@@ -86,6 +86,20 @@ export interface ModelResult {
   error?: string;
 }
 
+export interface NewsItem {
+  source: string;
+  title: string;
+  url: string | null;
+  summary: string | null;
+  published: string | null;
+}
+
+export interface NewsResponse {
+  market: Market | "all";
+  items: NewsItem[];
+  fetched_at: string;
+}
+
 export interface AnalyzeResponse {
   symbol: string;
   market: Market;
@@ -106,6 +120,7 @@ export interface AnalyzeResponse {
     votes?: Record<string, number>;
   };
   models: ModelResult[];
+  news_used: NewsItem[];
   generated_at: string;
 }
 
@@ -134,6 +149,10 @@ export const api = {
     get<ChartResponse>(`/asset/${market}/${symbol}/chart?timeframe=${timeframe}`),
   analyze: (market: Market, symbol: string, timeframe: Timeframe) =>
     post<AnalyzeResponse>(`/asset/${market}/${symbol}/analyze?timeframe=${timeframe}`, {}),
+  news: (market: Market | "all", limit = 40) =>
+    get<NewsResponse>(`/news?market=${market}&limit=${limit}`),
+  newsForAsset: (market: Market, symbol: string, limit = 10) =>
+    get<NewsResponse>(`/asset/${market}/${symbol}/news?limit=${limit}`),
 };
 
 export const TIMEFRAMES: Timeframe[] = ["15m", "30m", "1h", "3h", "6h", "12h", "18h", "24h"];

@@ -43,8 +43,17 @@ JSON_SCHEMA = """{
 }"""
 
 
-def _build_prompt(symbol: str, market: str, timeframe: str, ta: dict[str, Any], price: float) -> str:
+def _build_prompt(symbol: str, market: str, timeframe: str, ta: dict[str, Any], price: float, news: list[dict[str, Any]] | None = None) -> str:
     market_name = "Cryptocurrency (Binance)" if market == "crypto" else "Saham Indonesia (IDX)"
+    news_block = ""
+    if news:
+        lines = []
+        for n in news[:8]:
+            src = n.get("source", "")
+            title = (n.get("title") or "").strip()
+            pub = (n.get("published") or "")[:10]
+            lines.append(f"- [{pub}] ({src}) {title}")
+        news_block = "\n\nBerita & headline terkini (live RSS feed):\n" + "\n".join(lines)
     return f"""Analisa aset berikut:
 - Simbol: {symbol}
 - Market: {market_name}
@@ -57,9 +66,9 @@ def _build_prompt(symbol: str, market: str, timeframe: str, ta: dict[str, Any], 
   - MACD histogram: {ta.get('macd_hist')}
   - ATR(14): {ta.get('atr')}
 - Sinyal rule-based saat ini: {ta.get('action')} ({ta.get('label')}) confidence {ta.get('confidence')}%
-- Alasan teknis: {'; '.join(ta.get('reasons', []))}
+- Alasan teknis: {'; '.join(ta.get('reasons', []))}{news_block}
 
-Pertimbangkan juga konteks makro & berita global/Indonesia terkini (kebijakan Fed, suku bunga BI, geopolitik, regulasi crypto, kondisi politik & ekonomi Indonesia) yang Anda ketahui.
+Pertimbangkan berita di atas (jika ada) bersama konteks makro & berita global/Indonesia terkini (kebijakan Fed, suku bunga BI, geopolitik, regulasi crypto, kondisi politik & ekonomi Indonesia) yang Anda ketahui.
 
 Berikan rekomendasi trading. Balas HANYA dengan JSON sesuai skema ini:
 {JSON_SCHEMA}
@@ -199,9 +208,13 @@ def _aggregate(results: list[dict[str, Any]], fallback_ta: dict[str, Any]) -> di
     }
 
 
-async def ensemble_analyze(symbol: str, market: str, timeframe: str, ta: dict[str, Any], price: float) -> dict[str, Any]:
-    """Run all three models concurrently and aggregate."""
-    prompt = _build_prompt(symbol, market, timeframe, ta, price)
+async def ensemble_analyze(symbol: str, market: str, timeframe: str, ta: dict[str, Any], price: float, news: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Run all three models concurrently and aggregate.
+
+    `news` is a list of recent headlines (from RSS feed) which is injected
+    into the prompt so the AI grounds its analysis on real-time events.
+    """
+    prompt = _build_prompt(symbol, market, timeframe, ta, price, news)
     session_base = f"{symbol}-{timeframe}-{uuid.uuid4().hex[:8]}"
     tasks = [
         _call_one(cfg, prompt, f"{session_base}-{cfg['provider']}")

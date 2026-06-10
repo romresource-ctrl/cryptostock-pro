@@ -183,6 +183,13 @@ export default function Dashboard() {
         </View>
         <View style={styles.headerActions}>
           <TouchableOpacity
+            onPress={() => router.push("/news" as never)}
+            testID="news-button"
+            style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          >
+            <Ionicons name="newspaper-outline" size={18} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <TouchableOpacity
             onPress={toggle}
             testID="theme-toggle-button"
             style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}

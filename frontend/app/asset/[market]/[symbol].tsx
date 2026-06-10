@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Dimensions,
+  Linking,
   ScrollView,
   StyleSheet,
   Text,
@@ -317,6 +318,38 @@ export default function AssetDetail() {
                   ))}
                 </View>
               )}
+
+              {analysis.news_used.length > 0 && (
+                <View style={{ marginTop: 16 }}>
+                  <Text style={[styles.subTitle, { color: colors.textPrimary }]}>
+                    📡 Berita Live yang Digunakan ({analysis.news_used.length})
+                  </Text>
+                  {analysis.news_used.slice(0, 6).map((n, i) => (
+                    <TouchableOpacity
+                      key={i}
+                      onPress={() => n.url && Linking.openURL(n.url).catch(() => {})}
+                      activeOpacity={n.url ? 0.7 : 1}
+                      testID={`news-used-${i}`}
+                      style={[styles.newsRow, { borderColor: colors.border }]}
+                    >
+                      <View style={styles.newsHeadRow}>
+                        <Text style={[styles.newsSource, { color: colors.accentBlue }]} numberOfLines={1}>
+                          {n.source}
+                        </Text>
+                        {n.published ? (
+                          <Text style={[styles.newsTime, { color: colors.textMuted }]}>
+                            {new Date(n.published).toLocaleDateString("id-ID", { day: "2-digit", month: "short" })}
+                          </Text>
+                        ) : null}
+                      </View>
+                      <Text style={[styles.newsTitle, { color: colors.textSecondary }]} numberOfLines={2}>
+                        {n.title}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
               <Text style={[styles.generatedAt, { color: colors.textMuted }]}>
                 Dianalisa: {new Date(analysis.generated_at).toLocaleString("id-ID")}
               </Text>
@@ -451,5 +484,10 @@ const styles = StyleSheet.create({
   modelErr: { fontSize: 10, marginTop: 6 },
   subTitle: { fontSize: 13, fontWeight: "700", marginBottom: 4 },
   bullet: { fontSize: 12, lineHeight: 19 },
+  newsRow: { paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
+  newsHeadRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 2 },
+  newsSource: { fontSize: 10, fontWeight: "700", letterSpacing: 0.4, flex: 1 },
+  newsTime: { fontSize: 10, marginLeft: 8 },
+  newsTitle: { fontSize: 12, lineHeight: 17 },
   generatedAt: { fontSize: 10, marginTop: 12, textAlign: "right" },
 });

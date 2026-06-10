@@ -35,6 +35,7 @@ from market_data import (  # noqa: E402
     get_crypto_snapshot,
     get_stock_snapshot,
 )
+from news_feed import get_news, get_news_for_symbol  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s | %(message)s")
 logger = logging.getLogger("aitrade")
@@ -113,7 +114,22 @@ class AnalyzeResponse(BaseModel):
     technical: dict
     consensus: dict
     models: list[dict]
+    news_used: list[dict] = Field(default_factory=list)
     generated_at: str
+
+
+class NewsItem(BaseModel):
+    source: str
+    title: str
+    url: str | None = None
+    summary: str | None = None
+    published: str | None = None
+
+
+class NewsResponse(BaseModel):
+    market: str
+    items: list[NewsItem]
+    fetched_at: str
 
 
 # ---------------- Helpers ----------------
@@ -252,7 +268,9 @@ async def asset_analyze(market: Literal["crypto", "stock"], symbol: str, timefra
     technical = compute_signal(candles, market)
     if price is None:
         raise HTTPException(503, "Price unavailable")
-    result = await ensemble_analyze(symbol, market, timeframe, technical, float(price))
+    # Fetch real-time news headlines for this symbol/market
+    news = await get_news_for_symbol(symbol, market, limit=8)
+    result = await ensemble_analyze(symbol, market, timeframe, technical, float(price), news=news)
     # Cache last analysis
     await db.analyses.replace_one(
         {"_id": f"{market}-{symbol}-{timeframe}"},
@@ -261,6 +279,7 @@ async def asset_analyze(market: Literal["crypto", "stock"], symbol: str, timefra
             "symbol": symbol, "market": market, "timeframe": timeframe,
             "price": float(price), "technical": technical,
             "consensus": result["consensus"], "models": result["models"],
+            "news_used": news,
             "generated_at": _now_iso(),
         },
         upsert=True,
@@ -269,8 +288,21 @@ async def asset_analyze(market: Literal["crypto", "stock"], symbol: str, timefra
         symbol=symbol, market=market, timeframe=timeframe,
         price=float(price), technical=technical,
         consensus=result["consensus"], models=result["models"],
+        news_used=news,
         generated_at=_now_iso(),
     )
+
+
+@api.get("/news", response_model=NewsResponse)
+async def news_global(market: Literal["crypto", "stock", "all"] = Query("all"), limit: int = Query(40, ge=1, le=80)) -> NewsResponse:
+    items = await get_news(market, limit=limit)
+    return NewsResponse(market=market, items=[NewsItem(**i) for i in items], fetched_at=_now_iso())
+
+
+@api.get("/asset/{market}/{symbol}/news", response_model=NewsResponse)
+async def news_for_asset(market: Literal["crypto", "stock"], symbol: str, limit: int = Query(10, ge=1, le=30)) -> NewsResponse:
+    items = await get_news_for_symbol(symbol.upper(), market, limit=limit)
+    return NewsResponse(market=market, items=[NewsItem(**i) for i in items], fetched_at=_now_iso())
 
 
 app.include_router(api)

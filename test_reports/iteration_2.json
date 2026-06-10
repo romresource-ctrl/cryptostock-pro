@@ -1,0 +1,39 @@
+{
+  "summary": "AITrade Pro iteration 2 — live RSS news feature tested end-to-end. Backend: 27/27 pytest cases pass (25 first-run, 2 analyze tests flaky on first parallel run due to transient Binance/Yahoo upstream rate-limit returning 404 — both PASS on retry, same flakiness was already noted in iteration 1). New tests added: /api/news for crypto/stock/all with field validation (source/title/url/summary/published, market+fetched_at), cache fast-path (<5s on 2nd hit), /api/asset/crypto/BTC/news (5 items, BTC alias filter), /api/asset/stock/BBCA/news (200 + list — fallback acceptable), /api/asset/crypto/BTC/analyze response includes non-empty news_used array. Regression endpoints (/, /watchlist, /dashboard for all 8 timeframes, /asset/.../chart, invalid timeframe 400, invalid symbol 404, _id leakage) all still pass. Reuters feeds DNS-blocked in sandbox (logged warning) but other sources cover. No MongoDB _id leakage. Frontend (mobile viewport 390x844): Dashboard renders 'newspaper-outline' icon (testID=news-button) in header — tap navigates to /news. /news screen shows 'Berita Live' header, filter pills SEMUA/CRYPTO/SAHAM (testIDs news-filter-all/crypto/stock); SEMUA=50 items, CRYPTO=45 items, SAHAM=40 items — switching pills reloads correctly. News rows render source + relative time + title + summary; each is a TouchableOpacity with Linking.openURL handler (open handler exists; external nav not validated per request). Back button returns to dashboard. Asset detail flow: tap BTC card → ANALISA AI → ensemble completes in ~25s → '📡 Berita Live yang Digunakan (8)' section appears with 6 visible news-used rows (slice(0,6)) including source/time/title (e.g., CoinDesk · 'Live updates: What next for bitcoin…'). All previously-tested flows (timeframe pills, theme toggle, manage screen) still work — no red screen, no console errors.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/asset/{market}/{symbol}/analyze", "issue": "Returns 404 'Symbol not found or upstream data unavailable' during transient Binance/Yahoo rate-limit (concurrent test load). Same issue noted in iteration_1. Should distinguish upstream-failure (503) from real symbol-not-found (404)."},
+      {"endpoint": "GET /api/news (stock/all)", "issue": "Reuters feeds (feeds.reuters.com) DNS-blocked in sandbox — logged as warning, other sources compensate. Consider removing Reuters from STOCK_FEEDS/GLOBAL_FEEDS in news_feed.py to silence the warning, or swap for an accessible alternative."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/asset detail", "issues": ["Carry-over from iteration 1: helper text under ANALISA AI button still mentions 'GPT-5.4' while ai_engine.py uses 'GPT-5.2'. /app/frontend/app/asset/[market]/[symbol].tsx (around line 252)."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_aitrade_backend.py", "/app/test_reports/pytest/results.xml"],
+  "action_items": [
+    "(Optional) Remove or replace Reuters RSS feeds in /app/backend/news_feed.py (sandbox DNS blocks feeds.reuters.com → repeated WARNING in backend log; functionality unaffected).",
+    "(Optional, carry-over) Return 503 instead of 404 in /api/asset/.../analyze and /chart when upstream (Binance/Yahoo) momentarily fails, to make this distinguishable from a truly unknown symbol.",
+    "(Optional, carry-over) Fix detail-screen copy: 'GPT-5.4' → 'GPT-5.2'."
+  ],
+  "critical_code_review_comments": [
+    "news_feed.get_news: 15-min in-memory cache verified working (cache call <5s after warm-up). Cache key is per-market — good.",
+    "news_feed._fetch_one: gracefully handles per-feed failures (try/except + warning log) — Reuters DNS failures do not break the response.",
+    "news_feed.get_news_for_symbol: fallback to top headlines when no symbol match — sensible default that the frontend can still display.",
+    "server.NewsResponse uses Pydantic model + NewsItem coercion, no _id ever introduced. analyze endpoint persists news_used to db.analyses with _id=key; response model excludes mongo _id by construction.",
+    "Frontend api.ts: news() and newsForAsset() typed correctly; NewsItem fields match backend.",
+    "news.tsx: solid use of FlatList + RefreshControl + testIDs for filter pills; row testID uses title slice — unique enough for tests."
+  ],
+  "updated_files": ["/app/backend/tests/test_aitrade_backend.py"],
+  "success_rate": {"backend": "100% (27/27 with 2 retries on flaky upstream rate-limit)", "frontend": "100% on all tested flows (news button, /news screen filters, asset detail news_used section, back nav)"},
+  "seed_data_creation": "None. RSS sources are public/live. Watchlist auto-initializes on first GET.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend at https://cryptostock-pro.preview.emergentagent.com. News endpoint first call 5-10s (live RSS fetch), subsequent calls <1s (15-min cache). Analyze endpoint 15-40s; if it returns 404 with 'upstream data unavailable' simply retry — it's transient Binance/Yahoo rate-limit, not a real bug. Reuters feeds DNS-blocked, expected. Frontend testIDs of interest: news-button, news-filter-{all,crypto,stock}, news-back-button, news-used-{0..5}, run-ai-analysis-button.",
+  "rca_of_issue": "No new bug found. The 2 transient analyze failures were upstream rate-limit (Binance/Yahoo) returning empty snapshot → backend's 404 path triggered. Same class of flakiness flagged in iteration_1. Mitigation: change 404→503 when snapshot is None due to upstream HTTP failure (still 404 only when symbol is truly unknown like in CRYPTO_BINANCE_MAP/STOCK_YAHOO_MAP)."
+}

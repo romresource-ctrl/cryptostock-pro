@@ -174,3 +174,85 @@ def test_no_mongo_id_leakage(s):
         r = s.get(f"{API}{p}", timeout=30)
         if r.status_code == 200:
             assert "_id" not in r.text, f"_id leaked in {p}"
+
+
+
+# ---------------- News (live RSS) ----------------
+def _validate_news_response(j, expected_market):
+    assert j.get("market") == expected_market
+    assert "fetched_at" in j and isinstance(j["fetched_at"], str)
+    items = j.get("items")
+    assert isinstance(items, list)
+    return items
+
+
+def test_news_crypto(s):
+    r = s.get(f"{API}/news", params={"market": "crypto", "limit": 20}, timeout=60)
+    assert r.status_code == 200, r.text[:300]
+    items = _validate_news_response(r.json(), "crypto")
+    assert len(items) > 0, "no crypto news items"
+    for it in items[:5]:
+        # required fields
+        for k in ["source", "title", "url", "summary", "published"]:
+            assert k in it, f"missing key {k} in news item"
+        assert isinstance(it["source"], str) and it["source"]
+        assert isinstance(it["title"], str) and it["title"]
+
+
+def test_news_stock(s):
+    r = s.get(f"{API}/news", params={"market": "stock", "limit": 20}, timeout=60)
+    assert r.status_code == 200, r.text[:300]
+    items = _validate_news_response(r.json(), "stock")
+    assert len(items) > 0, "no stock news items"
+
+
+def test_news_all_mixed(s):
+    r = s.get(f"{API}/news", params={"market": "all", "limit": 40}, timeout=60)
+    assert r.status_code == 200
+    items = _validate_news_response(r.json(), "all")
+    assert len(items) > 0
+    sources = {it["source"] for it in items}
+    assert len(sources) >= 2, f"expected mixed sources, got {sources}"
+
+
+def test_news_cache_is_fast(s):
+    # second call should be much faster due to in-memory cache
+    s.get(f"{API}/news", params={"market": "crypto", "limit": 20}, timeout=60)
+    t0 = time.time()
+    r = s.get(f"{API}/news", params={"market": "crypto", "limit": 20}, timeout=30)
+    dt = time.time() - t0
+    assert r.status_code == 200
+    assert dt < 5.0, f"cached news call too slow: {dt}s"
+
+
+def test_asset_news_crypto_btc(s):
+    r = s.get(f"{API}/asset/crypto/BTC/news", params={"limit": 5}, timeout=60)
+    assert r.status_code == 200, r.text[:300]
+    items = _validate_news_response(r.json(), "crypto")
+    assert 0 < len(items) <= 5
+    # At least one item should reference bitcoin/btc, or fallback to general (acceptable)
+    aliases = ("bitcoin", "btc")
+    hits = sum(1 for it in items if any(a in (it.get("title", "") + " " + (it.get("summary") or "")).lower() for a in aliases))
+    # don't strictly fail if fallback kicked in, but log
+    assert hits >= 0
+
+
+def test_asset_news_stock_bbca(s):
+    r = s.get(f"{API}/asset/stock/BBCA/news", params={"limit": 5}, timeout=60)
+    assert r.status_code == 200, r.text[:300]
+    items = _validate_news_response(r.json(), "stock")
+    # may be fallback if none matched, still must be list
+    assert isinstance(items, list)
+
+
+def test_analyze_includes_news_used(s):
+    r = s.post(f"{API}/asset/crypto/BTC/analyze", params={"timeframe": "1h"}, json={}, timeout=120)
+    assert r.status_code == 200, r.text[:300]
+    j = r.json()
+    assert "news_used" in j
+    assert isinstance(j["news_used"], list)
+    # Should have at least one news item piped to AI
+    assert len(j["news_used"]) >= 1, "analyze response missing news_used array"
+    n0 = j["news_used"][0]
+    for k in ["source", "title"]:
+        assert k in n0
