@@ -1,6 +1,6 @@
 """Multi-AI ensemble for trading analysis.
 
-Calls Claude Sonnet 4.6, GPT-5.4, and Gemini 3.1 Pro Preview in parallel
+Calls Claude Sonnet 4.6, GPT-5.2, and Gemini 3.1 Pro Preview in parallel
 via emergentintegrations, then aggregates into a consensus signal with
 news/macro context.
 """

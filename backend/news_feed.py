@@ -34,12 +34,10 @@ STOCK_FEEDS: list[tuple[str, str]] = [
     ("Bisnis.com Market", "https://market.bisnis.com/rss"),
     ("Kontan Investasi", "https://investasi.kontan.co.id/rss"),
     ("CNBC Indonesia Market", "https://www.cnbcindonesia.com/market/rss"),
-    ("Reuters Business", "https://feeds.reuters.com/reuters/businessNews"),
     ("Investing.com Indonesia", "https://id.investing.com/rss/news.rss"),
 ]
 
 GLOBAL_FEEDS: list[tuple[str, str]] = [
-    ("Reuters Markets", "https://feeds.reuters.com/reuters/marketsNews"),
     ("Yahoo Finance Top", "https://finance.yahoo.com/news/rssindex"),
 ]
 
