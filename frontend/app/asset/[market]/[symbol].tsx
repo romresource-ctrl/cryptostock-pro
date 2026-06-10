@@ -249,7 +249,7 @@ export default function AssetDetail() {
 
           {!analysis && !analyzing && (
             <Text style={[styles.aiHint, { color: colors.textMuted }]}>
-              Tekan ANALISA AI untuk konsensus Claude Sonnet 4.6 + GPT-5.4 + Gemini 3.1 Pro
+              Tekan ANALISA AI untuk konsensus Claude Sonnet 4.6 + GPT-5.2 + Gemini 3.1 Pro
               berdasarkan teknikal, berita global, makro & politik terkini.
             </Text>
           )}
