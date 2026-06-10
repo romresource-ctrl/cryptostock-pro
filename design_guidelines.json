@@ -1,0 +1,134 @@
+{
+  "theme_and_archetype": {
+    "domain": "Finance / Trading / Crypto & Stocks",
+    "theme": "Dark (Primary) / Light Toggleable",
+    "archetype": "2 (Performance Pro) with Pro Exchange Aesthetic"
+  },
+  "colors": {
+    "dark": {
+      "background": "#0B0E11",
+      "surface": "#181A20",
+      "surfaceHighlight": "#2B3139",
+      "textPrimary": "#EAECEF",
+      "textSecondary": "#848E9C",
+      "accentUp": "#0ECB81",
+      "accentDown": "#F6465D",
+      "accentHold": "#FCD535",
+      "accentBlue": "#2962FF",
+      "border": "#2B3139"
+    },
+    "light": {
+      "background": "#FAFAFA",
+      "surface": "#FFFFFF",
+      "surfaceHighlight": "#F0F0F0",
+      "textPrimary": "#1E2329",
+      "textSecondary": "#707A8A",
+      "accentUp": "#02C076",
+      "accentDown": "#F6465D",
+      "accentHold": "#F3BA2F",
+      "accentBlue": "#2962FF",
+      "border": "#EAECEF"
+    }
+  },
+  "typography": {
+    "headings": {
+      "fontFamily": "System",
+      "weights": ["600", "700"],
+      "sizes": {
+        "h1": "24px",
+        "h2": "20px",
+        "h3": "16px"
+      }
+    },
+    "data_numbers": {
+      "fontFamily": "monospace",
+      "weights": ["500", "700"],
+      "sizes": {
+        "large": "28px",
+        "medium": "16px",
+        "small": "12px",
+        "micro": "10px"
+      }
+    },
+    "body": {
+      "fontFamily": "System",
+      "weights": ["400", "500"],
+      "sizes": {
+        "base": "14px",
+        "small": "12px",
+        "micro": "10px"
+      }
+    }
+  },
+  "spacing_and_layout": {
+    "padding": {
+      "xs": "4px",
+      "sm": "8px",
+      "md": "16px",
+      "lg": "24px",
+      "xl": "32px"
+    },
+    "radius": {
+      "sm": "4px",
+      "md": "8px",
+      "lg": "12px"
+    },
+    "dashboard_grid": {
+      "type": "2-column",
+      "description": "Split screen vertically into two 50% width scrollable columns (or a 2-column FlatList). Left: CRYPTO, Right: SAHAM.",
+      "gap": "8px"
+    }
+  },
+  "components_and_screens": {
+    "Header": {
+      "description": "Sticky top bar with App Name 'AITrade Pro', Theme Toggle (Sun/Moon), Settings/Manage Assets Icon."
+    },
+    "TimeframeSelector": {
+      "description": "Horizontal ScrollView containing interval pills: 15m, 30m, 60m, 3h, 6h, 12h, 18h, 24h.",
+      "active_state": "Solid background matching surfaceHighlight, border bottom accentUp or brand color."
+    },
+    "DashboardList": {
+      "description": "Two parallel columns. Due to screen width constraints, use dense rows inside each column.",
+      "CardItem": {
+        "layout": "Row based or dense vertical. Ticker top-left, Price bottom-left, Signal top-right, Confidence bottom-right.",
+        "Signal_BUY": "Text color accentUp, bg color accentUp with 20% opacity.",
+        "Signal_SELL": "Text color accentDown, bg color accentDown with 20% opacity.",
+        "Signal_HOLD": "Text color accentHold, bg color accentHold with 20% opacity."
+      }
+    },
+    "ManageAssetsModal": {
+      "description": "Screen/Modal to add/remove assets from the active screening list."
+    },
+    "DetailScreen": {
+      "description": "Asset details with big candlestick/line chart, Technical Indicators, AI textual analysis (Claude/GPT mock), Entry/Exit/SL/TP points, and News/Global Data impact reports.",
+      "Chart": "Use react-native-chart-kit, react-native-svg, or react-native-wagmi-charts for rendering."
+    }
+  },
+  "testing": {
+    "attributes": "Add testID prop to all interactive elements in React Native (e.g., testID='crypto-btc-card')."
+  },
+  "image_urls": {
+    "trading_chart_bg": {
+      "url": "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxNzV8MHwxfHNlYXJjaHwxfHx0cmFkaW5nJTIwY2hhcnR8ZW58MHx8fHwxNzgxMDczNjM1fDA&ixlib=rb-4.1.0&q=85",
+      "description": "stock market candlestick chart on dark screen",
+      "usage": "Background image for the AI Analysis / News report header on Detail screen."
+    },
+    "colorful_data_screen": {
+      "url": "https://images.pexels.com/photos/16594725/pexels-photo-16594725.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "description": "Detailed financial trading screen with colorful charts",
+      "usage": "Background placeholder for global news/reports section."
+    }
+  },
+  "instructions_to_main_agent": [
+    "Build an Expo React Native application using .js files (NOT .tsx).",
+    "Implement a Dark/Light theme context, defaulting to Dark Mode (Pro Exchange). No login required.",
+    "On the Home Screen, place a Timeframe Selector horizontally at the top (15m, 30m, 60m, 3h, 6h, 12h, 18h, 24h).",
+    "Below the selector, display a 2-column layout side-by-side (Left: CRYPTO, Right: SAHAM) showing asset cards. Use dense mobile UI.",
+    "Data to mock/display: CRYPTO (BTC, ETH, HYPE, USDT, ASTER, BNB, XRP, SOL, DOGE, PEPE, SUI, ADA, TRX, LTC, LINK, HBAR, SHIB, DOT, BCH, SAND, ALGO, XAUT).",
+    "Data to mock/display: SAHAM (BBCA, BBRI, BMRI, TPIA, ADRO, DEWA, ASII, EMTK, ADMR, BRMS, PANI, CBRE, RAJA, PTRO, INET, ANTM, MBMA, MDKA).",
+    "Mock AI signals containing BUY/SELL/HOLD/LONG/SHORT and a confidence percentage (e.g., 92%) for each asset.",
+    "Create a Details screen when tapping an asset, featuring an interactive chart, detailed AI analysis (mocked from Claude/GPT), Entry/Exit points, and News impact.",
+    "Implement an Add/Remove Asset screen accessible from the dashboard.",
+    "Add 'testID' attributes to all Touchable and interactive components."
+  ]
+}
