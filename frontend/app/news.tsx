@@ -129,9 +129,9 @@ export default function NewsScreen() {
     { key: "stock", label: "SAHAM" },
   ];
 
-  const symbolChips: { sym: string; market: Market }[] = [
-    ...watchlistCrypto.map((s) => ({ sym: s, market: "crypto" as const })),
-    ...watchlistStocks.map((s) => ({ sym: s, market: "stock" as const })),
+  const symbolChips: { symbol: string; market: Market }[] = [
+    ...watchlistCrypto.map((s) => ({ symbol: s, market: "crypto" as const })),
+    ...watchlistStocks.map((s) => ({ symbol: s, market: "stock" as const })),
   ].filter((c) => {
     if (marketFilter === "all") return true;
     return c.market === marketFilter;
@@ -197,12 +197,12 @@ export default function NewsScreen() {
             contentContainerStyle={{ paddingHorizontal: 16, gap: 6, alignItems: "center" }}
           >
             {symbolChips.map((c) => {
-              const active = symbolFilter?.symbol === c.sym && symbolFilter?.market === c.market;
+              const active = symbolFilter?.symbol === c.symbol && symbolFilter?.market === c.market;
               return (
                 <TouchableOpacity
-                  key={`${c.market}-${c.sym}`}
+                  key={`${c.market}-${c.symbol}`}
                   onPress={() => setSymbolFilter(active ? null : c)}
-                  testID={`news-symbol-${c.sym}`}
+                  testID={`news-symbol-${c.symbol}`}
                   style={[
                     styles.symbolChip,
                     {
@@ -212,7 +212,7 @@ export default function NewsScreen() {
                   ]}
                 >
                   <Text style={[styles.symbolChipText, { color: active ? colors.accentBlue : colors.textSecondary }]}>
-                    {c.sym}
+                    {c.symbol}
                   </Text>
                 </TouchableOpacity>
               );

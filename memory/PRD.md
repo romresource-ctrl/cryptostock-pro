@@ -6,27 +6,21 @@ signals for Indonesian Stocks (IDX, via Yahoo Finance) and Cryptocurrency
 (Binance public API). Pro-Exchange aesthetic with dark theme primary.
 
 ## Core Features (delivered)
-1. **Two-column dashboard** (CRYPTO / SAHAM) showing 22+18 default assets with:
-   - Price (Binance for crypto, Yahoo `.JK` for IDX stocks)
-   - 24h change %
-   - Sparkline (30 bars)
-   - BUY / SELL / HOLD signal pill (LONG/SHORT label for crypto)
-   - AI confidence %
+1. **Two-column dashboard** (CRYPTO / SAHAM) with price, sparkline, BUY/SELL/HOLD signal,
+   AI confidence %, **WR 30d badge** (track-record win rate) per asset.
 2. **Timeframe selector**: 15m, 30m, 1h, 3h, 6h, 12h, 18h, 24h.
-3. **Asset detail screen** with:
-   - Line+area price chart (closing prices, react-native-svg)
-   - Technical indicators (RSI, EMA20/50, MACD-H, ATR)
-   - Entry / Stop-Loss / Take-Profit suggestions
-   - Multi-AI ensemble button (calls Claude Sonnet 4.6, GPT-5.2, Gemini 3.1 Pro
-     concurrently and aggregates a consensus signal, news factors, risks).
-   - "Berita Live yang Digunakan" — daftar headline RSS yang dipakai AI
-4. **Manage assets** screen – toggle which symbols are shown on each column,
-   persisted in MongoDB (`watchlist` collection, single shared doc).
-5. **Theme toggle** (dark primary, light alternate) persisted via AsyncStorage.
-6. **Live News Feed** (iteration 2) – RSS aggregator dari CoinDesk, CoinTelegraph,
-   Decrypt, CryptoPanic, Bitcoin Magazine, Bisnis.com, Kontan, CNBC Indonesia,
-   Investing.com Indonesia, Yahoo Finance. Cached 15 menit. Filter SEMUA/CRYPTO/SAHAM.
-   Headlines diumpankan ke prompt AI ensemble sebagai konteks real-time.
+3. **Asset detail screen** with line+area chart, technical indicators, Entry/SL/TP,
+   Multi-AI ensemble (Claude Sonnet 4.6 + GPT-5.2 + Gemini 3.1 Pro) with live news,
+   plus **📊 Track Record** section (WR 7d/30d/all + recent signals with hit/miss).
+4. **Multi-profile watchlist** – default seeded profiles: **Spot Crypto**, **Futures Crypto**,
+   **Saham Konservatif**. Create/rename/delete/activate via Manage screen.
+5. **Theme toggle** (dark primary, light alternate), persisted via storage.
+6. **Live News Feed** – RSS aggregator (CoinDesk, CoinTelegraph, Decrypt, CryptoPanic,
+   Bitcoin Magazine, Bisnis.com, Kontan, CNBC Indonesia, Investing.com Indonesia,
+   Yahoo Finance) with 5-min cache + 60s frontend auto-refresh, **OG image thumbnails**,
+   filter pills SEMUA/CRYPTO/SAHAM, **per-symbol chip filter** (tap BTC/ETH/BBCA etc.).
+7. **Signal history & backtesting** – every `/analyze` records a signal; lazily evaluated
+   N candles later vs spot price; hit threshold 1%. Win-rate aggregated 7d/30d/all-time.
 
 ## Tech Stack
 - Backend: FastAPI + Motor (MongoDB) + emergentintegrations (Emergent LLM key)
@@ -35,11 +29,14 @@ signals for Indonesian Stocks (IDX, via Yahoo Finance) and Cryptocurrency
 - AI: Claude Sonnet 4.6 + GPT-5.4 + Gemini 3.1 Pro via Emergent Universal Key
 
 ## API
-- `GET /api/dashboard?market=crypto|stock&timeframe=…` → signals list
-- `GET /api/watchlist` / `POST /api/watchlist` → CRUD watchlist
+- `GET /api/dashboard?market=crypto|stock&timeframe=…` → signals + track_record per asset
+- `GET /api/profiles` / `POST /api/profiles` / `PUT /api/profiles/{id}` /
+  `DELETE /api/profiles/{id}` / `POST /api/profiles/{id}/activate`
+- `GET /api/watchlist` / `POST /api/watchlist` → CRUD active profile's lists (legacy)
 - `GET /api/asset/{market}/{symbol}/chart?timeframe=…` → candles + signal
-- `POST /api/asset/{market}/{symbol}/analyze?timeframe=…` → Multi-AI consensus + news_used
-- `GET /api/news?market=crypto|stock|all&limit=N` → live RSS news aggregator
+- `POST /api/asset/{market}/{symbol}/analyze?timeframe=…` → AI consensus + news_used + records signal
+- `GET /api/asset/{market}/{symbol}/track-record` → WR 7d/30d/all + recent signals
+- `GET /api/news?market=crypto|stock|all&limit=N` → live RSS aggregator (image incl.)
 - `GET /api/asset/{market}/{symbol}/news?limit=N` → news matched to symbol aliases
 
 ## Out of scope (future)

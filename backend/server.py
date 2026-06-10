@@ -215,11 +215,18 @@ def _now_iso() -> str:
 
 
 async def _ensure_seed() -> None:
-    """Seed default profiles + state on first launch."""
-    count = await db.profiles.count_documents({})
-    if count == 0:
+    """Seed default profiles + state on first launch.
+
+    Uses upsert by _id so defaults are stable even if deleted and re-seeded.
+    """
+    has_any = await db.profiles.count_documents({}) > 0
+    if not has_any:
         for p in DEFAULT_PROFILES:
-            await db.profiles.insert_one({**p, "created_at": _now_iso()})
+            await db.profiles.update_one(
+                {"_id": p["_id"]},
+                {"$setOnInsert": {**p, "created_at": _now_iso()}},
+                upsert=True,
+            )
     state = await db.app_state.find_one({"_id": "active"})
     if not state:
         await db.app_state.replace_one(
