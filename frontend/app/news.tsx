@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  Image,
   Linking,
   RefreshControl,
   ScrollView,
@@ -17,7 +18,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { api, type Market, type NewsItem } from "@/src/lib/api";
 import { useTheme } from "@/src/theme/ThemeContext";
 
-type Filter = "all" | Market;
+type MarketFilter = "all" | Market;
+
+const AUTO_REFRESH_MS = 60_000;
 
 function formatRelative(iso: string | null): string {
   if (!iso) return "";
@@ -42,20 +45,29 @@ function NewsRow({ item }: { item: NewsItem }) {
       testID={`news-item-${item.title.slice(0, 20)}`}
       style={[styles.row, { backgroundColor: colors.surface, borderColor: colors.border }]}
     >
-      <View style={styles.rowHead}>
-        <Text style={[styles.source, { color: colors.accentBlue }]} numberOfLines={1}>
-          {item.source}
+      {item.image ? (
+        <Image source={{ uri: item.image }} style={styles.thumb} resizeMode="cover" />
+      ) : (
+        <View style={[styles.thumb, styles.thumbPlaceholder, { backgroundColor: colors.surfaceAlt }]}>
+          <Ionicons name="newspaper-outline" size={18} color={colors.textMuted} />
+        </View>
+      )}
+      <View style={styles.rowBody}>
+        <View style={styles.rowHead}>
+          <Text style={[styles.source, { color: colors.accentBlue }]} numberOfLines={1}>
+            {item.source}
+          </Text>
+          <Text style={[styles.time, { color: colors.textMuted }]}>{formatRelative(item.published)}</Text>
+        </View>
+        <Text style={[styles.title, { color: colors.textPrimary }]} numberOfLines={3}>
+          {item.title}
         </Text>
-        <Text style={[styles.time, { color: colors.textMuted }]}>{formatRelative(item.published)}</Text>
+        {item.summary ? (
+          <Text style={[styles.summary, { color: colors.textSecondary }]} numberOfLines={2}>
+            {item.summary}
+          </Text>
+        ) : null}
       </View>
-      <Text style={[styles.title, { color: colors.textPrimary }]} numberOfLines={3}>
-        {item.title}
-      </Text>
-      {item.summary ? (
-        <Text style={[styles.summary, { color: colors.textSecondary }]} numberOfLines={2}>
-          {item.summary}
-        </Text>
-      ) : null}
     </TouchableOpacity>
   );
 }
@@ -63,38 +75,67 @@ function NewsRow({ item }: { item: NewsItem }) {
 export default function NewsScreen() {
   const { colors } = useTheme();
   const router = useRouter();
-  const [filter, setFilter] = useState<Filter>("all");
+  const [marketFilter, setMarketFilter] = useState<MarketFilter>("all");
+  const [symbolFilter, setSymbolFilter] = useState<{ symbol: string; market: Market } | null>(null);
   const [items, setItems] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [fetchedAt, setFetchedAt] = useState<string>("");
+  const [watchlistCrypto, setWatchlistCrypto] = useState<string[]>([]);
+  const [watchlistStocks, setWatchlistStocks] = useState<string[]>([]);
 
-  const load = useCallback(async (f: Filter) => {
-    setLoading(true);
-    try {
-      const r = await api.news(f, 50);
-      setItems(r.items);
-      setFetchedAt(new Date(r.fetched_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }));
-    } finally {
-      setLoading(false);
-    }
+  // Load active profile watchlist for symbol chips
+  useEffect(() => {
+    void (async () => {
+      try {
+        const w = await api.watchlist();
+        setWatchlistCrypto(w.crypto);
+        setWatchlistStocks(w.stocks);
+      } catch {
+        // ignore
+      }
+    })();
   }, []);
 
+  const load = useCallback(
+    async (m: MarketFilter, sym: { symbol: string; market: Market } | null) => {
+      setLoading(true);
+      try {
+        const r = sym ? await api.newsForAsset(sym.market, sym.symbol, 30) : await api.news(m, 50);
+        setItems(r.items);
+        setFetchedAt(new Date(r.fetched_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
-    void load(filter);
-  }, [filter, load]);
+    void load(marketFilter, symbolFilter);
+    const id = setInterval(() => void load(marketFilter, symbolFilter), AUTO_REFRESH_MS);
+    return () => clearInterval(id);
+  }, [marketFilter, symbolFilter, load]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await load(filter);
+    await load(marketFilter, symbolFilter);
     setRefreshing(false);
-  }, [load, filter]);
+  }, [load, marketFilter, symbolFilter]);
 
-  const filters: { key: Filter; label: string }[] = [
+  const markets: { key: MarketFilter; label: string }[] = [
     { key: "all", label: "SEMUA" },
     { key: "crypto", label: "CRYPTO" },
     { key: "stock", label: "SAHAM" },
   ];
+
+  const symbolChips: { sym: string; market: Market }[] = [
+    ...watchlistCrypto.map((s) => ({ sym: s, market: "crypto" as const })),
+    ...watchlistStocks.map((s) => ({ sym: s, market: "stock" as const })),
+  ].filter((c) => {
+    if (marketFilter === "all") return true;
+    return c.market === marketFilter;
+  });
 
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: colors.background }]} edges={["top"]}>
@@ -110,22 +151,27 @@ export default function NewsScreen() {
           <Text style={[styles.appTitle, { color: colors.textPrimary }]}>Berita Live</Text>
           <Text style={[styles.appSub, { color: colors.textMuted }]}>
             RSS publik • {fetchedAt ? `update ${fetchedAt}` : "memuat…"}
+            {symbolFilter ? ` • ${symbolFilter.symbol}` : ""}
           </Text>
         </View>
       </View>
 
+      {/* Market filter pills */}
       <View style={styles.filterRow}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ paddingHorizontal: 16, gap: 8, alignItems: "center" }}
         >
-          {filters.map((f) => {
-            const active = f.key === filter;
+          {markets.map((f) => {
+            const active = f.key === marketFilter && !symbolFilter;
             return (
               <TouchableOpacity
                 key={f.key}
-                onPress={() => setFilter(f.key)}
+                onPress={() => {
+                  setMarketFilter(f.key);
+                  setSymbolFilter(null);
+                }}
                 testID={`news-filter-${f.key}`}
                 style={[
                   styles.pill,
@@ -142,6 +188,39 @@ export default function NewsScreen() {
         </ScrollView>
       </View>
 
+      {/* Symbol chips */}
+      {symbolChips.length > 0 && (
+        <View style={styles.symbolRow}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 16, gap: 6, alignItems: "center" }}
+          >
+            {symbolChips.map((c) => {
+              const active = symbolFilter?.symbol === c.sym && symbolFilter?.market === c.market;
+              return (
+                <TouchableOpacity
+                  key={`${c.market}-${c.sym}`}
+                  onPress={() => setSymbolFilter(active ? null : c)}
+                  testID={`news-symbol-${c.sym}`}
+                  style={[
+                    styles.symbolChip,
+                    {
+                      backgroundColor: active ? colors.accentBlue + "22" : colors.surface,
+                      borderColor: active ? colors.accentBlue : colors.border,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.symbolChipText, { color: active ? colors.accentBlue : colors.textSecondary }]}>
+                    {c.sym}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
+
       {loading && items.length === 0 ? (
         <View style={styles.loader}>
           <ActivityIndicator color={colors.accentBlue} />
@@ -151,7 +230,7 @@ export default function NewsScreen() {
           data={items}
           keyExtractor={(i, idx) => `${idx}-${i.title.slice(0, 30)}`}
           renderItem={({ item }) => <NewsRow item={item} />}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32, gap: 8 }}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32, gap: 8, paddingTop: 8 }}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accentBlue} />
           }
@@ -169,10 +248,7 @@ export default function NewsScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   header: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12,
   },
   iconBtn: {
     width: 36, height: 36, borderRadius: 10,
@@ -182,20 +258,26 @@ const styles = StyleSheet.create({
   appSub: { fontSize: 11, marginTop: 2 },
   filterRow: { height: 56, justifyContent: "center" },
   pill: {
-    height: 36,
-    paddingHorizontal: 14,
-    borderRadius: 18,
-    borderWidth: 1,
-    flexShrink: 0,
-    alignItems: "center",
-    justifyContent: "center",
+    height: 36, paddingHorizontal: 14, borderRadius: 18, borderWidth: 1, flexShrink: 0,
+    alignItems: "center", justifyContent: "center",
   },
   pillText: { fontSize: 12, fontWeight: "600", letterSpacing: 0.5 },
+  symbolRow: { height: 44, justifyContent: "center" },
+  symbolChip: {
+    height: 30, paddingHorizontal: 10, borderRadius: 15, borderWidth: 1, flexShrink: 0,
+    alignItems: "center", justifyContent: "center",
+  },
+  symbolChipText: { fontSize: 11, fontWeight: "700", letterSpacing: 0.4 },
   loader: { flex: 1, alignItems: "center", justifyContent: "center" },
-  row: { padding: 12, borderRadius: 10, borderWidth: 1 },
-  rowHead: { flexDirection: "row", justifyContent: "space-between", marginBottom: 6 },
-  source: { fontSize: 11, fontWeight: "700", letterSpacing: 0.4, flex: 1 },
+  row: {
+    flexDirection: "row", padding: 10, borderRadius: 10, borderWidth: 1, gap: 10,
+  },
+  thumb: { width: 80, height: 80, borderRadius: 8 },
+  thumbPlaceholder: { alignItems: "center", justifyContent: "center" },
+  rowBody: { flex: 1, justifyContent: "space-between" },
+  rowHead: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 },
+  source: { fontSize: 10, fontWeight: "700", letterSpacing: 0.4, flex: 1 },
   time: { fontSize: 10, marginLeft: 8 },
-  title: { fontSize: 14, fontWeight: "600", lineHeight: 20 },
-  summary: { fontSize: 12, marginTop: 6, lineHeight: 17 },
+  title: { fontSize: 13, fontWeight: "600", lineHeight: 18 },
+  summary: { fontSize: 11, marginTop: 4, lineHeight: 15 },
 });

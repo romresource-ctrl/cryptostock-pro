@@ -1,17 +1,26 @@
 """AITrade Pro backend.
 
 Endpoints:
-  GET  /api/                       health
-  GET  /api/watchlist              get default watchlist (crypto + stock)
-  POST /api/watchlist              update watchlist (full replace)
-  GET  /api/dashboard              dashboard signals batch (market, timeframe)
-  GET  /api/asset/{market}/{symbol}/chart    candles + ticker
-  POST /api/asset/{market}/{symbol}/analyze  AI ensemble deep analysis
+  GET    /api/                              health
+  GET    /api/profiles                      list profiles + active
+  POST   /api/profiles                      create profile {name, crypto?, stocks?}
+  PUT    /api/profiles/{id}                 rename + update lists
+  DELETE /api/profiles/{id}                 delete profile (cannot delete last)
+  POST   /api/profiles/{id}/activate        set active
+  GET    /api/watchlist                     active profile's lists + globals (legacy)
+  POST   /api/watchlist                     replace active profile's lists (legacy)
+  GET    /api/dashboard                     signals batch (market, timeframe) for active profile
+  GET    /api/asset/{market}/{symbol}/chart       candles + ticker
+  POST   /api/asset/{market}/{symbol}/analyze     AI ensemble (records to signal history)
+  GET    /api/asset/{market}/{symbol}/news        symbol-filtered news
+  GET    /api/asset/{market}/{symbol}/track-record  win-rate stats
+  GET    /api/news                          aggregated news (cache 5min)
 """
 from __future__ import annotations
 
 import logging
 import os
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
@@ -36,6 +45,11 @@ from market_data import (  # noqa: E402
     get_stock_snapshot,
 )
 from news_feed import get_news, get_news_for_symbol  # noqa: E402
+from track_record import (  # noqa: E402
+    get_track_record,
+    get_track_record_summary,
+    record_signal,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s | %(message)s")
 logger = logging.getLogger("aitrade")
@@ -49,7 +63,29 @@ DEFAULT_CRYPTO = ["BTC", "ETH", "HYPE", "USDT", "ASTER", "BNB", "XRP", "SOL", "D
 DEFAULT_STOCKS = ["BBCA", "BBRI", "BMRI", "TPIA", "ADRO", "DEWA", "ASII", "EMTK", "ADMR",
                   "BRMS", "PANI", "CBRE", "RAJA", "PTRO", "INET", "ANTM", "MBMA", "MDKA"]
 
-WATCHLIST_ID = "default"  # No-login app: single shared watchlist
+# Default seed profiles for new installs
+DEFAULT_PROFILES = [
+    {
+        "_id": "spot",
+        "name": "Spot Crypto",
+        "crypto": ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOT", "LINK", "LTC", "BCH"],
+        "stocks": [],
+    },
+    {
+        "_id": "futures",
+        "name": "Futures Crypto",
+        "crypto": ["BTC", "ETH", "SOL", "HYPE", "DOGE", "PEPE", "ASTER", "SUI", "SHIB", "XRP", "ALGO", "SAND"],
+        "stocks": [],
+    },
+    {
+        "_id": "konservatif",
+        "name": "Saham Konservatif",
+        "crypto": ["BTC", "ETH", "XAUT", "USDT"],
+        "stocks": ["BBCA", "BBRI", "BMRI", "ASII", "TPIA", "ANTM", "ADRO"],
+    },
+]
+DEFAULT_ACTIVE_PROFILE = "spot"
+
 TIMEFRAMES = ["15m", "30m", "1h", "3h", "6h", "12h", "18h", "24h"]
 
 app = FastAPI(title="AITrade Pro")
@@ -63,12 +99,48 @@ class WatchlistPayload(BaseModel):
     stocks: list[str] = Field(default_factory=list)
 
 
+class ProfileCreate(BaseModel):
+    name: str
+    crypto: list[str] = Field(default_factory=list)
+    stocks: list[str] = Field(default_factory=list)
+
+
+class ProfileUpdate(BaseModel):
+    name: str | None = None
+    crypto: list[str] | None = None
+    stocks: list[str] | None = None
+
+
+class Profile(BaseModel):
+    id: str
+    name: str
+    crypto: list[str]
+    stocks: list[str]
+
+
+class ProfilesResponse(BaseModel):
+    profiles: list[Profile]
+    active_id: str
+    available_crypto: list[str]
+    available_stocks: list[str]
+    timeframes: list[str]
+
+
 class WatchlistResponse(BaseModel):
     crypto: list[str]
     stocks: list[str]
     available_crypto: list[str]
     available_stocks: list[str]
     timeframes: list[str]
+    profile_id: str
+    profile_name: str
+
+
+class TrackRecordMini(BaseModel):
+    wr_7d: float | None = None
+    n_7d: int = 0
+    wr_30d: float | None = None
+    n_30d: int = 0
 
 
 class AssetSignal(BaseModel):
@@ -88,6 +160,7 @@ class AssetSignal(BaseModel):
     entry: float | None = None
     stop_loss: float | None = None
     take_profit: float | None = None
+    track_record: TrackRecordMini = Field(default_factory=TrackRecordMini)
 
 
 class DashboardResponse(BaseModel):
@@ -95,6 +168,8 @@ class DashboardResponse(BaseModel):
     timeframe: str
     server_time: str
     assets: list[AssetSignal]
+    profile_id: str
+    profile_name: str
 
 
 class ChartResponse(BaseModel):
@@ -124,6 +199,7 @@ class NewsItem(BaseModel):
     url: str | None = None
     summary: str | None = None
     published: str | None = None
+    image: str | None = None
 
 
 class NewsResponse(BaseModel):
@@ -138,19 +214,44 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-async def _get_or_init_watchlist() -> dict:
-    doc = await db.watchlist.find_one({"_id": WATCHLIST_ID}, {"_id": 0, "crypto": 1, "stocks": 1})
-    if not doc:
-        doc = {"crypto": DEFAULT_CRYPTO.copy(), "stocks": DEFAULT_STOCKS.copy()}
-        await db.watchlist.replace_one(
-            {"_id": WATCHLIST_ID},
-            {"_id": WATCHLIST_ID, **doc, "updated_at": _now_iso()},
+async def _ensure_seed() -> None:
+    """Seed default profiles + state on first launch."""
+    count = await db.profiles.count_documents({})
+    if count == 0:
+        for p in DEFAULT_PROFILES:
+            await db.profiles.insert_one({**p, "created_at": _now_iso()})
+    state = await db.app_state.find_one({"_id": "active"})
+    if not state:
+        await db.app_state.replace_one(
+            {"_id": "active"},
+            {"_id": "active", "profile_id": DEFAULT_ACTIVE_PROFILE},
             upsert=True,
         )
-    return doc
 
 
-def _build_signal(snapshot: dict) -> AssetSignal:
+async def _get_active_profile() -> dict:
+    await _ensure_seed()
+    state = await db.app_state.find_one({"_id": "active"}, {"_id": 0, "profile_id": 1})
+    pid = (state or {}).get("profile_id") or DEFAULT_ACTIVE_PROFILE
+    prof = await db.profiles.find_one({"_id": pid}, {"_id": 1, "name": 1, "crypto": 1, "stocks": 1})
+    if not prof:
+        # fallback to any profile
+        prof = await db.profiles.find_one({}, {"_id": 1, "name": 1, "crypto": 1, "stocks": 1})
+        if prof:
+            await db.app_state.replace_one({"_id": "active"}, {"_id": "active", "profile_id": prof["_id"]}, upsert=True)
+    if not prof:
+        # Shouldn't happen after seed, but be safe
+        return {"_id": "default", "name": "Default", "crypto": DEFAULT_CRYPTO.copy(), "stocks": DEFAULT_STOCKS.copy()}
+    return prof
+
+
+def _filter_lists(crypto: list[str], stocks: list[str]) -> tuple[list[str], list[str]]:
+    c = [s.upper() for s in (crypto or []) if s.upper() in CRYPTO_BINANCE_MAP]
+    s = [t.upper() for t in (stocks or []) if t.upper() in STOCK_YAHOO_MAP]
+    return c, s
+
+
+def _build_signal(snapshot: dict, tr: dict | None = None) -> AssetSignal:
     market = snapshot["market"]
     candles = snapshot.get("candles", [])
     ticker = snapshot.get("ticker", {}) or {}
@@ -173,7 +274,12 @@ def _build_signal(snapshot: dict) -> AssetSignal:
         entry=sig["entry"],
         stop_loss=sig["stop_loss"],
         take_profit=sig["take_profit"],
+        track_record=TrackRecordMini(**(tr or {})),
     )
+
+
+def _profile_to_model(p: dict) -> Profile:
+    return Profile(id=p["_id"], name=p.get("name", "Untitled"), crypto=p.get("crypto", []), stocks=p.get("stocks", []))
 
 
 # ---------------- Routes ----------------
@@ -183,26 +289,106 @@ async def health() -> dict:
     return {"app": "AITrade Pro", "status": "ok", "time": _now_iso()}
 
 
-@api.get("/watchlist", response_model=WatchlistResponse)
-async def get_watchlist() -> WatchlistResponse:
-    doc = await _get_or_init_watchlist()
-    return WatchlistResponse(
-        crypto=doc.get("crypto", []),
-        stocks=doc.get("stocks", []),
+# -------- Profiles --------
+
+@api.get("/profiles", response_model=ProfilesResponse)
+async def list_profiles() -> ProfilesResponse:
+    await _ensure_seed()
+    cursor = db.profiles.find({}, {"_id": 1, "name": 1, "crypto": 1, "stocks": 1})
+    profiles = [_profile_to_model(p) async for p in cursor]
+    state = await db.app_state.find_one({"_id": "active"}, {"_id": 0, "profile_id": 1})
+    active_id = (state or {}).get("profile_id") or (profiles[0].id if profiles else "")
+    return ProfilesResponse(
+        profiles=profiles,
+        active_id=active_id,
         available_crypto=list(CRYPTO_BINANCE_MAP.keys()),
         available_stocks=list(STOCK_YAHOO_MAP.keys()),
         timeframes=TIMEFRAMES,
     )
 
 
+@api.post("/profiles", response_model=Profile)
+async def create_profile(payload: ProfileCreate) -> Profile:
+    name = payload.name.strip() or "Profil Baru"
+    crypto, stocks = _filter_lists(payload.crypto, payload.stocks)
+    pid = str(uuid.uuid4())[:8]
+    doc = {"_id": pid, "name": name, "crypto": crypto, "stocks": stocks, "created_at": _now_iso()}
+    await db.profiles.insert_one(doc)
+    return _profile_to_model(doc)
+
+
+@api.put("/profiles/{profile_id}", response_model=Profile)
+async def update_profile(profile_id: str, payload: ProfileUpdate) -> Profile:
+    current = await db.profiles.find_one({"_id": profile_id})
+    if not current:
+        raise HTTPException(404, "Profile not found")
+    update: dict = {}
+    if payload.name is not None:
+        update["name"] = payload.name.strip() or current.get("name", "Untitled")
+    if payload.crypto is not None or payload.stocks is not None:
+        c = payload.crypto if payload.crypto is not None else current.get("crypto", [])
+        s = payload.stocks if payload.stocks is not None else current.get("stocks", [])
+        c, s = _filter_lists(c, s)
+        update["crypto"] = c
+        update["stocks"] = s
+    if update:
+        await db.profiles.update_one({"_id": profile_id}, {"$set": update})
+    doc = await db.profiles.find_one({"_id": profile_id}, {"_id": 1, "name": 1, "crypto": 1, "stocks": 1})
+    return _profile_to_model(doc or current)
+
+
+@api.delete("/profiles/{profile_id}")
+async def delete_profile(profile_id: str) -> dict:
+    total = await db.profiles.count_documents({})
+    if total <= 1:
+        raise HTTPException(400, "Tidak bisa menghapus profil terakhir")
+    res = await db.profiles.delete_one({"_id": profile_id})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Profile not found")
+    state = await db.app_state.find_one({"_id": "active"}, {"_id": 0, "profile_id": 1})
+    if (state or {}).get("profile_id") == profile_id:
+        fallback = await db.profiles.find_one({}, {"_id": 1})
+        if fallback:
+            await db.app_state.replace_one(
+                {"_id": "active"}, {"_id": "active", "profile_id": fallback["_id"]}, upsert=True,
+            )
+    return {"ok": True, "deleted": profile_id}
+
+
+@api.post("/profiles/{profile_id}/activate")
+async def activate_profile(profile_id: str) -> dict:
+    doc = await db.profiles.find_one({"_id": profile_id}, {"_id": 1})
+    if not doc:
+        raise HTTPException(404, "Profile not found")
+    await db.app_state.replace_one(
+        {"_id": "active"}, {"_id": "active", "profile_id": profile_id}, upsert=True,
+    )
+    return {"ok": True, "active_id": profile_id}
+
+
+# -------- Watchlist (legacy, routes to active profile) --------
+
+@api.get("/watchlist", response_model=WatchlistResponse)
+async def get_watchlist() -> WatchlistResponse:
+    prof = await _get_active_profile()
+    return WatchlistResponse(
+        crypto=prof.get("crypto", []),
+        stocks=prof.get("stocks", []),
+        available_crypto=list(CRYPTO_BINANCE_MAP.keys()),
+        available_stocks=list(STOCK_YAHOO_MAP.keys()),
+        timeframes=TIMEFRAMES,
+        profile_id=prof["_id"],
+        profile_name=prof.get("name", "Default"),
+    )
+
+
 @api.post("/watchlist", response_model=WatchlistResponse)
 async def update_watchlist(payload: WatchlistPayload) -> WatchlistResponse:
-    crypto = [s.upper() for s in payload.crypto if s.upper() in CRYPTO_BINANCE_MAP]
-    stocks = [s.upper() for s in payload.stocks if s.upper() in STOCK_YAHOO_MAP]
-    await db.watchlist.replace_one(
-        {"_id": WATCHLIST_ID},
-        {"_id": WATCHLIST_ID, "crypto": crypto, "stocks": stocks, "updated_at": _now_iso()},
-        upsert=True,
+    prof = await _get_active_profile()
+    crypto, stocks = _filter_lists(payload.crypto, payload.stocks)
+    await db.profiles.update_one(
+        {"_id": prof["_id"]},
+        {"$set": {"crypto": crypto, "stocks": stocks, "updated_at": _now_iso()}},
     )
     return WatchlistResponse(
         crypto=crypto,
@@ -210,8 +396,12 @@ async def update_watchlist(payload: WatchlistPayload) -> WatchlistResponse:
         available_crypto=list(CRYPTO_BINANCE_MAP.keys()),
         available_stocks=list(STOCK_YAHOO_MAP.keys()),
         timeframes=TIMEFRAMES,
+        profile_id=prof["_id"],
+        profile_name=prof.get("name", "Default"),
     )
 
+
+# -------- Dashboard --------
 
 @api.get("/dashboard", response_model=DashboardResponse)
 async def dashboard(
@@ -221,19 +411,28 @@ async def dashboard(
     if timeframe not in TIMEFRAME_MAP:
         raise HTTPException(400, f"Invalid timeframe. Use one of {TIMEFRAMES}")
 
-    doc = await _get_or_init_watchlist()
-    symbols = doc.get("crypto") if market == "crypto" else doc.get("stocks")
-    symbols = symbols or (DEFAULT_CRYPTO if market == "crypto" else DEFAULT_STOCKS)
+    prof = await _get_active_profile()
+    symbols = prof.get("crypto") if market == "crypto" else prof.get("stocks")
+    symbols = symbols or []
+    if not symbols:
+        return DashboardResponse(
+            market=market, timeframe=timeframe, server_time=_now_iso(), assets=[],
+            profile_id=prof["_id"], profile_name=prof.get("name", "Default"),
+        )
 
     snapshots = await get_batch(market, symbols, timeframe)
-    # Keep order matching watchlist
+    tr_summary = await get_track_record_summary(db, market, symbols)
     by_sym = {s["symbol"]: s for s in snapshots}
     ordered = [by_sym[s] for s in symbols if s in by_sym]
-    assets = [_build_signal(s) for s in ordered]
+    assets = [_build_signal(s, tr_summary.get(s["symbol"])) for s in ordered]
     return DashboardResponse(
-        market=market, timeframe=timeframe, server_time=_now_iso(), assets=assets
+        market=market, timeframe=timeframe, server_time=_now_iso(),
+        assets=assets,
+        profile_id=prof["_id"], profile_name=prof.get("name", "Default"),
     )
 
+
+# -------- Asset detail --------
 
 @api.get("/asset/{market}/{symbol}/chart", response_model=ChartResponse)
 async def asset_chart(market: Literal["crypto", "stock"], symbol: str, timeframe: str = "1h") -> ChartResponse:
@@ -268,9 +467,27 @@ async def asset_analyze(market: Literal["crypto", "stock"], symbol: str, timefra
     technical = compute_signal(candles, market)
     if price is None:
         raise HTTPException(503, "Price unavailable")
-    # Fetch real-time news headlines for this symbol/market
     news = await get_news_for_symbol(symbol, market, limit=8)
     result = await ensemble_analyze(symbol, market, timeframe, technical, float(price), news=news)
+    consensus = result["consensus"]
+
+    # Record signal into history for backtesting
+    try:
+        prof = await _get_active_profile()
+        await record_signal(
+            db,
+            profile_id=prof["_id"],
+            market=market,
+            symbol=symbol,
+            timeframe=timeframe,
+            action=consensus.get("action", "HOLD"),
+            label=consensus.get("label", "HOLD"),
+            confidence=int(consensus.get("confidence", 0)),
+            price_at_signal=float(price),
+        )
+    except Exception as e:
+        logger.warning("Failed to record signal: %s", e)
+
     # Cache last analysis
     await db.analyses.replace_one(
         {"_id": f"{market}-{symbol}-{timeframe}"},
@@ -278,7 +495,7 @@ async def asset_analyze(market: Literal["crypto", "stock"], symbol: str, timefra
             "_id": f"{market}-{symbol}-{timeframe}",
             "symbol": symbol, "market": market, "timeframe": timeframe,
             "price": float(price), "technical": technical,
-            "consensus": result["consensus"], "models": result["models"],
+            "consensus": consensus, "models": result["models"],
             "news_used": news,
             "generated_at": _now_iso(),
         },
@@ -287,11 +504,18 @@ async def asset_analyze(market: Literal["crypto", "stock"], symbol: str, timefra
     return AnalyzeResponse(
         symbol=symbol, market=market, timeframe=timeframe,
         price=float(price), technical=technical,
-        consensus=result["consensus"], models=result["models"],
+        consensus=consensus, models=result["models"],
         news_used=news,
         generated_at=_now_iso(),
     )
 
+
+@api.get("/asset/{market}/{symbol}/track-record")
+async def asset_track_record(market: Literal["crypto", "stock"], symbol: str) -> dict:
+    return await get_track_record(db, market, symbol.upper())
+
+
+# -------- News --------
 
 @api.get("/news", response_model=NewsResponse)
 async def news_global(market: Literal["crypto", "stock", "all"] = Query("all"), limit: int = Query(40, ge=1, le=80)) -> NewsResponse:
@@ -305,11 +529,18 @@ async def news_for_asset(market: Literal["crypto", "stock"], symbol: str, limit:
     return NewsResponse(market=market, items=[NewsItem(**i) for i in items], fetched_at=_now_iso())
 
 
+# -------- App wiring --------
+
 app.include_router(api)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def _startup() -> None:
+    await _ensure_seed()
 
 
 @app.on_event("shutdown")

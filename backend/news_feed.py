@@ -42,7 +42,47 @@ GLOBAL_FEEDS: list[tuple[str, str]] = [
 ]
 
 _CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
-_CACHE_TTL_SEC = 900  # 15 min
+_CACHE_TTL_SEC = 300  # 5 min (aggressive refresh)
+
+
+def _extract_image(entry: Any) -> str | None:
+    """Best-effort RSS image extraction across multiple feed conventions."""
+    get = (lambda k: entry.get(k)) if isinstance(entry, dict) else (lambda k: getattr(entry, k, None))
+    # media:content / media:thumbnail
+    for key in ("media_content", "media_thumbnail"):
+        media = get(key)
+        if isinstance(media, list) and media:
+            for m in media:
+                url = (m or {}).get("url") if isinstance(m, dict) else None
+                if url and isinstance(url, str) and url.startswith(("http://", "https://")):
+                    return url
+    # enclosures
+    enc = get("enclosures")
+    if isinstance(enc, list):
+        for e in enc:
+            d = e if isinstance(e, dict) else {}
+            t = (d.get("type") or "").lower()
+            url = d.get("href") or d.get("url")
+            if url and (t.startswith("image/") or any(url.lower().endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif"))):
+                return url
+    # image
+    img = get("image")
+    if isinstance(img, dict):
+        url = img.get("href") or img.get("url")
+        if url:
+            return url
+    # Look inside summary/description for first <img src>
+    for key in ("summary", "description", "content"):
+        body = get(key)
+        if isinstance(body, list) and body:
+            body = body[0].get("value", "") if isinstance(body[0], dict) else str(body[0])
+        if isinstance(body, str) and body:
+            m = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', body, re.IGNORECASE)
+            if m:
+                u = m.group(1)
+                if u.startswith(("http://", "https://")):
+                    return u
+    return None
 
 
 def _clean_html(s: str) -> str:
@@ -95,6 +135,7 @@ async def _fetch_one(client: httpx.AsyncClient, source: str, url: str) -> list[d
                 "url": link,
                 "summary": _clean_html(summary)[:280],
                 "published": _parse_date(e),
+                "image": _extract_image(e),
             })
         return items
     except Exception as ex:

@@ -21,6 +21,7 @@ import {
   type Market,
   type ModelResult,
   type Timeframe,
+  type TrackRecordResponse,
   api,
   formatPct,
   formatPrice,
@@ -70,6 +71,7 @@ export default function AssetDetail() {
   const [timeframe, setTimeframe] = useState<Timeframe>(initialTf);
   const [chart, setChart] = useState<ChartResponse | null>(null);
   const [analysis, setAnalysis] = useState<AnalyzeResponse | null>(null);
+  const [trackRecord, setTrackRecord] = useState<TrackRecordResponse | null>(null);
   const [loadingChart, setLoadingChart] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string>("");
@@ -107,6 +109,22 @@ export default function AssetDetail() {
     void loadChart(timeframe);
     setAnalysis(null);
   }, [timeframe, loadChart]);
+
+  // Load track record once per asset
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try {
+        const tr = await api.trackRecord(market, symbol);
+        if (live) setTrackRecord(tr);
+      } catch {
+        if (live) setTrackRecord(null);
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [market, symbol]);
 
   const ticker = chart?.ticker ?? {};
   const sig = chart?.signal;
@@ -222,6 +240,46 @@ export default function AssetDetail() {
                     • {r}
                   </Text>
                 ))}
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Track Record */}
+        {trackRecord && (trackRecord.win_rate_30d.total > 0 || trackRecord.win_rate_7d.total > 0) && (
+          <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]} testID="track-record-section">
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>📊 Track Record</Text>
+              <Text style={[styles.aiHint, { color: colors.textMuted, marginTop: 0 }]}>
+                {trackRecord.win_rate_all.total} sinyal historis
+              </Text>
+            </View>
+            <View style={styles.entryRow}>
+              <WrCell label="WIN RATE 7D" stat={trackRecord.win_rate_7d} colors={colors} />
+              <WrCell label="WIN RATE 30D" stat={trackRecord.win_rate_30d} colors={colors} />
+              <WrCell label="ALL TIME" stat={trackRecord.win_rate_all} colors={colors} />
+            </View>
+            {trackRecord.recent_signals.length > 0 && (
+              <View style={{ marginTop: 12 }}>
+                <Text style={[styles.subTitle, { color: colors.textPrimary, marginBottom: 8 }]}>Sinyal Terakhir</Text>
+                {trackRecord.recent_signals.slice(0, 5).map((s, i) => {
+                  const sigCol = signalColors(colors, s.action);
+                  const hit = s.evaluation?.hit;
+                  return (
+                    <View key={i} style={[styles.recentRow, { borderBottomColor: colors.border }]} testID={`recent-signal-${i}`}>
+                      <View style={[styles.signalPill, { backgroundColor: sigCol.bg }]}>
+                        <Text style={[styles.signalText, { color: sigCol.fg }]}>{s.label}</Text>
+                      </View>
+                      <Text style={[styles.recentDate, { color: colors.textMuted }]}>
+                        {new Date(s.created_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short" })}
+                      </Text>
+                      <Text style={[styles.recentTf, { color: colors.textSecondary }]}>{s.timeframe}</Text>
+                      <Text style={[styles.recentPct, { color: hit ? colors.accentUp : colors.accentDown }]}>
+                        {hit ? "✓" : "✗"} {formatPct(s.evaluation?.pct_change)}
+                      </Text>
+                    </View>
+                  );
+                })}
               </View>
             )}
           </View>
@@ -388,6 +446,26 @@ function EntryCell({ label, value, color, colors }: {
   );
 }
 
+function WrCell({ label, stat, colors }: {
+  label: string;
+  stat: { total: number; hits: number; win_rate: number | null };
+  colors: ReturnType<typeof useTheme>["colors"];
+}) {
+  const wr = stat.win_rate;
+  const color = wr === null ? colors.textMuted : wr >= 65 ? colors.accentUp : wr >= 50 ? colors.accentHold : colors.accentDown;
+  return (
+    <View style={[styles.entryCell, { backgroundColor: colors.surfaceAlt, borderLeftColor: color }]}>
+      <Text style={[styles.entryLabel, { color: colors.textMuted }]}>{label}</Text>
+      <Text style={[styles.entryVal, { color }]}>
+        {wr === null ? "—" : `${wr.toFixed(0)}%`}
+      </Text>
+      <Text style={[styles.entryLabel, { color: colors.textMuted, marginTop: 2 }]}>
+        {stat.hits}/{stat.total} hit
+      </Text>
+    </View>
+  );
+}
+
 function formatVolume(v: number): string {
   if (v >= 1e9) return (v / 1e9).toFixed(2) + "B";
   if (v >= 1e6) return (v / 1e6).toFixed(2) + "M";
@@ -490,4 +568,11 @@ const styles = StyleSheet.create({
   newsTime: { fontSize: 10, marginLeft: 8 },
   newsTitle: { fontSize: 12, lineHeight: 17 },
   generatedAt: { fontSize: 10, marginTop: 12, textAlign: "right" },
+  recentRow: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  recentDate: { fontSize: 11, width: 56 },
+  recentTf: { fontSize: 10, width: 32 },
+  recentPct: { fontSize: 11, fontWeight: "700", textAlign: "right", flex: 1 },
 });

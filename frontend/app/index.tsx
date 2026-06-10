@@ -14,7 +14,16 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import Sparkline from "@/src/components/Sparkline";
-import { TIMEFRAMES, type AssetSignal, type Market, type Timeframe, api, formatPct, formatPrice } from "@/src/lib/api";
+import {
+  TIMEFRAMES,
+  type AssetSignal,
+  type Market,
+  type Profile,
+  type Timeframe,
+  api,
+  formatPct,
+  formatPrice,
+} from "@/src/lib/api";
 import { useTheme } from "@/src/theme/ThemeContext";
 
 const REFRESH_INTERVAL_MS = 60_000;
@@ -23,6 +32,13 @@ function signalColors(colors: ReturnType<typeof useTheme>["colors"], action: str
   if (action === "BUY") return { fg: colors.accentUp, bg: colors.accentUp + "26" };
   if (action === "SELL") return { fg: colors.accentDown, bg: colors.accentDown + "26" };
   return { fg: colors.accentHold, bg: colors.accentHold + "26" };
+}
+
+function wrColor(colors: ReturnType<typeof useTheme>["colors"], wr: number | null): string {
+  if (wr === null) return colors.textMuted;
+  if (wr >= 65) return colors.accentUp;
+  if (wr >= 50) return colors.accentHold;
+  return colors.accentDown;
 }
 
 function AssetCard({
@@ -38,6 +54,8 @@ function AssetCard({
   const sig = signalColors(colors, asset.action);
   const change = asset.change_pct_24h ?? 0;
   const changeColor = change >= 0 ? colors.accentUp : colors.accentDown;
+  const wr = asset.track_record?.wr_30d ?? null;
+  const wrCol = wrColor(colors, wr);
 
   return (
     <TouchableOpacity
@@ -65,12 +83,22 @@ function AssetCard({
       </View>
 
       <View style={styles.cardBottom}>
-        <Sparkline data={asset.spark} color={sig.fg} width={70} height={24} />
+        <Sparkline data={asset.spark} color={sig.fg} width={64} height={22} />
         <View style={styles.confidenceWrap}>
           <Text style={[styles.confidenceLabel, { color: colors.textMuted }]}>AI</Text>
           <Text style={[styles.confidenceVal, { color: sig.fg }]}>{asset.confidence}%</Text>
         </View>
       </View>
+
+      {wr !== null && (
+        <View style={[styles.wrRow, { borderTopColor: colors.border }]} testID={`wr-badge-${market}-${asset.symbol}`}>
+          <Text style={[styles.wrLabel, { color: colors.textMuted }]}>WR 30d</Text>
+          <Text style={[styles.wrVal, { color: wrCol }]}>
+            {wr.toFixed(0)}%
+            <Text style={[styles.wrSub, { color: colors.textMuted }]}> · {asset.track_record.n_30d}</Text>
+          </Text>
+        </View>
+      )}
     </TouchableOpacity>
   );
 }
@@ -99,6 +127,10 @@ function ColumnList({
         <View style={styles.loadingBox}>
           <ActivityIndicator color={colors.accentBlue} />
         </View>
+      ) : data.length === 0 ? (
+        <Text style={[styles.emptyBox, { color: colors.textMuted }]}>
+          Profil ini belum punya aset {title.toLowerCase()}. Tap ⚙ untuk tambah.
+        </Text>
       ) : (
         <FlatList
           data={data}
@@ -118,6 +150,8 @@ export default function Dashboard() {
   const { colors, mode, toggle } = useTheme();
   const router = useRouter();
   const [timeframe, setTimeframe] = useState<Timeframe>("1h");
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [activeId, setActiveId] = useState<string>("");
   const [crypto, setCrypto] = useState<AssetSignal[]>([]);
   const [stocks, setStocks] = useState<AssetSignal[]>([]);
   const [loadingCrypto, setLoadingCrypto] = useState(true);
@@ -125,37 +159,58 @@ export default function Dashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<string>("");
 
-  const load = useCallback(
-    async (tf: Timeframe) => {
-      setLoadingCrypto(true);
-      setLoadingStock(true);
-      try {
-        const [c, s] = await Promise.allSettled([
-          api.dashboard("crypto", tf),
-          api.dashboard("stock", tf),
-        ]);
-        if (c.status === "fulfilled") setCrypto(c.value.assets);
-        if (s.status === "fulfilled") setStocks(s.value.assets);
-        setLastUpdate(new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
-      } finally {
-        setLoadingCrypto(false);
-        setLoadingStock(false);
+  const loadProfiles = useCallback(async () => {
+    const r = await api.profiles();
+    setProfiles(r.profiles);
+    setActiveId(r.active_id);
+  }, []);
+
+  const load = useCallback(async (tf: Timeframe) => {
+    setLoadingCrypto(true);
+    setLoadingStock(true);
+    try {
+      const [c, s] = await Promise.allSettled([
+        api.dashboard("crypto", tf),
+        api.dashboard("stock", tf),
+      ]);
+      if (c.status === "fulfilled") {
+        setCrypto(c.value.assets);
+        setActiveId(c.value.profile_id);
       }
-    },
-    [],
-  );
+      if (s.status === "fulfilled") setStocks(s.value.assets);
+      setLastUpdate(new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+    } finally {
+      setLoadingCrypto(false);
+      setLoadingStock(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadProfiles();
+  }, [loadProfiles]);
 
   useEffect(() => {
     void load(timeframe);
     const id = setInterval(() => void load(timeframe), REFRESH_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [timeframe, load]);
+  }, [timeframe, load, activeId]);
+
+  const switchProfile = async (id: string) => {
+    if (id === activeId) return;
+    setActiveId(id);
+    try {
+      await api.activateProfile(id);
+      await load(timeframe);
+    } catch {
+      // ignore — UI shows error in next dashboard pull
+    }
+  };
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await load(timeframe);
+    await Promise.all([loadProfiles(), load(timeframe)]);
     setRefreshing(false);
-  }, [load, timeframe]);
+  }, [load, loadProfiles, timeframe]);
 
   const handleAssetPress = (a: AssetSignal) => {
     router.push(`/asset/${a.market}/${a.symbol}?timeframe=${timeframe}` as never);
@@ -163,7 +218,6 @@ export default function Dashboard() {
 
   const consensus = useMemo(() => {
     const all = [...crypto, ...stocks];
-    if (!all.length) return { buy: 0, sell: 0, hold: 0 };
     return {
       buy: all.filter((a) => a.action === "BUY").length,
       sell: all.filter((a) => a.action === "SELL").length,
@@ -171,14 +225,16 @@ export default function Dashboard() {
     };
   }, [crypto, stocks]);
 
+  const activeName = profiles.find((p) => p.id === activeId)?.name ?? "Profil";
+
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: colors.background }]} edges={["top"]}>
       {/* Header */}
       <View style={styles.header}>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={[styles.appTitle, { color: colors.textPrimary }]}>AITrade Pro</Text>
-          <Text style={[styles.appSub, { color: colors.textMuted }]}>
-            Multi-AI sinyal • {lastUpdate ? `update ${lastUpdate}` : "memuat…"}
+          <Text style={[styles.appSub, { color: colors.textMuted }]} numberOfLines={1}>
+            {activeName} • {lastUpdate ? `update ${lastUpdate}` : "memuat…"}
           </Text>
         </View>
         <View style={styles.headerActions}>
@@ -204,6 +260,50 @@ export default function Dashboard() {
             <Ionicons name="options-outline" size={18} color={colors.textPrimary} />
           </TouchableOpacity>
         </View>
+      </View>
+
+      {/* Profile selector */}
+      <View style={styles.profileRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 16, gap: 8, alignItems: "center" }}
+        >
+          {profiles.map((p) => {
+            const active = p.id === activeId;
+            return (
+              <TouchableOpacity
+                key={p.id}
+                onPress={() => switchProfile(p.id)}
+                testID={`profile-${p.id}`}
+                style={[
+                  styles.profilePill,
+                  {
+                    backgroundColor: active ? colors.accentBlue : colors.surface,
+                    borderColor: active ? colors.accentBlue : colors.border,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={active ? "bookmark" : "bookmark-outline"}
+                  size={12}
+                  color={active ? "#fff" : colors.textSecondary}
+                />
+                <Text style={[styles.profilePillText, { color: active ? "#fff" : colors.textSecondary }]} numberOfLines={1}>
+                  {p.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+          <TouchableOpacity
+            onPress={() => router.push("/manage" as never)}
+            testID="profile-manage-btn"
+            style={[styles.profilePill, { backgroundColor: colors.surface, borderColor: colors.border, borderStyle: "dashed" }]}
+          >
+            <Ionicons name="add" size={14} color={colors.textSecondary} />
+            <Text style={[styles.profilePillText, { color: colors.textSecondary }]}>Kelola</Text>
+          </TouchableOpacity>
+        </ScrollView>
       </View>
 
       {/* Consensus strip */}
@@ -285,10 +385,9 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingTop: 8,
-    paddingBottom: 12,
+    paddingBottom: 10,
   },
   appTitle: { fontSize: 22, fontWeight: "700", letterSpacing: 0.3 },
   appSub: { fontSize: 11, marginTop: 2 },
@@ -297,8 +396,21 @@ const styles = StyleSheet.create({
     width: 36, height: 36, borderRadius: 10,
     alignItems: "center", justifyContent: "center", borderWidth: 1,
   },
+  profileRow: { height: 48, justifyContent: "center" },
+  profilePill: {
+    height: 32,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexShrink: 0,
+  },
+  profilePillText: { fontSize: 12, fontWeight: "600", maxWidth: 140 },
   consensusStrip: {
     marginHorizontal: 16,
+    marginTop: 4,
     borderRadius: 12,
     borderWidth: 1,
     flexDirection: "row",
@@ -308,52 +420,27 @@ const styles = StyleSheet.create({
   consensusNum: { fontSize: 18, fontWeight: "700" },
   consensusLabel: { fontSize: 10, marginTop: 2, letterSpacing: 0.5 },
   consensusDivider: { width: 1, marginVertical: 6 },
-  tfRow: {
-    height: 56,
-    justifyContent: "center",
-    marginTop: 4,
-  },
+  tfRow: { height: 56, justifyContent: "center", marginTop: 4 },
   tfPill: {
-    height: 36,
-    minWidth: 50,
-    paddingHorizontal: 14,
-    borderRadius: 18,
-    borderWidth: 1,
-    flexShrink: 0,
-    alignItems: "center",
-    justifyContent: "center",
+    height: 36, minWidth: 50, paddingHorizontal: 14,
+    borderRadius: 18, borderWidth: 1, flexShrink: 0,
+    alignItems: "center", justifyContent: "center",
   },
   tfPillText: { fontSize: 12, fontWeight: "600" },
   dualScroll: { paddingHorizontal: 8, paddingBottom: 24 },
   dualRow: { flexDirection: "row", gap: 8 },
-  column: {
-    flex: 1,
-    borderRadius: 12,
-    paddingHorizontal: 6,
-    paddingTop: 8,
-  },
+  column: { flex: 1, borderRadius: 12, paddingHorizontal: 6, paddingTop: 8 },
   columnHeader: {
-    paddingHorizontal: 6,
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    paddingHorizontal: 6, paddingBottom: 8, borderBottomWidth: 1,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
   },
   columnTitle: { fontSize: 13, fontWeight: "700", letterSpacing: 1 },
   columnCount: { fontSize: 11, fontWeight: "500" },
   loadingBox: { paddingVertical: 40, alignItems: "center" },
-  card: {
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 10,
-    marginTop: 8,
-  },
+  emptyBox: { textAlign: "center", padding: 16, fontSize: 11, lineHeight: 16 },
+  card: { borderWidth: 1, borderRadius: 10, padding: 10, marginTop: 8 },
   cardTop: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 6,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6,
   },
   ticker: { fontSize: 14, fontWeight: "700", letterSpacing: 0.4, flexShrink: 1 },
   signalPill: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
@@ -362,12 +449,16 @@ const styles = StyleSheet.create({
   price: { fontSize: 13, fontWeight: "600", fontVariant: ["tabular-nums"], flexShrink: 1 },
   change: { fontSize: 11, fontWeight: "600", marginLeft: 4 },
   cardBottom: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 6,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 6,
   },
   confidenceWrap: { alignItems: "flex-end" },
   confidenceLabel: { fontSize: 9, letterSpacing: 0.5 },
   confidenceVal: { fontSize: 13, fontWeight: "700" },
+  wrRow: {
+    marginTop: 8, paddingTop: 6, borderTopWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+  },
+  wrLabel: { fontSize: 9, letterSpacing: 0.5 },
+  wrVal: { fontSize: 12, fontWeight: "700" },
+  wrSub: { fontSize: 9, fontWeight: "500" },
 });

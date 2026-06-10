@@ -1,14 +1,18 @@
 /**
  * Backend API client for AITrade Pro.
- *
- * Reads EXPO_PUBLIC_BACKEND_URL from env and appends /api prefix.
  */
 const RAW = process.env.EXPO_PUBLIC_BACKEND_URL ?? "";
 export const API_BASE = `${RAW.replace(/\/+$/, "")}/api`;
 
 export type Market = "crypto" | "stock";
-
 export type Timeframe = "15m" | "30m" | "1h" | "3h" | "6h" | "12h" | "18h" | "24h";
+
+export interface TrackRecordMini {
+  wr_7d: number | null;
+  n_7d: number;
+  wr_30d: number | null;
+  n_30d: number;
+}
 
 export interface AssetSignal {
   symbol: string;
@@ -27,6 +31,7 @@ export interface AssetSignal {
   entry: number | null;
   stop_loss: number | null;
   take_profit: number | null;
+  track_record: TrackRecordMini;
 }
 
 export interface DashboardResponse {
@@ -34,6 +39,23 @@ export interface DashboardResponse {
   timeframe: Timeframe;
   server_time: string;
   assets: AssetSignal[];
+  profile_id: string;
+  profile_name: string;
+}
+
+export interface Profile {
+  id: string;
+  name: string;
+  crypto: string[];
+  stocks: string[];
+}
+
+export interface ProfilesResponse {
+  profiles: Profile[];
+  active_id: string;
+  available_crypto: string[];
+  available_stocks: string[];
+  timeframes: Timeframe[];
 }
 
 export interface WatchlistResponse {
@@ -42,6 +64,8 @@ export interface WatchlistResponse {
   available_crypto: string[];
   available_stocks: string[];
   timeframes: Timeframe[];
+  profile_id: string;
+  profile_name: string;
 }
 
 export interface ChartResponse {
@@ -92,6 +116,7 @@ export interface NewsItem {
   url: string | null;
   summary: string | null;
   published: string | null;
+  image: string | null;
 }
 
 export interface NewsResponse {
@@ -124,18 +149,38 @@ export interface AnalyzeResponse {
   generated_at: string;
 }
 
+export interface TrackRecordResponse {
+  symbol: string;
+  market: Market;
+  win_rate_7d: { total: number; hits: number; win_rate: number | null };
+  win_rate_30d: { total: number; hits: number; win_rate: number | null };
+  win_rate_all: { total: number; hits: number; win_rate: number | null };
+  recent_signals: {
+    action: string;
+    label: string;
+    confidence: number;
+    timeframe: string;
+    price_at_signal: number;
+    created_at: string;
+    evaluation: { pct_change: number; hit: boolean; price_after: number };
+  }[];
+}
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`);
   if (!res.ok) throw new Error(`HTTP ${res.status} on ${path}`);
   return (await res.json()) as T;
 }
-async function post<T>(path: string, body: unknown): Promise<T> {
+async function send<T>(path: string, method: "POST" | "PUT" | "DELETE", body?: unknown): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    method,
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status} on ${path}`);
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`HTTP ${res.status} on ${path}: ${txt.slice(0, 120)}`);
+  }
   return (await res.json()) as T;
 }
 
@@ -144,11 +189,23 @@ export const api = {
     get<DashboardResponse>(`/dashboard?market=${market}&timeframe=${timeframe}`),
   watchlist: () => get<WatchlistResponse>("/watchlist"),
   updateWatchlist: (payload: { crypto: string[]; stocks: string[] }) =>
-    post<WatchlistResponse>("/watchlist", payload),
+    send<WatchlistResponse>("/watchlist", "POST", payload),
+
+  profiles: () => get<ProfilesResponse>("/profiles"),
+  createProfile: (payload: { name: string; crypto?: string[]; stocks?: string[] }) =>
+    send<Profile>("/profiles", "POST", payload),
+  updateProfile: (id: string, payload: { name?: string; crypto?: string[]; stocks?: string[] }) =>
+    send<Profile>(`/profiles/${id}`, "PUT", payload),
+  deleteProfile: (id: string) => send<{ ok: boolean }>(`/profiles/${id}`, "DELETE"),
+  activateProfile: (id: string) => send<{ ok: boolean; active_id: string }>(`/profiles/${id}/activate`, "POST"),
+
   chart: (market: Market, symbol: string, timeframe: Timeframe) =>
     get<ChartResponse>(`/asset/${market}/${symbol}/chart?timeframe=${timeframe}`),
   analyze: (market: Market, symbol: string, timeframe: Timeframe) =>
-    post<AnalyzeResponse>(`/asset/${market}/${symbol}/analyze?timeframe=${timeframe}`, {}),
+    send<AnalyzeResponse>(`/asset/${market}/${symbol}/analyze?timeframe=${timeframe}`, "POST"),
+  trackRecord: (market: Market, symbol: string) =>
+    get<TrackRecordResponse>(`/asset/${market}/${symbol}/track-record`),
+
   news: (market: Market | "all", limit = 40) =>
     get<NewsResponse>(`/news?market=${market}&limit=${limit}`),
   newsForAsset: (market: Market, symbol: string, limit = 10) =>
