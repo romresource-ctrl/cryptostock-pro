@@ -1,75 +1,285 @@
-from fastapi import FastAPI, APIRouter
-from dotenv import load_dotenv
-from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
-import os
-import logging
-from pathlib import Path
-from pydantic import BaseModel, Field
-from typing import List
-import uuid
-from datetime import datetime
+"""AITrade Pro backend.
 
+Endpoints:
+  GET  /api/                       health
+  GET  /api/watchlist              get default watchlist (crypto + stock)
+  POST /api/watchlist              update watchlist (full replace)
+  GET  /api/dashboard              dashboard signals batch (market, timeframe)
+  GET  /api/asset/{market}/{symbol}/chart    candles + ticker
+  POST /api/asset/{market}/{symbol}/analyze  AI ensemble deep analysis
+"""
+from __future__ import annotations
+
+import logging
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Literal
+
+from dotenv import load_dotenv
+from fastapi import APIRouter, FastAPI, HTTPException, Query
+from motor.motor_asyncio import AsyncIOMotorClient
+from pydantic import BaseModel, Field
+from starlette.middleware.cors import CORSMiddleware
 
 ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
+load_dotenv(ROOT_DIR / ".env")
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
+from ai_engine import ensemble_analyze  # noqa: E402
+from indicators import compute_signal  # noqa: E402
+from market_data import (  # noqa: E402
+    CRYPTO_BINANCE_MAP,
+    STOCK_YAHOO_MAP,
+    TIMEFRAME_MAP,
+    get_batch,
+    get_crypto_snapshot,
+    get_stock_snapshot,
+)
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s | %(message)s")
+logger = logging.getLogger("aitrade")
+
+mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+db = client[os.environ["DB_NAME"]]
 
-# Create the main app without a prefix
-app = FastAPI()
+DEFAULT_CRYPTO = ["BTC", "ETH", "HYPE", "USDT", "ASTER", "BNB", "XRP", "SOL", "DOGE", "PEPE",
+                  "SUI", "ADA", "TRX", "LTC", "LINK", "HBAR", "SHIB", "DOT", "BCH", "SAND", "ALGO", "XAUT"]
+DEFAULT_STOCKS = ["BBCA", "BBRI", "BMRI", "TPIA", "ADRO", "DEWA", "ASII", "EMTK", "ADMR",
+                  "BRMS", "PANI", "CBRE", "RAJA", "PTRO", "INET", "ANTM", "MBMA", "MDKA"]
 
-# Create a router with the /api prefix
-api_router = APIRouter(prefix="/api")
+WATCHLIST_ID = "default"  # No-login app: single shared watchlist
+TIMEFRAMES = ["15m", "30m", "1h", "3h", "6h", "12h", "18h", "24h"]
+
+app = FastAPI(title="AITrade Pro")
+api = APIRouter(prefix="/api")
 
 
-# Define Models
-class StatusCheck(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+# ---------------- Models ----------------
 
-class StatusCheckCreate(BaseModel):
-    client_name: str
+class WatchlistPayload(BaseModel):
+    crypto: list[str] = Field(default_factory=list)
+    stocks: list[str] = Field(default_factory=list)
 
-# Add your routes to the router instead of directly to app
-@api_router.get("/")
-async def root():
-    return {"message": "Hello World"}
 
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.dict()
-    status_obj = StatusCheck(**status_dict)
-    _ = await db.status_checks.insert_one(status_obj.dict())
-    return status_obj
+class WatchlistResponse(BaseModel):
+    crypto: list[str]
+    stocks: list[str]
+    available_crypto: list[str]
+    available_stocks: list[str]
+    timeframes: list[str]
 
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    status_checks = await db.status_checks.find().to_list(1000)
-    return [StatusCheck(**status_check) for status_check in status_checks]
 
-# Include the router in the main app
-app.include_router(api_router)
+class AssetSignal(BaseModel):
+    symbol: str
+    market: str
+    price: float | None = None
+    change_pct_24h: float | None = None
+    high_24h: float | None = None
+    low_24h: float | None = None
+    volume_24h: float | None = None
+    spark: list[float] = Field(default_factory=list)
+    action: str
+    label: str
+    confidence: int
+    indicators: dict = Field(default_factory=dict)
+    reasons: list[str] = Field(default_factory=list)
+    entry: float | None = None
+    stop_loss: float | None = None
+    take_profit: float | None = None
 
+
+class DashboardResponse(BaseModel):
+    market: str
+    timeframe: str
+    server_time: str
+    assets: list[AssetSignal]
+
+
+class ChartResponse(BaseModel):
+    symbol: str
+    market: str
+    timeframe: str
+    ticker: dict
+    candles: list[dict]
+    signal: dict
+
+
+class AnalyzeResponse(BaseModel):
+    symbol: str
+    market: str
+    timeframe: str
+    price: float | None
+    technical: dict
+    consensus: dict
+    models: list[dict]
+    generated_at: str
+
+
+# ---------------- Helpers ----------------
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+async def _get_or_init_watchlist() -> dict:
+    doc = await db.watchlist.find_one({"_id": WATCHLIST_ID}, {"_id": 0, "crypto": 1, "stocks": 1})
+    if not doc:
+        doc = {"crypto": DEFAULT_CRYPTO.copy(), "stocks": DEFAULT_STOCKS.copy()}
+        await db.watchlist.replace_one(
+            {"_id": WATCHLIST_ID},
+            {"_id": WATCHLIST_ID, **doc, "updated_at": _now_iso()},
+            upsert=True,
+        )
+    return doc
+
+
+def _build_signal(snapshot: dict) -> AssetSignal:
+    market = snapshot["market"]
+    candles = snapshot.get("candles", [])
+    ticker = snapshot.get("ticker", {}) or {}
+    sig = compute_signal(candles, market)
+    spark = [c["close"] for c in candles[-30:]] if candles else []
+    return AssetSignal(
+        symbol=snapshot["symbol"],
+        market=market,
+        price=ticker.get("price"),
+        change_pct_24h=ticker.get("change_pct_24h"),
+        high_24h=ticker.get("high_24h"),
+        low_24h=ticker.get("low_24h"),
+        volume_24h=ticker.get("volume_24h"),
+        spark=spark,
+        action=sig["action"],
+        label=sig["label"],
+        confidence=sig["confidence"],
+        indicators=sig["indicators"],
+        reasons=sig["reasons"],
+        entry=sig["entry"],
+        stop_loss=sig["stop_loss"],
+        take_profit=sig["take_profit"],
+    )
+
+
+# ---------------- Routes ----------------
+
+@api.get("/")
+async def health() -> dict:
+    return {"app": "AITrade Pro", "status": "ok", "time": _now_iso()}
+
+
+@api.get("/watchlist", response_model=WatchlistResponse)
+async def get_watchlist() -> WatchlistResponse:
+    doc = await _get_or_init_watchlist()
+    return WatchlistResponse(
+        crypto=doc.get("crypto", []),
+        stocks=doc.get("stocks", []),
+        available_crypto=list(CRYPTO_BINANCE_MAP.keys()),
+        available_stocks=list(STOCK_YAHOO_MAP.keys()),
+        timeframes=TIMEFRAMES,
+    )
+
+
+@api.post("/watchlist", response_model=WatchlistResponse)
+async def update_watchlist(payload: WatchlistPayload) -> WatchlistResponse:
+    crypto = [s.upper() for s in payload.crypto if s.upper() in CRYPTO_BINANCE_MAP]
+    stocks = [s.upper() for s in payload.stocks if s.upper() in STOCK_YAHOO_MAP]
+    await db.watchlist.replace_one(
+        {"_id": WATCHLIST_ID},
+        {"_id": WATCHLIST_ID, "crypto": crypto, "stocks": stocks, "updated_at": _now_iso()},
+        upsert=True,
+    )
+    return WatchlistResponse(
+        crypto=crypto,
+        stocks=stocks,
+        available_crypto=list(CRYPTO_BINANCE_MAP.keys()),
+        available_stocks=list(STOCK_YAHOO_MAP.keys()),
+        timeframes=TIMEFRAMES,
+    )
+
+
+@api.get("/dashboard", response_model=DashboardResponse)
+async def dashboard(
+    market: Literal["crypto", "stock"] = Query("crypto"),
+    timeframe: str = Query("1h"),
+) -> DashboardResponse:
+    if timeframe not in TIMEFRAME_MAP:
+        raise HTTPException(400, f"Invalid timeframe. Use one of {TIMEFRAMES}")
+
+    doc = await _get_or_init_watchlist()
+    symbols = doc.get("crypto") if market == "crypto" else doc.get("stocks")
+    symbols = symbols or (DEFAULT_CRYPTO if market == "crypto" else DEFAULT_STOCKS)
+
+    snapshots = await get_batch(market, symbols, timeframe)
+    # Keep order matching watchlist
+    by_sym = {s["symbol"]: s for s in snapshots}
+    ordered = [by_sym[s] for s in symbols if s in by_sym]
+    assets = [_build_signal(s) for s in ordered]
+    return DashboardResponse(
+        market=market, timeframe=timeframe, server_time=_now_iso(), assets=assets
+    )
+
+
+@api.get("/asset/{market}/{symbol}/chart", response_model=ChartResponse)
+async def asset_chart(market: Literal["crypto", "stock"], symbol: str, timeframe: str = "1h") -> ChartResponse:
+    if timeframe not in TIMEFRAME_MAP:
+        raise HTTPException(400, "Invalid timeframe")
+    symbol = symbol.upper()
+    snap = await (get_crypto_snapshot(symbol, timeframe) if market == "crypto"
+                  else get_stock_snapshot(symbol, timeframe))
+    if not snap:
+        raise HTTPException(404, "Symbol not found or upstream data unavailable")
+    sig = compute_signal(snap.get("candles", []), market)
+    return ChartResponse(
+        symbol=symbol, market=market, timeframe=timeframe,
+        ticker=snap.get("ticker", {}) or {},
+        candles=snap.get("candles", []),
+        signal=sig,
+    )
+
+
+@api.post("/asset/{market}/{symbol}/analyze", response_model=AnalyzeResponse)
+async def asset_analyze(market: Literal["crypto", "stock"], symbol: str, timeframe: str = "1h") -> AnalyzeResponse:
+    if timeframe not in TIMEFRAME_MAP:
+        raise HTTPException(400, "Invalid timeframe")
+    symbol = symbol.upper()
+    snap = await (get_crypto_snapshot(symbol, timeframe) if market == "crypto"
+                  else get_stock_snapshot(symbol, timeframe))
+    if not snap:
+        raise HTTPException(404, "Symbol not found or upstream data unavailable")
+    candles = snap.get("candles", [])
+    ticker = snap.get("ticker", {}) or {}
+    price = ticker.get("price") or (candles[-1]["close"] if candles else None)
+    technical = compute_signal(candles, market)
+    if price is None:
+        raise HTTPException(503, "Price unavailable")
+    result = await ensemble_analyze(symbol, market, timeframe, technical, float(price))
+    # Cache last analysis
+    await db.analyses.replace_one(
+        {"_id": f"{market}-{symbol}-{timeframe}"},
+        {
+            "_id": f"{market}-{symbol}-{timeframe}",
+            "symbol": symbol, "market": market, "timeframe": timeframe,
+            "price": float(price), "technical": technical,
+            "consensus": result["consensus"], "models": result["models"],
+            "generated_at": _now_iso(),
+        },
+        upsert=True,
+    )
+    return AnalyzeResponse(
+        symbol=symbol, market=market, timeframe=timeframe,
+        price=float(price), technical=technical,
+        consensus=result["consensus"], models=result["models"],
+        generated_at=_now_iso(),
+    )
+
+
+app.include_router(api)
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=True, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 @app.on_event("shutdown")
-async def shutdown_db_client():
+async def _shutdown() -> None:
     client.close()

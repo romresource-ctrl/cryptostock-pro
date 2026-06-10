@@ -1,0 +1,38 @@
+{
+  "summary": "AITrade Pro fresh build tested end-to-end. Backend: 20/20 pytest cases pass (health, watchlist GET/POST + persistence + invalid-symbol filter, dashboard for crypto+stock across all 8 timeframes, chart endpoints for BTC/BBCA, invalid symbol -> 404, invalid timeframe -> 400, ensemble analyze for crypto and stock with all 3 models named correctly (Claude Sonnet 4.6, GPT-5.2, Gemini 3.1 Pro) and >=1 ok=true, no Mongo _id leakage). One backend bug FOUND AND FIXED: indicators.compute_signal short-circuit branch (candles < 20) was missing 'reasons' key which caused KeyError -> 500 on dashboard for 12h/18h/24h timeframes (where Yahoo daily candles for stocks are <20). Added reasons:[] to that branch (/app/backend/indicators.py). After fix all timeframes return 200. Frontend: Dashboard renders two columns CRYPTO (21) + SAHAM (18) with signal pills (BUY/SELL/HOLD), %, sparklines, AI confidence. Timeframe pills switch data. Theme toggle works (dark <-> light). Tapping an asset card navigates to /asset/<market>/<symbol>?timeframe=.. and renders chart, technical indicators (RSI/EMA20/EMA50/MACD H), entry/SL/TP. ANALISA AI button (testID=run-ai-analysis-button) triggers POST analyze; consensus pill + all three model chips render with confidence; news factors section shown. Manage screen opens, CRYPTO/SAHAM tab switching works, SIMPAN persists and navigates back. No red screen, no console errors.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/asset/{market}/{symbol}/chart", "issue": "Transient 404s observed when upstream (Binance/Yahoo) momentarily rate-limits under concurrent test load; backend should arguably distinguish upstream-failure (502/503) from real not-found (404). Retry succeeds immediately."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/asset detail", "issues": ["Helper text below ANALISA AI button reads 'Claude Sonnet 4.6 + GPT-5.4 + Gemini 3.1 Pro' but actual model used is GPT-5.2 (see ai_engine.py MODELS). Update copy at /app/frontend/app/asset/[market]/[symbol].tsx:252."]}
+    ],
+    "react_native_issues": [
+      {"component": "Pressable/View (likely from react-native-web)", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Likely from a third-party RN/RNW component; non-blocking but should be triaged."}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_aitrade_backend.py", "/app/test_reports/pytest/results.xml"],
+  "action_items": [
+    "(Optional) Distinguish upstream data unavailability from symbol-not-found in chart/analyze endpoints (return 503 when upstream fails, 404 only if symbol unknown).",
+    "Fix detail-screen copy: 'GPT-5.4' -> 'GPT-5.2' to match ai_engine.py MODELS list.",
+    "Investigate pointerEvents deprecation warning (RNW version mismatch in a dependency)."
+  ],
+  "critical_code_review_comments": [
+    "indicators.compute_signal: early-return branch omitted 'reasons' key -> KeyError in server._build_signal whenever candles<20 (occurred on Yahoo daily intervals for stocks at 12h/18h/24h timeframes). Fixed by including reasons:[].",
+    "ai_engine: confidence ceiling capped at 98 (consistent with spec).",
+    "server.py uses Literal types and proper validation; MongoDB queries exclude _id correctly (projection {'_id':0}); no _id leakage in any tested endpoint.",
+    "CORS allow_origins='*' acceptable for no-login public app."
+  ],
+  "updated_files": ["/app/backend/indicators.py", "/app/backend/tests/test_aitrade_backend.py"],
+  "success_rate": {"backend": "100% (20/20 after fix)", "frontend": "100% on tested flows (dashboard, navigation, detail, analyze, theme toggle, manage screen save)"},
+  "seed_data_creation": "None. Watchlist auto-initializes on first GET. Tests restore the original watchlist after the update-persistence test.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend at http://localhost:8001, public URL https://cryptostock-pro.preview.emergentagent.com. EMERGENT_LLM_KEY is set. Analyze endpoint takes ~15-45s (3 LLMs in parallel). Yahoo Finance daily intervals can return <20 candles for certain stocks at long timeframes (12h/18h/24h) — indicators must gracefully handle short candle arrays.",
+  "rca_of_issue": "Bug: GET /api/dashboard?market=stock&timeframe=12h|18h|24h returned 500. Root cause: in indicators.compute_signal, when len(candles)<20 the returned dict lacked the 'reasons' key, but server._build_signal unconditionally does sig['reasons'] -> KeyError -> 500. Fix: add 'reasons': [] to the early-return dict. Reproduction: curl /api/dashboard?market=stock&timeframe=24h before fix -> 500; after fix -> 200."
+}
