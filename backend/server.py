@@ -55,7 +55,15 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logger = logging.getLogger("aitrade")
 
 mongo_url = os.environ["MONGO_URL"]
-client = AsyncIOMotorClient(mongo_url)
+# Atlas-friendly connection: longer server-selection window, retry on transient errors.
+client = AsyncIOMotorClient(
+    mongo_url,
+    serverSelectionTimeoutMS=20000,
+    connectTimeoutMS=20000,
+    socketTimeoutMS=30000,
+    retryWrites=True,
+    uuidRepresentation="standard",
+)
 db = client[os.environ["DB_NAME"]]
 
 DEFAULT_CRYPTO = ["BTC", "ETH", "HYPE", "USDT", "ASTER", "BNB", "XRP", "SOL", "DOGE", "PEPE",
@@ -220,23 +228,37 @@ def _now_iso() -> str:
 async def _ensure_seed() -> None:
     """Seed default profiles + state on first launch.
 
-    Uses upsert by _id so defaults are stable even if deleted and re-seeded.
+    Called lazily from `_get_active_profile()` so a slow / unavailable
+    database does NOT block app startup (important for serverless /
+    Atlas deployments where the first connection may be slow).
+
+    Uses upsert by _id so defaults remain stable.
     """
-    has_any = await db.profiles.count_documents({}) > 0
+    try:
+        has_any = await db.profiles.count_documents({})
+    except Exception as e:
+        logger.warning("Mongo not reachable for seed yet: %s", e)
+        return
     if not has_any:
         for p in DEFAULT_PROFILES:
-            await db.profiles.update_one(
-                {"_id": p["_id"]},
-                {"$setOnInsert": {**p, "created_at": _now_iso()}},
+            try:
+                await db.profiles.update_one(
+                    {"_id": p["_id"]},
+                    {"$setOnInsert": {**p, "created_at": _now_iso()}},
+                    upsert=True,
+                )
+            except Exception as e:
+                logger.warning("Seed profile %s failed: %s", p["_id"], e)
+    try:
+        state = await db.app_state.find_one({"_id": "active"})
+        if not state:
+            await db.app_state.replace_one(
+                {"_id": "active"},
+                {"_id": "active", "profile_id": DEFAULT_ACTIVE_PROFILE},
                 upsert=True,
             )
-    state = await db.app_state.find_one({"_id": "active"})
-    if not state:
-        await db.app_state.replace_one(
-            {"_id": "active"},
-            {"_id": "active", "profile_id": DEFAULT_ACTIVE_PROFILE},
-            upsert=True,
-        )
+    except Exception as e:
+        logger.warning("Seed active state failed: %s", e)
 
 
 async def _get_active_profile() -> dict:
@@ -582,9 +604,9 @@ app.add_middleware(
 )
 
 
-@app.on_event("startup")
-async def _startup() -> None:
-    await _ensure_seed()
+# NOTE: no @app.on_event("startup") MongoDB seed — kept lazy so the API can
+# accept traffic immediately even while the Atlas connection is warming up.
+# Seeding happens on first /api/profiles or /api/dashboard call.
 
 
 @app.on_event("shutdown")
