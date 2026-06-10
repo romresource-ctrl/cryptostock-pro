@@ -1,0 +1,48 @@
+{
+  "summary": "Iteration 4 Premium Signals fully validated. Backend: 12/12 pytest pass on /app/backend/tests/test_iter4_premium_signals.py. GET /api/dashboard?market=crypto&timeframe=1h now returns is_premium per asset + premium_count + premium_threshold{min_confidence:85,min_wr:70.0}. With spot profile active, premium_count=4 (BNB, SOL, XRP, ADA — all is_premium=true, confidence>=85, WR_30d 80/83/72/75%). sort=premium puts premium-first; sort=confidence is monotonically desc; sort=wr is desc with None last; premium_only=true filters list and premium_count equals length; invalid sort -> 422; min_wr=50 yields >= the default premium_count; no _id leak anywhere; regression: /api/profiles /api/watchlist /api/asset/BTC/track-record /api/news still 200. Frontend (390x844, mobile-first): consensus strip shows '⭐ 4 PREMIUM' block (screenshot confirms); 4 golden PREMIUM ribbons visible with testIDs premium-badge-crypto-BNB / SOL / XRP / ADA; sort-default / sort-premium / sort-confidence / sort-wr testIDs all present and tapping each reorders the list correctly (confidence: ETH→BNB→SOL→XRP→ADA; wr: SOL→BNB→ADA→XRP→BTC); premium-only-toggle filters 10→4 cards, all 4 are premium, and tapping again restores to 10. Previous flows still work: profile-spot tap activates spot profile, asset-card tap navigates to /asset/.../ with track-record-section visible, manage-assets-button opens manage with 4 profile chips, news-button opens news with 10 symbol chips, theme-toggle-button works. Deprecated packages detected: none. SafeAreaView issues detected: none. RN web warnings: shadow* and pointerEvents prop deprecations (carry-over from RN web internals, not from app code; reported earlier in iter3).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/dashboard sort=wr", "issue": "Uses `-(wr_30d or -1)` so None tracks land at +1 in key (after positive WRs). Behaviour matches spec (None last). No fix needed."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard sort row", "issues": ["Default selected sort is 'premium' (per spec) but pill label reads '⭐ Sort: Premium' — clear. Pill labels are slightly inconsistent ('Sort: AI%' vs '⭐ Sort: Premium' vs 'Default') but acceptable."]}
+    ],
+    "react_native_issues": [
+      {"component": "RN Web (shadow* style props)", "issue": "Console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' — emitted from index.tsx AssetCard premium glow (shadowColor/shadowOpacity/shadowRadius/shadowOffset). On native this is fine; on web, RN-Web 0.20+ wants boxShadow. Reference: /app/frontend/app/index.tsx:74-79. Optional cleanup: gate via Platform.select to use boxShadow on web."},
+      {"component": "RN Web (pointerEvents prop)", "issue": "Carry-over: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Comes from a transitive RN/Expo dep; no functional impact."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter4_premium_signals.py",
+    "/app/test_reports/pytest/iter4.xml"
+  ],
+  "action_items": [
+    "(Optional polish) On web, replace shadowColor/shadowOpacity/shadowRadius/shadowOffset in /app/frontend/app/index.tsx AssetCard premium style with `boxShadow: '0 0 6px rgba(240,185,11,0.55)'` via Platform.select to silence the RN-Web 0.20+ deprecation warning.",
+    "(Carry-over) Fix news.tsx symbol chip key mismatch from iter3 (news-symbol-{SYMBOL} sends /api/asset/crypto/undefined/news). Not re-tested this iteration — still listed in iter3 report.",
+    "(Carry-over) Map upstream Binance/Yahoo failures from 404 to 503 in /api/asset/.../analyze."
+  ],
+  "critical_code_review_comments": [
+    "server._build_signal computes is_premium correctly (action != HOLD AND confidence>=min_conf AND wr>=min_wr). Threshold passed through from query params with FastAPI Query validation (ge/le). Clean.",
+    "server.dashboard sort logic uses stable Python sort: premium (premium first then conf desc), confidence (desc), wr (None last). Correct.",
+    "premium_count is recomputed AFTER premium_only filter — consistent with response (matches test).",
+    "index.tsx: sort state defaults to 'premium' per spec; useEffect dep array includes activeId which causes a second fetch after switchProfile (already loaded once). Minor duplicate fetch — non-blocking.",
+    "AssetCard premium border + golden ribbon are conditional on asset.is_premium — clean. Star icon size 9 may be slightly tight on small screens but ribbon legible at 390w.",
+    "No _id leaked in /api/dashboard, /api/profiles, /api/watchlist, /api/asset/.../track-record, /api/news (verified by recursive scanner in tests)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter4_premium_signals.py",
+    "/app/test_reports/iteration_4.json",
+    "/app/test_reports/pytest/iter4.xml"
+  ],
+  "success_rate": {"backend": "100% (12/12)", "frontend": "100% on all tested iter4 flows: premium-count chip, 4 premium ribbons, sort-confidence/sort-wr/sort-default reorder, premium-only-toggle filter+restore; plus regression: profile switch, theme toggle, news button, asset card tap → track-record, manage profile chips, news symbol chips render"},
+  "seed_data_creation": "None new this iteration. Pre-seeded signal history (BNB 80%, SOL 83%, XRP 72%, ADA 75% WR_30d on spot profile) verified via /api/dashboard response and reflected in UI.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iteration 4 Premium Signals is GREEN. Critical testIDs: premium-badge-crypto-{SYMBOL}, premium-only-toggle, sort-default/sort-premium/sort-confidence/sort-wr. /api/dashboard query params: sort (default|premium|confidence|wr), premium_only (bool), min_confidence (0-100), min_wr (0-100). Spot profile is the demo with the 4 premium tickers (BNB/SOL/XRP/ADA). If premium_count is unexpectedly 0, run POST /api/profiles/spot/activate first (active profile may have shifted in prior iterations). Carry-over bugs from iter3 (news symbol chip key mismatch) NOT re-tested here.",
+  "rca_of_issue": "N/A — no failures this iteration."
+}

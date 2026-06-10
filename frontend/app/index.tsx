@@ -17,6 +17,7 @@ import Sparkline from "@/src/components/Sparkline";
 import {
   TIMEFRAMES,
   type AssetSignal,
+  type DashboardSort,
   type Market,
   type Profile,
   type Timeframe,
@@ -56,14 +57,34 @@ function AssetCard({
   const changeColor = change >= 0 ? colors.accentUp : colors.accentDown;
   const wr = asset.track_record?.wr_30d ?? null;
   const wrCol = wrColor(colors, wr);
+  const premium = asset.is_premium;
+  const premiumGold = "#F0B90B";
 
   return (
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.75}
       testID={`asset-card-${market}-${asset.symbol}`}
-      style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
+      style={[
+        styles.card,
+        {
+          backgroundColor: colors.surface,
+          borderColor: premium ? premiumGold : colors.border,
+          borderWidth: premium ? 1.5 : 1,
+          shadowColor: premium ? premiumGold : "transparent",
+          shadowOpacity: premium ? 0.35 : 0,
+          shadowRadius: premium ? 6 : 0,
+          shadowOffset: { width: 0, height: 0 },
+          elevation: premium ? 4 : 0,
+        },
+      ]}
     >
+      {premium && (
+        <View style={[styles.premiumRibbon, { backgroundColor: premiumGold }]} testID={`premium-badge-${market}-${asset.symbol}`}>
+          <Ionicons name="star" size={9} color="#0B0E11" />
+          <Text style={styles.premiumRibbonText}>PREMIUM</Text>
+        </View>
+      )}
       <View style={styles.cardTop}>
         <Text style={[styles.ticker, { color: colors.textPrimary }]} numberOfLines={1}>
           {asset.symbol}
@@ -150,10 +171,13 @@ export default function Dashboard() {
   const { colors, mode, toggle } = useTheme();
   const router = useRouter();
   const [timeframe, setTimeframe] = useState<Timeframe>("1h");
+  const [sort, setSort] = useState<DashboardSort>("premium");
+  const [premiumOnly, setPremiumOnly] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [activeId, setActiveId] = useState<string>("");
   const [crypto, setCrypto] = useState<AssetSignal[]>([]);
   const [stocks, setStocks] = useState<AssetSignal[]>([]);
+  const [premiumCount, setPremiumCount] = useState(0);
   const [loadingCrypto, setLoadingCrypto] = useState(true);
   const [loadingStock, setLoadingStock] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -165,19 +189,25 @@ export default function Dashboard() {
     setActiveId(r.active_id);
   }, []);
 
-  const load = useCallback(async (tf: Timeframe) => {
+  const load = useCallback(async (tf: Timeframe, s: DashboardSort, po: boolean) => {
     setLoadingCrypto(true);
     setLoadingStock(true);
     try {
-      const [c, s] = await Promise.allSettled([
-        api.dashboard("crypto", tf),
-        api.dashboard("stock", tf),
+      const [c, st] = await Promise.allSettled([
+        api.dashboard("crypto", tf, { sort: s, premiumOnly: po }),
+        api.dashboard("stock", tf, { sort: s, premiumOnly: po }),
       ]);
+      let pCount = 0;
       if (c.status === "fulfilled") {
         setCrypto(c.value.assets);
         setActiveId(c.value.profile_id);
+        pCount += c.value.premium_count;
       }
-      if (s.status === "fulfilled") setStocks(s.value.assets);
+      if (st.status === "fulfilled") {
+        setStocks(st.value.assets);
+        pCount += st.value.premium_count;
+      }
+      setPremiumCount(pCount);
       setLastUpdate(new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
     } finally {
       setLoadingCrypto(false);
@@ -190,27 +220,27 @@ export default function Dashboard() {
   }, [loadProfiles]);
 
   useEffect(() => {
-    void load(timeframe);
-    const id = setInterval(() => void load(timeframe), REFRESH_INTERVAL_MS);
+    void load(timeframe, sort, premiumOnly);
+    const id = setInterval(() => void load(timeframe, sort, premiumOnly), REFRESH_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [timeframe, load, activeId]);
+  }, [timeframe, sort, premiumOnly, load, activeId]);
 
   const switchProfile = async (id: string) => {
     if (id === activeId) return;
     setActiveId(id);
     try {
       await api.activateProfile(id);
-      await load(timeframe);
+      await load(timeframe, sort, premiumOnly);
     } catch {
-      // ignore — UI shows error in next dashboard pull
+      // ignore
     }
   };
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([loadProfiles(), load(timeframe)]);
+    await Promise.all([loadProfiles(), load(timeframe, sort, premiumOnly)]);
     setRefreshing(false);
-  }, [load, loadProfiles, timeframe]);
+  }, [load, loadProfiles, timeframe, sort, premiumOnly]);
 
   const handleAssetPress = (a: AssetSignal) => {
     router.push(`/asset/${a.market}/${a.symbol}?timeframe=${timeframe}` as never);
@@ -309,6 +339,14 @@ export default function Dashboard() {
       {/* Consensus strip */}
       <View style={[styles.consensusStrip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <View style={styles.consensusItem}>
+          <View style={styles.premiumNumWrap}>
+            <Ionicons name="star" size={14} color="#F0B90B" />
+            <Text style={[styles.consensusNum, { color: "#F0B90B" }]}>{premiumCount}</Text>
+          </View>
+          <Text style={[styles.consensusLabel, { color: colors.textMuted }]}>PREMIUM</Text>
+        </View>
+        <View style={[styles.consensusDivider, { backgroundColor: colors.border }]} />
+        <View style={styles.consensusItem}>
           <Text style={[styles.consensusNum, { color: colors.accentUp }]}>{consensus.buy}</Text>
           <Text style={[styles.consensusLabel, { color: colors.textMuted }]}>BUY/LONG</Text>
         </View>
@@ -322,6 +360,52 @@ export default function Dashboard() {
           <Text style={[styles.consensusNum, { color: colors.accentDown }]}>{consensus.sell}</Text>
           <Text style={[styles.consensusLabel, { color: colors.textMuted }]}>SELL/SHORT</Text>
         </View>
+      </View>
+
+      {/* Sort / Premium-only filter */}
+      <View style={styles.sortRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 16, gap: 8, alignItems: "center" }}
+        >
+          <TouchableOpacity
+            onPress={() => setPremiumOnly((v) => !v)}
+            testID="premium-only-toggle"
+            style={[
+              styles.sortPill,
+              {
+                backgroundColor: premiumOnly ? "#F0B90B" : colors.surface,
+                borderColor: premiumOnly ? "#F0B90B" : colors.border,
+              },
+            ]}
+          >
+            <Ionicons name="star" size={11} color={premiumOnly ? "#0B0E11" : "#F0B90B"} />
+            <Text style={[styles.sortPillText, { color: premiumOnly ? "#0B0E11" : colors.textSecondary }]}>
+              PREMIUM ONLY
+            </Text>
+          </TouchableOpacity>
+          {(["premium", "confidence", "wr", "default"] as DashboardSort[]).map((s) => {
+            const active = s === sort;
+            const label = s === "premium" ? "⭐ Sort: Premium" : s === "confidence" ? "Sort: AI%" : s === "wr" ? "Sort: WR" : "Default";
+            return (
+              <TouchableOpacity
+                key={s}
+                onPress={() => setSort(s)}
+                testID={`sort-${s}`}
+                style={[
+                  styles.sortPill,
+                  {
+                    backgroundColor: active ? colors.accentBlue : colors.surface,
+                    borderColor: active ? colors.accentBlue : colors.border,
+                  },
+                ]}
+              >
+                <Text style={[styles.sortPillText, { color: active ? "#fff" : colors.textSecondary }]}>{label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       </View>
 
       {/* Timeframe selector */}
@@ -461,4 +545,24 @@ const styles = StyleSheet.create({
   wrLabel: { fontSize: 9, letterSpacing: 0.5 },
   wrVal: { fontSize: 12, fontWeight: "700" },
   wrSub: { fontSize: 9, fontWeight: "500" },
+  premiumRibbon: {
+    position: "absolute",
+    top: -1,
+    right: -1,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderTopRightRadius: 9,
+    borderBottomLeftRadius: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+  },
+  premiumRibbonText: { fontSize: 8, fontWeight: "800", letterSpacing: 0.6, color: "#0B0E11" },
+  premiumNumWrap: { flexDirection: "row", alignItems: "center", gap: 4 },
+  sortRow: { height: 50, justifyContent: "center", marginTop: 2 },
+  sortPill: {
+    height: 32, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, flexShrink: 0,
+    flexDirection: "row", alignItems: "center", gap: 5,
+  },
+  sortPillText: { fontSize: 11, fontWeight: "700", letterSpacing: 0.4 },
 });

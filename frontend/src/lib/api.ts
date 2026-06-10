@@ -32,7 +32,10 @@ export interface AssetSignal {
   stop_loss: number | null;
   take_profit: number | null;
   track_record: TrackRecordMini;
+  is_premium: boolean;
 }
+
+export type DashboardSort = "default" | "premium" | "confidence" | "wr";
 
 export interface DashboardResponse {
   market: Market;
@@ -41,6 +44,8 @@ export interface DashboardResponse {
   assets: AssetSignal[];
   profile_id: string;
   profile_name: string;
+  premium_count: number;
+  premium_threshold: { min_confidence: number; min_wr: number };
 }
 
 export interface Profile {
@@ -185,8 +190,16 @@ async function send<T>(path: string, method: "POST" | "PUT" | "DELETE", body?: u
 }
 
 export const api = {
-  dashboard: (market: Market, timeframe: Timeframe) =>
-    get<DashboardResponse>(`/dashboard?market=${market}&timeframe=${timeframe}`),
+  dashboard: (
+    market: Market,
+    timeframe: Timeframe,
+    opts: { sort?: DashboardSort; premiumOnly?: boolean } = {},
+  ) => {
+    const params = new URLSearchParams({ market, timeframe });
+    if (opts.sort) params.append("sort", opts.sort);
+    if (opts.premiumOnly) params.append("premium_only", "true");
+    return get<DashboardResponse>(`/dashboard?${params.toString()}`);
+  },
   watchlist: () => get<WatchlistResponse>("/watchlist"),
   updateWatchlist: (payload: { crypto: string[]; stocks: string[] }) =>
     send<WatchlistResponse>("/watchlist", "POST", payload),

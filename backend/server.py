@@ -161,6 +161,7 @@ class AssetSignal(BaseModel):
     stop_loss: float | None = None
     take_profit: float | None = None
     track_record: TrackRecordMini = Field(default_factory=TrackRecordMini)
+    is_premium: bool = False
 
 
 class DashboardResponse(BaseModel):
@@ -170,6 +171,8 @@ class DashboardResponse(BaseModel):
     assets: list[AssetSignal]
     profile_id: str
     profile_name: str
+    premium_count: int = 0
+    premium_threshold: dict = Field(default_factory=dict)
 
 
 class ChartResponse(BaseModel):
@@ -258,12 +261,20 @@ def _filter_lists(crypto: list[str], stocks: list[str]) -> tuple[list[str], list
     return c, s
 
 
-def _build_signal(snapshot: dict, tr: dict | None = None) -> AssetSignal:
+def _build_signal(snapshot: dict, tr: dict | None = None, *, min_conf: int = 85, min_wr: float = 70.0) -> AssetSignal:
     market = snapshot["market"]
     candles = snapshot.get("candles", [])
     ticker = snapshot.get("ticker", {}) or {}
     sig = compute_signal(candles, market)
     spark = [c["close"] for c in candles[-30:]] if candles else []
+    tr_mini = TrackRecordMini(**(tr or {}))
+    wr = tr_mini.wr_30d
+    is_premium = (
+        sig["action"] != "HOLD"
+        and sig["confidence"] >= min_conf
+        and wr is not None
+        and wr >= min_wr
+    )
     return AssetSignal(
         symbol=snapshot["symbol"],
         market=market,
@@ -281,7 +292,8 @@ def _build_signal(snapshot: dict, tr: dict | None = None) -> AssetSignal:
         entry=sig["entry"],
         stop_loss=sig["stop_loss"],
         take_profit=sig["take_profit"],
-        track_record=TrackRecordMini(**(tr or {})),
+        track_record=tr_mini,
+        is_premium=is_premium,
     )
 
 
@@ -414,6 +426,10 @@ async def update_watchlist(payload: WatchlistPayload) -> WatchlistResponse:
 async def dashboard(
     market: Literal["crypto", "stock"] = Query("crypto"),
     timeframe: str = Query("1h"),
+    sort: Literal["default", "premium", "confidence", "wr"] = Query("default"),
+    premium_only: bool = Query(False),
+    min_confidence: int = Query(85, ge=0, le=100),
+    min_wr: float = Query(70.0, ge=0.0, le=100.0),
 ) -> DashboardResponse:
     if timeframe not in TIMEFRAME_MAP:
         raise HTTPException(400, f"Invalid timeframe. Use one of {TIMEFRAMES}")
@@ -425,17 +441,38 @@ async def dashboard(
         return DashboardResponse(
             market=market, timeframe=timeframe, server_time=_now_iso(), assets=[],
             profile_id=prof["_id"], profile_name=prof.get("name", "Default"),
+            premium_count=0,
+            premium_threshold={"min_confidence": min_confidence, "min_wr": min_wr},
         )
 
     snapshots = await get_batch(market, symbols, timeframe)
     tr_summary = await get_track_record_summary(db, market, symbols)
     by_sym = {s["symbol"]: s for s in snapshots}
     ordered = [by_sym[s] for s in symbols if s in by_sym]
-    assets = [_build_signal(s, tr_summary.get(s["symbol"])) for s in ordered]
+    assets = [
+        _build_signal(s, tr_summary.get(s["symbol"]), min_conf=min_confidence, min_wr=min_wr)
+        for s in ordered
+    ]
+
+    if premium_only:
+        assets = [a for a in assets if a.is_premium]
+
+    if sort == "premium":
+        # premium first, then by confidence desc
+        assets.sort(key=lambda a: (not a.is_premium, -a.confidence))
+    elif sort == "confidence":
+        assets.sort(key=lambda a: -a.confidence)
+    elif sort == "wr":
+        assets.sort(key=lambda a: -(a.track_record.wr_30d or -1))
+
+    premium_count = sum(1 for a in assets if a.is_premium)
+
     return DashboardResponse(
         market=market, timeframe=timeframe, server_time=_now_iso(),
         assets=assets,
         profile_id=prof["_id"], profile_name=prof.get("name", "Default"),
+        premium_count=premium_count,
+        premium_threshold={"min_confidence": min_confidence, "min_wr": min_wr},
     )
 
 
