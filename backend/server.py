@@ -452,17 +452,26 @@ async def dashboard(
     premium_only: bool = Query(False),
     min_confidence: int = Query(85, ge=0, le=100),
     min_wr: float = Query(70.0, ge=0.0, le=100.0),
+    full: bool = Query(False),
 ) -> DashboardResponse:
     if timeframe not in TIMEFRAME_MAP:
         raise HTTPException(400, f"Invalid timeframe. Use one of {TIMEFRAMES}")
 
     prof = await _get_active_profile()
-    symbols = prof.get("crypto") if market == "crypto" else prof.get("stocks")
-    symbols = symbols or []
+    if full:
+        # Bypass profile filtering — show ALL default screened assets.
+        symbols = DEFAULT_CRYPTO if market == "crypto" else DEFAULT_STOCKS
+        profile_name = "Semua Aset"
+        profile_id = "all"
+    else:
+        symbols = prof.get("crypto") if market == "crypto" else prof.get("stocks")
+        symbols = symbols or []
+        profile_id = prof["_id"]
+        profile_name = prof.get("name", "Default")
     if not symbols:
         return DashboardResponse(
             market=market, timeframe=timeframe, server_time=_now_iso(), assets=[],
-            profile_id=prof["_id"], profile_name=prof.get("name", "Default"),
+            profile_id=profile_id, profile_name=profile_name,
             premium_count=0,
             premium_threshold={"min_confidence": min_confidence, "min_wr": min_wr},
         )
@@ -480,7 +489,6 @@ async def dashboard(
         assets = [a for a in assets if a.is_premium]
 
     if sort == "premium":
-        # premium first, then by confidence desc
         assets.sort(key=lambda a: (not a.is_premium, -a.confidence))
     elif sort == "confidence":
         assets.sort(key=lambda a: -a.confidence)
@@ -492,7 +500,7 @@ async def dashboard(
     return DashboardResponse(
         market=market, timeframe=timeframe, server_time=_now_iso(),
         assets=assets,
-        profile_id=prof["_id"], profile_name=prof.get("name", "Default"),
+        profile_id=profile_id, profile_name=profile_name,
         premium_count=premium_count,
         premium_threshold={"min_confidence": min_confidence, "min_wr": min_wr},
     )

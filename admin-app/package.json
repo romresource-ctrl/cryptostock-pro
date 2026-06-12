@@ -1,0 +1,30 @@
+{
+  "name": "kevinai-pro-admin",
+  "version": "1.0.0",
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web"
+  },
+  "dependencies": {
+    "@expo/vector-icons": "^14.0.4",
+    "expo": "~54.0.0",
+    "expo-clipboard": "~7.0.1",
+    "expo-crypto": "~15.0.9",
+    "expo-router": "~5.0.0",
+    "expo-status-bar": "~2.0.1",
+    "expo-splash-screen": "~0.30.0",
+    "react": "19.0.0",
+    "react-native": "0.79.0",
+    "react-native-safe-area-context": "5.0.0",
+    "react-native-screens": "~4.4.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.0",
+    "typescript": "~5.8.0",
+    "@types/react": "~19.0.0"
+  },
+  "private": true
+}

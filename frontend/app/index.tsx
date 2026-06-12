@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Dimensions,
   FlatList,
   RefreshControl,
   ScrollView,
@@ -13,13 +14,13 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { useAuth } from "@/src/auth/AuthContext";
+import LoginModal from "@/src/components/LoginModal";
 import Sparkline from "@/src/components/Sparkline";
 import {
   TIMEFRAMES,
   type AssetSignal,
-  type DashboardSort,
   type Market,
-  type Profile,
   type Timeframe,
   api,
   formatPct,
@@ -28,13 +29,13 @@ import {
 import { useTheme } from "@/src/theme/ThemeContext";
 
 const REFRESH_INTERVAL_MS = 60_000;
+type ViewMode = "crypto" | "stock" | "both";
 
 function signalColors(colors: ReturnType<typeof useTheme>["colors"], action: string) {
   if (action === "BUY") return { fg: colors.accentUp, bg: colors.accentUp + "26" };
   if (action === "SELL") return { fg: colors.accentDown, bg: colors.accentDown + "26" };
   return { fg: colors.accentHold, bg: colors.accentHold + "26" };
 }
-
 function wrColor(colors: ReturnType<typeof useTheme>["colors"], wr: number | null): string {
   if (wr === null) return colors.textMuted;
   if (wr >= 65) return colors.accentUp;
@@ -43,14 +44,8 @@ function wrColor(colors: ReturnType<typeof useTheme>["colors"], wr: number | nul
 }
 
 function AssetCard({
-  asset,
-  onPress,
-  market,
-}: {
-  asset: AssetSignal;
-  onPress: () => void;
-  market: Market;
-}) {
+  asset, onPress, market, locked,
+}: { asset: AssetSignal; onPress: () => void; market: Market; locked: boolean }) {
   const { colors } = useTheme();
   const sig = signalColors(colors, asset.action);
   const change = asset.change_pct_24h ?? 0;
@@ -74,7 +69,6 @@ function AssetCard({
           shadowColor: premium ? premiumGold : "transparent",
           shadowOpacity: premium ? 0.35 : 0,
           shadowRadius: premium ? 6 : 0,
-          shadowOffset: { width: 0, height: 0 },
           elevation: premium ? 4 : 0,
         },
       ]}
@@ -85,6 +79,11 @@ function AssetCard({
           <Text style={styles.premiumRibbonText}>PREMIUM</Text>
         </View>
       )}
+      {locked && (
+        <View style={[styles.lockBadge, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
+          <Ionicons name="lock-closed" size={9} color={colors.textMuted} />
+        </View>
+      )}
       <View style={styles.cardTop}>
         <Text style={[styles.ticker, { color: colors.textPrimary }]} numberOfLines={1}>
           {asset.symbol}
@@ -93,7 +92,6 @@ function AssetCard({
           <Text style={[styles.signalText, { color: sig.fg }]}>{asset.label}</Text>
         </View>
       </View>
-
       <View style={styles.cardMid}>
         <Text style={[styles.price, { color: colors.textPrimary }]} numberOfLines={1}>
           {formatPrice(asset.price, market)}
@@ -102,15 +100,13 @@ function AssetCard({
           {formatPct(asset.change_pct_24h)}
         </Text>
       </View>
-
       <View style={styles.cardBottom}>
         <Sparkline data={asset.spark} color={sig.fg} width={64} height={22} />
-        <View style={styles.confidenceWrap}>
+        <View style={{ alignItems: "flex-end" }}>
           <Text style={[styles.confidenceLabel, { color: colors.textMuted }]}>AI</Text>
           <Text style={[styles.confidenceVal, { color: sig.fg }]}>{asset.confidence}%</Text>
         </View>
       </View>
-
       {wr !== null && (
         <View style={[styles.wrRow, { borderTopColor: colors.border }]} testID={`wr-badge-${market}-${asset.symbol}`}>
           <Text style={[styles.wrLabel, { color: colors.textMuted }]}>WR 30d</Text>
@@ -124,57 +120,13 @@ function AssetCard({
   );
 }
 
-function ColumnList({
-  title,
-  market,
-  data,
-  loading,
-  onPressAsset,
-}: {
-  title: string;
-  market: Market;
-  data: AssetSignal[];
-  loading: boolean;
-  onPressAsset: (a: AssetSignal) => void;
-}) {
-  const { colors } = useTheme();
-  return (
-    <View style={[styles.column, { backgroundColor: colors.surfaceAlt }]}>
-      <View style={[styles.columnHeader, { borderColor: colors.border }]}>
-        <Text style={[styles.columnTitle, { color: colors.textPrimary }]}>{title}</Text>
-        <Text style={[styles.columnCount, { color: colors.textMuted }]}>{data.length}</Text>
-      </View>
-      {loading && data.length === 0 ? (
-        <View style={styles.loadingBox}>
-          <ActivityIndicator color={colors.accentBlue} />
-        </View>
-      ) : data.length === 0 ? (
-        <Text style={[styles.emptyBox, { color: colors.textMuted }]}>
-          Profil ini belum punya aset {title.toLowerCase()}. Tap ⚙ untuk tambah.
-        </Text>
-      ) : (
-        <FlatList
-          data={data}
-          keyExtractor={(a) => a.symbol}
-          renderItem={({ item }) => (
-            <AssetCard asset={item} market={market} onPress={() => onPressAsset(item)} />
-          )}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 24 }}
-        />
-      )}
-    </View>
-  );
-}
-
 export default function Dashboard() {
   const { colors, mode, toggle } = useTheme();
   const router = useRouter();
+  const { isUnlocked, email, logout, loaded: authLoaded } = useAuth();
+
+  const [view, setView] = useState<ViewMode>("both");
   const [timeframe, setTimeframe] = useState<Timeframe>("1h");
-  const [sort, setSort] = useState<DashboardSort>("premium");
-  const [premiumOnly, setPremiumOnly] = useState(false);
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [activeId, setActiveId] = useState<string>("");
   const [crypto, setCrypto] = useState<AssetSignal[]>([]);
   const [stocks, setStocks] = useState<AssetSignal[]>([]);
   const [premiumCount, setPremiumCount] = useState(0);
@@ -182,31 +134,31 @@ export default function Dashboard() {
   const [loadingStock, setLoadingStock] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<string>("");
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [lockedToast, setLockedToast] = useState(false);
 
-  const loadProfiles = useCallback(async () => {
-    const r = await api.profiles();
-    setProfiles(r.profiles);
-    setActiveId(r.active_id);
-  }, []);
+  const needCrypto = view === "crypto" || view === "both";
+  const needStock = view === "stock" || view === "both";
 
-  const load = useCallback(async (tf: Timeframe, s: DashboardSort, po: boolean) => {
-    setLoadingCrypto(true);
-    setLoadingStock(true);
+  const load = useCallback(async (tf: Timeframe, v: ViewMode) => {
+    const wantCrypto = v === "crypto" || v === "both";
+    const wantStock = v === "stock" || v === "both";
+    if (wantCrypto) setLoadingCrypto(true);
+    if (wantStock) setLoadingStock(true);
     try {
-      const [c, st] = await Promise.allSettled([
-        api.dashboard("crypto", tf, { sort: s, premiumOnly: po }),
-        api.dashboard("stock", tf, { sort: s, premiumOnly: po }),
-      ]);
+      const calls: Promise<unknown>[] = [];
+      if (wantCrypto) calls.push(api.dashboard("crypto", tf, { full: true, sort: "premium" }));
+      else calls.push(Promise.resolve(null));
+      if (wantStock) calls.push(api.dashboard("stock", tf, { full: true, sort: "premium" }));
+      else calls.push(Promise.resolve(null));
+      const [c, s] = (await Promise.allSettled(calls)) as PromiseSettledResult<{ assets: AssetSignal[]; premium_count: number } | null>[];
       let pCount = 0;
-      if (c.status === "fulfilled") {
-        setCrypto(c.value.assets);
-        setActiveId(c.value.profile_id);
-        pCount += c.value.premium_count;
-      }
-      if (st.status === "fulfilled") {
-        setStocks(st.value.assets);
-        pCount += st.value.premium_count;
-      }
+      if (wantCrypto) {
+        if (c.status === "fulfilled" && c.value) { setCrypto(c.value.assets); pCount += c.value.premium_count; }
+      } else setCrypto([]);
+      if (wantStock) {
+        if (s.status === "fulfilled" && s.value) { setStocks(s.value.assets); pCount += s.value.premium_count; }
+      } else setStocks([]);
       setPremiumCount(pCount);
       setLastUpdate(new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
     } finally {
@@ -216,55 +168,52 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    void loadProfiles();
-  }, [loadProfiles]);
-
-  useEffect(() => {
-    void load(timeframe, sort, premiumOnly);
-    const id = setInterval(() => void load(timeframe, sort, premiumOnly), REFRESH_INTERVAL_MS);
+    void load(timeframe, view);
+    const id = setInterval(() => void load(timeframe, view), REFRESH_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [timeframe, sort, premiumOnly, load, activeId]);
-
-  const switchProfile = async (id: string) => {
-    if (id === activeId) return;
-    setActiveId(id);
-    try {
-      await api.activateProfile(id);
-      await load(timeframe, sort, premiumOnly);
-    } catch {
-      // ignore
-    }
-  };
+  }, [timeframe, view, load]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([loadProfiles(), load(timeframe, sort, premiumOnly)]);
+    await load(timeframe, view);
     setRefreshing(false);
-  }, [load, loadProfiles, timeframe, sort, premiumOnly]);
+  }, [load, timeframe, view]);
 
   const handleAssetPress = (a: AssetSignal) => {
+    if (!isUnlocked) {
+      setLockedToast(true);
+      setTimeout(() => setLockedToast(false), 2500);
+      setLoginOpen(true);
+      return;
+    }
     router.push(`/asset/${a.market}/${a.symbol}?timeframe=${timeframe}` as never);
   };
 
   const consensus = useMemo(() => {
-    const all = [...crypto, ...stocks];
+    const all = [...(needCrypto ? crypto : []), ...(needStock ? stocks : [])];
     return {
       buy: all.filter((a) => a.action === "BUY").length,
       sell: all.filter((a) => a.action === "SELL").length,
       hold: all.filter((a) => a.action === "HOLD").length,
     };
-  }, [crypto, stocks]);
+  }, [crypto, stocks, needCrypto, needStock]);
 
-  const activeName = profiles.find((p) => p.id === activeId)?.name ?? "Profil";
+  const viewPills: { key: ViewMode; label: string; icon: string }[] = [
+    { key: "crypto", label: "Crypto", icon: "logo-bitcoin" },
+    { key: "stock", label: "Saham", icon: "trending-up" },
+    { key: "both", label: "Crypto + Saham", icon: "grid" },
+  ];
+
+  const SCREEN_W = Dimensions.get("window").width;
 
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: colors.background }]} edges={["top"]}>
-      {/* Header */}
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <Text style={[styles.appTitle, { color: colors.textPrimary }]}>KevinAI Pro</Text>
           <Text style={[styles.appSub, { color: colors.textMuted }]} numberOfLines={1}>
-            {activeName} • {lastUpdate ? `update ${lastUpdate}` : "memuat…"}
+            {premiumCount > 0 ? `⭐ ${premiumCount} Premium · ` : ""}
+            {lastUpdate ? `update ${lastUpdate}` : "memuat…"}
           </Text>
         </View>
         <View style={styles.headerActions}>
@@ -282,64 +231,66 @@ export default function Dashboard() {
           >
             <Ionicons name={mode === "dark" ? "sunny-outline" : "moon-outline"} size={18} color={colors.textPrimary} />
           </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => router.push("/manage" as never)}
-            testID="manage-assets-button"
-            style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          >
-            <Ionicons name="options-outline" size={18} color={colors.textPrimary} />
-          </TouchableOpacity>
+          {authLoaded && (
+            isUnlocked ? (
+              <TouchableOpacity
+                onPress={() => logout()}
+                testID="logout-button"
+                style={[styles.unlockedBtn, { backgroundColor: "#0ECB81" + "22", borderColor: "#0ECB81" }]}
+              >
+                <Ionicons name="checkmark-circle" size={14} color="#0ECB81" />
+                <Text style={[styles.unlockedText, { color: "#0ECB81" }]} numberOfLines={1}>
+                  {email && email.length > 12 ? email.split("@")[0] : email}
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                onPress={() => setLoginOpen(true)}
+                testID="login-button"
+                style={[styles.loginBtn, { backgroundColor: colors.accentBlue, borderColor: colors.accentBlue }]}
+              >
+                <Ionicons name="log-in-outline" size={14} color="#fff" />
+                <Text style={styles.loginBtnText}>LOGIN</Text>
+              </TouchableOpacity>
+            )
+          )}
         </View>
       </View>
 
-      {/* Profile selector */}
-      <View style={styles.profileRow}>
+      {/* View mode pills */}
+      <View style={styles.viewRow}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ paddingHorizontal: 16, gap: 8, alignItems: "center" }}
         >
-          {profiles.map((p) => {
-            const active = p.id === activeId;
+          {viewPills.map((vp) => {
+            const active = vp.key === view;
             return (
               <TouchableOpacity
-                key={p.id}
-                onPress={() => switchProfile(p.id)}
-                testID={`profile-${p.id}`}
+                key={vp.key}
+                onPress={() => setView(vp.key)}
+                testID={`view-${vp.key}`}
                 style={[
-                  styles.profilePill,
+                  styles.viewPill,
                   {
                     backgroundColor: active ? colors.accentBlue : colors.surface,
                     borderColor: active ? colors.accentBlue : colors.border,
                   },
                 ]}
               >
-                <Ionicons
-                  name={active ? "bookmark" : "bookmark-outline"}
-                  size={12}
-                  color={active ? "#fff" : colors.textSecondary}
-                />
-                <Text style={[styles.profilePillText, { color: active ? "#fff" : colors.textSecondary }]} numberOfLines={1}>
-                  {p.name}
-                </Text>
+                <Ionicons name={vp.icon as never} size={14} color={active ? "#fff" : colors.textSecondary} />
+                <Text style={[styles.viewPillText, { color: active ? "#fff" : colors.textSecondary }]}>{vp.label}</Text>
               </TouchableOpacity>
             );
           })}
-          <TouchableOpacity
-            onPress={() => router.push("/manage" as never)}
-            testID="profile-manage-btn"
-            style={[styles.profilePill, { backgroundColor: colors.surface, borderColor: colors.border, borderStyle: "dashed" }]}
-          >
-            <Ionicons name="add" size={14} color={colors.textSecondary} />
-            <Text style={[styles.profilePillText, { color: colors.textSecondary }]}>Kelola</Text>
-          </TouchableOpacity>
         </ScrollView>
       </View>
 
       {/* Consensus strip */}
       <View style={[styles.consensusStrip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <View style={styles.consensusItem}>
-          <View style={styles.premiumNumWrap}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
             <Ionicons name="star" size={14} color="#F0B90B" />
             <Text style={[styles.consensusNum, { color: "#F0B90B" }]}>{premiumCount}</Text>
           </View>
@@ -360,52 +311,6 @@ export default function Dashboard() {
           <Text style={[styles.consensusNum, { color: colors.accentDown }]}>{consensus.sell}</Text>
           <Text style={[styles.consensusLabel, { color: colors.textMuted }]}>SELL/SHORT</Text>
         </View>
-      </View>
-
-      {/* Sort / Premium-only filter */}
-      <View style={styles.sortRow}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 16, gap: 8, alignItems: "center" }}
-        >
-          <TouchableOpacity
-            onPress={() => setPremiumOnly((v) => !v)}
-            testID="premium-only-toggle"
-            style={[
-              styles.sortPill,
-              {
-                backgroundColor: premiumOnly ? "#F0B90B" : colors.surface,
-                borderColor: premiumOnly ? "#F0B90B" : colors.border,
-              },
-            ]}
-          >
-            <Ionicons name="star" size={11} color={premiumOnly ? "#0B0E11" : "#F0B90B"} />
-            <Text style={[styles.sortPillText, { color: premiumOnly ? "#0B0E11" : colors.textSecondary }]}>
-              PREMIUM ONLY
-            </Text>
-          </TouchableOpacity>
-          {(["premium", "confidence", "wr", "default"] as DashboardSort[]).map((s) => {
-            const active = s === sort;
-            const label = s === "premium" ? "⭐ Sort: Premium" : s === "confidence" ? "Sort: AI%" : s === "wr" ? "Sort: WR" : "Default";
-            return (
-              <TouchableOpacity
-                key={s}
-                onPress={() => setSort(s)}
-                testID={`sort-${s}`}
-                style={[
-                  styles.sortPill,
-                  {
-                    backgroundColor: active ? colors.accentBlue : colors.surface,
-                    borderColor: active ? colors.accentBlue : colors.border,
-                  },
-                ]}
-              >
-                <Text style={[styles.sortPillText, { color: active ? "#fff" : colors.textSecondary }]}>{label}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
       </View>
 
       {/* Timeframe selector */}
@@ -437,77 +342,131 @@ export default function Dashboard() {
         </ScrollView>
       </View>
 
-      {/* Two-column dashboard */}
+      {/* Asset lists */}
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={styles.dualScroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accentBlue} />}
       >
-        <View style={styles.dualRow}>
-          <ColumnList
-            title="CRYPTO"
-            market="crypto"
-            data={crypto}
-            loading={loadingCrypto}
-            onPressAsset={handleAssetPress}
-          />
-          <ColumnList
-            title="SAHAM"
-            market="stock"
-            data={stocks}
-            loading={loadingStock}
-            onPressAsset={handleAssetPress}
-          />
-        </View>
+        {view === "both" ? (
+          <View style={styles.dualRow}>
+            <ListColumn title="CRYPTO" market="crypto" data={crypto} loading={loadingCrypto} onPress={handleAssetPress} locked={!isUnlocked} />
+            <ListColumn title="SAHAM" market="stock" data={stocks} loading={loadingStock} onPress={handleAssetPress} locked={!isUnlocked} />
+          </View>
+        ) : view === "crypto" ? (
+          <FullList title="CRYPTO" market="crypto" data={crypto} loading={loadingCrypto} onPress={handleAssetPress} locked={!isUnlocked} screenW={SCREEN_W} />
+        ) : (
+          <FullList title="SAHAM" market="stock" data={stocks} loading={loadingStock} onPress={handleAssetPress} locked={!isUnlocked} screenW={SCREEN_W} />
+        )}
       </ScrollView>
+
+      {/* Locked toast */}
+      {lockedToast && (
+        <View style={[styles.toast, { backgroundColor: colors.surface, borderColor: colors.accentBlue }]} testID="locked-toast">
+          <Ionicons name="lock-closed" size={14} color={colors.accentBlue} />
+          <Text style={[styles.toastText, { color: colors.textPrimary }]}>
+            Login dulu untuk akses detail aset
+          </Text>
+        </View>
+      )}
+
+      <LoginModal visible={loginOpen} onClose={() => setLoginOpen(false)} />
     </SafeAreaView>
+  );
+}
+
+function ListColumn({
+  title, market, data, loading, onPress, locked,
+}: { title: string; market: Market; data: AssetSignal[]; loading: boolean; onPress: (a: AssetSignal) => void; locked: boolean }) {
+  const { colors } = useTheme();
+  return (
+    <View style={[styles.column, { backgroundColor: colors.surfaceAlt }]}>
+      <View style={[styles.columnHeader, { borderColor: colors.border }]}>
+        <Text style={[styles.columnTitle, { color: colors.textPrimary }]}>{title}</Text>
+        <Text style={[styles.columnCount, { color: colors.textMuted }]}>{data.length}</Text>
+      </View>
+      {loading && data.length === 0 ? (
+        <View style={{ paddingVertical: 40, alignItems: "center" }}>
+          <ActivityIndicator color={colors.accentBlue} />
+        </View>
+      ) : (
+        <FlatList
+          data={data}
+          keyExtractor={(a) => a.symbol}
+          renderItem={({ item }) => <AssetCard asset={item} market={market} locked={locked} onPress={() => onPress(item)} />}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 24 }}
+        />
+      )}
+    </View>
+  );
+}
+
+function FullList({
+  title, market, data, loading, onPress, locked, screenW,
+}: { title: string; market: Market; data: AssetSignal[]; loading: boolean; onPress: (a: AssetSignal) => void; locked: boolean; screenW: number }) {
+  const { colors } = useTheme();
+  // Two-column grid for single-market view
+  return (
+    <View style={[styles.fullPanel, { backgroundColor: colors.surfaceAlt }]}>
+      <View style={[styles.columnHeader, { borderColor: colors.border }]}>
+        <Text style={[styles.columnTitle, { color: colors.textPrimary }]}>{title}</Text>
+        <Text style={[styles.columnCount, { color: colors.textMuted }]}>{data.length} aset</Text>
+      </View>
+      {loading && data.length === 0 ? (
+        <View style={{ paddingVertical: 40, alignItems: "center" }}>
+          <ActivityIndicator color={colors.accentBlue} />
+        </View>
+      ) : (
+        <View style={styles.grid}>
+          {data.map((a) => (
+            <View key={a.symbol} style={{ width: (screenW - 32 - 8) / 2 }}>
+              <AssetCard asset={a} market={market} locked={locked} onPress={() => onPress(a)} />
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
   header: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 10,
+    flexDirection: "row", alignItems: "center", paddingHorizontal: 16,
+    paddingTop: 8, paddingBottom: 10,
   },
   appTitle: { fontSize: 22, fontWeight: "700", letterSpacing: 0.3 },
   appSub: { fontSize: 11, marginTop: 2 },
-  headerActions: { flexDirection: "row", gap: 8 },
-  iconBtn: {
-    width: 36, height: 36, borderRadius: 10,
-    alignItems: "center", justifyContent: "center", borderWidth: 1,
+  headerActions: { flexDirection: "row", gap: 8, alignItems: "center" },
+  iconBtn: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center", borderWidth: 1 },
+  loginBtn: {
+    height: 36, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1,
+    flexDirection: "row", alignItems: "center", gap: 5,
   },
-  profileRow: { height: 48, justifyContent: "center" },
-  profilePill: {
-    height: 32,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    flexShrink: 0,
+  loginBtnText: { color: "#fff", fontSize: 12, fontWeight: "700", letterSpacing: 0.6 },
+  unlockedBtn: {
+    height: 36, paddingHorizontal: 10, borderRadius: 10, borderWidth: 1,
+    flexDirection: "row", alignItems: "center", gap: 5, maxWidth: 140,
   },
-  profilePillText: { fontSize: 12, fontWeight: "600", maxWidth: 140 },
+  unlockedText: { fontSize: 11, fontWeight: "700", maxWidth: 90 },
+  viewRow: { height: 50, justifyContent: "center" },
+  viewPill: {
+    height: 36, paddingHorizontal: 14, borderRadius: 18, borderWidth: 1, flexShrink: 0,
+    flexDirection: "row", alignItems: "center", gap: 6,
+  },
+  viewPillText: { fontSize: 12, fontWeight: "700", letterSpacing: 0.4 },
   consensusStrip: {
-    marginHorizontal: 16,
-    marginTop: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-    flexDirection: "row",
-    paddingVertical: 10,
+    marginHorizontal: 16, marginTop: 4, borderRadius: 12, borderWidth: 1,
+    flexDirection: "row", paddingVertical: 10,
   },
   consensusItem: { flex: 1, alignItems: "center" },
   consensusNum: { fontSize: 18, fontWeight: "700" },
   consensusLabel: { fontSize: 10, marginTop: 2, letterSpacing: 0.5 },
   consensusDivider: { width: 1, marginVertical: 6 },
-  tfRow: { height: 56, justifyContent: "center", marginTop: 4 },
+  tfRow: { height: 56, justifyContent: "center", marginTop: 2 },
   tfPill: {
-    height: 36, minWidth: 50, paddingHorizontal: 14,
-    borderRadius: 18, borderWidth: 1, flexShrink: 0,
+    height: 36, minWidth: 50, paddingHorizontal: 14, borderRadius: 18, borderWidth: 1, flexShrink: 0,
     alignItems: "center", justifyContent: "center",
   },
   tfPillText: { fontSize: 12, fontWeight: "600" },
@@ -520,22 +479,17 @@ const styles = StyleSheet.create({
   },
   columnTitle: { fontSize: 13, fontWeight: "700", letterSpacing: 1 },
   columnCount: { fontSize: 11, fontWeight: "500" },
-  loadingBox: { paddingVertical: 40, alignItems: "center" },
-  emptyBox: { textAlign: "center", padding: 16, fontSize: 11, lineHeight: 16 },
-  card: { borderWidth: 1, borderRadius: 10, padding: 10, marginTop: 8 },
-  cardTop: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6,
-  },
+  fullPanel: { flex: 1, borderRadius: 12, paddingHorizontal: 8, paddingTop: 8, marginHorizontal: 8 },
+  grid: { flexDirection: "row", flexWrap: "wrap", gap: 8, paddingTop: 8, paddingBottom: 24 },
+  card: { borderWidth: 1, borderRadius: 10, padding: 10, marginTop: 8, position: "relative" },
+  cardTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
   ticker: { fontSize: 14, fontWeight: "700", letterSpacing: 0.4, flexShrink: 1 },
   signalPill: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
   signalText: { fontSize: 10, fontWeight: "700", letterSpacing: 0.5 },
   cardMid: { flexDirection: "row", justifyContent: "space-between", alignItems: "baseline" },
   price: { fontSize: 13, fontWeight: "600", fontVariant: ["tabular-nums"], flexShrink: 1 },
   change: { fontSize: 11, fontWeight: "600", marginLeft: 4 },
-  cardBottom: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 6,
-  },
-  confidenceWrap: { alignItems: "flex-end" },
+  cardBottom: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 6 },
   confidenceLabel: { fontSize: 9, letterSpacing: 0.5 },
   confidenceVal: { fontSize: 13, fontWeight: "700" },
   wrRow: {
@@ -546,23 +500,21 @@ const styles = StyleSheet.create({
   wrVal: { fontSize: 12, fontWeight: "700" },
   wrSub: { fontSize: 9, fontWeight: "500" },
   premiumRibbon: {
-    position: "absolute",
-    top: -1,
-    right: -1,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderTopRightRadius: 9,
-    borderBottomLeftRadius: 8,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
+    position: "absolute", top: -1, right: -1,
+    paddingHorizontal: 6, paddingVertical: 2,
+    borderTopRightRadius: 9, borderBottomLeftRadius: 8,
+    flexDirection: "row", alignItems: "center", gap: 3,
   },
   premiumRibbonText: { fontSize: 8, fontWeight: "800", letterSpacing: 0.6, color: "#0B0E11" },
-  premiumNumWrap: { flexDirection: "row", alignItems: "center", gap: 4 },
-  sortRow: { height: 50, justifyContent: "center", marginTop: 2 },
-  sortPill: {
-    height: 32, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, flexShrink: 0,
-    flexDirection: "row", alignItems: "center", gap: 5,
+  lockBadge: {
+    position: "absolute", top: 6, left: 6,
+    width: 16, height: 16, borderRadius: 8, borderWidth: 1,
+    alignItems: "center", justifyContent: "center", zIndex: 1,
   },
-  sortPillText: { fontSize: 11, fontWeight: "700", letterSpacing: 0.4 },
+  toast: {
+    position: "absolute", bottom: 32, left: 16, right: 16,
+    paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10, borderWidth: 1,
+    flexDirection: "row", alignItems: "center", gap: 8,
+  },
+  toastText: { fontSize: 13, fontWeight: "600", flex: 1 },
 });

@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "KevinAI Admin",
+    "slug": "kevinai-admin",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "kevinai-admin",
+    "userInterfaceStyle": "dark",
+    "android": {
+      "package": "com.kevinai.admin",
+      "edgeToEdgeEnabled": true
+    },
+    "plugins": [
+      "expo-router"
+    ]
+  }
+}

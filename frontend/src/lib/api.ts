@@ -193,11 +193,12 @@ export const api = {
   dashboard: (
     market: Market,
     timeframe: Timeframe,
-    opts: { sort?: DashboardSort; premiumOnly?: boolean } = {},
+    opts: { sort?: DashboardSort; premiumOnly?: boolean; full?: boolean } = {},
   ) => {
     const params = new URLSearchParams({ market, timeframe });
     if (opts.sort) params.append("sort", opts.sort);
     if (opts.premiumOnly) params.append("premium_only", "true");
+    if (opts.full) params.append("full", "true");
     return get<DashboardResponse>(`/dashboard?${params.toString()}`);
   },
   watchlist: () => get<WatchlistResponse>("/watchlist"),
