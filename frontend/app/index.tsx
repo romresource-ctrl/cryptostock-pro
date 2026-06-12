@@ -507,9 +507,9 @@ const styles = StyleSheet.create({
   },
   premiumRibbonText: { fontSize: 8, fontWeight: "800", letterSpacing: 0.6, color: "#0B0E11" },
   lockBadge: {
-    position: "absolute", top: 6, left: 6,
+    position: "absolute", bottom: 6, right: 6,
     width: 16, height: 16, borderRadius: 8, borderWidth: 1,
-    alignItems: "center", justifyContent: "center", zIndex: 1,
+    alignItems: "center", justifyContent: "center", opacity: 0.6,
   },
   toast: {
     position: "absolute", bottom: 32, left: 16, right: 16,
