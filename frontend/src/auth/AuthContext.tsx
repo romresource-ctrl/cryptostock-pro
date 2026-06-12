@@ -57,6 +57,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
     await storage.setItem(STORAGE_KEY, next);
     setAuth(next);
+    // Fire-and-forget record-login to backend so the admin app can list users.
+    void (async () => {
+      try {
+        const RAW = process.env.EXPO_PUBLIC_BACKEND_URL ?? "";
+        const base = `${RAW.replace(/\/+$/, "")}/api`;
+        await fetch(`${base}/auth/record-login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: cleanEmail, code: cleanCode }),
+        });
+      } catch {
+        // offline-tolerant: still unlocked locally even if record fails
+      }
+    })();
     return { ok: true };
   };
 

@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, FastAPI, HTTPException, Query
+from fastapi import APIRouter, FastAPI, Header, HTTPException, Query
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
 from starlette.middleware.cors import CORSMiddleware
@@ -217,6 +217,34 @@ class NewsResponse(BaseModel):
     market: str
     items: list[NewsItem]
     fetched_at: str
+
+
+# ---------------- Auth tracking ----------------
+
+class LoginRecordPayload(BaseModel):
+    email: str
+    code: str
+
+
+class LoggedUser(BaseModel):
+    email: str
+    unlocked_at: str
+    last_seen: str
+    login_count: int
+
+
+class LoggedUsersResponse(BaseModel):
+    total: int
+    users: list[LoggedUser]
+
+
+def _compute_unlock_code(email: str) -> str:
+    import hashlib
+    secret = os.environ.get("UNLOCK_SECRET", "")
+    normalized = email.strip().lower()
+    msg = f"{secret}::{normalized}"
+    h = hashlib.sha256(msg.encode()).hexdigest()[:12].upper()
+    return f"{h[0:4]}-{h[4:8]}-{h[8:12]}"
 
 
 # ---------------- Helpers ----------------
@@ -604,6 +632,57 @@ async def news_for_asset(market: Literal["crypto", "stock"], symbol: str, limit:
 
 
 # -------- App wiring --------
+
+@api.post("/auth/record-login")
+async def record_login(payload: LoginRecordPayload) -> dict:
+    """Called by the main app after a successful unlock.
+
+    The server re-verifies the unlock code so spam / forged calls can't
+    pollute the `logged_users` collection.
+    """
+    email = payload.email.strip().lower()
+    code = payload.code.strip().upper()
+    expected = _compute_unlock_code(email)
+    if not email or not expected or expected != code:
+        raise HTTPException(401, "Invalid email or unlock code")
+    now = _now_iso()
+    res = await db.logged_users.find_one({"_id": email}, {"_id": 0, "login_count": 1})
+    if res:
+        await db.logged_users.update_one(
+            {"_id": email},
+            {"$set": {"last_seen": now}, "$inc": {"login_count": 1}},
+        )
+    else:
+        await db.logged_users.insert_one({
+            "_id": email,
+            "email": email,
+            "unlocked_at": now,
+            "last_seen": now,
+            "login_count": 1,
+        })
+    return {"ok": True}
+
+
+@api.get("/admin/users", response_model=LoggedUsersResponse)
+async def admin_list_users(x_admin_token: str | None = Header(default=None)) -> LoggedUsersResponse:
+    """List all users who have successfully unlocked the app. Admin-only."""
+    expected = os.environ.get("ADMIN_TOKEN", "")
+    if not expected or x_admin_token != expected:
+        raise HTTPException(403, "Forbidden")
+    docs: list[LoggedUser] = []
+    cursor = db.logged_users.find(
+        {},
+        {"_id": 0, "email": 1, "unlocked_at": 1, "last_seen": 1, "login_count": 1},
+    ).sort("last_seen", -1)
+    async for d in cursor:
+        docs.append(LoggedUser(
+            email=d.get("email", ""),
+            unlocked_at=d.get("unlocked_at", ""),
+            last_seen=d.get("last_seen", ""),
+            login_count=int(d.get("login_count", 1)),
+        ))
+    return LoggedUsersResponse(total=len(docs), users=docs)
+
 
 app.include_router(api)
 app.add_middleware(

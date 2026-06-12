@@ -1,8 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  FlatList,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,165 +14,272 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { fetchLoggedUsers, type LoggedUser } from "@/lib/adminApi";
 import { generateUnlockCode } from "@/lib/unlockCode";
 
-type History = { email: string; code: string; at: string };
+type Tab = "generator" | "users";
 
-export default function AdminGenerator() {
+function timeAgo(iso: string): string {
+  if (!iso) return "—";
+  const t = new Date(iso).getTime();
+  if (isNaN(t)) return iso;
+  const diff = Math.floor((Date.now() - t) / 1000);
+  if (diff < 60) return `${diff}d lalu`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m lalu`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}j lalu`;
+  return `${Math.floor(diff / 86400)}h lalu`;
+}
+
+export default function AdminScreen() {
+  const [tab, setTab] = useState<Tab>("generator");
+
+  // Generator state
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [history, setHistory] = useState<History[]>([]);
-  const [error, setError] = useState("");
+  const [genError, setGenError] = useState("");
+
+  // Logged users state
+  const [users, setUsers] = useState<LoggedUser[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [usersError, setUsersError] = useState("");
+  const [filter, setFilter] = useState("");
 
   const generate = async () => {
-    setError("");
+    setGenError("");
     setCopied(false);
     const trimmed = email.trim().toLowerCase();
-    if (!trimmed) {
-      setError("Masukkan email user dulu.");
-      return;
-    }
+    if (!trimmed) { setGenError("Masukkan email user."); return; }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
-      setError("Format email tidak valid.");
-      return;
+      setGenError("Format email tidak valid."); return;
     }
     setBusy(true);
     try {
-      const c = await generateUnlockCode(trimmed);
-      setCode(c);
-      setHistory((h) => [
-        { email: trimmed, code: c, at: new Date().toLocaleTimeString("id-ID") },
-        ...h.filter((x) => x.email !== trimmed),
-      ].slice(0, 20));
-    } finally {
-      setBusy(false);
-    }
+      setCode(await generateUnlockCode(trimmed));
+    } finally { setBusy(false); }
   };
 
-  const copy = async () => {
+  const copyCode = async () => {
     if (!code) return;
     await Clipboard.setStringAsync(code);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
 
-  const copyMessage = async () => {
+  const copyMsg = async () => {
     if (!code || !email) return;
-    const msg = `Hi! Berikut unlock code KevinAI Pro Anda:\n\nEmail: ${email.trim().toLowerCase()}\nUnlock Code: ${code}\n\nBuka app KevinAI Pro → tombol LOGIN (pojok kanan atas) → isi email & code. Sekali login berlaku selamanya.`;
-    await Clipboard.setStringAsync(msg);
+    const m = `Hi! Berikut unlock code KevinAI Pro Anda:\n\nEmail: ${email.trim().toLowerCase()}\nUnlock Code: ${code}\n\nBuka app → tombol LOGIN (pojok kanan atas) → isi email & code.`;
+    await Clipboard.setStringAsync(m);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
 
+  const loadUsers = useCallback(async () => {
+    setLoadingUsers(true);
+    setUsersError("");
+    try {
+      setUsers(await fetchLoggedUsers());
+    } catch (e) {
+      setUsersError((e as Error).message);
+    } finally {
+      setLoadingUsers(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab === "users" && users.length === 0 && !loadingUsers) void loadUsers();
+  }, [tab, users.length, loadingUsers, loadUsers]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadUsers();
+    setRefreshing(false);
+  }, [loadUsers]);
+
+  const filteredUsers = filter
+    ? users.filter((u) => u.email.toLowerCase().includes(filter.toLowerCase()))
+    : users;
+
+  const generateForUser = async (em: string) => {
+    setEmail(em);
+    setTab("generator");
+    setCode(await generateUnlockCode(em));
+  };
+
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 32 }}>
-        <View style={styles.header}>
-          <View style={styles.headerIcon}>
-            <Ionicons name="key" size={24} color="#F0B90B" />
-          </View>
+      <View style={styles.header}>
+        <View style={styles.headerIcon}>
+          <Ionicons name="key" size={22} color="#F0B90B" />
+        </View>
+        <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={styles.title}>KevinAI Pro</Text>
-          <Text style={styles.subtitle}>Unlock Code Generator</Text>
-          <Text style={styles.warn}>⚠ ADMIN ONLY · Jangan distribusikan APK ini</Text>
+          <Text style={styles.subtitle}>Admin Console</Text>
         </View>
+      </View>
 
-        <View style={styles.card}>
-          <Text style={styles.label}>EMAIL USER</Text>
-          <TextInput
-            value={email}
-            onChangeText={setEmail}
-            placeholder="user@example.com"
-            placeholderTextColor="#5E6673"
-            autoCapitalize="none"
-            keyboardType="email-address"
-            autoCorrect={false}
-            style={styles.input}
-            testID="admin-email-input"
-          />
+      <View style={styles.tabs}>
+        <TouchableOpacity
+          onPress={() => setTab("generator")}
+          testID="tab-generator"
+          style={[styles.tab, tab === "generator" && styles.tabActive]}
+        >
+          <Ionicons name="construct" size={14} color={tab === "generator" ? "#F0B90B" : "#848E9C"} />
+          <Text style={[styles.tabText, { color: tab === "generator" ? "#EAECEF" : "#848E9C" }]}>GENERATOR</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => setTab("users")}
+          testID="tab-users"
+          style={[styles.tab, tab === "users" && styles.tabActive]}
+        >
+          <Ionicons name="people" size={14} color={tab === "users" ? "#0ECB81" : "#848E9C"} />
+          <Text style={[styles.tabText, { color: tab === "users" ? "#EAECEF" : "#848E9C" }]}>
+            LOGGED USERS {users.length > 0 ? `· ${users.length}` : ""}
+          </Text>
+        </TouchableOpacity>
+      </View>
 
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+      {tab === "generator" ? (
+        <ScrollView contentContainerStyle={{ paddingBottom: 32 }}>
+          <View style={styles.card}>
+            <Text style={styles.label}>EMAIL USER</Text>
+            <TextInput
+              value={email}
+              onChangeText={setEmail}
+              placeholder="user@example.com"
+              placeholderTextColor="#5E6673"
+              autoCapitalize="none"
+              keyboardType="email-address"
+              style={styles.input}
+              testID="admin-email-input"
+            />
+            {genError ? <Text style={styles.error}>{genError}</Text> : null}
+            <TouchableOpacity
+              onPress={generate}
+              disabled={busy}
+              style={[styles.genBtn, { opacity: busy ? 0.6 : 1 }]}
+              testID="admin-generate-button"
+            >
+              {busy ? <ActivityIndicator color="#0B0E11" /> : (
+                <>
+                  <Ionicons name="construct" size={16} color="#0B0E11" />
+                  <Text style={styles.genBtnText}>GENERATE UNLOCK CODE</Text>
+                </>
+              )}
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={generate}
-            disabled={busy}
-            style={[styles.genBtn, { opacity: busy ? 0.6 : 1 }]}
-            testID="admin-generate-button"
-          >
-            {busy ? (
-              <ActivityIndicator color="#0B0E11" size="small" />
-            ) : (
-              <>
-                <Ionicons name="construct" size={16} color="#0B0E11" />
-                <Text style={styles.genBtnText}>GENERATE UNLOCK CODE</Text>
-              </>
-            )}
-          </TouchableOpacity>
-
-          {code ? (
-            <View style={styles.resultBox}>
-              <Text style={styles.resultLabel}>UNLOCK CODE</Text>
-              <Text style={styles.codeBig} selectable testID="admin-code-output">{code}</Text>
-              <Text style={styles.resultEmail}>untuk: {email.trim().toLowerCase()}</Text>
-              <View style={styles.actionRow}>
-                <TouchableOpacity onPress={copy} style={styles.copyBtn} testID="admin-copy-code-button">
-                  <Ionicons name="copy" size={14} color="#EAECEF" />
-                  <Text style={styles.copyBtnText}>Salin Code</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={copyMessage} style={[styles.copyBtn, { backgroundColor: "#2962FF" }]} testID="admin-copy-message-button">
-                  <Ionicons name="chatbubble-ellipses" size={14} color="#fff" />
-                  <Text style={[styles.copyBtnText, { color: "#fff" }]}>Salin Pesan</Text>
-                </TouchableOpacity>
-              </View>
-              {copied ? <Text style={styles.copied}>✓ Berhasil disalin</Text> : null}
-            </View>
-          ) : null}
-        </View>
-
-        {history.length > 0 && (
-          <View style={[styles.card, { marginTop: 12 }]}>
-            <Text style={styles.label}>HISTORI ({history.length})</Text>
-            {history.map((h, i) => (
-              <View key={`${h.email}-${i}`} style={styles.histRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.histEmail} numberOfLines={1}>{h.email}</Text>
-                  <Text style={styles.histTime}>{h.at}</Text>
+            {code ? (
+              <View style={styles.resultBox}>
+                <Text style={styles.resultLabel}>UNLOCK CODE</Text>
+                <Text style={styles.codeBig} selectable>{code}</Text>
+                <Text style={styles.resultEmail}>untuk: {email.trim().toLowerCase()}</Text>
+                <View style={styles.actionRow}>
+                  <TouchableOpacity onPress={copyCode} style={styles.copyBtn}>
+                    <Ionicons name="copy" size={14} color="#EAECEF" />
+                    <Text style={styles.copyBtnText}>Salin Code</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={copyMsg} style={[styles.copyBtn, { backgroundColor: "#2962FF" }]}>
+                    <Ionicons name="chatbubble-ellipses" size={14} color="#fff" />
+                    <Text style={[styles.copyBtnText, { color: "#fff" }]}>Salin Pesan</Text>
+                  </TouchableOpacity>
                 </View>
-                <Text style={styles.histCode} selectable>{h.code}</Text>
+                {copied && <Text style={styles.copied}>✓ Berhasil disalin</Text>}
               </View>
-            ))}
+            ) : null}
           </View>
-        )}
+        </ScrollView>
+      ) : (
+        <View style={{ flex: 1 }}>
+          <View style={styles.searchBar}>
+            <Ionicons name="search" size={16} color="#5E6673" />
+            <TextInput
+              value={filter}
+              onChangeText={setFilter}
+              placeholder="cari email…"
+              placeholderTextColor="#5E6673"
+              autoCapitalize="none"
+              style={styles.searchInput}
+            />
+          </View>
 
-        <Text style={styles.footer}>
-          🔒 Code dihitung lokal (offline). Hanya admin yang punya SECRET dapat menghasilkan kode yang valid.
-        </Text>
-      </ScrollView>
+          {usersError ? (
+            <View style={styles.card}>
+              <Text style={styles.error}>Gagal load: {usersError}</Text>
+              <TouchableOpacity onPress={loadUsers} style={[styles.genBtn, { marginTop: 12 }]}>
+                <Ionicons name="refresh" size={16} color="#0B0E11" />
+                <Text style={styles.genBtnText}>COBA LAGI</Text>
+              </TouchableOpacity>
+            </View>
+          ) : loadingUsers && users.length === 0 ? (
+            <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+              <ActivityIndicator color="#F0B90B" />
+            </View>
+          ) : (
+            <FlatList
+              data={filteredUsers}
+              keyExtractor={(u) => u.email}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#F0B90B" />}
+              contentContainerStyle={{ padding: 16, gap: 8 }}
+              ListEmptyComponent={
+                <Text style={{ color: "#5E6673", textAlign: "center", marginTop: 40 }}>
+                  {filter ? "Tidak ada email yang cocok." : "Belum ada user yang login."}
+                </Text>
+              }
+              renderItem={({ item }) => (
+                <View style={styles.userRow}>
+                  <View style={styles.userAvatar}>
+                    <Ionicons name="checkmark-circle" size={20} color="#0ECB81" />
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={styles.userEmail} numberOfLines={1}>{item.email}</Text>
+                    <Text style={styles.userMeta}>
+                      Login {item.login_count}× · {timeAgo(item.last_seen)}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => generateForUser(item.email)}
+                    style={styles.userGenBtn}
+                    testID={`gen-for-${item.email}`}
+                  >
+                    <Ionicons name="key" size={14} color="#F0B90B" />
+                  </TouchableOpacity>
+                </View>
+              )}
+            />
+          )}
+        </View>
+      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#0B0E11" },
-  header: { padding: 24, alignItems: "center" },
+  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 14 },
   headerIcon: {
-    width: 56, height: 56, borderRadius: 28,
+    width: 44, height: 44, borderRadius: 22,
     backgroundColor: "#F0B90B22", alignItems: "center", justifyContent: "center",
     borderWidth: 1, borderColor: "#F0B90B",
   },
-  title: { fontSize: 22, fontWeight: "700", color: "#EAECEF", marginTop: 10 },
-  subtitle: { fontSize: 13, color: "#848E9C", marginTop: 2 },
-  warn: { fontSize: 10, color: "#F6465D", marginTop: 12, letterSpacing: 0.5 },
+  title: { fontSize: 18, fontWeight: "700", color: "#EAECEF" },
+  subtitle: { fontSize: 11, color: "#848E9C", marginTop: 2 },
+  tabs: { flexDirection: "row", borderBottomWidth: 1, borderColor: "#2B3139", paddingHorizontal: 16 },
+  tab: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    paddingVertical: 12, borderBottomWidth: 2, borderColor: "transparent",
+  },
+  tabActive: { borderColor: "#F0B90B" },
+  tabText: { fontSize: 11, fontWeight: "700", letterSpacing: 0.6 },
   card: {
-    marginHorizontal: 16, padding: 16, borderRadius: 14,
+    marginHorizontal: 16, marginTop: 12, padding: 16, borderRadius: 14,
     backgroundColor: "#181A20", borderWidth: 1, borderColor: "#2B3139",
   },
   label: { fontSize: 10, color: "#848E9C", letterSpacing: 0.7, marginBottom: 6 },
   input: {
     height: 46, borderRadius: 10, borderWidth: 1, borderColor: "#2B3139",
-    backgroundColor: "#1E2329", color: "#EAECEF",
-    paddingHorizontal: 12, fontSize: 14,
+    backgroundColor: "#1E2329", color: "#EAECEF", paddingHorizontal: 12, fontSize: 14,
   },
   error: { color: "#F6465D", fontSize: 12, marginTop: 8 },
   genBtn: {
@@ -195,12 +304,26 @@ const styles = StyleSheet.create({
   },
   copyBtnText: { color: "#EAECEF", fontSize: 12, fontWeight: "700" },
   copied: { color: "#0ECB81", fontSize: 11, textAlign: "center", marginTop: 8 },
-  histRow: {
-    flexDirection: "row", alignItems: "center",
-    paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: "#2B3139",
+  searchBar: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    marginHorizontal: 16, marginTop: 12, paddingHorizontal: 12,
+    height: 40, borderRadius: 10, borderWidth: 1, borderColor: "#2B3139", backgroundColor: "#181A20",
   },
-  histEmail: { color: "#EAECEF", fontSize: 13, fontWeight: "600" },
-  histTime: { color: "#5E6673", fontSize: 10, marginTop: 2 },
-  histCode: { color: "#F0B90B", fontSize: 12, fontWeight: "700", fontVariant: ["tabular-nums"] },
-  footer: { color: "#5E6673", fontSize: 10, textAlign: "center", marginTop: 18, paddingHorizontal: 24, lineHeight: 14 },
+  searchInput: { flex: 1, color: "#EAECEF", fontSize: 13 },
+  userRow: {
+    flexDirection: "row", alignItems: "center",
+    padding: 12, borderRadius: 10, borderWidth: 1,
+    borderColor: "#2B3139", backgroundColor: "#181A20",
+  },
+  userAvatar: {
+    width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center",
+    backgroundColor: "#0ECB8122",
+  },
+  userEmail: { color: "#EAECEF", fontSize: 13, fontWeight: "600" },
+  userMeta: { color: "#848E9C", fontSize: 10, marginTop: 2 },
+  userGenBtn: {
+    width: 34, height: 34, borderRadius: 8,
+    backgroundColor: "#F0B90B22", borderWidth: 1, borderColor: "#F0B90B",
+    alignItems: "center", justifyContent: "center",
+  },
 });
