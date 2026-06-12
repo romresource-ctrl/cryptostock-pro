@@ -1,5 +1,5 @@
 /**
- * Backend API client for AITrade Pro.
+ * Backend API client for KevinAI Pro.
  */
 const RAW = process.env.EXPO_PUBLIC_BACKEND_URL ?? "";
 export const API_BASE = `${RAW.replace(/\/+$/, "")}/api`;

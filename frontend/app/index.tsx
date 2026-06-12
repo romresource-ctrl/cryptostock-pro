@@ -262,7 +262,7 @@ export default function Dashboard() {
       {/* Header */}
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
-          <Text style={[styles.appTitle, { color: colors.textPrimary }]}>AITrade Pro</Text>
+          <Text style={[styles.appTitle, { color: colors.textPrimary }]}>KevinAI Pro</Text>
           <Text style={[styles.appSub, { color: colors.textMuted }]} numberOfLines={1}>
             {activeName} • {lastUpdate ? `update ${lastUpdate}` : "memuat…"}
           </Text>
