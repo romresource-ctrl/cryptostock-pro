@@ -18,7 +18,7 @@ type Props = {
   onLogin: () => void;
 };
 
-const CONTACT_EMAIL = "kevinAIipro@gmail.com";
+const CONTACT_EMAIL = "kevinAIpro@gmail.com";
 const CONTACT_WA = "6282186597571";
 
 export default function VipModal({ visible, onClose, onLogin }: Props) {
