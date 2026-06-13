@@ -107,13 +107,18 @@ function AssetCard({
           <Text style={[styles.confidenceVal, { color: sig.fg }]}>{asset.confidence}%</Text>
         </View>
       </View>
-      {wr !== null && (
+      {wr !== null ? (
         <View style={[styles.wrRow, { borderTopColor: colors.border }]} testID={`wr-badge-${market}-${asset.symbol}`}>
           <Text style={[styles.wrLabel, { color: colors.textMuted }]}>WR 30d</Text>
           <Text style={[styles.wrVal, { color: wrCol }]}>
             {wr.toFixed(0)}%
             <Text style={[styles.wrSub, { color: colors.textMuted }]}> · {asset.track_record.n_30d}</Text>
           </Text>
+        </View>
+      ) : (
+        <View style={[styles.wrRow, { borderTopColor: colors.border }]} testID={`wr-empty-${market}-${asset.symbol}`}>
+          <Text style={[styles.wrLabel, { color: colors.textMuted }]}>WR 30d</Text>
+          <Text style={[styles.wrVal, { color: colors.textMuted }]}>—</Text>
         </View>
       )}
     </TouchableOpacity>
