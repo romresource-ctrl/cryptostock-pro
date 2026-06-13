@@ -18,3 +18,11 @@ export async function fetchLoggedUsers(): Promise<LoggedUser[]> {
   const data = (await res.json()) as { total: number; users: LoggedUser[] };
   return data.users;
 }
+
+export async function revokeUser(email: string): Promise<void> {
+  const res = await fetch(`${BACKEND_URL}/api/admin/users/${encodeURIComponent(email)}`, {
+    method: "DELETE",
+    headers: { "X-Admin-Token": ADMIN_TOKEN },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}

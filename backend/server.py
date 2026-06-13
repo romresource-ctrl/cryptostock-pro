@@ -684,6 +684,24 @@ async def admin_list_users(x_admin_token: str | None = Header(default=None)) -> 
     return LoggedUsersResponse(total=len(docs), users=docs)
 
 
+@api.delete("/admin/users/{email}")
+async def admin_revoke_user(email: str, x_admin_token: str | None = Header(default=None)) -> dict:
+    """Revoke a user — removes them from the logged_users collection.
+
+    NOTE: This does NOT prevent re-login with the same code. To permanently
+    revoke an account you must also rotate UNLOCK_SECRET, which invalidates
+    all codes globally.
+    """
+    expected = os.environ.get("ADMIN_TOKEN", "")
+    if not expected or x_admin_token != expected:
+        raise HTTPException(403, "Forbidden")
+    target = email.strip().lower()
+    res = await db.logged_users.delete_one({"_id": target})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "User not found")
+    return {"ok": True, "revoked": target}
+
+
 app.include_router(api)
 app.add_middleware(
     CORSMiddleware,

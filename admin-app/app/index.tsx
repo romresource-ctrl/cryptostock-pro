@@ -108,6 +108,19 @@ export default function AdminScreen() {
     setCode(await generateUnlockCode(em));
   };
 
+  const [revoking, setRevoking] = useState<string | null>(null);
+  const doRevoke = async (em: string) => {
+    setRevoking(em);
+    try {
+      await revokeUser(em);
+      setUsers((prev) => prev.filter((u) => u.email !== em));
+    } catch (e) {
+      setUsersError((e as Error).message);
+    } finally {
+      setRevoking(null);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>
       <View style={styles.header}>
@@ -245,6 +258,18 @@ export default function AdminScreen() {
                   >
                     <Ionicons name="key" size={14} color="#F0B90B" />
                   </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => doRevoke(item.email)}
+                    disabled={revoking === item.email}
+                    style={styles.userRevokeBtn}
+                    testID={`revoke-${item.email}`}
+                  >
+                    {revoking === item.email ? (
+                      <ActivityIndicator color="#F6465D" size="small" />
+                    ) : (
+                      <Ionicons name="trash-outline" size={14} color="#F6465D" />
+                    )}
+                  </TouchableOpacity>
                 </View>
               )}
             />
@@ -324,6 +349,11 @@ const styles = StyleSheet.create({
   userGenBtn: {
     width: 34, height: 34, borderRadius: 8,
     backgroundColor: "#F0B90B22", borderWidth: 1, borderColor: "#F0B90B",
+    alignItems: "center", justifyContent: "center",
+  },
+  userRevokeBtn: {
+    width: 34, height: 34, borderRadius: 8, marginLeft: 6,
+    backgroundColor: "#F6465D22", borderWidth: 1, borderColor: "#F6465D",
     alignItems: "center", justifyContent: "center",
   },
 });

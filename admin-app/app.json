@@ -1,13 +1,13 @@
 {
   "expo": {
-    "name": "KevinAI Admin",
-    "slug": "kevinai-admin",
+    "name": "UnlockKeyGen",
+    "slug": "unlockkeygen",
     "version": "1.0.0",
     "orientation": "portrait",
-    "scheme": "kevinai-admin",
+    "scheme": "unlockkeygen",
     "userInterfaceStyle": "dark",
     "android": {
-      "package": "com.kevinai.admin",
+      "package": "com.kevinai.unlockkeygen",
       "edgeToEdgeEnabled": true
     },
     "plugins": [
