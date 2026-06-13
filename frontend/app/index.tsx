@@ -17,6 +17,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "@/src/auth/AuthContext";
 import LoginModal from "@/src/components/LoginModal";
 import Sparkline from "@/src/components/Sparkline";
+import VipModal from "@/src/components/VipModal";
 import {
   TIMEFRAMES,
   type AssetSignal,
@@ -140,6 +141,7 @@ export default function Dashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<string>("");
   const [loginOpen, setLoginOpen] = useState(false);
+  const [vipOpen, setVipOpen] = useState(false);
   const [lockedToast, setLockedToast] = useState(false);
 
   const needCrypto = view === "crypto" || view === "both";
@@ -186,9 +188,7 @@ export default function Dashboard() {
 
   const handleAssetPress = (a: AssetSignal) => {
     if (!isUnlocked) {
-      setLockedToast(true);
-      setTimeout(() => setLockedToast(false), 2500);
-      setLoginOpen(true);
+      setVipOpen(true);
       return;
     }
     router.push(`/asset/${a.market}/${a.symbol}?timeframe=${timeframe}` as never);
@@ -376,6 +376,11 @@ export default function Dashboard() {
       )}
 
       <LoginModal visible={loginOpen} onClose={() => setLoginOpen(false)} />
+      <VipModal
+        visible={vipOpen}
+        onClose={() => setVipOpen(false)}
+        onLogin={() => setLoginOpen(true)}
+      />
     </SafeAreaView>
   );
 }
@@ -486,7 +491,7 @@ const styles = StyleSheet.create({
   columnCount: { fontSize: 11, fontWeight: "500" },
   fullPanel: { flex: 1, borderRadius: 12, paddingHorizontal: 8, paddingTop: 8, marginHorizontal: 8 },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 8, paddingTop: 8, paddingBottom: 24 },
-  card: { borderWidth: 1, borderRadius: 10, padding: 10, marginTop: 8, position: "relative" },
+  card: { borderWidth: 1, borderRadius: 10, padding: 10, marginTop: 8, position: "relative", minHeight: 132, justifyContent: "space-between" },
   cardTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
   ticker: { fontSize: 14, fontWeight: "700", letterSpacing: 0.4, flexShrink: 1 },
   signalPill: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
