@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -53,6 +54,58 @@ from track_record import (  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s | %(message)s")
 logger = logging.getLogger("aitrade")
+
+# ---- Dashboard in-memory cache (TTL) ----
+# Caches expensive batch snapshots (Binance & Yahoo Finance) and track-record summaries
+# to avoid hammering upstream APIs on every dashboard refresh.
+import asyncio  # noqa: E402
+
+DASHBOARD_CACHE_TTL = float(os.environ.get("DASHBOARD_CACHE_TTL_SEC", "45"))
+_snapshot_cache: dict[str, tuple[float, list[dict]]] = {}
+_snapshot_locks: dict[str, asyncio.Lock] = {}
+_tr_cache: dict[str, tuple[float, dict]] = {}
+_tr_locks: dict[str, asyncio.Lock] = {}
+
+
+def _cache_key_snap(market: str, symbols: list[str], timeframe: str) -> str:
+    return f"{market}|{timeframe}|{','.join(symbols)}"
+
+
+def _cache_key_tr(market: str, symbols: list[str]) -> str:
+    return f"{market}|{','.join(sorted(symbols))}"
+
+
+async def _get_snapshots_cached(market: str, symbols: list[str], timeframe: str) -> list[dict]:
+    key = _cache_key_snap(market, symbols, timeframe)
+    now = time.time()
+    hit = _snapshot_cache.get(key)
+    if hit and now - hit[0] < DASHBOARD_CACHE_TTL:
+        return hit[1]
+    lock = _snapshot_locks.setdefault(key, asyncio.Lock())
+    async with lock:
+        hit = _snapshot_cache.get(key)
+        if hit and time.time() - hit[0] < DASHBOARD_CACHE_TTL:
+            return hit[1]
+        data = await get_batch(market, symbols, timeframe)
+        _snapshot_cache[key] = (time.time(), data)
+        return data
+
+
+async def _get_tr_summary_cached(market: str, symbols: list[str]) -> dict:
+    key = _cache_key_tr(market, symbols)
+    now = time.time()
+    hit = _tr_cache.get(key)
+    # Track record changes infrequently; cache twice as long.
+    if hit and now - hit[0] < DASHBOARD_CACHE_TTL * 2:
+        return hit[1]
+    lock = _tr_locks.setdefault(key, asyncio.Lock())
+    async with lock:
+        hit = _tr_cache.get(key)
+        if hit and time.time() - hit[0] < DASHBOARD_CACHE_TTL * 2:
+            return hit[1]
+        data = await get_track_record_summary(db, market, symbols)
+        _tr_cache[key] = (time.time(), data)
+        return data
 
 mongo_url = os.environ["MONGO_URL"]
 # Atlas-friendly connection: longer server-selection window, retry on transient errors.
@@ -516,8 +569,8 @@ async def dashboard(
             premium_threshold={"min_confidence": min_confidence, "min_wr": min_wr},
         )
 
-    snapshots = await get_batch(eff_market, symbols, timeframe)
-    tr_summary = await get_track_record_summary(db, eff_market, symbols)
+    snapshots = await _get_snapshots_cached(eff_market, symbols, timeframe)
+    tr_summary = await _get_tr_summary_cached(eff_market, symbols)
     by_sym = {s["symbol"]: s for s in snapshots}
     ordered = [by_sym[s] for s in symbols if s in by_sym]
     assets = [
