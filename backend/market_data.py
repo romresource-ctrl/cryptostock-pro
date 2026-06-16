@@ -12,16 +12,17 @@ import httpx
 # Crypto symbol -> Binance trading pair (USDT-quoted spot)
 CRYPTO_BINANCE_MAP: dict[str, str] = {
     "BTC": "BTCUSDT", "ETH": "ETHUSDT", "HYPE": "HYPEUSDT",
-    "USDT": "USDCUSDT",  # stablecoin; show vs USDC
+    "AVAX": "AVAXUSDT",
+    "USDT": "USDCUSDT",
     "ASTER": "ASTERUSDT", "BNB": "BNBUSDT", "XRP": "XRPUSDT",
     "SOL": "SOLUSDT", "DOGE": "DOGEUSDT", "PEPE": "PEPEUSDT",
     "SUI": "SUIUSDT", "ADA": "ADAUSDT", "TRX": "TRXUSDT",
     "LTC": "LTCUSDT", "LINK": "LINKUSDT", "HBAR": "HBARUSDT",
     "SHIB": "SHIBUSDT", "DOT": "DOTUSDT", "BCH": "BCHUSDT",
-    "SAND": "SANDUSDT", "ALGO": "ALGOUSDT", "XAUT": "PAXGUSDT",  # XAUT thin liquidity; PAXG proxy for tokenized gold
+    "SAND": "SANDUSDT", "ALGO": "ALGOUSDT", "XAUT": "PAXGUSDT",
 }
 
-# IDX ticker -> Yahoo Finance symbol
+# IDX (Indonesia) stocks -> Yahoo Finance with .JK suffix
 STOCK_YAHOO_MAP: dict[str, str] = {
     "BBCA": "BBCA.JK", "BBRI": "BBRI.JK", "BMRI": "BMRI.JK",
     "TPIA": "TPIA.JK", "ADRO": "ADRO.JK", "DEWA": "DEWA.JK",
@@ -29,6 +30,29 @@ STOCK_YAHOO_MAP: dict[str, str] = {
     "BRMS": "BRMS.JK", "PANI": "PANI.JK", "CBRE": "CBRE.JK",
     "RAJA": "RAJA.JK", "PTRO": "PTRO.JK", "INET": "INET.JK",
     "ANTM": "ANTM.JK", "MBMA": "MBMA.JK", "MDKA": "MDKA.JK",
+    "TLKM": "TLKM.JK", "AMMN": "AMMN.JK", "PGEO": "PGEO.JK",
+    "SIDO": "SIDO.JK", "UNVR": "UNVR.JK",
+}
+
+# ETFs -> Yahoo Finance (no suffix, listed in USD)
+ETF_YAHOO_MAP: dict[str, str] = {
+    "QQQ": "QQQ", "VOO": "VOO", "VTI": "VTI", "ARKK": "ARKK",
+    "SMH": "SMH", "TLT": "TLT", "IBIT": "IBIT", "FBTC": "FBTC",
+    "ARKB": "ARKB", "BITO": "BITO", "ETHE": "ETHE", "ETHA": "ETHA",
+    "SCHD": "SCHD", "VYM": "VYM", "INDA": "INDA", "EWJ": "EWJ",
+    "XLF": "XLF", "XLE": "XLE", "XBI": "XBI", "EIDO": "EIDO",
+    "BND": "BND", "LQD": "LQD",
+}
+
+# US stocks -> Yahoo Finance
+STOCK_US_YAHOO_MAP: dict[str, str] = {
+    "AAPL": "AAPL", "MSFT": "MSFT", "NVDA": "NVDA", "GOOGL": "GOOGL",
+    "AMZN": "AMZN", "TSLA": "TSLA", "META": "META", "SPCX": "SPCX",
+    "AMD": "AMD", "ASML": "ASML", "TSMC": "TSM", "ARM": "ARM",
+    "PLTR": "PLTR", "SNOW": "SNOW", "CRWD": "CRWD", "ADBE": "ADBE",
+    "AVGO": "AVGO", "ANET": "ANET", "DELL": "DELL", "MSTR": "MSTR",
+    "BABA": "BABA", "TCEHY": "TCEHY", "PDD": "PDD", "BIDU": "BIDU",
+    "JD": "JD", "SHOP": "SHOP", "NU": "NU", "AZN": "AZN",
 }
 
 # Map app timeframe -> (binance_interval, yahoo_range, yahoo_interval, candles_needed)
@@ -159,22 +183,77 @@ async def get_crypto_snapshot(symbol: str, timeframe: str) -> dict[str, Any] | N
     return {"symbol": symbol, "market": "crypto", "ticker": ticker or {}, "candles": klines}
 
 
-async def get_stock_snapshot(symbol: str, timeframe: str) -> dict[str, Any] | None:
+async def get_stock_snapshot(symbol: str, timeframe: str, market: str = "stock_id") -> dict[str, Any] | None:
     tf = TIMEFRAME_MAP.get(timeframe, TIMEFRAME_MAP["1h"])
+    if market == "stock_id":
+        sym_map = STOCK_YAHOO_MAP
+    elif market == "etf":
+        sym_map = ETF_YAHOO_MAP
+    elif market == "stock_us":
+        sym_map = STOCK_US_YAHOO_MAP
+    else:
+        sym_map = STOCK_YAHOO_MAP
+    yahoo_sym = sym_map.get(symbol)
+    if not yahoo_sym:
+        return None
     async with httpx.AsyncClient() as client:
-        data = await _fetch_yahoo_chart(client, symbol, tf["yahoo_range"], tf["yahoo_interval"])
+        data = await _fetch_yahoo_chart_by_symbol(client, yahoo_sym, tf["yahoo_range"], tf["yahoo_interval"])
     if not data:
         return None
-    return {"symbol": symbol, "market": "stock", "ticker": data["ticker"], "candles": data["candles"]}
+    return {"symbol": symbol, "market": market, "ticker": data["ticker"], "candles": data["candles"]}
+
+
+async def _fetch_yahoo_chart_by_symbol(client: httpx.AsyncClient, yahoo_sym: str, range_: str, interval: str) -> dict[str, Any] | None:
+    try:
+        r = await client.get(
+            f"{YAHOO_BASE}/v8/finance/chart/{yahoo_sym}",
+            params={"range": range_, "interval": interval, "includePrePost": "false"},
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=10.0,
+        )
+        r.raise_for_status()
+        data = r.json()
+        result = data["chart"]["result"][0]
+        meta = result.get("meta", {})
+        ts = result.get("timestamp", []) or []
+        quote = (result.get("indicators", {}).get("quote") or [{}])[0]
+        opens = quote.get("open") or []
+        highs = quote.get("high") or []
+        lows = quote.get("low") or []
+        closes = quote.get("close") or []
+        volumes = quote.get("volume") or []
+        candles: list[dict[str, float]] = []
+        for i, t in enumerate(ts):
+            o, hi, lo, c, v = opens[i], highs[i], lows[i], closes[i], volumes[i]
+            if None in (o, hi, lo, c):
+                continue
+            candles.append({
+                "t": int(t) * 1000, "open": float(o), "high": float(hi),
+                "low": float(lo), "close": float(c), "volume": float(v or 0),
+            })
+        last = candles[-1] if candles else None
+        prev_close = float(meta.get("chartPreviousClose") or (candles[-2]["close"] if len(candles) >= 2 else (last["close"] if last else 0)))
+        price = float(meta.get("regularMarketPrice") or (last["close"] if last else 0))
+        change_pct = ((price - prev_close) / prev_close * 100.0) if prev_close else 0.0
+        return {
+            "candles": candles,
+            "ticker": {
+                "price": price, "change_pct_24h": change_pct,
+                "volume_24h": float(meta.get("regularMarketVolume") or 0),
+                "high_24h": float(meta.get("regularMarketDayHigh") or (last["high"] if last else 0)),
+                "low_24h": float(meta.get("regularMarketDayLow") or (last["low"] if last else 0)),
+            },
+        }
+    except Exception:
+        return None
 
 
 async def get_batch(market: str, symbols: list[str], timeframe: str) -> list[dict[str, Any]]:
     """Fetch many symbols concurrently. Returns only successful results."""
     if market == "crypto":
-        fetcher = get_crypto_snapshot
+        results = await asyncio.gather(*[get_crypto_snapshot(s, timeframe) for s in symbols], return_exceptions=True)
     else:
-        fetcher = get_stock_snapshot
-    results = await asyncio.gather(*[fetcher(s, timeframe) for s in symbols], return_exceptions=True)
+        results = await asyncio.gather(*[get_stock_snapshot(s, timeframe, market) for s in symbols], return_exceptions=True)
     out: list[dict[str, Any]] = []
     for r in results:
         if isinstance(r, dict):

@@ -66,10 +66,16 @@ client = AsyncIOMotorClient(
 )
 db = client[os.environ["DB_NAME"]]
 
-DEFAULT_CRYPTO = ["BTC", "ETH", "HYPE", "USDT", "ASTER", "BNB", "XRP", "SOL", "DOGE", "PEPE",
+DEFAULT_CRYPTO = ["BTC", "ETH", "AVAX", "USDT", "ASTER", "BNB", "XRP", "SOL", "DOGE", "PEPE",
                   "SUI", "ADA", "TRX", "LTC", "LINK", "HBAR", "SHIB", "DOT", "BCH", "SAND", "ALGO", "XAUT"]
 DEFAULT_STOCKS = ["BBCA", "BBRI", "BMRI", "TPIA", "ADRO", "DEWA", "ASII", "EMTK", "ADMR",
-                  "BRMS", "PANI", "CBRE", "RAJA", "PTRO", "INET", "ANTM", "MBMA", "MDKA"]
+                  "BRMS", "PANI", "CBRE", "RAJA", "PTRO", "INET", "ANTM", "MBMA", "MDKA",
+                  "TLKM", "AMMN", "PGEO", "SIDO", "UNVR"]
+DEFAULT_ETF = ["QQQ", "VOO", "VTI", "ARKK", "SMH", "TLT", "IBIT", "FBTC", "ARKB", "BITO",
+               "ETHE", "ETHA", "SCHD", "VYM", "INDA", "EWJ", "XLF", "XLE", "XBI", "EIDO", "BND", "LQD"]
+DEFAULT_STOCK_US = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "TSLA", "META", "AMD", "ASML",
+                    "TSMC", "ARM", "PLTR", "SNOW", "CRWD", "ADBE", "AVGO", "ANET", "DELL",
+                    "MSTR", "BABA", "TCEHY", "PDD", "BIDU", "JD", "SHOP", "NU", "AZN", "SPCX"]
 
 # Default seed profiles for new installs
 DEFAULT_PROFILES = [
@@ -474,7 +480,7 @@ async def update_watchlist(payload: WatchlistPayload) -> WatchlistResponse:
 
 @api.get("/dashboard", response_model=DashboardResponse)
 async def dashboard(
-    market: Literal["crypto", "stock"] = Query("crypto"),
+    market: Literal["crypto", "stock", "etf", "stock_id", "stock_us"] = Query("crypto"),
     timeframe: str = Query("1h"),
     sort: Literal["default", "premium", "confidence", "wr"] = Query("default"),
     premium_only: bool = Query(False),
@@ -484,15 +490,21 @@ async def dashboard(
 ) -> DashboardResponse:
     if timeframe not in TIMEFRAME_MAP:
         raise HTTPException(400, f"Invalid timeframe. Use one of {TIMEFRAMES}")
+    # Backward-compat: "stock" -> "stock_id"
+    eff_market = "stock_id" if market == "stock" else market
 
     prof = await _get_active_profile()
     if full:
-        # Bypass profile filtering — show ALL default screened assets.
-        symbols = DEFAULT_CRYPTO if market == "crypto" else DEFAULT_STOCKS
+        symbols = {
+            "crypto": DEFAULT_CRYPTO,
+            "stock_id": DEFAULT_STOCKS,
+            "etf": DEFAULT_ETF,
+            "stock_us": DEFAULT_STOCK_US,
+        }.get(eff_market, [])
         profile_name = "Semua Aset"
         profile_id = "all"
     else:
-        symbols = prof.get("crypto") if market == "crypto" else prof.get("stocks")
+        symbols = prof.get("crypto") if eff_market == "crypto" else prof.get("stocks")
         symbols = symbols or []
         profile_id = prof["_id"]
         profile_name = prof.get("name", "Default")
@@ -504,8 +516,8 @@ async def dashboard(
             premium_threshold={"min_confidence": min_confidence, "min_wr": min_wr},
         )
 
-    snapshots = await get_batch(market, symbols, timeframe)
-    tr_summary = await get_track_record_summary(db, market, symbols)
+    snapshots = await get_batch(eff_market, symbols, timeframe)
+    tr_summary = await get_track_record_summary(db, eff_market, symbols)
     by_sym = {s["symbol"]: s for s in snapshots}
     ordered = [by_sym[s] for s in symbols if s in by_sym]
     assets = [
