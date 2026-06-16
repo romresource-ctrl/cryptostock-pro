@@ -30,7 +30,14 @@ import {
 import { useTheme } from "@/src/theme/ThemeContext";
 
 const REFRESH_INTERVAL_MS = 60_000;
-type ViewMode = "crypto" | "stock" | "both";
+type Category = Market;
+
+const CATEGORIES: { key: Category; label: string; icon: string }[] = [
+  { key: "crypto", label: "Crypto", icon: "logo-bitcoin" },
+  { key: "etf", label: "ETF", icon: "pie-chart" },
+  { key: "stock_id", label: "Saham IDX", icon: "trending-up" },
+  { key: "stock_us", label: "Saham US", icon: "globe" },
+];
 
 function signalColors(colors: ReturnType<typeof useTheme>["colors"], action: string) {
   if (action === "BUY") return { fg: colors.accentUp, bg: colors.accentUp + "26" };
@@ -131,46 +138,39 @@ export default function Dashboard() {
   const router = useRouter();
   const { isUnlocked, email, logout, loaded: authLoaded } = useAuth();
 
-  const [view, setView] = useState<ViewMode>("both");
+  const [view, setView] = useState<Category[]>(["crypto", "stock_id"]);
   const [timeframe, setTimeframe] = useState<Timeframe>("1h");
-  const [crypto, setCrypto] = useState<AssetSignal[]>([]);
-  const [stocks, setStocks] = useState<AssetSignal[]>([]);
+  const [data, setData] = useState<Record<Category, AssetSignal[]>>({ crypto: [], etf: [], stock_id: [], stock_us: [] });
   const [premiumCount, setPremiumCount] = useState(0);
-  const [loadingCrypto, setLoadingCrypto] = useState(true);
-  const [loadingStock, setLoadingStock] = useState(true);
+  const [loadingMap, setLoadingMap] = useState<Record<Category, boolean>>({ crypto: true, etf: false, stock_id: true, stock_us: false });
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<string>("");
   const [loginOpen, setLoginOpen] = useState(false);
   const [vipOpen, setVipOpen] = useState(false);
   const [lockedToast, setLockedToast] = useState(false);
 
-  const needCrypto = view === "crypto" || view === "both";
-  const needStock = view === "stock" || view === "both";
-
-  const load = useCallback(async (tf: Timeframe, v: ViewMode) => {
-    const wantCrypto = v === "crypto" || v === "both";
-    const wantStock = v === "stock" || v === "both";
-    if (wantCrypto) setLoadingCrypto(true);
-    if (wantStock) setLoadingStock(true);
+  const load = useCallback(async (tf: Timeframe, selected: Category[]) => {
+    const updates: Record<Category, boolean> = { crypto: false, etf: false, stock_id: false, stock_us: false };
+    selected.forEach((k) => { updates[k] = true; });
+    setLoadingMap(updates);
     try {
-      const calls: Promise<unknown>[] = [];
-      if (wantCrypto) calls.push(api.dashboard("crypto", tf, { full: true, sort: "premium" }));
-      else calls.push(Promise.resolve(null));
-      if (wantStock) calls.push(api.dashboard("stock", tf, { full: true, sort: "premium" }));
-      else calls.push(Promise.resolve(null));
-      const [c, s] = (await Promise.allSettled(calls)) as PromiseSettledResult<{ assets: AssetSignal[]; premium_count: number } | null>[];
+      const results = await Promise.allSettled(
+        selected.map((k) => api.dashboard(k, tf, { full: true, sort: "premium" })),
+      );
       let pCount = 0;
-      if (wantCrypto) {
-        if (c.status === "fulfilled" && c.value) { setCrypto(c.value.assets); pCount += c.value.premium_count; }
-      } else setCrypto([]);
-      if (wantStock) {
-        if (s.status === "fulfilled" && s.value) { setStocks(s.value.assets); pCount += s.value.premium_count; }
-      } else setStocks([]);
+      const next = { crypto: [], etf: [], stock_id: [], stock_us: [] } as Record<Category, AssetSignal[]>;
+      selected.forEach((k, i) => {
+        const r = results[i];
+        if (r.status === "fulfilled") {
+          next[k] = r.value.assets;
+          pCount += r.value.premium_count;
+        }
+      });
+      setData(next);
       setPremiumCount(pCount);
       setLastUpdate(new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
     } finally {
-      setLoadingCrypto(false);
-      setLoadingStock(false);
+      setLoadingMap({ crypto: false, etf: false, stock_id: false, stock_us: false });
     }
   }, []);
 
@@ -179,6 +179,19 @@ export default function Dashboard() {
     const id = setInterval(() => void load(timeframe, view), REFRESH_INTERVAL_MS);
     return () => clearInterval(id);
   }, [timeframe, view, load]);
+
+  const toggleCategory = (k: Category) => {
+    setView((prev) => {
+      if (prev.includes(k)) {
+        // Don't allow zero selection — keep at least 1
+        if (prev.length === 1) return prev;
+        return prev.filter((x) => x !== k);
+      }
+      // Max 2 selected
+      if (prev.length >= 2) return [prev[1], k];
+      return [...prev, k];
+    });
+  };
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -195,21 +208,16 @@ export default function Dashboard() {
   };
 
   const consensus = useMemo(() => {
-    const all = [...(needCrypto ? crypto : []), ...(needStock ? stocks : [])];
+    const all = view.flatMap((k) => data[k]);
     return {
       buy: all.filter((a) => a.action === "BUY").length,
       sell: all.filter((a) => a.action === "SELL").length,
       hold: all.filter((a) => a.action === "HOLD").length,
     };
-  }, [crypto, stocks, needCrypto, needStock]);
-
-  const viewPills: { key: ViewMode; label: string; icon: string }[] = [
-    { key: "crypto", label: "Crypto", icon: "logo-bitcoin" },
-    { key: "stock", label: "Saham", icon: "trending-up" },
-    { key: "both", label: "Crypto + Saham", icon: "grid" },
-  ];
+  }, [data, view]);
 
   const SCREEN_W = Dimensions.get("window").width;
+  const selectedCount = view.length;
 
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: colors.background }]} edges={["top"]}>
@@ -262,20 +270,20 @@ export default function Dashboard() {
         </View>
       </View>
 
-      {/* View mode pills */}
+      {/* Category chips (multi-select, max 2) */}
       <View style={styles.viewRow}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ paddingHorizontal: 16, gap: 8, alignItems: "center" }}
         >
-          {viewPills.map((vp) => {
-            const active = vp.key === view;
+          {CATEGORIES.map((vp) => {
+            const active = view.includes(vp.key);
             return (
               <TouchableOpacity
                 key={vp.key}
-                onPress={() => setView(vp.key)}
-                testID={`view-${vp.key}`}
+                onPress={() => toggleCategory(vp.key)}
+                testID={`category-${vp.key}`}
                 style={[
                   styles.viewPill,
                   {
@@ -286,6 +294,11 @@ export default function Dashboard() {
               >
                 <Ionicons name={vp.icon as never} size={14} color={active ? "#fff" : colors.textSecondary} />
                 <Text style={[styles.viewPillText, { color: active ? "#fff" : colors.textSecondary }]}>{vp.label}</Text>
+                {active && (
+                  <View style={styles.activeOrder}>
+                    <Text style={styles.activeOrderText}>{view.indexOf(vp.key) + 1}</Text>
+                  </View>
+                )}
               </TouchableOpacity>
             );
           })}
@@ -353,15 +366,39 @@ export default function Dashboard() {
         contentContainerStyle={styles.dualScroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accentBlue} />}
       >
-        {view === "both" ? (
+        {selectedCount === 2 ? (
           <View style={styles.dualRow}>
-            <ListColumn title="CRYPTO" market="crypto" data={crypto} loading={loadingCrypto} onPress={handleAssetPress} locked={!isUnlocked} />
-            <ListColumn title="SAHAM" market="stock" data={stocks} loading={loadingStock} onPress={handleAssetPress} locked={!isUnlocked} />
+            {view.map((k) => {
+              const catLabel = CATEGORIES.find((c) => c.key === k)?.label.toUpperCase() ?? k;
+              return (
+                <ListColumn
+                  key={k}
+                  title={catLabel}
+                  market={k}
+                  data={data[k]}
+                  loading={loadingMap[k]}
+                  onPress={handleAssetPress}
+                  locked={!isUnlocked}
+                />
+              );
+            })}
           </View>
-        ) : view === "crypto" ? (
-          <FullList title="CRYPTO" market="crypto" data={crypto} loading={loadingCrypto} onPress={handleAssetPress} locked={!isUnlocked} screenW={SCREEN_W} />
         ) : (
-          <FullList title="SAHAM" market="stock" data={stocks} loading={loadingStock} onPress={handleAssetPress} locked={!isUnlocked} screenW={SCREEN_W} />
+          (() => {
+            const k = view[0];
+            const catLabel = CATEGORIES.find((c) => c.key === k)?.label.toUpperCase() ?? k;
+            return (
+              <FullList
+                title={catLabel}
+                market={k}
+                data={data[k]}
+                loading={loadingMap[k]}
+                onPress={handleAssetPress}
+                locked={!isUnlocked}
+                screenW={SCREEN_W}
+              />
+            );
+          })()
         )}
       </ScrollView>
 
@@ -466,6 +503,12 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", gap: 6,
   },
   viewPillText: { fontSize: 12, fontWeight: "700", letterSpacing: 0.4 },
+  activeOrder: {
+    minWidth: 16, height: 16, paddingHorizontal: 4, borderRadius: 8,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    alignItems: "center", justifyContent: "center", marginLeft: 2,
+  },
+  activeOrderText: { fontSize: 9, fontWeight: "800", color: "#fff" },
   consensusStrip: {
     marginHorizontal: 16, marginTop: 4, borderRadius: 12, borderWidth: 1,
     flexDirection: "row", paddingVertical: 10,

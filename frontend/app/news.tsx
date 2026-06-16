@@ -126,12 +126,14 @@ export default function NewsScreen() {
   const markets: { key: MarketFilter; label: string }[] = [
     { key: "all", label: "SEMUA" },
     { key: "crypto", label: "CRYPTO" },
-    { key: "stock", label: "SAHAM" },
+    { key: "etf", label: "ETF" },
+    { key: "stock_id", label: "SAHAM IDX" },
+    { key: "stock_us", label: "SAHAM US" },
   ];
 
   const symbolChips: { symbol: string; market: Market }[] = [
     ...watchlistCrypto.map((s) => ({ symbol: s, market: "crypto" as const })),
-    ...watchlistStocks.map((s) => ({ symbol: s, market: "stock" as const })),
+    ...watchlistStocks.map((s) => ({ symbol: s, market: "stock_id" as const })),
   ].filter((c) => {
     if (marketFilter === "all") return true;
     return c.market === marketFilter;

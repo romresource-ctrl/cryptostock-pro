@@ -549,17 +549,25 @@ async def dashboard(
 # -------- Asset detail --------
 
 @api.get("/asset/{market}/{symbol}/chart", response_model=ChartResponse)
-async def asset_chart(market: Literal["crypto", "stock"], symbol: str, timeframe: str = "1h") -> ChartResponse:
+async def asset_chart(
+    market: Literal["crypto", "stock", "etf", "stock_id", "stock_us"],
+    symbol: str,
+    timeframe: str = "1h",
+) -> ChartResponse:
     if timeframe not in TIMEFRAME_MAP:
         raise HTTPException(400, "Invalid timeframe")
+    eff_market = "stock_id" if market == "stock" else market
     symbol = symbol.upper()
-    snap = await (get_crypto_snapshot(symbol, timeframe) if market == "crypto"
-                  else get_stock_snapshot(symbol, timeframe))
+    snap = await (
+        get_crypto_snapshot(symbol, timeframe)
+        if eff_market == "crypto"
+        else get_stock_snapshot(symbol, timeframe, market=eff_market)
+    )
     if not snap:
         raise HTTPException(404, "Symbol not found or upstream data unavailable")
-    sig = compute_signal(snap.get("candles", []), market)
+    sig = compute_signal(snap.get("candles", []), eff_market)
     return ChartResponse(
-        symbol=symbol, market=market, timeframe=timeframe,
+        symbol=symbol, market=eff_market, timeframe=timeframe,
         ticker=snap.get("ticker", {}) or {},
         candles=snap.get("candles", []),
         signal=sig,
@@ -567,22 +575,30 @@ async def asset_chart(market: Literal["crypto", "stock"], symbol: str, timeframe
 
 
 @api.post("/asset/{market}/{symbol}/analyze", response_model=AnalyzeResponse)
-async def asset_analyze(market: Literal["crypto", "stock"], symbol: str, timeframe: str = "1h") -> AnalyzeResponse:
+async def asset_analyze(
+    market: Literal["crypto", "stock", "etf", "stock_id", "stock_us"],
+    symbol: str,
+    timeframe: str = "1h",
+) -> AnalyzeResponse:
     if timeframe not in TIMEFRAME_MAP:
         raise HTTPException(400, "Invalid timeframe")
+    eff_market = "stock_id" if market == "stock" else market
     symbol = symbol.upper()
-    snap = await (get_crypto_snapshot(symbol, timeframe) if market == "crypto"
-                  else get_stock_snapshot(symbol, timeframe))
+    snap = await (
+        get_crypto_snapshot(symbol, timeframe)
+        if eff_market == "crypto"
+        else get_stock_snapshot(symbol, timeframe, market=eff_market)
+    )
     if not snap:
         raise HTTPException(404, "Symbol not found or upstream data unavailable")
     candles = snap.get("candles", [])
     ticker = snap.get("ticker", {}) or {}
     price = ticker.get("price") or (candles[-1]["close"] if candles else None)
-    technical = compute_signal(candles, market)
+    technical = compute_signal(candles, eff_market)
     if price is None:
         raise HTTPException(503, "Price unavailable")
-    news = await get_news_for_symbol(symbol, market, limit=8)
-    result = await ensemble_analyze(symbol, market, timeframe, technical, float(price), news=news)
+    news = await get_news_for_symbol(symbol, eff_market, limit=8)
+    result = await ensemble_analyze(symbol, eff_market, timeframe, technical, float(price), news=news)
     consensus = result["consensus"]
 
     # Record signal into history for backtesting
@@ -591,7 +607,7 @@ async def asset_analyze(market: Literal["crypto", "stock"], symbol: str, timefra
         await record_signal(
             db,
             profile_id=prof["_id"],
-            market=market,
+            market=eff_market,
             symbol=symbol,
             timeframe=timeframe,
             action=consensus.get("action", "HOLD"),
@@ -604,10 +620,10 @@ async def asset_analyze(market: Literal["crypto", "stock"], symbol: str, timefra
 
     # Cache last analysis
     await db.analyses.replace_one(
-        {"_id": f"{market}-{symbol}-{timeframe}"},
+        {"_id": f"{eff_market}-{symbol}-{timeframe}"},
         {
-            "_id": f"{market}-{symbol}-{timeframe}",
-            "symbol": symbol, "market": market, "timeframe": timeframe,
+            "_id": f"{eff_market}-{symbol}-{timeframe}",
+            "symbol": symbol, "market": eff_market, "timeframe": timeframe,
             "price": float(price), "technical": technical,
             "consensus": consensus, "models": result["models"],
             "news_used": news,
@@ -616,7 +632,7 @@ async def asset_analyze(market: Literal["crypto", "stock"], symbol: str, timefra
         upsert=True,
     )
     return AnalyzeResponse(
-        symbol=symbol, market=market, timeframe=timeframe,
+        symbol=symbol, market=eff_market, timeframe=timeframe,
         price=float(price), technical=technical,
         consensus=consensus, models=result["models"],
         news_used=news,
@@ -625,22 +641,35 @@ async def asset_analyze(market: Literal["crypto", "stock"], symbol: str, timefra
 
 
 @api.get("/asset/{market}/{symbol}/track-record")
-async def asset_track_record(market: Literal["crypto", "stock"], symbol: str) -> dict:
-    return await get_track_record(db, market, symbol.upper())
+async def asset_track_record(
+    market: Literal["crypto", "stock", "etf", "stock_id", "stock_us"],
+    symbol: str,
+) -> dict:
+    eff_market = "stock_id" if market == "stock" else market
+    return await get_track_record(db, eff_market, symbol.upper())
 
 
 # -------- News --------
 
 @api.get("/news", response_model=NewsResponse)
-async def news_global(market: Literal["crypto", "stock", "all"] = Query("all"), limit: int = Query(40, ge=1, le=80)) -> NewsResponse:
-    items = await get_news(market, limit=limit)
-    return NewsResponse(market=market, items=[NewsItem(**i) for i in items], fetched_at=_now_iso())
+async def news_global(
+    market: Literal["crypto", "stock", "etf", "stock_id", "stock_us", "all"] = Query("all"),
+    limit: int = Query(40, ge=1, le=80),
+) -> NewsResponse:
+    eff_market = "stock_id" if market == "stock" else market
+    items = await get_news(eff_market, limit=limit)
+    return NewsResponse(market=eff_market, items=[NewsItem(**i) for i in items], fetched_at=_now_iso())
 
 
 @api.get("/asset/{market}/{symbol}/news", response_model=NewsResponse)
-async def news_for_asset(market: Literal["crypto", "stock"], symbol: str, limit: int = Query(10, ge=1, le=30)) -> NewsResponse:
-    items = await get_news_for_symbol(symbol.upper(), market, limit=limit)
-    return NewsResponse(market=market, items=[NewsItem(**i) for i in items], fetched_at=_now_iso())
+async def news_for_asset(
+    market: Literal["crypto", "stock", "etf", "stock_id", "stock_us"],
+    symbol: str,
+    limit: int = Query(10, ge=1, le=30),
+) -> NewsResponse:
+    eff_market = "stock_id" if market == "stock" else market
+    items = await get_news_for_symbol(symbol.upper(), eff_market, limit=limit)
+    return NewsResponse(market=eff_market, items=[NewsItem(**i) for i in items], fetched_at=_now_iso())
 
 
 # -------- App wiring --------

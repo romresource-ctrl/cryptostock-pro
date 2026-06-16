@@ -64,7 +64,8 @@ export default function AssetDetail() {
   const { colors } = useTheme();
   const router = useRouter();
   const params = useLocalSearchParams<{ market: string; symbol: string; timeframe?: string }>();
-  const market = (params.market === "stock" ? "stock" : "crypto") as Market;
+  const validMarkets = ["crypto", "etf", "stock_id", "stock_us"] as const;
+  const market = (validMarkets.includes(params.market as Market) ? params.market : "crypto") as Market;
   const symbol = String(params.symbol || "").toUpperCase();
   const initialTf = (TIMEFRAMES.includes(params.timeframe as Timeframe) ? params.timeframe : "1h") as Timeframe;
 
@@ -147,7 +148,12 @@ export default function AssetDetail() {
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={[styles.symbolTitle, { color: colors.textPrimary }]}>
-            {symbol} <Text style={[styles.marketBadge, { color: colors.textMuted }]}>{market === "crypto" ? "CRYPTO" : "SAHAM"}</Text>
+            {symbol} <Text style={[styles.marketBadge, { color: colors.textMuted }]}>{
+              market === "crypto" ? "CRYPTO" :
+              market === "etf" ? "ETF" :
+              market === "stock_us" ? "SAHAM US" :
+              "SAHAM IDX"
+            }</Text>
           </Text>
           <Text style={[styles.priceBig, { color: colors.textPrimary }]}>
             {formatPrice(ticker.price ?? null, market)}{" "}

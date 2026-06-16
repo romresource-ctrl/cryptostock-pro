@@ -4,7 +4,7 @@
 const RAW = process.env.EXPO_PUBLIC_BACKEND_URL ?? "";
 export const API_BASE = `${RAW.replace(/\/+$/, "")}/api`;
 
-export type Market = "crypto" | "stock";
+export type Market = "crypto" | "etf" | "stock_id" | "stock_us";
 export type Timeframe = "15m" | "30m" | "1h" | "3h" | "6h" | "12h" | "18h" | "24h";
 
 export interface TrackRecordMini {
@@ -230,8 +230,11 @@ export const TIMEFRAMES: Timeframe[] = ["15m", "30m", "1h", "3h", "6h", "12h", "
 
 export function formatPrice(v: number | null | undefined, market: Market): string {
   if (v === null || v === undefined || isNaN(v)) return "—";
-  if (market === "stock") {
+  if (market === "stock_id") {
     return v.toLocaleString("id-ID", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  }
+  if (market === "stock_us" || market === "etf") {
+    return v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
   if (v >= 1000) return v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   if (v >= 1) return v.toFixed(3);
