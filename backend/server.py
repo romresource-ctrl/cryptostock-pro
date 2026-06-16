@@ -119,7 +119,7 @@ client = AsyncIOMotorClient(
 )
 db = client[os.environ["DB_NAME"]]
 
-DEFAULT_CRYPTO = ["BTC", "ETH", "AVAX", "USDT", "ASTER", "BNB", "XRP", "SOL", "DOGE", "PEPE",
+DEFAULT_CRYPTO = ["BTC", "ETH", "HYPE", "AVAX", "USDT", "ASTER", "BNB", "XRP", "SOL", "DOGE", "PEPE",
                   "SUI", "ADA", "TRX", "LTC", "LINK", "HBAR", "SHIB", "DOT", "BCH", "SAND", "ALGO", "XAUT"]
 DEFAULT_STOCKS = ["BBCA", "BBRI", "BMRI", "TPIA", "ADRO", "DEWA", "ASII", "EMTK", "ADMR",
                   "BRMS", "PANI", "CBRE", "RAJA", "PTRO", "INET", "ANTM", "MBMA", "MDKA",

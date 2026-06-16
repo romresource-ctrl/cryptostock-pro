@@ -69,6 +69,78 @@ TIMEFRAME_MAP: dict[str, dict[str, Any]] = {
 
 BINANCE_BASE = "https://data-api.binance.vision"
 YAHOO_BASE = "https://query1.finance.yahoo.com"
+OKX_BASE = "https://www.okx.com"
+
+# Symbols that should be fetched from OKX instead of Binance
+# (e.g. HYPE / Hyperliquid is not listed on Binance spot API).
+CRYPTO_OKX_MAP: dict[str, str] = {
+    "HYPE": "HYPE-USDT",
+}
+
+# OKX timeframe mapping (OKX uses uppercase H/D, lowercase m for minutes)
+OKX_BAR_MAP: dict[str, str] = {
+    "15m": "15m", "30m": "30m", "1h": "1H", "2h": "2H", "6h": "6H",
+    "12h": "12H", "1d": "1D",
+}
+
+
+async def _fetch_okx_klines(client: httpx.AsyncClient, symbol: str, interval: str, limit: int) -> list[dict[str, float]]:
+    pair = CRYPTO_OKX_MAP.get(symbol)
+    if not pair:
+        return []
+    bar = OKX_BAR_MAP.get(interval, "1H")
+    try:
+        r = await client.get(
+            f"{OKX_BASE}/api/v5/market/candles",
+            params={"instId": pair, "bar": bar, "limit": str(min(limit, 300))},
+            timeout=10.0,
+        )
+        r.raise_for_status()
+        data = r.json()
+        rows = data.get("data") or []
+        # OKX returns newest-first; reverse to oldest-first for charting parity with Binance.
+        rows = list(reversed(rows))
+        return [
+            {
+                "t": int(k[0]),
+                "open": float(k[1]),
+                "high": float(k[2]),
+                "low": float(k[3]),
+                "close": float(k[4]),
+                "volume": float(k[5]),
+            }
+            for k in rows
+        ]
+    except Exception:
+        return []
+
+
+async def _fetch_okx_ticker(client: httpx.AsyncClient, symbol: str) -> dict[str, float] | None:
+    pair = CRYPTO_OKX_MAP.get(symbol)
+    if not pair:
+        return None
+    try:
+        r = await client.get(
+            f"{OKX_BASE}/api/v5/market/ticker",
+            params={"instId": pair},
+            timeout=8.0,
+        )
+        r.raise_for_status()
+        d = (r.json().get("data") or [None])[0]
+        if not d:
+            return None
+        last = float(d["last"])
+        open24 = float(d.get("open24h") or last)
+        change_pct = ((last - open24) / open24 * 100.0) if open24 else 0.0
+        return {
+            "price": last,
+            "change_pct_24h": change_pct,
+            "volume_24h": float(d.get("volCcy24h") or 0.0),
+            "high_24h": float(d.get("high24h") or 0.0),
+            "low_24h": float(d.get("low24h") or 0.0),
+        }
+    except Exception:
+        return None
 
 
 async def _fetch_binance_klines(client: httpx.AsyncClient, symbol: str, interval: str, limit: int) -> list[dict[str, float]]:
@@ -173,6 +245,16 @@ async def _fetch_yahoo_chart(client: httpx.AsyncClient, symbol: str, range_: str
 
 async def get_crypto_snapshot(symbol: str, timeframe: str) -> dict[str, Any] | None:
     tf = TIMEFRAME_MAP.get(timeframe, TIMEFRAME_MAP["1h"])
+    # Route to OKX for symbols not listed on Binance public API
+    if symbol in CRYPTO_OKX_MAP:
+        async with httpx.AsyncClient() as client:
+            ticker, klines = await asyncio.gather(
+                _fetch_okx_ticker(client, symbol),
+                _fetch_okx_klines(client, symbol, tf["binance"], tf["limit"]),
+            )
+        if not ticker and not klines:
+            return None
+        return {"symbol": symbol, "market": "crypto", "ticker": ticker or {}, "candles": klines}
     async with httpx.AsyncClient() as client:
         ticker, klines = await asyncio.gather(
             _fetch_binance_ticker(client, symbol),
