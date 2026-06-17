@@ -224,6 +224,9 @@ export const api = {
     get<NewsResponse>(`/news?market=${market}&limit=${limit}&lang=${lang}`),
   newsForAsset: (market: Market, symbol: string, limit = 10, lang: "id" | "en" = "id") =>
     get<NewsResponse>(`/asset/${market}/${symbol}/news?limit=${limit}&lang=${lang}`),
+
+  translate: (texts: string[], target_lang: "en" | "id" = "en") =>
+    send<{ target_lang: string; items: string[] }>(`/translate`, "POST", { texts, target_lang }),
 };
 
 export const TIMEFRAMES: Timeframe[] = ["15m", "30m", "1h", "3h", "6h", "12h", "18h", "24h"];

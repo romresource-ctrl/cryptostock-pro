@@ -63,7 +63,7 @@ function ModelChip({ model }: { model: ModelResult }) {
 
 export default function AssetDetail() {
   const { colors } = useTheme();
-  const { lang } = useI18n();
+  const { lang, t } = useI18n();
   const router = useRouter();
   const params = useLocalSearchParams<{ market: string; symbol: string; timeframe?: string }>();
   const validMarkets = ["crypto", "etf", "stock_id", "stock_us"] as const;
@@ -78,6 +78,7 @@ export default function AssetDetail() {
   const [loadingChart, setLoadingChart] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string>("");
+  const [translatedReasons, setTranslatedReasons] = useState<string[] | null>(null);
 
   const loadChart = useCallback(
     async (tf: Timeframe) => {
@@ -112,6 +113,27 @@ export default function AssetDetail() {
     void loadChart(timeframe);
     setAnalysis(null);
   }, [timeframe, loadChart]);
+
+  // Translate technical reasoning bullets when EN selected (cached server-side)
+  useEffect(() => {
+    const reasons = chart?.signal?.reasons;
+    if (!reasons || reasons.length === 0 || lang !== "en") {
+      setTranslatedReasons(null);
+      return;
+    }
+    let live = true;
+    (async () => {
+      try {
+        const r = await api.translate(reasons, "en");
+        if (live) setTranslatedReasons(r.items);
+      } catch {
+        if (live) setTranslatedReasons(null);
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [chart, lang]);
 
   // Load track record once per asset
   useEffect(() => {
@@ -150,12 +172,12 @@ export default function AssetDetail() {
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={[styles.symbolTitle, { color: colors.textPrimary }]}>
-            {symbol} <Text style={[styles.marketBadge, { color: colors.textMuted }]}>{
-              market === "crypto" ? "CRYPTO" :
-              market === "etf" ? "ETF" :
-              market === "stock_us" ? "SAHAM US" :
-              "SAHAM IDX"
-            }</Text>
+            {symbol} <Text style={[styles.marketBadge, { color: colors.textMuted }]}>{t(
+              market === "crypto" ? "badge_crypto" :
+              market === "etf" ? "badge_etf" :
+              market === "stock_us" ? "badge_stock_us" :
+              "badge_stock_id"
+            )}</Text>
           </Text>
           <Text style={[styles.priceBig, { color: colors.textPrimary }]}>
             {formatPrice(ticker.price ?? null, market)}{" "}
@@ -223,7 +245,7 @@ export default function AssetDetail() {
         {sig && (
           <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Sinyal Teknikal</Text>
+              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>{t("detail_signal")}</Text>
               <View style={[styles.signalPillLarge, { backgroundColor: sigColors.bg }]}>
                 <Text style={[styles.signalTextLarge, { color: sigColors.fg }]}>
                   {sig.label} • {sig.confidence}%
@@ -237,13 +259,13 @@ export default function AssetDetail() {
               <IndicatorCell label="MACD H" value={(sig.indicators.macd_hist ?? 0).toFixed(4)} colors={colors} />
             </View>
             <View style={styles.entryRow}>
-              <EntryCell label="ENTRY" value={formatPrice(sig.entry, market)} color={colors.accentBlue} colors={colors} />
-              <EntryCell label="STOP LOSS" value={formatPrice(sig.stop_loss, market)} color={colors.accentDown} colors={colors} />
-              <EntryCell label="TAKE PROFIT" value={formatPrice(sig.take_profit, market)} color={colors.accentUp} colors={colors} />
+              <EntryCell label={t("detail_entry")} value={formatPrice(sig.entry, market)} color={colors.accentBlue} colors={colors} />
+              <EntryCell label={t("detail_stop")} value={formatPrice(sig.stop_loss, market)} color={colors.accentDown} colors={colors} />
+              <EntryCell label={t("detail_tp")} value={formatPrice(sig.take_profit, market)} color={colors.accentUp} colors={colors} />
             </View>
             {sig.reasons.length > 0 && (
               <View style={{ marginTop: 10 }}>
-                {sig.reasons.map((r, i) => (
+                {(translatedReasons && translatedReasons.length === sig.reasons.length ? translatedReasons : sig.reasons).map((r, i) => (
                   <Text key={i} style={[styles.reasonLine, { color: colors.textSecondary }]}>
                     • {r}
                   </Text>
@@ -257,19 +279,19 @@ export default function AssetDetail() {
         {trackRecord && (trackRecord.win_rate_30d.total > 0 || trackRecord.win_rate_7d.total > 0) && (
           <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]} testID="track-record-section">
             <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>📊 Track Record</Text>
+              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>📊 {t("detail_track_record")}</Text>
               <Text style={[styles.aiHint, { color: colors.textMuted, marginTop: 0 }]}>
-                {trackRecord.win_rate_all.total} sinyal historis
+                {trackRecord.win_rate_all.total} {t("detail_historic_signals")}
               </Text>
             </View>
             <View style={styles.entryRow}>
-              <WrCell label="WIN RATE 7D" stat={trackRecord.win_rate_7d} colors={colors} />
-              <WrCell label="WIN RATE 30D" stat={trackRecord.win_rate_30d} colors={colors} />
-              <WrCell label="ALL TIME" stat={trackRecord.win_rate_all} colors={colors} />
+              <WrCell label={t("detail_wr_7d")} stat={trackRecord.win_rate_7d} colors={colors} />
+              <WrCell label={t("detail_wr_30d")} stat={trackRecord.win_rate_30d} colors={colors} />
+              <WrCell label={t("detail_wr_all")} stat={trackRecord.win_rate_all} colors={colors} />
             </View>
             {trackRecord.recent_signals.length > 0 && (
               <View style={{ marginTop: 12 }}>
-                <Text style={[styles.subTitle, { color: colors.textPrimary, marginBottom: 8 }]}>Sinyal Terakhir</Text>
+                <Text style={[styles.subTitle, { color: colors.textPrimary, marginBottom: 8 }]}>{t("detail_recent_signals")}</Text>
                 {trackRecord.recent_signals.slice(0, 5).map((s, i) => {
                   const sigCol = signalColors(colors, s.action);
                   const hit = s.evaluation?.hit;
@@ -279,7 +301,7 @@ export default function AssetDetail() {
                         <Text style={[styles.signalText, { color: sigCol.fg }]}>{s.label}</Text>
                       </View>
                       <Text style={[styles.recentDate, { color: colors.textMuted }]}>
-                        {new Date(s.created_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short" })}
+                        {new Date(s.created_at).toLocaleDateString(lang === "en" ? "en-US" : "id-ID", { day: "2-digit", month: "short" })}
                       </Text>
                       <Text style={[styles.recentTf, { color: colors.textSecondary }]}>{s.timeframe}</Text>
                       <Text style={[styles.recentPct, { color: hit ? colors.accentUp : colors.accentDown }]}>
@@ -296,7 +318,7 @@ export default function AssetDetail() {
         {/* AI Ensemble */}
         <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Multi-AI Ensemble</Text>
+            <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>{t("detail_ai_section")}</Text>
             <TouchableOpacity
               onPress={runAnalysis}
               disabled={analyzing}
@@ -308,7 +330,7 @@ export default function AssetDetail() {
               ) : (
                 <>
                   <Ionicons name="sparkles" size={14} color="#fff" />
-                  <Text style={styles.analyzeBtnText}>{analysis ? "ULANGI" : "ANALISA AI"}</Text>
+                  <Text style={styles.analyzeBtnText}>{analysis ? t("detail_ai_repeat") : t("detail_ai_btn")}</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -316,8 +338,7 @@ export default function AssetDetail() {
 
           {!analysis && !analyzing && (
             <Text style={[styles.aiHint, { color: colors.textMuted }]}>
-              Tekan ANALISA AI untuk konsensus Claude Sonnet 4.6 + GPT-5.2 + Gemini 3.1 Pro
-              berdasarkan teknikal, berita global, makro & politik terkini.
+              {t("detail_ai_hint")}
             </Text>
           )}
 
@@ -333,7 +354,7 @@ export default function AssetDetail() {
                   },
                 ]}
               >
-                <Text style={[styles.consensusLabel, { color: colors.textMuted }]}>KONSENSUS AI</Text>
+                <Text style={[styles.consensusLabel, { color: colors.textMuted }]}>{t("detail_consensus")}</Text>
                 <Text style={[styles.consensusAction, { color: signalColors(colors, analysis.consensus.action).fg }]}>
                   {analysis.consensus.label} • {analysis.consensus.confidence}%
                 </Text>
@@ -358,15 +379,15 @@ export default function AssetDetail() {
 
               {/* Entry/SL/TP from AI */}
               <View style={[styles.entryRow, { marginTop: 16 }]}>
-                <EntryCell label="AI ENTRY" value={formatPrice(analysis.consensus.entry, market)} color={colors.accentBlue} colors={colors} />
-                <EntryCell label="AI SL" value={formatPrice(analysis.consensus.stop_loss, market)} color={colors.accentDown} colors={colors} />
-                <EntryCell label="AI TP" value={formatPrice(analysis.consensus.take_profit, market)} color={colors.accentUp} colors={colors} />
+                <EntryCell label={t("detail_ai_entry")} value={formatPrice(analysis.consensus.entry, market)} color={colors.accentBlue} colors={colors} />
+                <EntryCell label={t("detail_ai_sl")} value={formatPrice(analysis.consensus.stop_loss, market)} color={colors.accentDown} colors={colors} />
+                <EntryCell label={t("detail_ai_tp")} value={formatPrice(analysis.consensus.take_profit, market)} color={colors.accentUp} colors={colors} />
               </View>
 
               {/* News & Risk */}
               {analysis.consensus.news_factors.length > 0 && (
                 <View style={{ marginTop: 16 }}>
-                  <Text style={[styles.subTitle, { color: colors.textPrimary }]}>📰 Faktor Berita & Makro</Text>
+                  <Text style={[styles.subTitle, { color: colors.textPrimary }]}>{t("detail_news_factors")}</Text>
                   {analysis.consensus.news_factors.map((n, i) => (
                     <Text key={i} style={[styles.bullet, { color: colors.textSecondary }]}>
                       • {n}
@@ -376,7 +397,7 @@ export default function AssetDetail() {
               )}
               {analysis.consensus.risk_factors.length > 0 && (
                 <View style={{ marginTop: 12 }}>
-                  <Text style={[styles.subTitle, { color: colors.textPrimary }]}>⚠️ Risiko</Text>
+                  <Text style={[styles.subTitle, { color: colors.textPrimary }]}>{t("detail_risk")}</Text>
                   {analysis.consensus.risk_factors.map((n, i) => (
                     <Text key={i} style={[styles.bullet, { color: colors.textSecondary }]}>
                       • {n}
@@ -388,7 +409,7 @@ export default function AssetDetail() {
               {analysis.news_used.length > 0 && (
                 <View style={{ marginTop: 16 }}>
                   <Text style={[styles.subTitle, { color: colors.textPrimary }]}>
-                    📡 Berita Live yang Digunakan ({analysis.news_used.length})
+                    {t("detail_news_live")} ({analysis.news_used.length})
                   </Text>
                   {analysis.news_used.slice(0, 6).map((n, i) => (
                     <TouchableOpacity
@@ -404,7 +425,7 @@ export default function AssetDetail() {
                         </Text>
                         {n.published ? (
                           <Text style={[styles.newsTime, { color: colors.textMuted }]}>
-                            {new Date(n.published).toLocaleDateString("id-ID", { day: "2-digit", month: "short" })}
+                            {new Date(n.published).toLocaleDateString(lang === "en" ? "en-US" : "id-ID", { day: "2-digit", month: "short" })}
                           </Text>
                         ) : null}
                       </View>
@@ -417,7 +438,7 @@ export default function AssetDetail() {
               )}
 
               <Text style={[styles.generatedAt, { color: colors.textMuted }]}>
-                Dianalisa: {new Date(analysis.generated_at).toLocaleString("id-ID")}
+                {t("detail_generated_at")}: {new Date(analysis.generated_at).toLocaleString(lang === "en" ? "en-US" : "id-ID")}
               </Text>
             </View>
           )}
