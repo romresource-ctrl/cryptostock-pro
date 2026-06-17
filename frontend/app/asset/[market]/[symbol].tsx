@@ -79,6 +79,10 @@ export default function AssetDetail() {
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string>("");
   const [translatedReasons, setTranslatedReasons] = useState<string[] | null>(null);
+  const [translatedNewsFactors, setTranslatedNewsFactors] = useState<string[] | null>(null);
+  const [translatedRiskFactors, setTranslatedRiskFactors] = useState<string[] | null>(null);
+  const [translatedSummary, setTranslatedSummary] = useState<string | null>(null);
+  const [translatedTfView, setTranslatedTfView] = useState<string | null>(null);
 
   const loadChart = useCallback(
     async (tf: Timeframe) => {
@@ -134,6 +138,44 @@ export default function AssetDetail() {
       live = false;
     };
   }, [chart, lang]);
+
+  // Translate AI consensus narrative bullets (news_factors / risk_factors / summary / tf view)
+  useEffect(() => {
+    if (!analysis || lang !== "en") {
+      setTranslatedNewsFactors(null);
+      setTranslatedRiskFactors(null);
+      setTranslatedSummary(null);
+      setTranslatedTfView(null);
+      return;
+    }
+    let live = true;
+    const news = analysis.consensus.news_factors || [];
+    const risk = analysis.consensus.risk_factors || [];
+    const summary = analysis.consensus.summary || "";
+    const tfView = analysis.consensus.timeframe_view || "";
+    (async () => {
+      try {
+        const allBatch = [summary, tfView, ...news, ...risk];
+        const r = await api.translate(allBatch, "en");
+        if (!live) return;
+        const items = r.items;
+        setTranslatedSummary(items[0] || null);
+        setTranslatedTfView(items[1] || null);
+        setTranslatedNewsFactors(items.slice(2, 2 + news.length));
+        setTranslatedRiskFactors(items.slice(2 + news.length, 2 + news.length + risk.length));
+      } catch {
+        if (live) {
+          setTranslatedNewsFactors(null);
+          setTranslatedRiskFactors(null);
+          setTranslatedSummary(null);
+          setTranslatedTfView(null);
+        }
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [analysis, lang]);
 
   // Load track record once per asset
   useEffect(() => {
@@ -359,11 +401,11 @@ export default function AssetDetail() {
                   {analysis.consensus.label} • {analysis.consensus.confidence}%
                 </Text>
                 <Text style={[styles.consensusSummary, { color: colors.textPrimary }]}>
-                  {analysis.consensus.summary}
+                  {translatedSummary ?? analysis.consensus.summary}
                 </Text>
                 {analysis.consensus.timeframe_view ? (
                   <Text style={[styles.consensusTfView, { color: colors.textSecondary }]}>
-                    📊 {analysis.consensus.timeframe_view}
+                    📊 {translatedTfView ?? analysis.consensus.timeframe_view}
                   </Text>
                 ) : null}
               </View>
@@ -388,7 +430,10 @@ export default function AssetDetail() {
               {analysis.consensus.news_factors.length > 0 && (
                 <View style={{ marginTop: 16 }}>
                   <Text style={[styles.subTitle, { color: colors.textPrimary }]}>{t("detail_news_factors")}</Text>
-                  {analysis.consensus.news_factors.map((n, i) => (
+                  {(translatedNewsFactors && translatedNewsFactors.length === analysis.consensus.news_factors.length
+                    ? translatedNewsFactors
+                    : analysis.consensus.news_factors
+                  ).map((n, i) => (
                     <Text key={i} style={[styles.bullet, { color: colors.textSecondary }]}>
                       • {n}
                     </Text>
@@ -398,7 +443,10 @@ export default function AssetDetail() {
               {analysis.consensus.risk_factors.length > 0 && (
                 <View style={{ marginTop: 12 }}>
                   <Text style={[styles.subTitle, { color: colors.textPrimary }]}>{t("detail_risk")}</Text>
-                  {analysis.consensus.risk_factors.map((n, i) => (
+                  {(translatedRiskFactors && translatedRiskFactors.length === analysis.consensus.risk_factors.length
+                    ? translatedRiskFactors
+                    : analysis.consensus.risk_factors
+                  ).map((n, i) => (
                     <Text key={i} style={[styles.bullet, { color: colors.textSecondary }]}>
                       • {n}
                     </Text>

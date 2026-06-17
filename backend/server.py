@@ -691,10 +691,11 @@ async def asset_analyze(
     )
 
     # If EN requested, translate human-readable narrative fields (consensus reasoning,
-    # per-model reasoning, news titles/descriptions). Ticker symbols / numbers stay intact.
+    # per-model reasoning, news titles/descriptions, news_factors, risk_factors).
+    # Ticker symbols / numbers stay intact thanks to translator prompt rules.
     if lang == "en":
         narrative_texts: list[str] = []
-        ptrs: list[tuple] = []  # (collection_ref, key) for write-back
+        ptrs: list[tuple] = []  # (collection_ref, key_or_index) for write-back
 
         cons_reason = consensus.get("reasoning") or consensus.get("rationale") or ""
         if cons_reason:
@@ -702,6 +703,19 @@ async def asset_analyze(
         cons_summary = consensus.get("summary") or ""
         if cons_summary:
             narrative_texts.append(cons_summary); ptrs.append(("consensus", "summary"))
+        cons_tfview = consensus.get("timeframe_view") or ""
+        if cons_tfview:
+            narrative_texts.append(cons_tfview); ptrs.append(("consensus", "timeframe_view"))
+
+        # news_factors and risk_factors arrays
+        news_factors = consensus.get("news_factors") or []
+        for i, nf in enumerate(news_factors):
+            if nf:
+                narrative_texts.append(nf); ptrs.append(("news_factor", i))
+        risk_factors = consensus.get("risk_factors") or []
+        for i, rf in enumerate(risk_factors):
+            if rf:
+                narrative_texts.append(rf); ptrs.append(("risk_factor", i))
 
         for idx, m in enumerate(result.get("models", []) or []):
             data = m.get("data") if isinstance(m, dict) else None
@@ -723,6 +737,16 @@ async def asset_analyze(
         for (loc, key), val in zip(ptrs, translated):
             if loc == "consensus":
                 consensus[key] = val
+            elif loc == "news_factor":
+                try:
+                    consensus["news_factors"][key] = val
+                except Exception:
+                    pass
+            elif loc == "risk_factor":
+                try:
+                    consensus["risk_factors"][key] = val
+                except Exception:
+                    pass
             elif loc == "model":
                 try:
                     result["models"][key]["data"]["reasoning"] = val
