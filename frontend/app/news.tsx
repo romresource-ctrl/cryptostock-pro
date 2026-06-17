@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { api, type Market, type NewsItem } from "@/src/lib/api";
+import { useI18n } from "@/src/i18n/I18nContext";
 import { useTheme } from "@/src/theme/ThemeContext";
 
 type MarketFilter = "all" | Market;
@@ -75,6 +76,7 @@ function NewsRow({ item }: { item: NewsItem }) {
 export default function NewsScreen() {
   const { colors } = useTheme();
   const router = useRouter();
+  const { lang } = useI18n();
   const [marketFilter, setMarketFilter] = useState<MarketFilter>("all");
   const [symbolFilter, setSymbolFilter] = useState<{ symbol: string; market: Market } | null>(null);
   const [items, setItems] = useState<NewsItem[]>([]);
@@ -101,14 +103,14 @@ export default function NewsScreen() {
     async (m: MarketFilter, sym: { symbol: string; market: Market } | null) => {
       setLoading(true);
       try {
-        const r = sym ? await api.newsForAsset(sym.market, sym.symbol, 30) : await api.news(m, 50);
+        const r = sym ? await api.newsForAsset(sym.market, sym.symbol, 30, lang) : await api.news(m, 50, lang);
         setItems(r.items);
-        setFetchedAt(new Date(r.fetched_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }));
+        setFetchedAt(new Date(r.fetched_at).toLocaleTimeString(lang === "en" ? "en-US" : "id-ID", { hour: "2-digit", minute: "2-digit" }));
       } finally {
         setLoading(false);
       }
     },
-    [],
+    [lang],
   );
 
   useEffect(() => {

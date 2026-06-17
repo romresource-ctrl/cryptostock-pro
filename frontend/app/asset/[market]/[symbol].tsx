@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import PriceChart from "@/src/components/PriceChart";
+import { useI18n } from "@/src/i18n/I18nContext";
 import {
   TIMEFRAMES,
   type AnalyzeResponse,
@@ -62,6 +63,7 @@ function ModelChip({ model }: { model: ModelResult }) {
 
 export default function AssetDetail() {
   const { colors } = useTheme();
+  const { lang } = useI18n();
   const router = useRouter();
   const params = useLocalSearchParams<{ market: string; symbol: string; timeframe?: string }>();
   const validMarkets = ["crypto", "etf", "stock_id", "stock_us"] as const;
@@ -97,14 +99,14 @@ export default function AssetDetail() {
     setAnalyzing(true);
     setError("");
     try {
-      const a = await api.analyze(market, symbol, timeframe);
+      const a = await api.analyze(market, symbol, timeframe, lang);
       setAnalysis(a);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setAnalyzing(false);
     }
-  }, [market, symbol, timeframe]);
+  }, [market, symbol, timeframe, lang]);
 
   useEffect(() => {
     void loadChart(timeframe);

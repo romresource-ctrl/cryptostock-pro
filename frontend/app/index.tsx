@@ -18,6 +18,7 @@ import { useAuth } from "@/src/auth/AuthContext";
 import LoginModal from "@/src/components/LoginModal";
 import Sparkline from "@/src/components/Sparkline";
 import VipModal from "@/src/components/VipModal";
+import { useI18n } from "@/src/i18n/I18nContext";
 import {
   TIMEFRAMES,
   type AssetSignal,
@@ -27,6 +28,7 @@ import {
   formatPct,
   formatPrice,
 } from "@/src/lib/api";
+import { APP_VERSION } from "@/src/lib/version";
 import { useTheme } from "@/src/theme/ThemeContext";
 
 const REFRESH_INTERVAL_MS = 60_000;
@@ -137,6 +139,7 @@ export default function Dashboard() {
   const { colors, mode, toggle } = useTheme();
   const router = useRouter();
   const { isUnlocked, email, logout, loaded: authLoaded } = useAuth();
+  const { lang, toggle: toggleLang, t } = useI18n();
 
   const [view, setView] = useState<Category[]>(["crypto", "stock_id"]);
   const [timeframe, setTimeframe] = useState<Timeframe>("1h");
@@ -223,10 +226,10 @@ export default function Dashboard() {
     <SafeAreaView style={[styles.root, { backgroundColor: colors.background }]} edges={["top"]}>
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
-          <Text style={[styles.appTitle, { color: colors.textPrimary }]}>KevinAI Pro</Text>
+          <Text style={[styles.appTitle, { color: colors.textPrimary }]}>{t("app_title")}</Text>
           <Text style={[styles.appSub, { color: colors.textMuted }]} numberOfLines={1}>
-            {premiumCount > 0 ? `⭐ ${premiumCount} Premium · ` : ""}
-            {lastUpdate ? `update ${lastUpdate}` : "memuat…"}
+            {premiumCount > 0 ? `⭐ ${premiumCount} ${t("premium_label")} · ` : ""}
+            {`${t("ver_label")} ${APP_VERSION}`}
           </Text>
         </View>
         <View style={styles.headerActions}>
@@ -243,6 +246,19 @@ export default function Dashboard() {
             style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
           >
             <Ionicons name={mode === "dark" ? "sunny-outline" : "moon-outline"} size={18} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={toggleLang}
+            testID="lang-toggle-button"
+            style={[
+              styles.iconBtn,
+              {
+                backgroundColor: lang === "en" ? "#1E66F5" : "#E53935",
+                borderColor: lang === "en" ? "#1E66F5" : "#E53935",
+              },
+            ]}
+          >
+            <Text style={styles.langBtnText}>{lang === "en" ? "EN" : "ID"}</Text>
           </TouchableOpacity>
           {authLoaded && (
             isUnlocked ? (
@@ -293,7 +309,7 @@ export default function Dashboard() {
                 ]}
               >
                 <Ionicons name={vp.icon as never} size={14} color={active ? "#fff" : colors.textSecondary} />
-                <Text style={[styles.viewPillText, { color: active ? "#fff" : colors.textSecondary }]}>{vp.label}</Text>
+                <Text style={[styles.viewPillText, { color: active ? "#fff" : colors.textSecondary }]}>{t(`category_${vp.key}`)}</Text>
                 {active && (
                   <View style={styles.activeOrder}>
                     <Text style={styles.activeOrderText}>{view.indexOf(vp.key) + 1}</Text>
@@ -312,22 +328,22 @@ export default function Dashboard() {
             <Ionicons name="star" size={14} color="#F0B90B" />
             <Text style={[styles.consensusNum, { color: "#F0B90B" }]}>{premiumCount}</Text>
           </View>
-          <Text style={[styles.consensusLabel, { color: colors.textMuted }]}>PREMIUM</Text>
+          <Text style={[styles.consensusLabel, { color: colors.textMuted }]}>{t("premium_label")}</Text>
         </View>
         <View style={[styles.consensusDivider, { backgroundColor: colors.border }]} />
         <View style={styles.consensusItem}>
           <Text style={[styles.consensusNum, { color: colors.accentUp }]}>{consensus.buy}</Text>
-          <Text style={[styles.consensusLabel, { color: colors.textMuted }]}>BUY/LONG</Text>
+          <Text style={[styles.consensusLabel, { color: colors.textMuted }]}>{t("buy_long")}</Text>
         </View>
         <View style={[styles.consensusDivider, { backgroundColor: colors.border }]} />
         <View style={styles.consensusItem}>
           <Text style={[styles.consensusNum, { color: colors.accentHold }]}>{consensus.hold}</Text>
-          <Text style={[styles.consensusLabel, { color: colors.textMuted }]}>HOLD</Text>
+          <Text style={[styles.consensusLabel, { color: colors.textMuted }]}>{t("hold")}</Text>
         </View>
         <View style={[styles.consensusDivider, { backgroundColor: colors.border }]} />
         <View style={styles.consensusItem}>
           <Text style={[styles.consensusNum, { color: colors.accentDown }]}>{consensus.sell}</Text>
-          <Text style={[styles.consensusLabel, { color: colors.textMuted }]}>SELL/SHORT</Text>
+          <Text style={[styles.consensusLabel, { color: colors.textMuted }]}>{t("sell_short")}</Text>
         </View>
       </View>
 
@@ -369,7 +385,7 @@ export default function Dashboard() {
         {selectedCount === 2 ? (
           <View style={styles.dualRow}>
             {view.map((k) => {
-              const catLabel = CATEGORIES.find((c) => c.key === k)?.label.toUpperCase() ?? k;
+              const catLabel = t(`category_${k}`).toUpperCase();
               return (
                 <ListColumn
                   key={k}
@@ -386,7 +402,7 @@ export default function Dashboard() {
         ) : (
           (() => {
             const k = view[0];
-            const catLabel = CATEGORIES.find((c) => c.key === k)?.label.toUpperCase() ?? k;
+            const catLabel = t(`category_${k}`).toUpperCase();
             return (
               <FullList
                 title={catLabel}
@@ -396,6 +412,7 @@ export default function Dashboard() {
                 onPress={handleAssetPress}
                 locked={!isUnlocked}
                 screenW={SCREEN_W}
+                assetLabel={t("asset")}
               />
             );
           })()
@@ -407,7 +424,7 @@ export default function Dashboard() {
         <View style={[styles.toast, { backgroundColor: colors.surface, borderColor: colors.accentBlue }]} testID="locked-toast">
           <Ionicons name="lock-closed" size={14} color={colors.accentBlue} />
           <Text style={[styles.toastText, { color: colors.textPrimary }]}>
-            Login dulu untuk akses detail aset
+            {lang === "en" ? "Login first to access asset details" : "Login dulu untuk akses detail aset"}
           </Text>
         </View>
       )}
@@ -450,15 +467,15 @@ function ListColumn({
 }
 
 function FullList({
-  title, market, data, loading, onPress, locked, screenW,
-}: { title: string; market: Market; data: AssetSignal[]; loading: boolean; onPress: (a: AssetSignal) => void; locked: boolean; screenW: number }) {
+  title, market, data, loading, onPress, locked, screenW, assetLabel,
+}: { title: string; market: Market; data: AssetSignal[]; loading: boolean; onPress: (a: AssetSignal) => void; locked: boolean; screenW: number; assetLabel: string }) {
   const { colors } = useTheme();
   // Two-column grid for single-market view
   return (
     <View style={[styles.fullPanel, { backgroundColor: colors.surfaceAlt }]}>
       <View style={[styles.columnHeader, { borderColor: colors.border }]}>
         <Text style={[styles.columnTitle, { color: colors.textPrimary }]}>{title}</Text>
-        <Text style={[styles.columnCount, { color: colors.textMuted }]}>{data.length} aset</Text>
+        <Text style={[styles.columnCount, { color: colors.textMuted }]}>{data.length} {assetLabel}</Text>
       </View>
       {loading && data.length === 0 ? (
         <View style={{ paddingVertical: 40, alignItems: "center" }}>
@@ -503,6 +520,7 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", gap: 6,
   },
   viewPillText: { fontSize: 12, fontWeight: "700", letterSpacing: 0.4 },
+  langBtnText: { fontSize: 12, fontWeight: "800", color: "#fff", letterSpacing: 0.6 },
   activeOrder: {
     minWidth: 16, height: 16, paddingHorizontal: 4, borderRadius: 8,
     backgroundColor: "rgba(255,255,255,0.25)",

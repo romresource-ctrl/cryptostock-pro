@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 
+import { useI18n } from "@/src/i18n/I18nContext";
 import { useTheme } from "@/src/theme/ThemeContext";
 
 type Props = {
@@ -17,11 +18,12 @@ type Props = {
   onLogin: () => void;
 };
 
-const CONTACT_EMAIL = "kevinAIpro@gmail.com";
+const CONTACT_EMAIL = "cryptostockapps@gmail.com";
 const CONTACT_WA = "6282186597571";
 
 export default function VipModal({ visible, onClose, onLogin }: Props) {
   const { colors } = useTheme();
+  const { t } = useI18n();
   const gold = "#F0B90B";
 
   const openWa = () => Linking.openURL(`https://wa.me/${CONTACT_WA}`).catch(() => {});
@@ -37,11 +39,9 @@ export default function VipModal({ visible, onClose, onLogin }: Props) {
           <View style={[styles.iconRing, { borderColor: gold, backgroundColor: gold + "22" }]}>
             <Ionicons name="star" size={28} color={gold} />
           </View>
-          <Text style={[styles.title, { color: gold }]}>VIP Members Only Features</Text>
-          <Text style={[styles.body, { color: colors.textPrimary }]}>
-            LOGIN or Become Member to view exclusive Premium insights and accurate AI Signals.
-          </Text>
-          <Text style={[styles.contactLabel, { color: colors.textMuted }]}>Contact Us to unlock:</Text>
+          <Text style={[styles.title, { color: gold }]}>{t("vip_title")}</Text>
+          <Text style={[styles.body, { color: colors.textPrimary }]}>{t("vip_body")}</Text>
+          <Text style={[styles.contactLabel, { color: colors.textMuted }]}>{t("vip_contact_label")}</Text>
           <TouchableOpacity onPress={openEmail} style={[styles.contactRow, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]} testID="vip-email-button">
             <Ionicons name="mail" size={18} color={colors.accentBlue} />
             <Text style={[styles.contactText, { color: colors.textPrimary }]} numberOfLines={1}>{CONTACT_EMAIL}</Text>
@@ -54,7 +54,7 @@ export default function VipModal({ visible, onClose, onLogin }: Props) {
           </TouchableOpacity>
           <TouchableOpacity onPress={() => { onClose(); onLogin(); }} style={[styles.loginBtn, { backgroundColor: colors.accentBlue }]} testID="vip-login-button">
             <Ionicons name="key" size={16} color="#fff" />
-            <Text style={styles.loginText}>SUDAH PUNYA CODE? LOGIN</Text>
+            <Text style={styles.loginText}>{t("vip_login_btn")}</Text>
           </TouchableOpacity>
         </View>
       </View>

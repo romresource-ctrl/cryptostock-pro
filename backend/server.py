@@ -51,6 +51,7 @@ from track_record import (  # noqa: E402
     get_track_record_summary,
     record_signal,
 )
+from translator import translate_many  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s | %(message)s")
 logger = logging.getLogger("aitrade")
@@ -378,12 +379,15 @@ def _build_signal(snapshot: dict, tr: dict | None = None, *, min_conf: int = 85,
     spark = [c["close"] for c in candles[-30:]] if candles else []
     tr_mini = TrackRecordMini(**(tr or {}))
     wr = tr_mini.wr_30d
-    is_premium = (
-        sig["action"] != "HOLD"
-        and sig["confidence"] >= min_conf
-        and wr is not None
-        and wr >= min_wr
-    )
+    action_ok = sig["action"] != "HOLD"
+    conf_ok = sig["confidence"] >= min_conf
+    # Primary: action OK, confidence OK, AND historical WR >= threshold
+    # Fallback (for markets without enough recorded history yet): allow premium
+    # when confidence is very high (>= 90) even if WR is unavailable.
+    if wr is None:
+        is_premium = action_ok and sig["confidence"] >= max(min_conf, 90)
+    else:
+        is_premium = action_ok and conf_ok and wr >= min_wr
     return AssetSignal(
         symbol=snapshot["symbol"],
         market=market,
@@ -632,6 +636,7 @@ async def asset_analyze(
     market: Literal["crypto", "stock", "etf", "stock_id", "stock_us"],
     symbol: str,
     timeframe: str = "1h",
+    lang: Literal["id", "en"] = "id",
 ) -> AnalyzeResponse:
     if timeframe not in TIMEFRAME_MAP:
         raise HTTPException(400, "Invalid timeframe")
@@ -671,7 +676,7 @@ async def asset_analyze(
     except Exception as e:
         logger.warning("Failed to record signal: %s", e)
 
-    # Cache last analysis
+    # Cache last analysis (always store the Indonesian original)
     await db.analyses.replace_one(
         {"_id": f"{eff_market}-{symbol}-{timeframe}"},
         {
@@ -684,6 +689,49 @@ async def asset_analyze(
         },
         upsert=True,
     )
+
+    # If EN requested, translate human-readable narrative fields (consensus reasoning,
+    # per-model reasoning, news titles/descriptions). Ticker symbols / numbers stay intact.
+    if lang == "en":
+        narrative_texts: list[str] = []
+        ptrs: list[tuple] = []  # (collection_ref, key) for write-back
+
+        cons_reason = consensus.get("reasoning") or consensus.get("rationale") or ""
+        if cons_reason:
+            narrative_texts.append(cons_reason); ptrs.append(("consensus", "reasoning"))
+        cons_summary = consensus.get("summary") or ""
+        if cons_summary:
+            narrative_texts.append(cons_summary); ptrs.append(("consensus", "summary"))
+
+        for idx, m in enumerate(result.get("models", []) or []):
+            data = m.get("data") if isinstance(m, dict) else None
+            if data:
+                r = data.get("reasoning") or data.get("rationale") or ""
+                if r:
+                    narrative_texts.append(r); ptrs.append(("model", idx))
+
+        n_items = news or []
+        news_titles = [i.get("title") or "" for i in n_items]
+        news_descs = [i.get("description") or "" for i in n_items]
+
+        translated = await translate_many(db, narrative_texts, "en") if narrative_texts else []
+        news_titles_tr, news_descs_tr = await asyncio.gather(
+            translate_many(db, news_titles, "en"),
+            translate_many(db, news_descs, "en"),
+        )
+
+        for (loc, key), val in zip(ptrs, translated):
+            if loc == "consensus":
+                consensus[key] = val
+            elif loc == "model":
+                try:
+                    result["models"][key]["data"]["reasoning"] = val
+                except Exception:
+                    pass
+        for i, item in enumerate(n_items):
+            item["title"] = news_titles_tr[i] if i < len(news_titles_tr) else item.get("title")
+            item["description"] = news_descs_tr[i] if i < len(news_descs_tr) else item.get("description")
+
     return AnalyzeResponse(
         symbol=symbol, market=eff_market, timeframe=timeframe,
         price=float(price), technical=technical,
@@ -708,9 +756,20 @@ async def asset_track_record(
 async def news_global(
     market: Literal["crypto", "stock", "etf", "stock_id", "stock_us", "all"] = Query("all"),
     limit: int = Query(40, ge=1, le=80),
+    lang: Literal["id", "en"] = Query("id"),
 ) -> NewsResponse:
     eff_market = "stock_id" if market == "stock" else market
     items = await get_news(eff_market, limit=limit)
+    if lang == "en" and items:
+        titles = [i.get("title") or "" for i in items]
+        descs = [i.get("description") or "" for i in items]
+        titles_tr, descs_tr = await asyncio.gather(
+            translate_many(db, titles, "en"),
+            translate_many(db, descs, "en"),
+        )
+        for i, item in enumerate(items):
+            item["title"] = titles_tr[i]
+            item["description"] = descs_tr[i]
     return NewsResponse(market=eff_market, items=[NewsItem(**i) for i in items], fetched_at=_now_iso())
 
 
@@ -719,10 +778,35 @@ async def news_for_asset(
     market: Literal["crypto", "stock", "etf", "stock_id", "stock_us"],
     symbol: str,
     limit: int = Query(10, ge=1, le=30),
+    lang: Literal["id", "en"] = Query("id"),
 ) -> NewsResponse:
     eff_market = "stock_id" if market == "stock" else market
     items = await get_news_for_symbol(symbol.upper(), eff_market, limit=limit)
+    if lang == "en" and items:
+        titles = [i.get("title") or "" for i in items]
+        descs = [i.get("description") or "" for i in items]
+        titles_tr, descs_tr = await asyncio.gather(
+            translate_many(db, titles, "en"),
+            translate_many(db, descs, "en"),
+        )
+        for i, item in enumerate(items):
+            item["title"] = titles_tr[i]
+            item["description"] = descs_tr[i]
     return NewsResponse(market=eff_market, items=[NewsItem(**i) for i in items], fetched_at=_now_iso())
+
+
+# -------- Translate --------
+
+class TranslatePayload(BaseModel):
+    texts: list[str]
+    target_lang: Literal["en", "id"] = "en"
+
+
+@api.post("/translate")
+async def translate_endpoint(payload: TranslatePayload) -> dict:
+    """Batch-translate arbitrary texts (cached by content hash)."""
+    out = await translate_many(db, payload.texts, payload.target_lang)
+    return {"target_lang": payload.target_lang, "items": out}
 
 
 # -------- App wiring --------

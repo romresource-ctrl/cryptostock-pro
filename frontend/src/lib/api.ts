@@ -215,15 +215,15 @@ export const api = {
 
   chart: (market: Market, symbol: string, timeframe: Timeframe) =>
     get<ChartResponse>(`/asset/${market}/${symbol}/chart?timeframe=${timeframe}`),
-  analyze: (market: Market, symbol: string, timeframe: Timeframe) =>
-    send<AnalyzeResponse>(`/asset/${market}/${symbol}/analyze?timeframe=${timeframe}`, "POST"),
+  analyze: (market: Market, symbol: string, timeframe: Timeframe, lang: "id" | "en" = "id") =>
+    send<AnalyzeResponse>(`/asset/${market}/${symbol}/analyze?timeframe=${timeframe}&lang=${lang}`, "POST"),
   trackRecord: (market: Market, symbol: string) =>
     get<TrackRecordResponse>(`/asset/${market}/${symbol}/track-record`),
 
-  news: (market: Market | "all", limit = 40) =>
-    get<NewsResponse>(`/news?market=${market}&limit=${limit}`),
-  newsForAsset: (market: Market, symbol: string, limit = 10) =>
-    get<NewsResponse>(`/asset/${market}/${symbol}/news?limit=${limit}`),
+  news: (market: Market | "all", limit = 40, lang: "id" | "en" = "id") =>
+    get<NewsResponse>(`/news?market=${market}&limit=${limit}&lang=${lang}`),
+  newsForAsset: (market: Market, symbol: string, limit = 10, lang: "id" | "en" = "id") =>
+    get<NewsResponse>(`/asset/${market}/${symbol}/news?limit=${limit}&lang=${lang}`),
 };
 
 export const TIMEFRAMES: Timeframe[] = ["15m", "30m", "1h", "3h", "6h", "12h", "18h", "24h"];
