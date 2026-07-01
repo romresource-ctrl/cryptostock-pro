@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CryptoStock Admin — Unlock Code Generator</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0B0F1A; color: #E8ECF4; margin: 0; padding: 16px;
+    min-height: 100vh;
+  }
+  h1 { color: #F0B90B; margin: 0 0 4px; font-size: 22px; }
+  .subtitle { color: #8A93A6; font-size: 12px; margin-bottom: 20px; letter-spacing: 0.4px; }
+  .card {
+    background: #141B2C; border: 1px solid #24304A; border-radius: 12px;
+    padding: 18px; margin-bottom: 16px;
+  }
+  .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+  .tab {
+    flex: 1; padding: 10px 8px; text-align: center; cursor: pointer;
+    background: #141B2C; border: 1px solid #24304A; border-radius: 8px;
+    color: #8A93A6; font-weight: 700; font-size: 12px; letter-spacing: 0.4px;
+  }
+  .tab.active { background: #1E66F5; border-color: #1E66F5; color: white; }
+  label { display: block; color: #8A93A6; font-size: 11px; letter-spacing: 0.6px; margin-bottom: 6px; font-weight: 700; }
+  input {
+    width: 100%; background: #0B0F1A; border: 1px solid #24304A;
+    border-radius: 8px; padding: 12px 14px; color: #E8ECF4; font-size: 14px;
+    margin-bottom: 12px; font-family: inherit;
+  }
+  input:focus { outline: none; border-color: #1E66F5; }
+  button {
+    width: 100%; background: #1E66F5; color: white; border: none;
+    padding: 14px; border-radius: 8px; font-size: 13px; font-weight: 800;
+    letter-spacing: 0.6px; cursor: pointer; margin-bottom: 8px;
+    font-family: inherit;
+  }
+  button:hover { background: #1856d8; }
+  button.secondary { background: #24304A; }
+  button.secondary:hover { background: #2f3d5c; }
+  .result {
+    background: #0B0F1A; border: 1.5px solid #F0B90B; border-radius: 8px;
+    padding: 16px; margin: 14px 0; text-align: center;
+  }
+  .code-value {
+    font-family: "SF Mono", Consolas, Monaco, monospace;
+    font-size: 24px; font-weight: 800; color: #F0B90B; letter-spacing: 2px;
+    margin: 6px 0;
+  }
+  .code-label { font-size: 10px; color: #8A93A6; letter-spacing: 0.6px; }
+  .msg-preview {
+    background: #0B0F1A; border: 1px solid #24304A; border-radius: 8px;
+    padding: 12px; font-size: 12px; color: #C8CFDE; white-space: pre-wrap;
+    line-height: 1.5; margin-bottom: 8px;
+  }
+  .user-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px; border: 1px solid #24304A; border-radius: 8px;
+    margin-bottom: 8px; gap: 8px;
+  }
+  .user-email { font-size: 13px; color: #E8ECF4; flex: 1; word-break: break-all; }
+  .user-meta { font-size: 10px; color: #8A93A6; }
+  .icon-btn {
+    background: transparent; border: 1px solid #F0B90B; color: #F0B90B;
+    padding: 6px 10px; width: auto; font-size: 11px; margin: 0;
+    border-radius: 6px;
+  }
+  .icon-btn.danger { border-color: #E53935; color: #E53935; }
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: #25D366; color: white; padding: 10px 18px; border-radius: 24px;
+    font-size: 13px; font-weight: 700; z-index: 100; opacity: 0;
+    transition: opacity 0.25s;
+  }
+  .toast.show { opacity: 1; }
+  .warning {
+    background: rgba(240,185,11,0.1); border: 1px solid #F0B90B;
+    color: #F0B90B; padding: 10px 12px; border-radius: 8px; font-size: 11px;
+    margin-bottom: 14px; letter-spacing: 0.3px; line-height: 1.5;
+  }
+  .empty { text-align: center; color: #8A93A6; font-size: 13px; padding: 24px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+
+<h1>🔑 CryptoStock Admin</h1>
+<div class="subtitle">Unlock Code Generator · web edition</div>
+
+<div class="warning">
+  ⚠️ HALAMAN INI ADMIN-ONLY. Jangan share URL / file ini ke user.
+</div>
+
+<div class="tabs">
+  <div class="tab active" data-tab="gen">🔧 GENERATOR</div>
+  <div class="tab" data-tab="users">👥 LOGGED USERS</div>
+</div>
+
+<!-- GENERATOR TAB -->
+<div class="card" id="tab-gen">
+  <label>EMAIL USER</label>
+  <input type="email" id="email" placeholder="budi@gmail.com" autocomplete="off" />
+
+  <button onclick="generateCode()">🔑 GENERATE UNLOCK CODE</button>
+
+  <div id="result" class="result hidden">
+    <div class="code-label">UNLOCK CODE</div>
+    <div class="code-value" id="code-out">—</div>
+    <div class="code-label" id="email-out">—</div>
+  </div>
+
+  <div id="msg-block" class="hidden">
+    <label style="margin-top:14px;">TEMPLATE PESAN (WA / EMAIL)</label>
+    <div class="msg-preview" id="msg-preview">—</div>
+    <button class="secondary" onclick="copyMessage()">📋 Salin Pesan</button>
+    <button class="secondary" onclick="copyCode()">📋 Salin Code Saja</button>
+  </div>
+</div>
+
+<!-- USERS TAB -->
+<div class="card hidden" id="tab-users">
+  <label>SEARCH EMAIL</label>
+  <input type="text" id="search" placeholder="Filter email..." oninput="renderUsers()" />
+  <button onclick="loadUsers()" id="refresh-btn">🔄 REFRESH LIST</button>
+  <div id="users-list" class="empty">Tap REFRESH untuk memuat...</div>
+</div>
+
+<div id="toast" class="toast">Copied!</div>
+
+<script>
+  // ==== CONFIG (edit if backend URL / admin token changes) ====
+  const BACKEND_URL = "https://cryptostock-pro.preview.emergentagent.com";
+  const ADMIN_TOKEN = "kevin-admin-2026-do-not-share-xyz789";
+  const UNLOCK_SECRET = "KevinAI-Pro-2026-Premium-Unlock-Secret-v1-DoNotShare";
+
+  // ==== TAB SWITCHING ====
+  document.querySelectorAll(".tab").forEach(t => {
+    t.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
+      t.classList.add("active");
+      const tab = t.dataset.tab;
+      document.getElementById("tab-gen").classList.toggle("hidden", tab !== "gen");
+      document.getElementById("tab-users").classList.toggle("hidden", tab !== "users");
+      if (tab === "users" && !usersLoaded) loadUsers();
+    });
+  });
+
+  // ==== UNLOCK CODE GENERATION ====
+  async function sha256Hex(msg) {
+    const enc = new TextEncoder().encode(msg);
+    const hashBuffer = await crypto.subtle.digest("SHA-256", enc);
+    const bytes = Array.from(new Uint8Array(hashBuffer));
+    return bytes.map(b => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  async function computeUnlock(email) {
+    const normalized = email.trim().toLowerCase();
+    if (!normalized) return "";
+    const digest = await sha256Hex(UNLOCK_SECRET + "::" + normalized);
+    const c = digest.substring(0, 12).toUpperCase();
+    return c.substring(0, 4) + "-" + c.substring(4, 8) + "-" + c.substring(8, 12);
+  }
+
+  let currentCode = "";
+  let currentEmail = "";
+
+  async function generateCode() {
+    const email = document.getElementById("email").value.trim().toLowerCase();
+    if (!email || !email.includes("@")) {
+      alert("Email tidak valid!");
+      return;
+    }
+    const code = await computeUnlock(email);
+    currentCode = code;
+    currentEmail = email;
+    document.getElementById("code-out").textContent = code;
+    document.getElementById("email-out").textContent = email;
+    document.getElementById("result").classList.remove("hidden");
+
+    const msg =
+      "🔑 CryptoStock Premium Access\n\n" +
+      "Email: " + email + "\n" +
+      "Unlock Code: " + code + "\n\n" +
+      "Cara login:\n" +
+      "1. Buka app CryptoStock\n" +
+      "2. Tekan tombol LOGIN\n" +
+      "3. Masukkan email + unlock code di atas\n" +
+      "4. Tekan UNLOCK\n\n" +
+      "Kode ini bersifat pribadi. Jangan share ke orang lain.";
+    document.getElementById("msg-preview").textContent = msg;
+    document.getElementById("msg-block").classList.remove("hidden");
+  }
+
+  function showToast(text) {
+    const t = document.getElementById("toast");
+    t.textContent = text;
+    t.classList.add("show");
+    setTimeout(() => t.classList.remove("show"), 1600);
+  }
+
+  function copyToClipboard(text, label) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => showToast(label + " tersalin!"));
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = text; document.body.appendChild(ta);
+      ta.select(); document.execCommand("copy"); document.body.removeChild(ta);
+      showToast(label + " tersalin!");
+    }
+  }
+  function copyMessage() { copyToClipboard(document.getElementById("msg-preview").textContent, "Pesan"); }
+  function copyCode() { copyToClipboard(currentCode, "Code"); }
+
+  // ==== USERS FETCH ====
+  let allUsers = [];
+  let usersLoaded = false;
+
+  async function loadUsers() {
+    const btn = document.getElementById("refresh-btn");
+    btn.textContent = "Memuat...";
+    btn.disabled = true;
+    try {
+      const res = await fetch(BACKEND_URL + "/api/admin/users", {
+        headers: { "X-Admin-Token": ADMIN_TOKEN }
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const data = await res.json();
+      allUsers = data.users || [];
+      usersLoaded = true;
+      renderUsers();
+    } catch (e) {
+      document.getElementById("users-list").innerHTML =
+        '<div class="empty" style="color:#E53935;">❌ Gagal load: ' + e.message + '<br><br>Cek BACKEND_URL & ADMIN_TOKEN di source.</div>';
+    } finally {
+      btn.textContent = "🔄 REFRESH LIST";
+      btn.disabled = false;
+    }
+  }
+
+  async function renderUsers() {
+    const q = document.getElementById("search").value.trim().toLowerCase();
+    const filtered = allUsers.filter(u => u.email.toLowerCase().includes(q));
+    const el = document.getElementById("users-list");
+    if (filtered.length === 0) {
+      el.innerHTML = '<div class="empty">Tidak ada user' + (q ? " untuk pencarian ini" : "") + '.</div>';
+      return;
+    }
+    el.innerHTML = "";
+    for (const u of filtered) {
+      const row = document.createElement("div");
+      row.className = "user-row";
+      const meta = new Date(u.unlocked_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+      row.innerHTML =
+        '<div><div class="user-email">' + u.email + '</div>' +
+        '<div class="user-meta">Login ' + u.login_count + '× · unlock ' + meta + '</div></div>' +
+        '<div style="display:flex; gap:6px;"><button class="icon-btn" onclick="quickGen(\'' + u.email.replace(/'/g, "\\'") + '\')">🔑</button>' +
+        '<button class="icon-btn danger" onclick="revokeUser(\'' + u.email.replace(/'/g, "\\'") + '\')">✕</button></div>';
+      el.appendChild(row);
+    }
+  }
+
+  function quickGen(email) {
+    document.getElementById("email").value = email;
+    document.querySelector('.tab[data-tab="gen"]').click();
+    generateCode();
+  }
+
+  async function revokeUser(email) {
+    if (!confirm("Revoke akses untuk " + email + "?")) return;
+    try {
+      const res = await fetch(BACKEND_URL + "/api/admin/users/" + encodeURIComponent(email), {
+        method: "DELETE",
+        headers: { "X-Admin-Token": ADMIN_TOKEN }
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      showToast("Revoked!");
+      allUsers = allUsers.filter(u => u.email !== email);
+      renderUsers();
+    } catch (e) {
+      alert("Gagal revoke: " + e.message);
+    }
+  }
+
+  // Enter key submits generator
+  document.getElementById("email").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") generateCode();
+  });
+</script>
+
+</body>
+</html>

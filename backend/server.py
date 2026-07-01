@@ -911,6 +911,26 @@ app.add_middleware(
 )
 
 
+# --- Admin-only static admin HTML (served under /api/admin-tool for ingress-friendly route) ---
+from fastapi.responses import HTMLResponse  # noqa: E402
+
+
+@app.get("/api/admin-tool", include_in_schema=False)
+async def admin_tool_html() -> HTMLResponse:
+    """Serve the standalone Unlock Code Generator web page.
+
+    Access via https://<backend>/api/admin-tool from a browser. Do NOT share
+    the URL. The page still calls protected /api/admin/* endpoints with the
+    admin token embedded.
+    """
+    try:
+        path = os.path.join(os.path.dirname(__file__), "static", "admin.html")
+        with open(path, "r", encoding="utf-8") as f:
+            return HTMLResponse(f.read())
+    except Exception:
+        return HTMLResponse("<h1>Admin tool not deployed</h1>", status_code=404)
+
+
 # NOTE: no @app.on_event("startup") MongoDB seed — kept lazy so the API can
 # accept traffic immediately even while the Atlas connection is warming up.
 # Seeding happens on first /api/profiles or /api/dashboard call.
