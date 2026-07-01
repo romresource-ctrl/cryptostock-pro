@@ -38,6 +38,8 @@ const STRINGS: Record<string, { id: string; en: string }> = {
   login_code: { id: "Unlock Code", en: "Unlock Code" },
   login_submit: { id: "UNLOCK", en: "UNLOCK" },
   login_invalid: { id: "Email atau code salah", en: "Invalid email or code" },
+  login: { id: "LOGIN", en: "LOGIN" },
+  logged: { id: "LOGGED", en: "LOGGED" },
   // Asset detail
   detail_signal: { id: "Sinyal Teknikal", en: "Technical Signal" },
   detail_confidence: { id: "Confidence AI", en: "AI Confidence" },

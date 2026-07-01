@@ -265,11 +265,11 @@ export default function Dashboard() {
               <TouchableOpacity
                 onPress={() => logout()}
                 testID="logout-button"
-                style={[styles.unlockedBtn, { backgroundColor: "#0ECB81" + "22", borderColor: "#0ECB81" }]}
+                style={[styles.unlockedBtn, { backgroundColor: colors.accentBlue, borderColor: colors.accentBlue }]}
               >
-                <Ionicons name="checkmark-circle" size={14} color="#0ECB81" />
-                <Text style={[styles.unlockedText, { color: "#0ECB81" }]} numberOfLines={1}>
-                  {email && email.length > 12 ? email.split("@")[0] : email}
+                <Ionicons name="checkmark-circle" size={14} color="#fff" />
+                <Text style={[styles.unlockedText, { color: "#fff" }]} numberOfLines={1}>
+                  {t("logged")}
                 </Text>
               </TouchableOpacity>
             ) : (
@@ -279,7 +279,7 @@ export default function Dashboard() {
                 style={[styles.loginBtn, { backgroundColor: colors.accentBlue, borderColor: colors.accentBlue }]}
               >
                 <Ionicons name="log-in-outline" size={14} color="#fff" />
-                <Text style={styles.loginBtnText}>LOGIN</Text>
+                <Text style={styles.loginBtnText}>{t("login")}</Text>
               </TouchableOpacity>
             )
           )}
