@@ -912,7 +912,7 @@ app.add_middleware(
 
 
 # --- Admin-only static admin HTML (served under /api/admin-tool for ingress-friendly route) ---
-from fastapi.responses import HTMLResponse  # noqa: E402
+from fastapi.responses import FileResponse, HTMLResponse  # noqa: E402
 
 
 @app.get("/api/admin-tool", include_in_schema=False)
@@ -929,6 +929,21 @@ async def admin_tool_html() -> HTMLResponse:
             return HTMLResponse(f.read())
     except Exception:
         return HTMLResponse("<h1>Admin tool not deployed</h1>", status_code=404)
+
+
+@app.get("/api/admin-source.zip", include_in_schema=False)
+async def admin_source_zip() -> FileResponse:
+    """Download the admin-app source ZIP (for offline APK build via EAS Cloud).
+
+    Contains the entire /app/admin-app source tree minus node_modules. Extract
+    and follow admin-app/BUILD_APK.md instructions.
+    """
+    path = os.path.join(os.path.dirname(__file__), "static", "CryptoStock-Admin-Source.zip")
+    return FileResponse(
+        path,
+        media_type="application/zip",
+        filename="CryptoStock-Admin-Source.zip",
+    )
 
 
 # NOTE: no @app.on_event("startup") MongoDB seed — kept lazy so the API can
