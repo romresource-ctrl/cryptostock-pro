@@ -1,0 +1,40 @@
+{
+  "summary": "v2.1.6 security fix VALIDATED — admin/backend URL leak in LoginModal is fully remediated. FRONTEND (390x844, http://localhost:3000): header shows 'Ver 2.1.6'. Tapping [data-testid=login-button] opens LoginModal containing ONLY the allowed elements: title 'Login CryptoStock', sub description, EMAIL label + input, UNLOCK CODE label + input (XXXX-XXXX-XXXX placeholder), UNLOCK button, and hint 'Belum punya unlock code? Hubungi admin dan berikan email Anda.'. Full modal innerText scraped and matched against forbidden strings: 'APK ini terhubung ke', 'Buka Admin Tool', 'admin-tool', 'https://', 'http://', 'BACKEND SAAT INI', 'DB:', 'Codes:', 'backend_origin' — ALL ABSENT. Legacy testIDs from iter5 (copy-admin-url, whoami-banner, admin-url-box, whoami-origin) all confirmed absent from the DOM. AdminDebugModal.tsx no longer exists in /app/frontend/src/components/ (only LoginModal, PriceChart, Sparkline, VipModal remain). No import of AdminDebugModal in /app/frontend/app/index.tsx. Invalid login (test@x.com + AAAA-BBBB-CCCC) correctly returns error text 'Unlock code tidak ditemukan.' and re-scanning modal text after the error still finds ZERO leaks. Closing (X) via [data-testid=login-close-button] and reopening resets email='' and code='' — modal remains clean on reopen. BACKEND (17/17 pytest on test_iter5_whoami_and_auth.py against https://cryptostock-pro.preview.emergentagent.com): GET /api/whoami still 200 with all 5 fields (backend_origin, db_name=aitrade_pro, codes_count, admin_tool_url, server_time) — intentionally kept for admin curl/tool use. Full unlock flow regression green: POST /api/admin/generate-code (X-Admin-Token) → POST /api/auth/verify success (ok:true, lifetime, device_id echoed), case+whitespace tolerant re-verify, device_mismatch reason on different device_id, invalid_code reason on wrong code, DELETE cleanup 200, admin token required (403 without). GET /api/admin-tool still returns 200 HTML with whoami-banner (expected — this is the admin's own tool, not the end-user APK). Regression /api/ and /api/profiles still 200. Deprecated packages detected: none. SafeAreaView issues detected: none.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "RN-Web shadow* deprecation", "issue": "Carry-over from iter5: 'shadow*' style props are deprecated. Use 'boxShadow'. Emitted from AssetCard premium glow. Reference: /app/frontend/app/index.tsx:79-82 (shadowColor/shadowOpacity/shadowRadius). No functional impact."},
+      {"component": "RN-Web pointerEvents deprecation", "issue": "Carry-over transitive warning from RN-Web internals: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Origin is RN-Web Modal implementation, not app code. No functional impact."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter5_whoami_and_auth.py",
+    "/app/test_reports/pytest/iter6.xml"
+  ],
+  "action_items": [
+    "(Carry-over, cosmetic only) Silence RN-Web shadow* deprecation on web by wrapping the premium glow style in Platform.select({ web: { boxShadow: '0 0 6px rgba(240,185,11,0.35)' }, default: { shadowColor: '#F0B90B', shadowOpacity: 0.35, shadowRadius: 6, elevation: 4 } }) in /app/frontend/app/index.tsx:79-82."
+  ],
+  "critical_code_review_comments": [
+    "LoginModal.tsx (154 lines) is now genuinely minimal — 4 imports from RN, useAuth/useI18n/useTheme, two useState pairs for email/code and busy/error, no useEffect, no API_BASE, no expo-clipboard, no whoami fetch. Confirmed clean.",
+    "index.tsx does not import AdminDebugModal (verified via grep — no matches for 'AdminDebugModal', 'whoami', 'admin-tool' anywhere in app/ or src/components/).",
+    "server.py intentionally retains /api/whoami and /api/admin-tool — this is CORRECT for the stated threat model: the security concern is not the endpoint's existence but preventing the APK UI from *advertising* the admin URL to end users. Admin curl / admin tool page continues to work.",
+    "admin.html static banner (BACKEND SAAT INI) is intentionally preserved for admin verification when generating codes — not shipped to APK.",
+    "All required testIDs still present: login-button, login-email-input, login-code-input, login-submit-button, login-error, login-close-button. testIDs for the removed feature (copy-admin-url, whoami-banner) are fully absent from the DOM."
+  ],
+  "updated_files": [
+    "/app/test_reports/pytest/iter6.xml",
+    "/app/test_reports/iteration_6.json"
+  ],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "100% — security-critical checks all pass: modal contains only allowed elements, zero URL/admin/backend/db/codes leaks in normal & error states, invalid login shows correct error message without revealing admin URL, close+reopen resets state cleanly"},
+  "seed_data_creation": "Reused TestUnlockCodeFlow which creates+deletes TEST_e2etest@example.com lifetime code and its logged_users entry per run. Cleanup verified in test_f. No residual test data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "v2.1.6 security fix is GREEN. LoginModal is now minimal and reveals no backend/admin info. Backend /api/whoami and /api/admin-tool endpoints remain for admin use — this is by design. If retesting: reuse /app/backend/tests/test_iter5_whoami_and_auth.py (regression covers whoami + full unlock code flow). Frontend leak-check pattern: open modal via [data-testid=login-button], scrape innerText of the modal container, assert absence of ['APK ini terhubung ke','Buka Admin Tool','admin-tool','https://','http://','BACKEND SAAT INI','DB:','Codes:','backend_origin']. Repeat scrape after triggering error state.",
+  "rca_of_issue": "N/A — this iteration is a security hardening validation, not a bug fix. The prior iter5 feature (in-APK whoami fingerprint box to help end-users diagnose backend mismatches) was correctly identified by the user as a security leak because installed APKs would advertise the admin URL to any user, encouraging probing of /api/admin-tool. Mitigation applied and verified: (a) delete AdminDebugModal.tsx, (b) strip all whoami UI + useEffect + expo-clipboard + admin URL rendering from LoginModal.tsx, (c) remove AdminDebugModal import from app/index.tsx, (d) keep /api/whoami on backend for admin's own curl/tool debugging. Result: end-user APK now shows no backend origin, no admin URL, no DB name, no codes count — anywhere in the UI, including the error state. Admin workflow (generate code via admin tool with X-Admin-Token → give code + email to user → user unlocks) remains fully functional."
+}
