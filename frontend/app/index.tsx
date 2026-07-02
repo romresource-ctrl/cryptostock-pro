@@ -225,15 +225,14 @@ export default function Dashboard() {
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: colors.background }]} edges={["top"]}>
       <View style={styles.header}>
-        <View style={{ flex: 1 }}>
+        <View style={styles.headerTitleWrap}>
           <Text
             style={[styles.appTitle, { color: colors.textPrimary }]}
             numberOfLines={1}
             adjustsFontSizeToFit
-            minimumFontScale={0.7}
+            minimumFontScale={0.6}
           >{t("app_title")}</Text>
           <Text style={[styles.appSub, { color: colors.textMuted }]} numberOfLines={1}>
-            {premiumCount > 0 ? `⭐ ${premiumCount} ${t("premium_label")} · ` : ""}
             {`${t("ver_label")} ${APP_VERSION}`}
           </Text>
         </View>
@@ -505,7 +504,8 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", paddingHorizontal: 16,
     paddingTop: 8, paddingBottom: 10,
   },
-  appTitle: { fontSize: 20, fontWeight: "700", letterSpacing: 0.2 },
+  appTitle: { fontSize: 18, fontWeight: "800", letterSpacing: 0.2 },
+  headerTitleWrap: { flex: 1, paddingRight: 8, maxWidth: 180 },
   appSub: { fontSize: 11, marginTop: 2 },
   headerActions: { flexDirection: "row", gap: 8, alignItems: "center" },
   iconBtn: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center", borderWidth: 1 },

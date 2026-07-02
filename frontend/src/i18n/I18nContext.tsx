@@ -9,7 +9,7 @@ const STORAGE_KEY = "kevinaipro:lang";
 // strings are written here too. Dynamic content (news, AI analysis) is
 // translated server-side via /api/translate (cached in MongoDB).
 const STRINGS: Record<string, { id: string; en: string }> = {
-  app_title: { id: "CryptoStock", en: "CryptoStock" },
+  app_title: { id: "CryptoStock Pro", en: "CryptoStock Pro" },
   app_sub_loading: { id: "memuat…", en: "loading…" },
   ver_label: { id: "Ver", en: "Ver" },
   // Header / navigation
