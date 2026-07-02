@@ -15,6 +15,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAuth } from "@/src/auth/AuthContext";
+import AdminDebugModal from "@/src/components/AdminDebugModal";
 import LoginModal from "@/src/components/LoginModal";
 import Sparkline from "@/src/components/Sparkline";
 import VipModal from "@/src/components/VipModal";
