@@ -1,0 +1,46 @@
+{
+  "summary": "v2.1.6 whoami fingerprint + unlock-code flow FULLY VALIDATED. Backend: 17/17 pytest pass on /app/backend/tests/test_iter5_whoami_and_auth.py. GET /api/whoami returns all 5 required fields with backend_origin='https://cryptostock-pro.preview.emergentagent.com' (respects X-Forwarded-Host / X-Forwarded-Proto via ingress — not localhost:8001), db_name='aitrade_pro', codes_count=1 which matches actual admin/codes total, admin_tool_url = backend_origin + '/api/admin-tool' exactly, server_time in ISO-8601. GET /api/admin-tool HTML contains id='whoami-banner' and text 'BACKEND SAAT INI'. End-to-end auth flow: POST /api/admin/generate-code (X-Admin-Token) → POST /api/auth/verify with matching device_id → ok:true, duration:lifetime, expires_at:null, device_id echoed; same code with lowercase + whitespace still verifies; DIFFERENT device_id → ok:false reason:'device_mismatch'; unknown code → ok:false reason:'invalid_code'; DELETE cleanup 200; POST /api/admin/generate-code without token → 403. Regression: /api/, /api/profiles still 200. Frontend (390x844): header shows 'Ver 2.1.6'. LOGIN modal opens on tap of [data-testid=login-button]. Whoami fingerprint box appears within 1–2s with 'APK ini terhubung ke: https://cryptostock-pro.preview.emergentagent.com', 'DB: aitrade_pro', 'Codes: 1', 'Buka Admin Tool di URL YANG SAMA:' + full admin URL in dashed-border box. Tapping copy-admin-url swaps icon to green checkmark and shows 'URL disalin ke clipboard ✓' (clipboard permission granted; expo-clipboard call succeeded — no crash). Invalid login (kevchan1212@gmail.com + AAAA-BBBB-CCCC) shows red error 'Unlock code tidak ditemukan.' AND whoami box remains visible so user can visually confirm URL. Deprecated packages detected: none. SafeAreaView issues detected: none. Carry-over warnings from prior iters (shadow* / pointerEvents RN-Web deprecations) still emit but no functional impact.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "app.json", "issues": ["expo warning at startup: 'android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor' — androidStatusBar.backgroundColor is '#000000' but expo-splash-screen plugin backgroundColor is '#000' (short hex). Same visual color but string mismatch triggers the warning. Suggest normalizing to '#000000' at /app/frontend/app.json:38 to silence."]}
+    ],
+    "react_native_issues": [
+      {"component": "RN-Web shadow* deprecation", "issue": "Console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' — emitted from AssetCard premium glow on index.tsx (carry-over from iter4). Reference: /app/frontend/app/index.tsx:74-79."},
+      {"component": "RN-Web pointerEvents deprecation", "issue": "'props.pointerEvents is deprecated. Use style.pointerEvents' — carry-over transitive warning from RN-Web; no functional impact."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter5_whoami_and_auth.py",
+    "/app/test_reports/pytest/iter5.xml"
+  ],
+  "action_items": [
+    "(Optional polish) Normalize expo-splash-screen plugin backgroundColor from '#000' to '#000000' in /app/frontend/app.json:38 to silence the 'androidStatusBar.backgroundColor conflicts with splash.backgroundColor' warning on every Metro start.",
+    "(Carry-over from iter4) Silence RN-Web shadow* deprecation by using Platform.select boxShadow on web in AssetCard premium style (/app/frontend/app/index.tsx:74-79)."
+  ],
+  "critical_code_review_comments": [
+    "/api/whoami (backend/server.py:944-969) correctly prioritizes X-Forwarded-Host + X-Forwarded-Proto for the ingress-visible origin, falls back to Host header, and finally to request.base_url. Verified via live curl to https://cryptostock-pro.preview.emergentagent.com/api/whoami → backend_origin matches ingress exactly (no localhost:8001 leak).",
+    "codes_count uses db.unlock_codes.count_documents({}) inside try/except returning -1 on failure — safe; matches admin/codes total in live test.",
+    "admin_tool_url is constructed as backend_origin + '/api/admin-tool' — exact string equality asserted in test.",
+    "auth_verify (backend/server.py:901-941) normalizes email/code with strip + upper before hitting verify_code — makes verification case-insensitive & whitespace-tolerant (verified end-to-end).",
+    "LoginModal.tsx fetches ${API_BASE}/whoami on visible=true with cancel guard — clean async pattern. Uses testIDs login-email-input / login-code-input / login-submit-button / login-error / copy-admin-url / login-close-button — all present and reachable.",
+    "expo-clipboard is used correctly with Clipboard.setStringAsync; setTimeout resets copied state after 1.8s — verified visually.",
+    "admin.html (static) fetches /api/whoami and populates #whoami-origin / #whoami-meta — banner present in served HTML per test_admin_tool_html_contains_whoami_banner."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter5_whoami_and_auth.py",
+    "/app/test_reports/pytest/iter5.xml",
+    "/app/test_reports/iteration_5.json"
+  ],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "100% on all requested flows: Ver 2.1.6 header, LOGIN opens modal, whoami fingerprint box appears with correct URL/DB/codes_count, admin URL displayed in copyable box, copy tap shows green checkmark + 'URL disalin ke clipboard ✓', invalid login shows 'Unlock code tidak ditemukan.' AND whoami box remains visible"},
+  "seed_data_creation": "Test class TestUnlockCodeFlow creates+deletes one TEST_e2etest@example.com lifetime code per run; cleanup verified. logged_users entry also removed at teardown. No residual test data in DB.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "v2.1.6 whoami feature is GREEN end-to-end. The user-reported 'Unlock code tidak ditemukan.' bug root cause (APK vs Admin on different backends) is now visually diagnosable via the fingerprint box in LoginModal AND the blue banner on /api/admin-tool. Live backend origin as of test run: https://cryptostock-pro.preview.emergentagent.com, DB=aitrade_pro, codes_count=1. Critical testIDs: login-button, login-email-input, login-code-input, login-submit-button, login-error, copy-admin-url, login-close-button. If retesting, reuse /app/backend/tests/test_iter5_whoami_and_auth.py — self-cleaning. If codes_count changes, the whoami<->admin/codes cross-check test still passes because it compares live values.",
+  "rca_of_issue": "Original bug: user-reported 'invalid_code' after 17+ attempts. Hypothesis (APK build pointing to a different backend/DB than the admin tool the user opened) is CORRECTLY addressed by v2.1.6. Verified: (1) /api/whoami returns the actual ingress origin, not localhost — so the URL shown on the APK screen IS the URL the APK is querying; (2) codes_count is a live count from the same DB the /api/auth/verify code path reads — mismatch would be immediately obvious in-app; (3) admin.html shows the SAME backend_origin banner — user can side-by-side compare; (4) auth/verify itself is fully functional and case/whitespace tolerant (previously good — now confirmed under regression). No code fix needed beyond what was already applied; the v2.1.6 UX makes the mismatch visible."
+}

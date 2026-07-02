@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, FastAPI, Header, HTTPException, Query
+from fastapi import APIRouter, FastAPI, Header, HTTPException, Query, Request
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
 from starlette.middleware.cors import CORSMiddleware
@@ -939,6 +939,34 @@ async def auth_verify(payload: dict) -> dict:
         upsert=True,
     )
     return result
+
+
+@api.get("/whoami")
+async def whoami(request: Request) -> dict:
+    """Backend fingerprint — helps users verify their APK & admin tool
+    are talking to the SAME backend / database.
+
+    Returns:
+      - backend_host: the exact hostname/origin the request landed on
+      - db_name: MongoDB database name in use
+      - codes_count: number of unlock codes stored in this DB
+      - admin_tool_url: exact URL the admin tool should be opened at
+    """
+    # Prefer the ingress-visible host (respect proxy header if present)
+    fwd_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+    scheme = request.headers.get("x-forwarded-proto") or request.url.scheme or "https"
+    backend_origin = f"{scheme}://{fwd_host}" if fwd_host else str(request.base_url).rstrip("/")
+    try:
+        codes_count = await db.unlock_codes.count_documents({})
+    except Exception:
+        codes_count = -1
+    return {
+        "backend_origin": backend_origin,
+        "db_name": os.environ.get("DB_NAME", "?"),
+        "codes_count": codes_count,
+        "admin_tool_url": f"{backend_origin}/api/admin-tool",
+        "server_time": _now_iso(),
+    }
 
 
 # ---- Admin: unlock code management ----

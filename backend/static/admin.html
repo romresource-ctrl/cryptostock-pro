@@ -63,6 +63,16 @@
   🎯 Butuh APK asli? <a href="/api/admin-source.zip" style="color:#F0B90B; text-decoration:underline; font-weight:700;">Download ZIP</a> · ikuti panduan <code>BUILD_APK.md</code>
 </div>
 
+<!-- Backend fingerprint banner — MUST match APK's backend, else codes won't work -->
+<div id="whoami-banner" style="background:#0B2545; border:1px solid #2962FF; border-radius:10px; padding:10px 14px; margin-bottom:14px; font-size:12px; line-height:1.5;">
+  <div style="color:#8FB4FF; font-weight:700; margin-bottom:4px;">🌐 BACKEND SAAT INI (harus SAMA dengan yang di APK):</div>
+  <div id="whoami-origin" style="color:#F0B90B; font-weight:700; word-break:break-all;">Loading…</div>
+  <div id="whoami-meta" style="color:#8FB4FF; margin-top:4px; font-size:11px;">DB: — · Codes stored: —</div>
+  <div style="color:#EAECEF; margin-top:6px; font-size:11px; opacity:0.85;">
+    ⚠️ Jika APK menampilkan URL yang <b>BERBEDA</b> dengan URL di atas, code yang di-generate di sini <b>TIDAK</b> akan match. Buka admin dari URL yang sama persis dengan yang tertulis di modal Login APK.
+  </div>
+</div>
+
 <div class="tabs">
   <div class="tab active" data-tab="gen">🔧 GENERATOR</div>
   <div class="tab" data-tab="users">👥 USERS & CODES</div>
@@ -112,6 +122,21 @@
   // ==== CONFIG ====
   const BACKEND_URL = window.location.origin;  // same origin as admin tool
   const ADMIN_TOKEN = "kevin-admin-2026-do-not-share-xyz789";
+
+  // ==== BACKEND FINGERPRINT (whoami) ====
+  (async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/whoami`);
+      const w = await res.json();
+      const originEl = document.getElementById("whoami-origin");
+      const metaEl = document.getElementById("whoami-meta");
+      if (originEl) originEl.textContent = w.backend_origin || BACKEND_URL;
+      if (metaEl) metaEl.textContent = `DB: ${w.db_name || "?"} · Codes stored: ${w.codes_count ?? "?"}`;
+    } catch (e) {
+      const originEl = document.getElementById("whoami-origin");
+      if (originEl) originEl.textContent = BACKEND_URL + " (fingerprint unavailable)";
+    }
+  })();
 
   // ==== TAB SWITCHING ====
   document.querySelectorAll(".tab").forEach(t => {
