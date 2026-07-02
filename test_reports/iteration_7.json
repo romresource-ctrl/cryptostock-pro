@@ -1,0 +1,41 @@
+{
+  "summary": "v2.1.6 AI ensemble upgrade VALIDATED — MODELS list expanded from 3 to 5 (Claude Fable 5, Claude Opus 4.8, Claude Sonnet 4.6, GPT-5.5, Gemini 3.1 Pro) all reachable via Emergent LLM key. Backend pytest 5/5 PASS (/app/test_reports/pytest/iter7.xml). Crypto analyze on BNB (POST /api/asset/crypto/BNB/analyze?timeframe=1h) returned 200 in 17.3s with models array length=5, names exactly matching the expected label set, and ok_count=5/5 (no errors, no fallback triggered). Stock_id analyze on BBCA (POST /api/asset/stock_id/BBCA/analyze?timeframe=1h) returned 200 in 16.7s with models length=5, names exactly matching, ok_count=5/5. Response shape confirmed: {symbol, market, timeframe, price, technical, consensus:{action(BUY/SELL/HOLD), label, confidence, summary, entry, stop_loss, take_profit, timeframe_view, news_factors, risk_factors, votes}, models:[{name, ok, data, error}], news_used, generated_at}. Regression smoke green: GET /api/whoami 200 with all 5 fields (backend_origin, db_name=aitrade_pro, codes_count, admin_tool_url, server_time); GET /api/dashboard?market=crypto&timeframe=1h&full=true 200 with populated 'assets' array; full admin auth flow (POST /api/admin/generate-code with X-Admin-Token → POST /api/auth/verify ok:true → DELETE /api/admin/users/{email} 200) end-to-end verified. Deprecated packages detected: none. SafeAreaView issues detected: none. Frontend not tested per request (backend-only). NOTE: response body's top-level field is `consensus` (nested object containing action/confidence/summary), not action/confidence/summary flat at root as the review request phrasing suggested — this is the existing/correct AnalyzeResponse shape as implemented in server.py:697 and consumed by the frontend; test assertions updated accordingly.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter7_ai_ensemble.py",
+    "/app/test_reports/pytest/iter7.xml"
+  ],
+  "action_items": [
+    "None required for the AI ensemble upgrade — all 5 models return ok=true on both crypto and stock analyze calls. Cosmetic action item carried over from iter6 (RN-Web shadow* deprecation on AssetCard premium glow in /app/frontend/app/index.tsx:79-82) remains open but does not block anything."
+  ],
+  "critical_code_review_comments": [
+    "ai_engine.py MODELS list correctly declares 5 entries with matching provider/model/label. Labels used in assertions match exactly: 'Claude Fable 5', 'Claude Opus 4.8', 'Claude Sonnet 4.6', 'GPT-5.5', 'Gemini 3.1 Pro'.",
+    "_call_one still supports optional per-model fallback via fallback_model/fallback_label keys — currently no model uses it (all primaries work). Behavior preserved and inert as intended.",
+    "asyncio.gather(*tasks, return_exceptions=False) in ensemble_analyze — since _call_one internally try/excepts every LlmChat call and never re-raises, this is safe; a raw exception would still take down the whole batch. Consider return_exceptions=True defensively, but not blocking (no failures observed across 2 runs).",
+    "server.py /api/asset/{market}/{symbol}/analyze returns AnalyzeResponse with nested consensus + models — matches ai_engine.ensemble_analyze contract.",
+    "Emergent LLM key correctly read from os.environ EMERGENT_LLM_KEY inside _call_one on each invocation (no module-level capture), so a hot-reload of .env would be picked up."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter7_ai_ensemble.py",
+    "/app/test_reports/pytest/iter7.xml",
+    "/app/test_reports/iteration_7.json"
+  ],
+  "success_rate": {
+    "backend": "100% (5/5 pytest); AI ensemble 5/5 models ok=true on crypto BNB, 5/5 models ok=true on stock_id BBCA",
+    "frontend": "not tested (backend-only per review request)"
+  },
+  "seed_data_creation": "Test creates+deletes TEST_iter7_{uuid8}@example.com lifetime code within the auth_verify_full_flow test. Cleanup verified (DELETE /api/admin/users/{email} → 200). No residual test data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "AI ensemble upgrade to 5 models is GREEN. Reuse /app/backend/tests/test_iter7_ai_ensemble.py — it dynamically picks a symbol from /api/dashboard (assets[0]) so it self-heals if crypto/stock rotation changes. Analyze latency observed: ~17s per call with 5 parallel LLMs; keep timeout>=90s. Dashboard response uses key 'assets' (not 'items') for the item array — factor this in if writing new dashboard tests. Full admin unlock flow is covered here too, so if you need to regress auth you can just rerun this suite.",
+  "rca_of_issue": "N/A — feature validation, no bug found."
+}

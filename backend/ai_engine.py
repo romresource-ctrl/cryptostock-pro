@@ -16,8 +16,11 @@ from typing import Any
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 MODELS = [
+    # Semua versi terbaru per 2026 (5 AI agents ensemble)
+    {"provider": "anthropic", "model": "claude-fable-5", "label": "Claude Fable 5"},
+    {"provider": "anthropic", "model": "claude-opus-4-8", "label": "Claude Opus 4.8"},
     {"provider": "anthropic", "model": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6"},
-    {"provider": "openai", "model": "gpt-5.2", "label": "GPT-5.2"},
+    {"provider": "openai", "model": "gpt-5.5", "label": "GPT-5.5"},
     {"provider": "gemini", "model": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro"},
 ]
 
@@ -92,20 +95,37 @@ def _extract_json(text: str) -> dict[str, Any] | None:
 
 async def _call_one(model_cfg: dict[str, str], prompt: str, session_id: str) -> dict[str, Any]:
     api_key = os.environ.get("EMERGENT_LLM_KEY", "")
-    try:
-        chat = LlmChat(
-            api_key=api_key,
-            session_id=session_id,
-            system_message=SYSTEM_PROMPT,
-        ).with_model(model_cfg["provider"], model_cfg["model"])
-        response = await chat.send_message(UserMessage(text=prompt))
-        text = response if isinstance(response, str) else str(response)
-        parsed = _extract_json(text)
-        if parsed:
-            return {"model": model_cfg["label"], "ok": True, "data": parsed}
-        return {"model": model_cfg["label"], "ok": False, "error": "parse_failed", "raw": text[:300]}
-    except Exception as e:
-        return {"model": model_cfg["label"], "ok": False, "error": str(e)[:200]}
+
+    async def _try(provider: str, model: str, label: str) -> tuple[bool, dict[str, Any]]:
+        try:
+            chat = LlmChat(
+                api_key=api_key,
+                session_id=session_id,
+                system_message=SYSTEM_PROMPT,
+            ).with_model(provider, model)
+            response = await chat.send_message(UserMessage(text=prompt))
+            text = response if isinstance(response, str) else str(response)
+            parsed = _extract_json(text)
+            if parsed:
+                return True, {"model": label, "ok": True, "data": parsed}
+            return False, {"model": label, "ok": False, "error": "parse_failed", "raw": text[:300]}
+        except Exception as e:
+            return False, {"model": label, "ok": False, "error": str(e)[:200]}
+
+    ok, result = await _try(model_cfg["provider"], model_cfg["model"], model_cfg["label"])
+    if ok:
+        return result
+
+    # Optional fallback (e.g., Fable 5 → Opus 4.8 kalau Emergent belum whitelist Fable 5)
+    fb_model = model_cfg.get("fallback_model")
+    if fb_model:
+        fb_label = model_cfg.get("fallback_label", f"{fb_model} (fallback)")
+        ok2, result2 = await _try(model_cfg["provider"], fb_model, fb_label)
+        if ok2:
+            return result2
+        # Kalau fallback juga gagal, return error dari primary tapi tandai fallback juga fail
+        result["fallback_error"] = result2.get("error", "unknown")
+    return result
 
 
 def _aggregate(results: list[dict[str, Any]], fallback_ta: dict[str, Any]) -> dict[str, Any]:
