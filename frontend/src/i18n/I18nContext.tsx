@@ -33,6 +33,11 @@ const STRINGS: Record<string, { id: string; en: string }> = {
   vip_contact_label: { id: "Hubungi kami untuk membuka:", en: "Contact us to unlock:" },
   vip_login_btn: { id: "SUDAH PUNYA CODE? LOGIN", en: "ALREADY HAVE CODE? LOGIN" },
   // Login modal
+  login_modal_title: { id: "Login CryptoStock", en: "Login CryptoStock" },
+  login_modal_body: {
+    id: "Masukkan email Anda dan unlock code yang Anda terima dari admin. Sekali login, tidak perlu login ulang selama masa berlaku code masih aktif.",
+    en: "Enter your email and the unlock code you received from admin. Once logged in, you stay logged in as long as your code is still valid.",
+  },
   login_title: { id: "Masukkan Unlock Code", en: "Enter Unlock Code" },
   login_email: { id: "Email", en: "Email" },
   login_code: { id: "Unlock Code", en: "Unlock Code" },

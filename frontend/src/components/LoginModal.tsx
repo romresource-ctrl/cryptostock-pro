@@ -13,6 +13,7 @@ import {
 } from "react-native";
 
 import { useAuth } from "@/src/auth/AuthContext";
+import { useI18n } from "@/src/i18n/I18nContext";
 import { useTheme } from "@/src/theme/ThemeContext";
 
 type Props = {
@@ -22,6 +23,7 @@ type Props = {
 
 export default function LoginModal({ visible, onClose }: Props) {
   const { colors } = useTheme();
+  const { t } = useI18n();
   const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
@@ -66,7 +68,7 @@ export default function LoginModal({ visible, onClose }: Props) {
           <View style={styles.header}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
               <Ionicons name="key" size={18} color={colors.accentBlue} />
-              <Text style={[styles.title, { color: colors.textPrimary }]}>Login KevinAI Pro</Text>
+              <Text style={[styles.title, { color: colors.textPrimary }]}>{t("login_modal_title")}</Text>
             </View>
             <TouchableOpacity onPress={close} testID="login-close-button" hitSlop={8}>
               <Ionicons name="close" size={22} color={colors.textMuted} />
@@ -74,8 +76,7 @@ export default function LoginModal({ visible, onClose }: Props) {
           </View>
 
           <Text style={[styles.sub, { color: colors.textMuted }]}>
-            Masukkan email Anda dan unlock code yang Anda terima dari admin.
-            Sekali login, tidak perlu login ulang.
+            {t("login_modal_body")}
           </Text>
 
           <Text style={[styles.label, { color: colors.textMuted }]}>EMAIL</Text>
