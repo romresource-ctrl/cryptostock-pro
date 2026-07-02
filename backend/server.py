@@ -1112,6 +1112,20 @@ async def admin_source_zip() -> FileResponse:
     )
 
 
+@app.get("/api/app-source.zip", include_in_schema=False)
+async def app_source_zip() -> FileResponse:
+    """Download the MAIN APP source ZIP for building CryptoStock Pro APK (v2.1.3+)."""
+    path = os.path.join(os.path.dirname(__file__), "static", "CryptoStock-App-Source.zip")
+    return FileResponse(path, media_type="application/zip", filename="CryptoStock-App-Source.zip")
+
+
+@app.get("/api/build-main-guide", include_in_schema=False)
+async def build_main_guide() -> FileResponse:
+    """Markdown build guide for main app APK."""
+    path = os.path.join(os.path.dirname(__file__), "static", "BUILD_MAIN_APK.md")
+    return FileResponse(path, media_type="text/markdown", filename="BUILD_MAIN_APK.md")
+
+
 # NOTE: no @app.on_event("startup") MongoDB seed — kept lazy so the API can
 # accept traffic immediately even while the Atlas connection is warming up.
 # Seeding happens on first /api/profiles or /api/dashboard call.
