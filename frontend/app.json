@@ -39,7 +39,7 @@
     "scheme": "frontend",
     "slug": "kevinai-pro",
     "userInterfaceStyle": "automatic",
-    "version": "2.1.6",
+    "version": "2.1.7",
     "web": {
       "bundler": "metro",
       "favicon": "./assets/images/favicon.png",
