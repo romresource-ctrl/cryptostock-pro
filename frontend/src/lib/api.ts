@@ -259,7 +259,8 @@ export function formatPrice(v: number | null | undefined, market: Market): strin
   if (v >= 1) return v.toFixed(3);
   if (v >= 0.01) return v.toFixed(4);
   if (v >= 0.0001) return v.toFixed(6);
-  return v.toExponential(3);
+  if (v >= 0.00000001) return v.toFixed(8);
+  return v.toFixed(10).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 export function formatPct(v: number | null | undefined): string {
