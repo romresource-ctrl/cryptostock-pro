@@ -6,110 +6,88 @@
 <title>CryptoStock Admin — Unlock Code Generator</title>
 <style>
   * { box-sizing: border-box; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: #0B0F1A; color: #E8ECF4; margin: 0; padding: 16px;
-    min-height: 100vh;
-  }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0B0F1A; color: #E8ECF4; margin: 0; padding: 16px; min-height: 100vh; }
   h1 { color: #F0B90B; margin: 0 0 4px; font-size: 22px; }
   .subtitle { color: #8A93A6; font-size: 12px; margin-bottom: 20px; letter-spacing: 0.4px; }
-  .card {
-    background: #141B2C; border: 1px solid #24304A; border-radius: 12px;
-    padding: 18px; margin-bottom: 16px;
-  }
+  .card { background: #141B2C; border: 1px solid #24304A; border-radius: 12px; padding: 18px; margin-bottom: 16px; }
   .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
-  .tab {
-    flex: 1; padding: 10px 8px; text-align: center; cursor: pointer;
-    background: #141B2C; border: 1px solid #24304A; border-radius: 8px;
-    color: #8A93A6; font-weight: 700; font-size: 12px; letter-spacing: 0.4px;
-  }
+  .tab { flex: 1; padding: 10px 8px; text-align: center; cursor: pointer; background: #141B2C; border: 1px solid #24304A; border-radius: 8px; color: #8A93A6; font-weight: 700; font-size: 12px; letter-spacing: 0.4px; }
   .tab.active { background: #1E66F5; border-color: #1E66F5; color: white; }
   label { display: block; color: #8A93A6; font-size: 11px; letter-spacing: 0.6px; margin-bottom: 6px; font-weight: 700; }
-  input {
-    width: 100%; background: #0B0F1A; border: 1px solid #24304A;
-    border-radius: 8px; padding: 12px 14px; color: #E8ECF4; font-size: 14px;
-    margin-bottom: 12px; font-family: inherit;
+  input, select { width: 100%; background: #0B0F1A; border: 1px solid #24304A; border-radius: 8px; padding: 12px 14px; color: #E8ECF4; font-size: 14px; margin-bottom: 12px; font-family: inherit; -webkit-appearance: none; appearance: none; }
+  select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' stroke='%23F0B90B' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 14px center; background-size: 14px; padding-right: 40px;
   }
-  input:focus { outline: none; border-color: #1E66F5; }
-  button {
-    width: 100%; background: #1E66F5; color: white; border: none;
-    padding: 14px; border-radius: 8px; font-size: 13px; font-weight: 800;
-    letter-spacing: 0.6px; cursor: pointer; margin-bottom: 8px;
-    font-family: inherit;
-  }
+  input:focus, select:focus { outline: none; border-color: #1E66F5; }
+  button { width: 100%; background: #1E66F5; color: white; border: none; padding: 14px; border-radius: 8px; font-size: 13px; font-weight: 800; letter-spacing: 0.6px; cursor: pointer; margin-bottom: 8px; font-family: inherit; }
   button:hover { background: #1856d8; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
   button.secondary { background: #24304A; }
   button.secondary:hover { background: #2f3d5c; }
-  .result {
-    background: #0B0F1A; border: 1.5px solid #F0B90B; border-radius: 8px;
-    padding: 16px; margin: 14px 0; text-align: center;
-  }
-  .code-value {
-    font-family: "SF Mono", Consolas, Monaco, monospace;
-    font-size: 24px; font-weight: 800; color: #F0B90B; letter-spacing: 2px;
-    margin: 6px 0;
-  }
+  .result { background: #0B0F1A; border: 1.5px solid #F0B90B; border-radius: 8px; padding: 16px; margin: 14px 0; text-align: center; }
+  .code-value { font-family: "SF Mono", Consolas, Monaco, monospace; font-size: 24px; font-weight: 800; color: #F0B90B; letter-spacing: 2px; margin: 6px 0; }
   .code-label { font-size: 10px; color: #8A93A6; letter-spacing: 0.6px; }
-  .msg-preview {
-    background: #0B0F1A; border: 1px solid #24304A; border-radius: 8px;
-    padding: 12px; font-size: 12px; color: #C8CFDE; white-space: pre-wrap;
-    line-height: 1.5; margin-bottom: 8px;
-  }
-  .user-row {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 10px 12px; border: 1px solid #24304A; border-radius: 8px;
-    margin-bottom: 8px; gap: 8px;
-  }
-  .user-email { font-size: 13px; color: #E8ECF4; flex: 1; word-break: break-all; }
-  .user-meta { font-size: 10px; color: #8A93A6; }
-  .icon-btn {
-    background: transparent; border: 1px solid #F0B90B; color: #F0B90B;
-    padding: 6px 10px; width: auto; font-size: 11px; margin: 0;
-    border-radius: 6px;
-  }
+  .code-meta { font-size: 12px; color: #E8ECF4; margin-top: 8px; line-height: 1.6; }
+  .msg-preview { background: #0B0F1A; border: 1px solid #24304A; border-radius: 8px; padding: 12px; font-size: 12px; color: #C8CFDE; white-space: pre-wrap; line-height: 1.5; margin-bottom: 8px; }
+  .user-row { display: flex; flex-direction: column; padding: 10px 12px; border: 1px solid #24304A; border-radius: 8px; margin-bottom: 8px; gap: 6px; }
+  .user-row.duplicate { border-color: #E53935; background: rgba(229,57,53,0.06); }
+  .user-email { font-size: 13px; color: #E8ECF4; font-weight: 700; word-break: break-all; }
+  .user-meta { font-size: 10px; color: #8A93A6; line-height: 1.5; }
+  .user-actions { display: flex; gap: 6px; margin-top: 4px; }
+  .icon-btn { background: transparent; border: 1px solid #F0B90B; color: #F0B90B; padding: 6px 10px; width: auto; font-size: 10px; margin: 0; border-radius: 6px; letter-spacing: 0.4px; }
   .icon-btn.danger { border-color: #E53935; color: #E53935; }
-  .toast {
-    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-    background: #25D366; color: white; padding: 10px 18px; border-radius: 24px;
-    font-size: 13px; font-weight: 700; z-index: 100; opacity: 0;
-    transition: opacity 0.25s;
-  }
+  .icon-btn.blue { border-color: #1E66F5; color: #1E66F5; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 10px; letter-spacing: 0.4px; font-weight: 700; margin-right: 4px; }
+  .badge.active { background: #0ECB81; color: white; }
+  .badge.expired { background: #E53935; color: white; }
+  .badge.unused { background: #24304A; color: #8A93A6; }
+  .badge.revoked { background: #666; color: white; }
+  .badge.lifetime { background: #F0B90B; color: black; }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #25D366; color: white; padding: 10px 18px; border-radius: 24px; font-size: 13px; font-weight: 700; z-index: 100; opacity: 0; transition: opacity 0.25s; }
   .toast.show { opacity: 1; }
-  .warning {
-    background: rgba(240,185,11,0.1); border: 1px solid #F0B90B;
-    color: #F0B90B; padding: 10px 12px; border-radius: 8px; font-size: 11px;
-    margin-bottom: 14px; letter-spacing: 0.3px; line-height: 1.5;
-  }
+  .warning { background: rgba(240,185,11,0.1); border: 1px solid #F0B90B; color: #F0B90B; padding: 10px 12px; border-radius: 8px; font-size: 11px; margin-bottom: 14px; letter-spacing: 0.3px; line-height: 1.5; }
   .empty { text-align: center; color: #8A93A6; font-size: 13px; padding: 24px; }
   .hidden { display: none; }
+  .row-2 { display: flex; gap: 8px; }
+  .row-2 > * { flex: 1; }
 </style>
 </head>
 <body>
 
 <h1>🔑 CryptoStock Admin</h1>
-<div class="subtitle">Unlock Code Generator · web edition</div>
+<div class="subtitle">Unlock Code Generator · v2 · duration + device binding</div>
 
 <div class="warning">
   ⚠️ HALAMAN INI ADMIN-ONLY. Jangan share URL / file ini ke user.<br>
-  🎯 Butuh APK asli untuk HP admin? <a href="/api/admin-source.zip" style="color:#F0B90B; text-decoration:underline; font-weight:700;">Download source ZIP</a> · ikuti panduan di file <code>BUILD_APK.md</code> di dalam ZIP.
+  🎯 Butuh APK asli? <a href="/api/admin-source.zip" style="color:#F0B90B; text-decoration:underline; font-weight:700;">Download ZIP</a> · ikuti panduan <code>BUILD_APK.md</code>
 </div>
 
 <div class="tabs">
   <div class="tab active" data-tab="gen">🔧 GENERATOR</div>
-  <div class="tab" data-tab="users">👥 LOGGED USERS</div>
+  <div class="tab" data-tab="users">👥 USERS & CODES</div>
 </div>
 
 <!-- GENERATOR TAB -->
 <div class="card" id="tab-gen">
   <label>EMAIL USER</label>
-  <input type="email" id="email" placeholder="budi@gmail.com" autocomplete="off" />
+  <input type="email" id="email" placeholder="sample@email.com" autocomplete="off" />
 
-  <button onclick="generateCode()">🔑 GENERATE UNLOCK CODE</button>
+  <label>DURATION / MASA BERLAKU</label>
+  <select id="duration">
+    <option value="monthly">Monthly (30 hari)</option>
+    <option value="quarterly">Quarterly (90 hari / 3 bulan)</option>
+    <option value="half_year">Half Year (180 hari / 6 bulan)</option>
+    <option value="yearly">Yearly (365 hari / 12 bulan)</option>
+    <option value="lifetime">Lifetime (selamanya)</option>
+  </select>
+
+  <button id="gen-btn" onclick="generateCode()">🔑 GENERATE UNLOCK CODE</button>
 
   <div id="result" class="result hidden">
     <div class="code-label">UNLOCK CODE</div>
     <div class="code-value" id="code-out">—</div>
-    <div class="code-label" id="email-out">—</div>
+    <div class="code-meta" id="meta-out">—</div>
   </div>
 
   <div id="msg-block" class="hidden">
@@ -122,19 +100,18 @@
 
 <!-- USERS TAB -->
 <div class="card hidden" id="tab-users">
-  <label>SEARCH EMAIL</label>
-  <input type="text" id="search" placeholder="Filter email..." oninput="renderUsers()" />
-  <button onclick="loadUsers()" id="refresh-btn">🔄 REFRESH LIST</button>
-  <div id="users-list" class="empty">Tap REFRESH untuk memuat...</div>
+  <label>SEARCH EMAIL / CODE / DEVICE</label>
+  <input type="text" id="search" placeholder="Filter..." oninput="renderCodes()" />
+  <button onclick="loadCodes()" id="refresh-btn">🔄 REFRESH LIST</button>
+  <div id="codes-list" class="empty">Tap REFRESH untuk memuat...</div>
 </div>
 
 <div id="toast" class="toast">Copied!</div>
 
 <script>
-  // ==== CONFIG (edit if backend URL / admin token changes) ====
-  const BACKEND_URL = "https://cryptostock-pro.preview.emergentagent.com";
+  // ==== CONFIG ====
+  const BACKEND_URL = window.location.origin;  // same origin as admin tool
   const ADMIN_TOKEN = "kevin-admin-2026-do-not-share-xyz789";
-  const UNLOCK_SECRET = "KevinAI-Pro-2026-Premium-Unlock-Secret-v1-DoNotShare";
 
   // ==== TAB SWITCHING ====
   document.querySelectorAll(".tab").forEach(t => {
@@ -144,63 +121,87 @@
       const tab = t.dataset.tab;
       document.getElementById("tab-gen").classList.toggle("hidden", tab !== "gen");
       document.getElementById("tab-users").classList.toggle("hidden", tab !== "users");
-      if (tab === "users" && !usersLoaded) loadUsers();
+      if (tab === "users" && !codesLoaded) loadCodes();
     });
   });
 
-  // ==== UNLOCK CODE GENERATION ====
-  async function sha256Hex(msg) {
-    const enc = new TextEncoder().encode(msg);
-    const hashBuffer = await crypto.subtle.digest("SHA-256", enc);
-    const bytes = Array.from(new Uint8Array(hashBuffer));
-    return bytes.map(b => b.toString(16).padStart(2, "0")).join("");
-  }
-
-  async function computeUnlock(email) {
-    const normalized = email.trim().toLowerCase();
-    if (!normalized) return "";
-    const digest = await sha256Hex(UNLOCK_SECRET + "::" + normalized);
-    const c = digest.substring(0, 12).toUpperCase();
-    return c.substring(0, 4) + "-" + c.substring(4, 8) + "-" + c.substring(8, 12);
-  }
-
+  // ==== GENERATE CODE (server-side) ====
   let currentCode = "";
   let currentEmail = "";
+  let currentDuration = "";
+  let currentExpires = null;
+
+  const DURATION_LABEL = {
+    monthly: "Monthly (30 hari)",
+    quarterly: "Quarterly (90 hari / 3 bulan)",
+    half_year: "Half Year (180 hari / 6 bulan)",
+    yearly: "Yearly (365 hari / 12 bulan)",
+    lifetime: "Lifetime (selamanya)",
+  };
 
   async function generateCode() {
     const email = document.getElementById("email").value.trim().toLowerCase();
-    if (!email || !email.includes("@")) {
-      alert("Email tidak valid!");
-      return;
-    }
-    const code = await computeUnlock(email);
-    currentCode = code;
-    currentEmail = email;
-    document.getElementById("code-out").textContent = code;
-    document.getElementById("email-out").textContent = email;
-    document.getElementById("result").classList.remove("hidden");
+    const duration = document.getElementById("duration").value;
+    if (!email || !email.includes("@")) { alert("Email tidak valid!"); return; }
 
-    const msg =
-      "🔑 CryptoStock Premium Access\n\n" +
-      "Email: " + email + "\n" +
-      "Unlock Code: " + code + "\n\n" +
-      "Cara login:\n" +
-      "1. Buka app CryptoStock\n" +
-      "2. Tekan tombol LOGIN\n" +
-      "3. Masukkan email + unlock code di atas\n" +
-      "4. Tekan UNLOCK\n\n" +
-      "Kode ini bersifat pribadi. Jangan share ke orang lain.";
-    document.getElementById("msg-preview").textContent = msg;
-    document.getElementById("msg-block").classList.remove("hidden");
+    const btn = document.getElementById("gen-btn");
+    btn.disabled = true; btn.textContent = "Generating...";
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/admin/generate-code`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Admin-Token": ADMIN_TOKEN },
+        body: JSON.stringify({ email, duration }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      currentCode = data.code;
+      currentEmail = data.email;
+      currentDuration = data.duration;
+      currentExpires = data.expires_at;
+
+      document.getElementById("code-out").textContent = data.code;
+      const expText = data.expires_at
+        ? new Date(data.expires_at).toLocaleString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
+        : "SELAMANYA";
+      document.getElementById("meta-out").innerHTML =
+        `<strong>${email}</strong><br>` +
+        `Duration: <b>${DURATION_LABEL[duration] || duration}</b><br>` +
+        `Expires: <b style="color:${data.expires_at ? '#F0B90B' : '#0ECB81'}">${expText}</b>`;
+      document.getElementById("result").classList.remove("hidden");
+
+      const durText = duration === "lifetime"
+        ? "berlaku SELAMANYA (tidak akan expired)"
+        : `berlaku sampai ${expText}`;
+      const msg =
+        "🔑 CryptoStock Premium Access\n\n" +
+        "Email: " + email + "\n" +
+        "Unlock Code: " + data.code + "\n" +
+        "Masa berlaku: " + (DURATION_LABEL[duration] || duration) + "\n" +
+        "Aktif " + durText + "\n\n" +
+        "Cara login:\n" +
+        "1. Buka app CryptoStock di HP Anda\n" +
+        "2. Tekan tombol LOGIN\n" +
+        "3. Masukkan email + unlock code di atas\n" +
+        "4. Tekan UNLOCK\n\n" +
+        "⚠️ PENTING:\n" +
+        "• Code ini terikat pada HP pertama yang login\n" +
+        "• Tidak bisa dipakai di HP lain\n" +
+        "• Jangan share code ke orang lain\n" +
+        "• Login ulang di HP yang sama tetap boleh selama masih berlaku";
+      document.getElementById("msg-preview").textContent = msg;
+      document.getElementById("msg-block").classList.remove("hidden");
+    } catch (e) {
+      alert("Gagal generate: " + e.message);
+    } finally {
+      btn.disabled = false; btn.textContent = "🔑 GENERATE UNLOCK CODE";
+    }
   }
 
   function showToast(text) {
     const t = document.getElementById("toast");
-    t.textContent = text;
-    t.classList.add("show");
+    t.textContent = text; t.classList.add("show");
     setTimeout(() => t.classList.remove("show"), 1600);
   }
-
   function copyToClipboard(text, label) {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(() => showToast(label + " tersalin!"));
@@ -214,77 +215,122 @@
   function copyMessage() { copyToClipboard(document.getElementById("msg-preview").textContent, "Pesan"); }
   function copyCode() { copyToClipboard(currentCode, "Code"); }
 
-  // ==== USERS FETCH ====
-  let allUsers = [];
-  let usersLoaded = false;
+  // ==== USERS / CODES LIST ====
+  let allCodes = [];
+  let codesLoaded = false;
 
-  async function loadUsers() {
+  async function loadCodes() {
     const btn = document.getElementById("refresh-btn");
-    btn.textContent = "Memuat...";
-    btn.disabled = true;
+    btn.textContent = "Memuat..."; btn.disabled = true;
     try {
-      const res = await fetch(BACKEND_URL + "/api/admin/users", {
-        headers: { "X-Admin-Token": ADMIN_TOKEN }
-      });
+      const res = await fetch(`${BACKEND_URL}/api/admin/codes`, { headers: { "X-Admin-Token": ADMIN_TOKEN } });
       if (!res.ok) throw new Error("HTTP " + res.status);
       const data = await res.json();
-      allUsers = data.users || [];
-      usersLoaded = true;
-      renderUsers();
+      allCodes = data.codes || [];
+      codesLoaded = true;
+      renderCodes();
     } catch (e) {
-      document.getElementById("users-list").innerHTML =
-        '<div class="empty" style="color:#E53935;">❌ Gagal load: ' + e.message + '<br><br>Cek BACKEND_URL & ADMIN_TOKEN di source.</div>';
+      document.getElementById("codes-list").innerHTML =
+        `<div class="empty" style="color:#E53935;">❌ Gagal load: ${e.message}</div>`;
     } finally {
-      btn.textContent = "🔄 REFRESH LIST";
-      btn.disabled = false;
+      btn.textContent = "🔄 REFRESH LIST"; btn.disabled = false;
     }
   }
 
-  async function renderUsers() {
+  function esc(s) {
+    return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  function fmtDate(iso) {
+    if (!iso) return "—";
+    try { return new Date(iso).toLocaleString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }); }
+    catch { return iso; }
+  }
+  function statusBadge(c) {
+    const s = c.status || "unknown";
+    if (c.duration === "lifetime" && s === "active") return '<span class="badge lifetime">LIFETIME</span>';
+    return `<span class="badge ${s}">${s.toUpperCase()}</span>`;
+  }
+
+  function renderCodes() {
     const q = document.getElementById("search").value.trim().toLowerCase();
-    const filtered = allUsers.filter(u => u.email.toLowerCase().includes(q));
-    const el = document.getElementById("users-list");
+    // Detect duplicates: same email on multiple codes (any status)
+    const emailUse = {};
+    allCodes.forEach(c => { emailUse[c.email] = (emailUse[c.email] || 0) + 1; });
+
+    const filtered = allCodes.filter(c => {
+      if (!q) return true;
+      return (c.email || "").toLowerCase().includes(q)
+        || (c.code || "").toLowerCase().includes(q)
+        || (c.device_name || "").toLowerCase().includes(q)
+        || (c.device_id || "").toLowerCase().includes(q);
+    });
+    const el = document.getElementById("codes-list");
     if (filtered.length === 0) {
-      el.innerHTML = '<div class="empty">Tidak ada user' + (q ? " untuk pencarian ini" : "") + '.</div>';
+      el.innerHTML = '<div class="empty">Tidak ada code' + (q ? " untuk pencarian ini" : "") + '.</div>';
       return;
     }
     el.innerHTML = "";
-    for (const u of filtered) {
+    for (const c of filtered) {
+      const isDup = emailUse[c.email] > 1;
       const row = document.createElement("div");
-      row.className = "user-row";
-      const meta = new Date(u.unlocked_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+      row.className = "user-row" + (isDup ? " duplicate" : "");
       row.innerHTML =
-        '<div><div class="user-email">' + u.email + '</div>' +
-        '<div class="user-meta">Login ' + u.login_count + '× · unlock ' + meta + '</div></div>' +
-        '<div style="display:flex; gap:6px;"><button class="icon-btn" onclick="quickGen(\'' + u.email.replace(/'/g, "\\'") + '\')">🔑</button>' +
-        '<button class="icon-btn danger" onclick="revokeUser(\'' + u.email.replace(/'/g, "\\'") + '\')">✕</button></div>';
+        `<div class="user-email">${esc(c.email)} ${statusBadge(c)} ${isDup ? '<span class="badge revoked">DOUBLE</span>' : ''}</div>` +
+        `<div class="user-meta">` +
+          `Code: <code style="color:#F0B90B">${esc(c.code)}</code><br>` +
+          `Duration: <b>${esc(DURATION_LABEL[c.duration] || c.duration)}</b><br>` +
+          `Device: ${c.device_name ? esc(c.device_name) : '<i>(belum digunakan)</i>'}` +
+          (c.device_id ? ` <span style="opacity:0.5">[${esc(c.device_id.slice(0, 16))}...]</span>` : "") + "<br>" +
+          `Issued: ${fmtDate(c.issued_at)}<br>` +
+          `Expires: <b style="color:${c.expires_at ? '#F0B90B' : '#0ECB81'}">${c.expires_at ? fmtDate(c.expires_at) : 'SELAMANYA'}</b><br>` +
+          `Login count: ${c.login_count || 0} · Last: ${fmtDate(c.last_used_at)}` +
+        `</div>` +
+        `<div class="user-actions">` +
+          `<button class="icon-btn blue" onclick="resetDevice('${esc(c.code)}')">🔄 RESET DEVICE</button>` +
+          `<button class="icon-btn" onclick="revokeCode('${esc(c.code)}')">🚫 REVOKE</button>` +
+          `<button class="icon-btn danger" onclick="deleteCode('${esc(c.code)}','${esc(c.email)}')">🗑 DELETE</button>` +
+        `</div>`;
       el.appendChild(row);
     }
   }
 
-  function quickGen(email) {
-    document.getElementById("email").value = email;
-    document.querySelector('.tab[data-tab="gen"]').click();
-    generateCode();
-  }
-
-  async function revokeUser(email) {
-    if (!confirm("Revoke akses untuk " + email + "?")) return;
+  async function resetDevice(code) {
+    if (!confirm("Reset device binding untuk code " + code + "?\nUser bisa login lagi di HP baru.")) return;
     try {
-      const res = await fetch(BACKEND_URL + "/api/admin/users/" + encodeURIComponent(email), {
-        method: "DELETE",
-        headers: { "X-Admin-Token": ADMIN_TOKEN }
+      const res = await fetch(`${BACKEND_URL}/api/admin/codes/${encodeURIComponent(code)}/reset-device`, {
+        method: "POST", headers: { "X-Admin-Token": ADMIN_TOKEN },
       });
       if (!res.ok) throw new Error("HTTP " + res.status);
-      showToast("Revoked!");
-      allUsers = allUsers.filter(u => u.email !== email);
-      renderUsers();
-    } catch (e) {
-      alert("Gagal revoke: " + e.message);
-    }
+      showToast("Device binding di-reset");
+      loadCodes();
+    } catch (e) { alert("Gagal: " + e.message); }
   }
 
-  // Enter key submits generator
+  async function revokeCode(code) {
+    if (!confirm("Revoke code " + code + "?\nUser tidak bisa login lagi dengan code ini.")) return;
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/admin/codes/${encodeURIComponent(code)}/revoke`, {
+        method: "POST", headers: { "X-Admin-Token": ADMIN_TOKEN },
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      showToast("Code revoked");
+      loadCodes();
+    } catch (e) { alert("Gagal: " + e.message); }
+  }
+
+  async function deleteCode(code, email) {
+    if (!confirm("HAPUS PERMANEN code " + code + " untuk " + email + "?\nCode tidak bisa di-recover.")) return;
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/admin/codes/${encodeURIComponent(code)}`, {
+        method: "DELETE", headers: { "X-Admin-Token": ADMIN_TOKEN },
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      showToast("Code deleted");
+      allCodes = allCodes.filter(c => c.code !== code);
+      renderCodes();
+    } catch (e) { alert("Gagal: " + e.message); }
+  }
+
   document.getElementById("email").addEventListener("keydown", (e) => {
     if (e.key === "Enter") generateCode();
   });

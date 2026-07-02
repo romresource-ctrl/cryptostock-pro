@@ -52,6 +52,16 @@ from track_record import (  # noqa: E402
     record_signal,
 )
 from translator import translate_many  # noqa: E402
+from unlock_codes import (  # noqa: E402
+    DURATION_DAYS,
+    DURATION_LABEL,
+    delete_code,
+    generate_code,
+    list_codes,
+    reset_device_binding,
+    revoke_code,
+    verify_code,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s | %(message)s")
 logger = logging.getLogger("aitrade")
@@ -291,6 +301,10 @@ class LoggedUser(BaseModel):
     unlocked_at: str
     last_seen: str
     login_count: int
+    device_id: str | None = None
+    device_name: str | None = None
+    duration: str | None = None
+    expires_at: str | None = None
 
 
 class LoggedUsersResponse(BaseModel):
@@ -835,70 +849,173 @@ async def translate_endpoint(payload: TranslatePayload) -> dict:
 
 # -------- App wiring --------
 
-@api.post("/auth/record-login")
-async def record_login(payload: LoginRecordPayload) -> dict:
-    """Called by the main app after a successful unlock.
+@api.post("/auth/verify")
+async def auth_verify(payload: dict) -> dict:
+    """Verify an unlock code from the main app.
 
-    The server re-verifies the unlock code so spam / forged calls can't
-    pollute the `logged_users` collection.
+    Body: { email, code, device_id, device_name? }
+
+    Returns:
+      { ok: true, duration, expires_at, device_id } on success
+      { ok: false, reason } on failure. Reasons:
+        - invalid_code, email_mismatch, revoked, expired, device_mismatch
     """
-    email = payload.email.strip().lower()
-    code = payload.code.strip().upper()
-    expected = _compute_unlock_code(email)
-    if not email or not expected or expected != code:
-        raise HTTPException(401, "Invalid email or unlock code")
+    email = str(payload.get("email") or "").strip()
+    code = str(payload.get("code") or "").strip().upper()
+    device_id = str(payload.get("device_id") or "").strip() or None
+    device_name = str(payload.get("device_name") or "").strip() or None
+    if not email or not code:
+        raise HTTPException(400, "Email and code are required")
+    if not device_id:
+        raise HTTPException(400, "device_id is required for device-bound verification")
+    result = await verify_code(db, email, code, device_id, device_name)
+    if not result["ok"]:
+        return result
+    # Mirror to legacy `logged_users` for existing admin views + track counters
     now = _now_iso()
-    res = await db.logged_users.find_one({"_id": email}, {"_id": 0, "login_count": 1})
-    if res:
-        await db.logged_users.update_one(
-            {"_id": email},
-            {"$set": {"last_seen": now}, "$inc": {"login_count": 1}},
-        )
-    else:
-        await db.logged_users.insert_one({
-            "_id": email,
-            "email": email,
-            "unlocked_at": now,
-            "last_seen": now,
-            "login_count": 1,
-        })
-    return {"ok": True}
+    await db.logged_users.update_one(
+        {"_id": email.lower()},
+        {
+            "$set": {
+                "email": email.lower(),
+                "last_seen": now,
+                "device_id": device_id,
+                "device_name": device_name,
+                "duration": result.get("duration"),
+                "expires_at": result.get("expires_at"),
+            },
+            "$setOnInsert": {"unlocked_at": now},
+            "$inc": {"login_count": 1},
+        },
+        upsert=True,
+    )
+    return result
+
+
+# ---- Admin: unlock code management ----
+
+def _check_admin(x_admin_token: str | None) -> None:
+    expected = os.environ.get("ADMIN_TOKEN", "")
+    if not expected or x_admin_token != expected:
+        raise HTTPException(403, "Forbidden")
+
+
+@api.post("/admin/generate-code")
+async def admin_generate_code(
+    payload: dict,
+    x_admin_token: str | None = Header(default=None),
+) -> dict:
+    """Generate a new unlock code for an email + duration. Admin-only."""
+    _check_admin(x_admin_token)
+    email = str(payload.get("email") or "").strip()
+    duration = str(payload.get("duration") or "monthly").lower()
+    if duration not in DURATION_DAYS:
+        raise HTTPException(400, f"Invalid duration. Must be one of {list(DURATION_DAYS.keys())}")
+    try:
+        res = await generate_code(db, email, duration)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {
+        **res,
+        "duration_label": DURATION_LABEL.get(duration, duration),
+    }
+
+
+@api.get("/admin/codes")
+async def admin_list_codes(
+    x_admin_token: str | None = Header(default=None),
+) -> dict:
+    """List all unlock codes with device / expiry status. Admin-only."""
+    _check_admin(x_admin_token)
+    codes = await list_codes(db)
+    # Compute a synthetic status (active/expired/revoked/unused) for each
+    now = datetime.now(timezone.utc)
+    for c in codes:
+        if c.get("revoked"):
+            c["status"] = "revoked"
+        else:
+            exp = c.get("expires_at")
+            if exp:
+                try:
+                    if datetime.fromisoformat(exp) <= now:
+                        c["status"] = "expired"
+                        continue
+                except Exception:
+                    pass
+            c["status"] = "active" if c.get("device_id") else "unused"
+    return {"total": len(codes), "codes": codes}
+
+
+@api.delete("/admin/codes/{code}")
+async def admin_delete_code(
+    code: str,
+    x_admin_token: str | None = Header(default=None),
+) -> dict:
+    """Fully delete an unlock code (user must be re-issued a new one)."""
+    _check_admin(x_admin_token)
+    ok = await delete_code(db, code)
+    if not ok:
+        raise HTTPException(404, "Code not found")
+    return {"ok": True, "code": code.upper()}
+
+
+@api.post("/admin/codes/{code}/revoke")
+async def admin_revoke_code_endpoint(
+    code: str,
+    x_admin_token: str | None = Header(default=None),
+) -> dict:
+    """Mark a code as revoked (softer than delete — code stays in history)."""
+    _check_admin(x_admin_token)
+    ok = await revoke_code(db, code)
+    if not ok:
+        raise HTTPException(404, "Code not found")
+    return {"ok": True, "code": code.upper()}
+
+
+@api.post("/admin/codes/{code}/reset-device")
+async def admin_reset_device(
+    code: str,
+    x_admin_token: str | None = Header(default=None),
+) -> dict:
+    """Clear device binding so the code can be re-bound to a new device."""
+    _check_admin(x_admin_token)
+    ok = await reset_device_binding(db, code)
+    if not ok:
+        raise HTTPException(404, "Code not found")
+    return {"ok": True, "code": code.upper()}
 
 
 @api.get("/admin/users", response_model=LoggedUsersResponse)
 async def admin_list_users(x_admin_token: str | None = Header(default=None)) -> LoggedUsersResponse:
-    """List all users who have successfully unlocked the app. Admin-only."""
-    expected = os.environ.get("ADMIN_TOKEN", "")
-    if not expected or x_admin_token != expected:
-        raise HTTPException(403, "Forbidden")
+    """List all users who have successfully unlocked the app. Admin-only.
+
+    Combined view: joins `logged_users` with device info from `unlock_codes`.
+    """
+    _check_admin(x_admin_token)
     docs: list[LoggedUser] = []
-    cursor = db.logged_users.find(
-        {},
-        {"_id": 0, "email": 1, "unlocked_at": 1, "last_seen": 1, "login_count": 1},
-    ).sort("last_seen", -1)
+    cursor = db.logged_users.find({}).sort("last_seen", -1)
     async for d in cursor:
         docs.append(LoggedUser(
             email=d.get("email", ""),
             unlocked_at=d.get("unlocked_at", ""),
             last_seen=d.get("last_seen", ""),
             login_count=int(d.get("login_count", 1)),
+            device_id=d.get("device_id"),
+            device_name=d.get("device_name"),
+            duration=d.get("duration"),
+            expires_at=d.get("expires_at"),
         ))
     return LoggedUsersResponse(total=len(docs), users=docs)
 
 
 @api.delete("/admin/users/{email}")
 async def admin_revoke_user(email: str, x_admin_token: str | None = Header(default=None)) -> dict:
-    """Revoke a user — removes them from the logged_users collection.
-
-    NOTE: This does NOT prevent re-login with the same code. To permanently
-    revoke an account you must also rotate UNLOCK_SECRET, which invalidates
-    all codes globally.
-    """
-    expected = os.environ.get("ADMIN_TOKEN", "")
-    if not expected or x_admin_token != expected:
-        raise HTTPException(403, "Forbidden")
+    """Revoke a user — removes them from logged_users AND revokes all their codes."""
+    _check_admin(x_admin_token)
     target = email.strip().lower()
     res = await db.logged_users.delete_one({"_id": target})
+    # Also revoke every code owned by this email
+    await db.unlock_codes.update_many({"email": target}, {"$set": {"revoked": True}})
     if res.deleted_count == 0:
         raise HTTPException(404, "User not found")
     return {"ok": True, "revoked": target}

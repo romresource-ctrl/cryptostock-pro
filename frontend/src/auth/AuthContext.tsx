@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 
+import { getDeviceId, getDeviceName } from "@/src/lib/deviceId";
 import { storage } from "@/src/utils/storage";
-import { verifyUnlockCode } from "@/src/auth/unlockCode";
 
 const STORAGE_KEY = "kevinai.auth";
 
@@ -9,35 +9,105 @@ type AuthState = {
   email: string;
   code: string;
   unlockedAt: string;
+  duration: "monthly" | "quarterly" | "half_year" | "yearly" | "lifetime" | null;
+  expiresAt: string | null; // null = lifetime
+  deviceId: string;
+};
+
+export type LoginResult = {
+  ok: boolean;
+  error?: string;
+  reason?:
+    | "invalid_code"
+    | "email_mismatch"
+    | "revoked"
+    | "expired"
+    | "device_mismatch"
+    | "network";
 };
 
 type AuthContextValue = {
   loaded: boolean;
   isUnlocked: boolean;
   email: string | null;
-  login: (email: string, code: string) => Promise<{ ok: boolean; error?: string }>;
-  logout: () => Promise<void>;
+  duration: string | null;
+  expiresAt: string | null;
+  login: (email: string, code: string) => Promise<LoginResult>;
+  logout: (reason?: string) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+
+function backendBase(): string {
+  const RAW = process.env.EXPO_PUBLIC_BACKEND_URL ?? "";
+  return `${RAW.replace(/\/+$/, "")}/api`;
+}
+
+function isExpired(expiresAt: string | null): boolean {
+  if (!expiresAt) return false; // lifetime
+  const t = Date.parse(expiresAt);
+  if (Number.isNaN(t)) return false;
+  return t <= Date.now();
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [loaded, setLoaded] = useState(false);
 
+  // Load persisted session + verify against backend
   useEffect(() => {
     (async () => {
       const saved = await storage.getItem<AuthState>(STORAGE_KEY, null as AuthState | null);
-      if (saved && saved.email && saved.code) {
-        // Verify cached code is still valid (in case secret was rotated)
-        const ok = await verifyUnlockCode(saved.email, saved.code);
-        if (ok) setAuth(saved);
+      if (saved && saved.email && saved.code && saved.deviceId) {
+        if (isExpired(saved.expiresAt)) {
+          await storage.removeItem(STORAGE_KEY);
+        } else {
+          // Re-verify with backend to catch: revoke, device change, secret rotation
+          try {
+            const res = await fetch(`${backendBase()}/auth/verify`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                email: saved.email,
+                code: saved.code,
+                device_id: saved.deviceId,
+                device_name: getDeviceName(),
+              }),
+            });
+            const data = await res.json();
+            if (data?.ok) {
+              // Refresh expiry/duration from server (in case admin extended it)
+              setAuth({
+                ...saved,
+                duration: data.duration ?? saved.duration,
+                expiresAt: data.expires_at ?? saved.expiresAt,
+              });
+            } else {
+              await storage.removeItem(STORAGE_KEY);
+            }
+          } catch {
+            // Offline: trust local expiry
+            setAuth(saved);
+          }
+        }
       }
       setLoaded(true);
     })();
   }, []);
 
-  const login = async (email: string, code: string) => {
+  // Periodic expiry check (every 60s while app is foregrounded)
+  useEffect(() => {
+    if (!auth) return;
+    const t = setInterval(() => {
+      if (auth && isExpired(auth.expiresAt)) {
+        void logout("expired");
+      }
+    }, 60_000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth?.expiresAt]);
+
+  const login = async (email: string, code: string): Promise<LoginResult> => {
     const cleanEmail = email.trim().toLowerCase();
     const cleanCode = code.trim().toUpperCase();
     if (!cleanEmail || !cleanCode) {
@@ -46,35 +116,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       return { ok: false, error: "Format email tidak valid." };
     }
-    const ok = await verifyUnlockCode(cleanEmail, cleanCode);
-    if (!ok) {
-      return { ok: false, error: "Unlock code tidak cocok untuk email ini." };
-    }
-    const next: AuthState = {
-      email: cleanEmail,
-      code: cleanCode,
-      unlockedAt: new Date().toISOString(),
-    };
-    await storage.setItem(STORAGE_KEY, next);
-    setAuth(next);
-    // Fire-and-forget record-login to backend so the admin app can list users.
-    void (async () => {
-      try {
-        const RAW = process.env.EXPO_PUBLIC_BACKEND_URL ?? "";
-        const base = `${RAW.replace(/\/+$/, "")}/api`;
-        await fetch(`${base}/auth/record-login`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: cleanEmail, code: cleanCode }),
-        });
-      } catch {
-        // offline-tolerant: still unlocked locally even if record fails
+    const deviceId = await getDeviceId();
+    const deviceName = getDeviceName();
+    try {
+      const res = await fetch(`${backendBase()}/auth/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: cleanEmail,
+          code: cleanCode,
+          device_id: deviceId,
+          device_name: deviceName,
+        }),
+      });
+      const data = await res.json();
+      if (!data?.ok) {
+        const reason = data?.reason as LoginResult["reason"];
+        const msg: Record<string, string> = {
+          invalid_code: "Unlock code tidak ditemukan.",
+          email_mismatch: "Email tidak cocok dengan code.",
+          revoked: "Code telah di-revoke oleh admin.",
+          expired: "Code sudah kadaluarsa. Minta code baru ke admin.",
+          device_mismatch: "Code sudah terpakai di device lain.",
+        };
+        return { ok: false, reason, error: msg[reason ?? ""] || "Unlock gagal." };
       }
-    })();
-    return { ok: true };
+      const next: AuthState = {
+        email: cleanEmail,
+        code: cleanCode,
+        unlockedAt: new Date().toISOString(),
+        duration: data.duration ?? null,
+        expiresAt: data.expires_at ?? null,
+        deviceId,
+      };
+      await storage.setItem(STORAGE_KEY, next);
+      setAuth(next);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, reason: "network", error: "Tidak bisa terhubung ke server." };
+    }
   };
 
-  const logout = async () => {
+  const logout = async (_reason?: string) => {
     await storage.removeItem(STORAGE_KEY);
     setAuth(null);
   };
@@ -82,8 +165,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<AuthContextValue>(
     () => ({
       loaded,
-      isUnlocked: !!auth,
+      isUnlocked: !!auth && !isExpired(auth?.expiresAt),
       email: auth?.email ?? null,
+      duration: auth?.duration ?? null,
+      expiresAt: auth?.expiresAt ?? null,
       login,
       logout,
     }),
