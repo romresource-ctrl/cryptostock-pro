@@ -16,12 +16,10 @@ from typing import Any
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 MODELS = [
-    # Semua versi terbaru per 2026 (5 AI agents ensemble)
+    # 3 model Anthropic versi terbaru (biaya lebih rendah, tanpa GPT & Gemini)
     {"provider": "anthropic", "model": "claude-fable-5", "label": "Claude Fable 5"},
     {"provider": "anthropic", "model": "claude-opus-4-8", "label": "Claude Opus 4.8"},
     {"provider": "anthropic", "model": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6"},
-    {"provider": "openai", "model": "gpt-5.5", "label": "GPT-5.5"},
-    {"provider": "gemini", "model": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro"},
 ]
 
 SYSTEM_PROMPT = (

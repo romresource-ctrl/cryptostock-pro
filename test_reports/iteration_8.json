@@ -1,0 +1,33 @@
+{
+  "summary": "Iteration 8 — cost-reduction verification of 3-model AI ensemble (CryptoStock Pro v2.1.8). All 3 pytest tests PASSED. POST /api/asset/crypto/BTC/analyze?timeframe=1h returned exactly 3 models with the EXACT expected labels ('Claude Fable 5', 'Claude Opus 4.8', 'Claude Sonnet 4.6'); no 'GPT-5.5' or 'Gemini 3.1 Pro' entries present. 3/3 models returned ok=true (exceeds >=2/3 threshold). Analyze latency ~17.5s. Regression: GET /api/whoami returns 200 with all required fields (backend_origin, db_name='aitrade_pro', codes_count, admin_tool_url, server_time); GET /api/dashboard?market=crypto returns 200 with populated assets list. MODELS list in /app/backend/ai_engine.py verified to contain exactly 3 Anthropic entries as specified.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter8_ai_ensemble_3models.py",
+    "/app/test_reports/pytest/iter8.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ai_engine.py module docstring (lines 1-6) still references 'Claude Sonnet 4.6, GPT-5.2, and Gemini 3.1 Pro Preview' — should be updated to reflect the new 3-Anthropic-model composition for accuracy (cosmetic only, does not affect functionality)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter8_ai_ensemble_3models.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (3/3 tests passed)",
+    "frontend": "not tested (backend-only request)"
+  },
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter8 verifies the 3-model ensemble downgrade. MODELS list in /app/backend/ai_engine.py contains 3 Anthropic entries. All 3 models (Fable 5, Opus 4.8, Sonnet 4.6) currently respond ok=true via EMERGENT_LLM_KEY. Test file: /app/backend/tests/test_iter8_ai_ensemble_3models.py. Regression tests for /api/whoami and /api/dashboard also pass.",
+  "rca_of_issue": "N/A — verification-only run; change (5→3 models) applied cleanly and validated."
+}
