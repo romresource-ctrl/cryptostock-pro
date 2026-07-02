@@ -1,47 +1,49 @@
 {
   "expo": {
-    "name": "KevinAI Pro",
-    "slug": "kevinai-pro",
-    "version": "2.1.6",
-    "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
-    "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#000000",
+        "foregroundImage": "./assets/images/adaptive-icon.png"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "app.emergent.cryptostockpro3d0aad46"
+    },
     "androidStatusBar": {
       "backgroundColor": "#000000",
       "barStyle": "light-content"
     },
+    "experiments": {
+      "typedRoutes": true
+    },
+    "icon": "./assets/images/icon.png",
     "ios": {
+      "bundleIdentifier": "app.emergent.cryptostockprob9d2cdb1",
       "supportsTablet": true
     },
-    "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000000"
-      },
-      "edgeToEdgeEnabled": true
-    },
-    "web": {
-      "bundler": "metro",
-      "output": "single",
-      "favicon": "./assets/images/favicon.png"
-    },
+    "name": "KevinAI Pro",
+    "newArchEnabled": true,
+    "orientation": "portrait",
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
+          "backgroundColor": "#000000",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#000000"
+          "resizeMode": "contain"
         }
       ],
       "expo-font"
     ],
-    "experiments": {
-      "typedRoutes": true
+    "scheme": "frontend",
+    "slug": "kevinai-pro",
+    "userInterfaceStyle": "automatic",
+    "version": "2.1.6",
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/images/favicon.png",
+      "output": "single"
     }
   }
 }
