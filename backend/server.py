@@ -170,6 +170,54 @@ app = FastAPI(title="AITrade Pro")
 api = APIRouter(prefix="/api")
 
 
+# --- App Version Enforcement Middleware ---
+# Old APKs (< 2.1.0) do NOT send X-App-Version header. Force them to fail so
+# users are forced to install the latest APK. Web browser & admin tool are
+# whitelisted so they keep working.
+from fastapi import Request  # noqa: E402
+from fastapi.responses import JSONResponse  # noqa: E402
+
+MIN_APP_VERSION = (2, 1, 0)  # major, minor, patch
+# Paths that OLD APKs depend on. Blocking these forces them to update.
+_ENFORCED_PATH_PREFIXES = ("/api/dashboard", "/api/asset/", "/api/watchlist")
+
+
+def _parse_version(v: str) -> tuple[int, int, int] | None:
+    try:
+        parts = v.strip().split(".")
+        if len(parts) != 3:
+            return None
+        return int(parts[0]), int(parts[1]), int(parts[2])
+    except Exception:
+        return None
+
+
+@app.middleware("http")
+async def enforce_app_version(request: Request, call_next):
+    path = request.url.path
+    if not path.startswith(_ENFORCED_PATH_PREFIXES):
+        return await call_next(request)
+    # Skip enforcement for browsers (they're viewing web preview / admin tool)
+    ua = (request.headers.get("user-agent") or "").lower()
+    is_browser = ("mozilla" in ua and "expo" not in ua) or "chrome" in ua or "safari" in ua
+    if is_browser:
+        return await call_next(request)
+    v_header = request.headers.get("x-app-version") or ""
+    v = _parse_version(v_header)
+    if v is None or v < MIN_APP_VERSION:
+        return JSONResponse(
+            status_code=426,
+            content={
+                "error": "upgrade_required",
+                "message": "Aplikasi CryptoStock Pro versi Anda sudah kadaluarsa. Silakan hubungi admin untuk mendapatkan APK versi terbaru.",
+                "message_en": "Your CryptoStock Pro app is outdated. Please contact admin for the latest APK.",
+                "min_version": ".".join(map(str, MIN_APP_VERSION)),
+                "your_version": v_header or "unknown",
+            },
+        )
+    return await call_next(request)
+
+
 # ---------------- Models ----------------
 
 class WatchlistPayload(BaseModel):

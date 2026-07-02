@@ -171,17 +171,33 @@ export interface TrackRecordResponse {
   }[];
 }
 
+import { APP_VERSION } from "./version";
+
+const COMMON_HEADERS: Record<string, string> = {
+  "X-App-Version": APP_VERSION,
+};
+
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`);
+  const res = await fetch(`${API_BASE}${path}`, { headers: COMMON_HEADERS });
+  if (res.status === 426) {
+    const err: Error & { code?: string } = new Error("Aplikasi Anda sudah kadaluarsa. Silakan install APK versi terbaru dari admin.");
+    err.code = "upgrade_required";
+    throw err;
+  }
   if (!res.ok) throw new Error(`HTTP ${res.status} on ${path}`);
   return (await res.json()) as T;
 }
 async function send<T>(path: string, method: "POST" | "PUT" | "DELETE", body?: unknown): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
+    headers: body ? { "Content-Type": "application/json", ...COMMON_HEADERS } : COMMON_HEADERS,
     body: body ? JSON.stringify(body) : undefined,
   });
+  if (res.status === 426) {
+    const err: Error & { code?: string } = new Error("Aplikasi Anda sudah kadaluarsa. Silakan install APK versi terbaru dari admin.");
+    err.code = "upgrade_required";
+    throw err;
+  }
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
     throw new Error(`HTTP ${res.status} on ${path}: ${txt.slice(0, 120)}`);
