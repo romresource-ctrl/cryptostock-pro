@@ -127,8 +127,14 @@ export default function LoginModal({ visible, onClose }: Props) {
           </TouchableOpacity>
 
           <Text style={[styles.hint, { color: colors.textMuted }]}>
-            Belum punya unlock code? Hubungi admin dan berikan email Anda.
+            {t("login_hint_admin")}
           </Text>
+          <View style={[styles.supportBox, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}>
+            <Ionicons name="mail" size={11} color={colors.accentBlue} />
+            <Text style={[styles.supportText, { color: colors.textMuted }]} numberOfLines={3}>
+              {t("login_support_footer")}
+            </Text>
+          </View>
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -151,4 +157,9 @@ const styles = StyleSheet.create({
   },
   submitText: { color: "#fff", fontSize: 13, fontWeight: "700", letterSpacing: 0.8 },
   hint: { fontSize: 10, textAlign: "center", marginTop: 14, lineHeight: 14 },
+  supportBox: {
+    marginTop: 10, padding: 10, borderRadius: 10, borderWidth: 1,
+    flexDirection: "row", alignItems: "flex-start", gap: 6,
+  },
+  supportText: { flex: 1, fontSize: 10, lineHeight: 14, fontWeight: "600" },
 });

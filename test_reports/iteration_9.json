@@ -1,0 +1,33 @@
+{
+  "summary": "Iteration 9 — full v3.0.1 verification (backend + frontend). Backend pytest: 14/14 PASSED. New markets gold_silver (XAU/USD, XAG/USD, XPT/USD, XPD/USD all price>0), commodity (WTI+BRENT present, price>0), forex (12 pairs returned, EUR/USD price within realistic band), world_stocks (>=30 items, index symbols US30/NAS100/SPX500/JP225/HK50/GER40/UK100/IDX30 present). New crypto timeframes 1m/5m/7d/30d all return 200 with non-empty assets. Regression: crypto/stock_id/etf/stock_us @ 1h all 200. /api/whoami returns 5 required fields. Full auth flow (X-Admin-Token header): generate-code lifetime -> /api/auth/verify -> DELETE /api/admin/users/{email} = 200. Frontend Playwright (390x844): 18/18 checks PASSED — header 'AI Crypto Stock Pro' + 'Ver 3.0.1' visible; 7 category chips render with correct ID labels (Crypto, ETF, Saham IDX, World Stocks, Gold/Silver, Commodities, Forex); Gold/Silver + Forex selection loads real prices (XAU, XAG, EUR/USD visible in DOM after 6s); search 'BTC' filters; language toggle ID->EN->RU->CN cycles correctly (RU shows 'Вер 3.0.1' + 'ВОЙТИ'; CN shows '版本 3.0.1'); disclaimer button navigates to /disclaimer with warning banner + cryptostockapps@gmail.com email; LoginModal shows email/code inputs + support email footer with cryptostockapps@gmail.com. No deprecated Expo packages, no React Native red screen, no console errors (only a benign 'shadow*' deprecation warning from a lib).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter9_v301_markets.py",
+    "/app/test_reports/pytest/iter9.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Minor: benign console warning '\"shadow*\" style props are deprecated. Use \"boxShadow\"' — comes from a third-party RN lib on web. Not blocking, but worth tracking if the app is later migrated to full RN Web parity."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter9_v301_markets.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (14/14 tests passed)",
+    "frontend": "100% (18/18 Playwright checks passed)"
+  },
+  "seed_data_creation": "Temporary unlock code generated & then deleted in TestAuthFlow (email prefix TEST_iter9_*).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "v3.0.1 fully verified. Admin auth uses X-Admin-Token HEADER (not query param or body field). Verify endpoint is /api/auth/verify (accepts email, code, device_id, device_name). Dashboard shape: {assets: [...]} per market. Frontend testIDs stable: category-<key>, asset-search-input, lang-toggle-button, disclaimer-button, login-button, login-email-input, login-code-input, login-submit-button. UI shows exactly 7 chip categories in ID order (stock_us not in CATEGORIES map — matches the review's expected 7 labels).",
+  "rca_of_issue": "N/A — verification-only run; all v3.0.1 bug fixes (8-key initializers for next/setLoadingMap in index.tsx) validated at runtime."
+}

@@ -9,6 +9,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -20,7 +21,6 @@ import Sparkline from "@/src/components/Sparkline";
 import VipModal from "@/src/components/VipModal";
 import { useI18n } from "@/src/i18n/I18nContext";
 import {
-  TIMEFRAMES,
   type AssetSignal,
   type Market,
   type Timeframe,
@@ -38,13 +38,24 @@ const CATEGORIES: { key: Category; label: string; icon: string }[] = [
   { key: "crypto", label: "Crypto", icon: "logo-bitcoin" },
   { key: "etf", label: "ETF", icon: "pie-chart" },
   { key: "stock_id", label: "Saham IDX", icon: "trending-up" },
-  { key: "stock_us", label: "Saham US", icon: "globe" },
+  { key: "stock_us", label: "World Stocks", icon: "globe" },
+  { key: "gold_silver", label: "Gold/Silver", icon: "medal" },
+  { key: "commodity", label: "Commodities", icon: "cube" },
+  { key: "forex", label: "Forex", icon: "swap-horizontal" },
 ];
 
 function signalColors(colors: ReturnType<typeof useTheme>["colors"], action: string) {
   if (action === "BUY") return { fg: colors.accentUp, bg: colors.accentUp + "26" };
   if (action === "SELL") return { fg: colors.accentDown, bg: colors.accentDown + "26" };
   return { fg: colors.accentHold, bg: colors.accentHold + "26" };
+}
+
+// Filter assets by search query (case-insensitive, matches symbol prefix/contains)
+function filterAssets(list: AssetSignal[] | undefined, query: string): AssetSignal[] {
+  if (!list) return [];
+  const q = query.trim().toUpperCase();
+  if (!q) return list;
+  return list.filter((a) => (a.symbol || "").toUpperCase().includes(q));
 }
 function wrColor(colors: ReturnType<typeof useTheme>["colors"], wr: number | null): string {
   if (wr === null) return colors.textMuted;
@@ -143,9 +154,16 @@ export default function Dashboard() {
 
   const [view, setView] = useState<Category[]>(["crypto", "stock_id"]);
   const [timeframe, setTimeframe] = useState<Timeframe>("1h");
-  const [data, setData] = useState<Record<Category, AssetSignal[]>>({ crypto: [], etf: [], stock_id: [], stock_us: [] });
+  const [searchQuery, setSearchQuery] = useState("");
+  const [data, setData] = useState<Record<Category, AssetSignal[]>>({
+    crypto: [], etf: [], stock_id: [], stock_us: [],
+    world_stocks: [], gold_silver: [], commodity: [], forex: [],
+  });
   const [premiumCount, setPremiumCount] = useState(0);
-  const [loadingMap, setLoadingMap] = useState<Record<Category, boolean>>({ crypto: true, etf: false, stock_id: true, stock_us: false });
+  const [loadingMap, setLoadingMap] = useState<Record<Category, boolean>>({
+    crypto: true, etf: false, stock_id: true, stock_us: false,
+    world_stocks: false, gold_silver: false, commodity: false, forex: false,
+  });
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<string>("");
   const [loginOpen, setLoginOpen] = useState(false);
@@ -153,7 +171,10 @@ export default function Dashboard() {
   const [lockedToast, setLockedToast] = useState(false);
 
   const load = useCallback(async (tf: Timeframe, selected: Category[]) => {
-    const updates: Record<Category, boolean> = { crypto: false, etf: false, stock_id: false, stock_us: false };
+    const updates: Record<Category, boolean> = {
+      crypto: false, etf: false, stock_id: false, stock_us: false,
+      world_stocks: false, gold_silver: false, commodity: false, forex: false,
+    };
     selected.forEach((k) => { updates[k] = true; });
     setLoadingMap(updates);
     try {
@@ -161,7 +182,10 @@ export default function Dashboard() {
         selected.map((k) => api.dashboard(k, tf, { full: true, sort: "premium" })),
       );
       let pCount = 0;
-      const next = { crypto: [], etf: [], stock_id: [], stock_us: [] } as Record<Category, AssetSignal[]>;
+      const next = {
+        crypto: [], etf: [], stock_id: [], stock_us: [],
+        world_stocks: [], gold_silver: [], commodity: [], forex: [],
+      } as Record<Category, AssetSignal[]>;
       selected.forEach((k, i) => {
         const r = results[i];
         if (r.status === "fulfilled") {
@@ -173,7 +197,10 @@ export default function Dashboard() {
       setPremiumCount(pCount);
       setLastUpdate(new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
     } finally {
-      setLoadingMap({ crypto: false, etf: false, stock_id: false, stock_us: false });
+      setLoadingMap({
+        crypto: false, etf: false, stock_id: false, stock_us: false,
+        world_stocks: false, gold_silver: false, commodity: false, forex: false,
+      });
     }
   }, []);
 
@@ -211,7 +238,7 @@ export default function Dashboard() {
   };
 
   const consensus = useMemo(() => {
-    const all = view.flatMap((k) => data[k]);
+    const all = view.flatMap((k) => data[k] || []).filter((a) => a && a.action);
     return {
       buy: all.filter((a) => a.action === "BUY").length,
       sell: all.filter((a) => a.action === "SELL").length,
@@ -238,6 +265,13 @@ export default function Dashboard() {
         </View>
         <View style={styles.headerActions}>
           <TouchableOpacity
+            onPress={() => router.push("/disclaimer" as never)}
+            testID="disclaimer-button"
+            style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          >
+            <Ionicons name="warning-outline" size={16} color={colors.accentDown} />
+          </TouchableOpacity>
+          <TouchableOpacity
             onPress={() => router.push("/news" as never)}
             testID="news-button"
             style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
@@ -257,12 +291,20 @@ export default function Dashboard() {
             style={[
               styles.iconBtn,
               {
-                backgroundColor: lang === "en" ? "#1E66F5" : "#E53935",
-                borderColor: lang === "en" ? "#1E66F5" : "#E53935",
+                backgroundColor:
+                  lang === "en" ? "#1E66F5" :
+                  lang === "ru" ? "#8B5CF6" :
+                  lang === "cn" ? "#F59E0B" :
+                  "#E53935",
+                borderColor:
+                  lang === "en" ? "#1E66F5" :
+                  lang === "ru" ? "#8B5CF6" :
+                  lang === "cn" ? "#F59E0B" :
+                  "#E53935",
               },
             ]}
           >
-            <Text style={styles.langBtnText}>{lang === "en" ? "EN" : "ID"}</Text>
+            <Text style={styles.langBtnText}>{lang.toUpperCase()}</Text>
           </TouchableOpacity>
           {authLoaded && (
             isUnlocked ? (
@@ -351,33 +393,26 @@ export default function Dashboard() {
         </View>
       </View>
 
-      {/* Timeframe selector */}
+      {/* Search bar (replaces TF row in v3.0.1 — TF now only on detail page) */}
       <View style={styles.tfRow}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 12, gap: 8, alignItems: "center" }}
-        >
-          {TIMEFRAMES.map((tf) => {
-            const active = tf === timeframe;
-            return (
-              <TouchableOpacity
-                key={tf}
-                testID={`timeframe-${tf}`}
-                onPress={() => setTimeframe(tf)}
-                style={[
-                  styles.tfPill,
-                  {
-                    backgroundColor: active ? colors.accentBlue : colors.surface,
-                    borderColor: active ? colors.accentBlue : colors.border,
-                  },
-                ]}
-              >
-                <Text style={[styles.tfPillText, { color: active ? "#fff" : colors.textSecondary }]}>{tf}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+        <View style={[styles.searchBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Ionicons name="search" size={16} color={colors.textMuted} style={{ marginLeft: 10 }} />
+          <TextInput
+            testID="asset-search-input"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder={t("search_placeholder")}
+            placeholderTextColor={colors.textMuted}
+            style={[styles.searchInput, { color: colors.textPrimary }]}
+            autoCapitalize="characters"
+            autoCorrect={false}
+          />
+          {searchQuery ? (
+            <TouchableOpacity onPress={() => setSearchQuery("")} hitSlop={8} style={{ paddingHorizontal: 10 }}>
+              <Ionicons name="close-circle" size={16} color={colors.textMuted} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
       </View>
 
       {/* Asset lists */}
@@ -395,7 +430,7 @@ export default function Dashboard() {
                   key={k}
                   title={catLabel}
                   market={k}
-                  data={data[k]}
+                  data={filterAssets(data[k], searchQuery)}
                   loading={loadingMap[k]}
                   onPress={handleAssetPress}
                   locked={!isUnlocked}
@@ -411,7 +446,7 @@ export default function Dashboard() {
               <FullList
                 title={catLabel}
                 market={k}
-                data={data[k]}
+                data={filterAssets(data[k], searchQuery)}
                 loading={loadingMap[k]}
                 onPress={handleAssetPress}
                 locked={!isUnlocked}
@@ -541,6 +576,21 @@ const styles = StyleSheet.create({
   consensusLabel: { fontSize: 10, marginTop: 2, letterSpacing: 0.5 },
   consensusDivider: { width: 1, marginVertical: 6 },
   tfRow: { height: 56, justifyContent: "center", marginTop: 2 },
+  searchBox: {
+    marginHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderRadius: 12,
+    height: 40,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "600",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
   tfPill: {
     height: 36, minWidth: 50, paddingHorizontal: 14, borderRadius: 18, borderWidth: 1, flexShrink: 0,
     alignItems: "center", justifyContent: "center",

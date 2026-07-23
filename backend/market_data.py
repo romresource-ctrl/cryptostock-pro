@@ -44,7 +44,7 @@ ETF_YAHOO_MAP: dict[str, str] = {
     "BND": "BND", "LQD": "LQD",
 }
 
-# US stocks -> Yahoo Finance
+# US stocks -> Yahoo Finance (renamed to "world_stocks" market — kept map name for backward compat)
 STOCK_US_YAHOO_MAP: dict[str, str] = {
     "AAPL": "AAPL", "MSFT": "MSFT", "NVDA": "NVDA", "GOOGL": "GOOGL",
     "AMZN": "AMZN", "TSLA": "TSLA", "META": "META", "SPCX": "SPCX",
@@ -53,18 +53,75 @@ STOCK_US_YAHOO_MAP: dict[str, str] = {
     "AVGO": "AVGO", "ANET": "ANET", "DELL": "DELL", "MSTR": "MSTR",
     "BABA": "BABA", "TCEHY": "TCEHY", "PDD": "PDD", "BIDU": "BIDU",
     "JD": "JD", "SHOP": "SHOP", "NU": "NU", "AZN": "AZN",
+    # Indices (world stock indices, tickers Yahoo)
+    "US30": "^DJI", "NAS100": "^IXIC", "SPX500": "^GSPC",
+    "JP225": "^N225", "HK50": "^HSI", "GER40": "^GDAXI",
+    "UK100": "^FTSE", "IDX30": "^JKSE",
+    # Extra world stocks per v3.0.1 request
+    "HOOD": "HOOD", "COIN": "COIN", "INTC": "INTC", "SPY": "SPY",
+    "MU": "MU", "QCOM": "QCOM", "ORCL": "ORCL", "DIS": "DIS",
+    "UBER": "UBER", "CSCO": "CSCO", "HD": "HD", "SOXL": "SOXL",
+    "MRVL": "MRVL", "WMT": "WMT", "JPM": "JPM", "V": "V",
+    "BRK-B": "BRK-B", "IBM": "IBM", "NOW": "NOW", "CRM": "CRM",
+    "AMAT": "AMAT", "NFLX": "NFLX", "COST": "COST", "EBAY": "EBAY",
+    "ZM": "ZM", "DKNG": "DKNG", "RIVN": "RIVN", "GME": "GME",
+    "TQQQ": "TQQQ", "SQQQ": "SQQQ", "CAT": "CAT", "TXN": "TXN",
+    "SMCI": "SMCI", "LRCX": "LRCX", "KLAC": "KLAC", "SONY": "SONY",
+    "LLY": "LLY", "NVO": "NVO", "PYPL": "PYPL", "RKLB": "RKLB",
+}
+
+# Gold / Silver / Precious metals -> Yahoo Finance FX/commodity symbols
+GOLD_SILVER_YAHOO_MAP: dict[str, str] = {
+    "XAU/USD": "GC=F",   # Gold futures (proxy for spot)
+    "XAG/USD": "SI=F",   # Silver futures
+    "XPT/USD": "PL=F",   # Platinum
+    "XPD/USD": "PA=F",   # Palladium
+}
+
+# Commodities -> Yahoo Finance futures symbols
+COMMODITY_YAHOO_MAP: dict[str, str] = {
+    "WTI":     "CL=F",   # WTI Crude Oil
+    "BRENT":   "BZ=F",   # Brent Crude Oil
+    "NATGAS":  "NG=F",   # Natural Gas
+    "CORN":    "ZC=F",   # Corn
+    "COFFEE":  "KC=F",   # Coffee Beans
+    "SUGAR":   "SB=F",   # Sugar
+    "COPPER":  "HG=F",   # Copper
+    "WHEAT":   "ZW=F",   # Wheat
+}
+
+# Forex -> Yahoo Finance FX symbols (XXX=X or XXXYYY=X)
+FOREX_YAHOO_MAP: dict[str, str] = {
+    "EUR/USD": "EURUSD=X",
+    "GBP/USD": "GBPUSD=X",
+    "USD/JPY": "JPY=X",
+    "AUD/USD": "AUDUSD=X",
+    "EUR/GBP": "EURGBP=X",
+    "EUR/JPY": "EURJPY=X",
+    "USD/IDR": "IDR=X",
+    "USD/TRY": "TRY=X",
+    "USD/ZAR": "ZAR=X",
+    "USD/CNY": "CNY=X",
+    "USD/RUB": "RUB=X",
+    "NZD/USD": "NZDUSD=X",
 }
 
 # Map app timeframe -> (binance_interval, yahoo_range, yahoo_interval, candles_needed)
 TIMEFRAME_MAP: dict[str, dict[str, Any]] = {
-    "15m": {"binance": "15m", "yahoo_range": "5d", "yahoo_interval": "15m", "limit": 100},
-    "30m": {"binance": "30m", "yahoo_range": "5d", "yahoo_interval": "30m", "limit": 100},
+    "1m":  {"binance": "1m",  "yahoo_range": "1d",  "yahoo_interval": "1m",  "limit": 100},
+    "3m":  {"binance": "3m",  "yahoo_range": "1d",  "yahoo_interval": "5m",  "limit": 100},
+    "5m":  {"binance": "5m",  "yahoo_range": "1d",  "yahoo_interval": "5m",  "limit": 100},
+    "15m": {"binance": "15m", "yahoo_range": "5d",  "yahoo_interval": "15m", "limit": 100},
+    "30m": {"binance": "30m", "yahoo_range": "5d",  "yahoo_interval": "30m", "limit": 100},
     "1h":  {"binance": "1h",  "yahoo_range": "1mo", "yahoo_interval": "60m", "limit": 100},
     "3h":  {"binance": "2h",  "yahoo_range": "1mo", "yahoo_interval": "60m", "limit": 100},
-    "6h":  {"binance": "6h",  "yahoo_range": "3mo", "yahoo_interval": "1d", "limit": 100},
-    "12h": {"binance": "12h", "yahoo_range": "3mo", "yahoo_interval": "1d", "limit": 100},
-    "18h": {"binance": "12h", "yahoo_range": "6mo", "yahoo_interval": "1d", "limit": 100},
-    "24h": {"binance": "1d",  "yahoo_range": "6mo", "yahoo_interval": "1d", "limit": 100},
+    "6h":  {"binance": "6h",  "yahoo_range": "3mo", "yahoo_interval": "1d",  "limit": 100},
+    "12h": {"binance": "12h", "yahoo_range": "3mo", "yahoo_interval": "1d",  "limit": 100},
+    "18h": {"binance": "12h", "yahoo_range": "6mo", "yahoo_interval": "1d",  "limit": 100},
+    "24h": {"binance": "1d",  "yahoo_range": "6mo", "yahoo_interval": "1d",  "limit": 100},
+    "7d":  {"binance": "1d",  "yahoo_range": "1y",  "yahoo_interval": "1wk", "limit": 100},
+    "14d": {"binance": "1d",  "yahoo_range": "2y",  "yahoo_interval": "1wk", "limit": 100},
+    "30d": {"binance": "1d",  "yahoo_range": "5y",  "yahoo_interval": "1mo", "limit": 100},
 }
 
 BINANCE_BASE = "https://data-api.binance.vision"
@@ -271,8 +328,14 @@ async def get_stock_snapshot(symbol: str, timeframe: str, market: str = "stock_i
         sym_map = STOCK_YAHOO_MAP
     elif market == "etf":
         sym_map = ETF_YAHOO_MAP
-    elif market == "stock_us":
+    elif market in ("stock_us", "world_stocks"):
         sym_map = STOCK_US_YAHOO_MAP
+    elif market == "gold_silver":
+        sym_map = GOLD_SILVER_YAHOO_MAP
+    elif market == "commodity":
+        sym_map = COMMODITY_YAHOO_MAP
+    elif market == "forex":
+        sym_map = FOREX_YAHOO_MAP
     else:
         sym_map = STOCK_YAHOO_MAP
     yahoo_sym = sym_map.get(symbol)

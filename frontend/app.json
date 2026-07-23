@@ -6,7 +6,7 @@
         "foregroundImage": "./assets/images/adaptive-icon.png"
       },
       "edgeToEdgeEnabled": true,
-      "package": "app.emergent.cryptostockpro3d0aad46"
+      "package": "com.cryptostockapps.aicryptostockpro"
     },
     "androidStatusBar": {
       "backgroundColor": "#000000",
@@ -17,10 +17,10 @@
     },
     "icon": "./assets/images/icon.png",
     "ios": {
-      "bundleIdentifier": "app.emergent.cryptostockprob9d2cdb1",
+      "bundleIdentifier": "com.cryptostockapps.aicryptostockpro",
       "supportsTablet": true
     },
-    "name": "KevinAI Pro",
+    "name": "AI Crypto Stock Pro",
     "newArchEnabled": true,
     "orientation": "portrait",
     "plugins": [
@@ -36,10 +36,10 @@
       ],
       "expo-font"
     ],
-    "scheme": "frontend",
-    "slug": "kevinai-pro",
+    "scheme": "aicryptostockpro",
+    "slug": "ai-crypto-stock-pro",
     "userInterfaceStyle": "automatic",
-    "version": "2.1.8",
+    "version": "3.0.1",
     "web": {
       "bundler": "metro",
       "favicon": "./assets/images/favicon.png",

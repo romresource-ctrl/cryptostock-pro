@@ -139,7 +139,19 @@ DEFAULT_ETF = ["QQQ", "VOO", "VTI", "ARKK", "SMH", "TLT", "IBIT", "FBTC", "ARKB"
                "ETHE", "ETHA", "SCHD", "VYM", "INDA", "EWJ", "XLF", "XLE", "XBI", "EIDO", "BND", "LQD"]
 DEFAULT_STOCK_US = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "TSLA", "META", "AMD", "ASML",
                     "TSMC", "ARM", "PLTR", "SNOW", "CRWD", "ADBE", "AVGO", "ANET", "DELL",
-                    "MSTR", "BABA", "TCEHY", "PDD", "BIDU", "JD", "SHOP", "NU", "AZN", "SPCX"]
+                    "MSTR", "BABA", "TCEHY", "PDD", "BIDU", "JD", "SHOP", "NU", "AZN", "SPCX",
+                    # Indices
+                    "US30", "NAS100", "SPX500", "JP225", "HK50", "GER40", "UK100", "IDX30",
+                    # Extra world stocks per v3.0.1
+                    "HOOD", "COIN", "INTC", "SPY", "MU", "QCOM", "ORCL", "DIS", "UBER", "CSCO",
+                    "HD", "SOXL", "MRVL", "WMT", "JPM", "V", "IBM", "NOW", "CRM", "AMAT",
+                    "NFLX", "COST", "SMCI", "LRCX", "KLAC", "SONY", "LLY", "NVO", "PYPL", "RKLB"]
+
+# NEW v3.0.1 categories
+DEFAULT_GOLD_SILVER = ["XAU/USD", "XAG/USD", "XPT/USD", "XPD/USD"]
+DEFAULT_COMMODITY = ["WTI", "BRENT", "NATGAS", "CORN", "COFFEE", "SUGAR", "COPPER", "WHEAT"]
+DEFAULT_FOREX = ["EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "EUR/GBP",
+                 "EUR/JPY", "USD/IDR", "USD/TRY", "USD/ZAR", "USD/CNY", "USD/RUB", "NZD/USD"]
 
 # Default seed profiles for new installs
 DEFAULT_PROFILES = [
@@ -600,7 +612,7 @@ async def update_watchlist(payload: WatchlistPayload) -> WatchlistResponse:
 
 @api.get("/dashboard", response_model=DashboardResponse)
 async def dashboard(
-    market: Literal["crypto", "stock", "etf", "stock_id", "stock_us"] = Query("crypto"),
+    market: Literal["crypto", "stock", "etf", "stock_id", "stock_us", "world_stocks", "gold_silver", "commodity", "forex"] = Query("crypto"),
     timeframe: str = Query("1h"),
     sort: Literal["default", "premium", "confidence", "wr"] = Query("default"),
     premium_only: bool = Query(False),
@@ -610,8 +622,10 @@ async def dashboard(
 ) -> DashboardResponse:
     if timeframe not in TIMEFRAME_MAP:
         raise HTTPException(400, f"Invalid timeframe. Use one of {TIMEFRAMES}")
-    # Backward-compat: "stock" -> "stock_id"
+    # Backward-compat: "stock" -> "stock_id", "world_stocks" -> "stock_us" internally
     eff_market = "stock_id" if market == "stock" else market
+    if eff_market == "world_stocks":
+        eff_market = "stock_us"
 
     prof = await _get_active_profile()
     if full:
@@ -620,12 +634,22 @@ async def dashboard(
             "stock_id": DEFAULT_STOCKS,
             "etf": DEFAULT_ETF,
             "stock_us": DEFAULT_STOCK_US,
+            "gold_silver": DEFAULT_GOLD_SILVER,
+            "commodity": DEFAULT_COMMODITY,
+            "forex": DEFAULT_FOREX,
         }.get(eff_market, [])
         profile_name = "Semua Aset"
         profile_id = "all"
     else:
         symbols = prof.get("crypto") if eff_market == "crypto" else prof.get("stocks")
         symbols = symbols or []
+        # For new asset categories (gold, commodity, forex, etf, us stocks) always show defaults
+        if not symbols and eff_market in ("etf", "stock_us", "gold_silver", "commodity", "forex"):
+            symbols = {
+                "etf": DEFAULT_ETF, "stock_us": DEFAULT_STOCK_US,
+                "gold_silver": DEFAULT_GOLD_SILVER, "commodity": DEFAULT_COMMODITY,
+                "forex": DEFAULT_FOREX,
+            }[eff_market]
         profile_id = prof["_id"]
         profile_name = prof.get("name", "Default")
     if not symbols:
@@ -670,13 +694,15 @@ async def dashboard(
 
 @api.get("/asset/{market}/{symbol}/chart", response_model=ChartResponse)
 async def asset_chart(
-    market: Literal["crypto", "stock", "etf", "stock_id", "stock_us"],
+    market: Literal["crypto", "stock", "etf", "stock_id", "stock_us", "world_stocks", "gold_silver", "commodity", "forex"],
     symbol: str,
     timeframe: str = "1h",
 ) -> ChartResponse:
     if timeframe not in TIMEFRAME_MAP:
         raise HTTPException(400, "Invalid timeframe")
     eff_market = "stock_id" if market == "stock" else market
+    if eff_market == "world_stocks":
+        eff_market = "stock_us"
     symbol = symbol.upper()
     snap = await (
         get_crypto_snapshot(symbol, timeframe)
@@ -696,7 +722,7 @@ async def asset_chart(
 
 @api.post("/asset/{market}/{symbol}/analyze", response_model=AnalyzeResponse)
 async def asset_analyze(
-    market: Literal["crypto", "stock", "etf", "stock_id", "stock_us"],
+    market: Literal["crypto", "stock", "etf", "stock_id", "stock_us", "world_stocks", "gold_silver", "commodity", "forex"],
     symbol: str,
     timeframe: str = "1h",
     lang: Literal["id", "en"] = "id",
@@ -704,6 +730,8 @@ async def asset_analyze(
     if timeframe not in TIMEFRAME_MAP:
         raise HTTPException(400, "Invalid timeframe")
     eff_market = "stock_id" if market == "stock" else market
+    if eff_market == "world_stocks":
+        eff_market = "stock_us"
     symbol = symbol.upper()
     snap = await (
         get_crypto_snapshot(symbol, timeframe)
@@ -830,10 +858,12 @@ async def asset_analyze(
 
 @api.get("/asset/{market}/{symbol}/track-record")
 async def asset_track_record(
-    market: Literal["crypto", "stock", "etf", "stock_id", "stock_us"],
+    market: Literal["crypto", "stock", "etf", "stock_id", "stock_us", "world_stocks", "gold_silver", "commodity", "forex"],
     symbol: str,
 ) -> dict:
     eff_market = "stock_id" if market == "stock" else market
+    if eff_market == "world_stocks":
+        eff_market = "stock_us"
     return await get_track_record(db, eff_market, symbol.upper())
 
 
@@ -841,11 +871,13 @@ async def asset_track_record(
 
 @api.get("/news", response_model=NewsResponse)
 async def news_global(
-    market: Literal["crypto", "stock", "etf", "stock_id", "stock_us", "all"] = Query("all"),
+    market: Literal["crypto", "stock", "etf", "stock_id", "stock_us", "world_stocks", "gold_silver", "commodity", "forex", "all"] = Query("all"),
     limit: int = Query(40, ge=1, le=80),
     lang: Literal["id", "en"] = Query("id"),
 ) -> NewsResponse:
     eff_market = "stock_id" if market == "stock" else market
+    if eff_market == "world_stocks":
+        eff_market = "stock_us"
     items = await get_news(eff_market, limit=limit)
     if lang == "en" and items:
         titles = [i.get("title") or "" for i in items]
@@ -862,12 +894,14 @@ async def news_global(
 
 @api.get("/asset/{market}/{symbol}/news", response_model=NewsResponse)
 async def news_for_asset(
-    market: Literal["crypto", "stock", "etf", "stock_id", "stock_us"],
+    market: Literal["crypto", "stock", "etf", "stock_id", "stock_us", "world_stocks", "gold_silver", "commodity", "forex"],
     symbol: str,
     limit: int = Query(10, ge=1, le=30),
     lang: Literal["id", "en"] = Query("id"),
 ) -> NewsResponse:
     eff_market = "stock_id" if market == "stock" else market
+    if eff_market == "world_stocks":
+        eff_market = "stock_us"
     items = await get_news_for_symbol(symbol.upper(), eff_market, limit=limit)
     if lang == "en" and items:
         titles = [i.get("title") or "" for i in items]

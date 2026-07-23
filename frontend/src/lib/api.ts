@@ -4,8 +4,8 @@
 const RAW = process.env.EXPO_PUBLIC_BACKEND_URL ?? "";
 export const API_BASE = `${RAW.replace(/\/+$/, "")}/api`;
 
-export type Market = "crypto" | "etf" | "stock_id" | "stock_us";
-export type Timeframe = "15m" | "30m" | "1h" | "3h" | "6h" | "12h" | "18h" | "24h";
+export type Market = "crypto" | "etf" | "stock_id" | "stock_us" | "world_stocks" | "gold_silver" | "commodity" | "forex";
+export type Timeframe = "1m" | "3m" | "5m" | "15m" | "30m" | "1h" | "3h" | "6h" | "12h" | "18h" | "24h" | "7d" | "14d" | "30d";
 
 export interface TrackRecordMini {
   wr_7d: number | null;
@@ -245,7 +245,7 @@ export const api = {
     send<{ target_lang: string; items: string[] }>(`/translate`, "POST", { texts, target_lang }),
 };
 
-export const TIMEFRAMES: Timeframe[] = ["15m", "30m", "1h", "3h", "6h", "12h", "18h", "24h"];
+export const TIMEFRAMES: Timeframe[] = ["1m", "3m", "5m", "15m", "30m", "1h", "3h", "6h", "12h", "18h", "24h", "7d", "14d", "30d"];
 
 export function formatPrice(v: number | null | undefined, market: Market): string {
   if (v === null || v === undefined || isNaN(v)) return "—";
