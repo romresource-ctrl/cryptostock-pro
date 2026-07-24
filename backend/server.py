@@ -1159,6 +1159,30 @@ async def admin_tool_html() -> HTMLResponse:
         return HTMLResponse("<h1>Admin tool not deployed</h1>", status_code=404)
 
 
+@app.get("/api/privacy", include_in_schema=False)
+async def privacy_policy_html() -> HTMLResponse:
+    """PUBLIC Privacy Policy page — required by Google Play Console for store
+    submission. Google reviewers must be able to open this URL without login.
+    """
+    try:
+        path = os.path.join(os.path.dirname(__file__), "static", "privacy.html")
+        with open(path, "r", encoding="utf-8") as f:
+            return HTMLResponse(f.read())
+    except Exception:
+        return HTMLResponse("<h1>Privacy policy not deployed</h1>", status_code=404)
+
+
+@app.get("/api/terms", include_in_schema=False)
+async def terms_html() -> HTMLResponse:
+    """PUBLIC Terms of Service page — required for Play Console subscription apps."""
+    try:
+        path = os.path.join(os.path.dirname(__file__), "static", "terms.html")
+        with open(path, "r", encoding="utf-8") as f:
+            return HTMLResponse(f.read())
+    except Exception:
+        return HTMLResponse("<h1>Terms of service not deployed</h1>", status_code=404)
+
+
 @app.get("/api/admin-source.zip", include_in_schema=False)
 async def admin_source_zip() -> FileResponse:
     """Download the admin-app source ZIP (for offline APK build via EAS Cloud).
