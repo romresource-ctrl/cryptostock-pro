@@ -101,3 +101,120 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: |
+  AI Crypto Stock Pro v3.0.8 — implement REAL Google Play Billing subscription
+  ($20/month with 3-day free trial, product ID `ai_cryptostockpro_monthly`),
+  server-side verification via Google Play Developer API, and enable R8/ProGuard.
+  Frontend must gate premium features on `isPremium` (subscription entitlement)
+  OR `isUnlocked` (legacy admin unlock code).
+
+backend:
+  - task: "Subscription verification endpoint (Google Play Developer API)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/subscription_service.py, /app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Added POST /api/subscription/verify and GET /api/subscription/status
+          endpoints. Uses `subscription_service.py` which calls Google Play
+          Publisher API `purchases.subscriptionsv2.get` (with v1 fallback) using
+          a service account. If GOOGLE_PLAY_SERVICE_ACCOUNT_JSON env var is not
+          set, endpoint returns status="unverified" and entitled=false — this is
+          the current state (dev-mode fallback). Entitlement upserted into
+          Mongo collection `subscriptions` keyed by (purchase_token, package_name).
+          Test with fake token returns unverified as expected. Real verification
+          only testable on Android Internal Testing after service account is
+          configured by user.
+
+frontend:
+  - task: "Subscription hook, provider, and VipModal integration (react-native-iap 15.6)"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/lib/subscription.ts, /app/frontend/src/lib/subscriptionContext.tsx, /app/frontend/src/components/VipModal.tsx, /app/frontend/app/_layout.tsx, /app/frontend/app/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Rewrote subscription.ts as full imperative flow: initIap (lazy Android-only
+          import), fetchSubscription, purchaseSubscription, restorePurchases,
+          setupPurchaseListener (global). New SubscriptionProvider wraps app in
+          _layout.tsx and exposes { isPremium, subscribe, restore, entitlement,
+          product }. VipModal rewired to use useSubscription() — Subscribe button
+          triggers real Google Play requestSubscription (Android) OR shows
+          Android-only message (web/iOS). Restore Purchase button added.
+          Dashboard gating updated: `hasAccess = isUnlocked || isPremium`.
+          Web preview shows the correct fallback UI (screenshot verified).
+          Actual purchase flow can only be validated on a real Android
+          Internal Testing device.
+  - task: "App version bump to 3.0.8"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/lib/version.ts, /app/frontend/app.json"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Bumped from 3.0.7 → 3.0.8. Screenshot confirms 'Ver 3.0.8' in header."
+  - task: "R8/ProGuard shrinking for AAB optimization"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app.json"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Added expo-build-properties plugin with
+          enableProguardInReleaseBuilds=true, enableShrinkResourcesInReleaseBuilds=true.
+          Added keep rules for react-native-iap, billing client, and nitro modules
+          to prevent stripping. Only effective in release AAB — cannot test in
+          dev mode / web preview.
+
+metadata:
+  created_by: "main_agent"
+  version: "3.0.8"
+  test_sequence: 11
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Subscription verification endpoint (Google Play Developer API)"
+    - "Subscription hook, provider, and VipModal integration (react-native-iap 15.6)"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: |
+      v3.0.8 delivered: real Google Play Billing scaffolding + backend verifier
+      + R8 enabled. Please test:
+      1. Backend endpoints:
+         - POST /api/subscription/verify — with fake token returns unverified/entitled=false (correct dev behavior)
+         - GET  /api/subscription/status?device_id=X — returns cached entitlement or "none"
+         - Confirm no regressions in existing endpoints (/api/dashboard, /api/auth/verify, /api/asset/*)
+      2. Frontend (web preview http://localhost:3000):
+         - App loads showing "Ver 3.0.8"
+         - Dashboard shows all 7 categories with data
+         - Tapping any asset while not unlocked opens VipModal
+         - VipModal shows SUBSCRIBE $20.00/MONTH button, Restore Purchase button,
+           and Android-only footer message
+         - No blue "Login" button in VipModal (only in header)
+         - No WhatsApp/contact button
+         - Email cryptostockapps@gmail.com button opens mailto
+         - i18n switcher works (ID/EN/RU/CN)
+      3. DO NOT test IAP purchase flow on web/Expo Go — it requires real Android
+         Internal Testing build. Just verify UI renders correctly and no JS errors.

@@ -51,6 +51,10 @@ from track_record import (  # noqa: E402
     get_track_record_summary,
     record_signal,
 )
+from subscription_service import (  # noqa: E402
+    ENTITLED_STATUSES,
+    verify_purchase,
+)
 from translator import translate_many  # noqa: E402
 from unlock_codes import (  # noqa: E402
     DURATION_DAYS,
@@ -1130,6 +1134,136 @@ async def admin_revoke_user(email: str, x_admin_token: str | None = Header(defau
     if res.deleted_count == 0:
         raise HTTPException(404, "User not found")
     return {"ok": True, "revoked": target}
+
+
+# ---------------- Google Play Billing Subscription ----------------
+
+class SubscriptionVerifyPayload(BaseModel):
+    purchase_token: str
+    product_id: str
+    package_name: str | None = None
+    device_id: str | None = None
+
+
+class SubscriptionStatusResponse(BaseModel):
+    status: str
+    entitled: bool
+    expiry_time: str | None = None
+    product_id: str | None = None
+    source: str = "unknown"
+
+
+async def _upsert_entitlement(
+    *,
+    device_id: str | None,
+    purchase_token: str,
+    product_id: str,
+    package_name: str,
+    status: str,
+    entitled: bool,
+    expiry_dt: datetime | None,
+    source: str,
+) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    doc = {
+        "purchase_token": purchase_token,
+        "product_id": product_id,
+        "package_name": package_name,
+        "device_id": device_id,
+        "status": status,
+        "entitled": entitled,
+        "expiry_time": expiry_dt.isoformat() if expiry_dt else None,
+        "source": source,
+        "updated_at": now,
+    }
+    await db.subscriptions.update_one(
+        {"purchase_token": purchase_token, "package_name": package_name},
+        {"$set": doc, "$setOnInsert": {"created_at": now}},
+        upsert=True,
+    )
+
+
+@api.post("/subscription/verify", response_model=SubscriptionStatusResponse)
+async def subscription_verify(payload: SubscriptionVerifyPayload) -> SubscriptionStatusResponse:
+    """Verify a Google Play subscription purchase token and persist entitlement.
+
+    - Called by the Android client right after `requestSubscription` succeeds
+      AND on restore-purchase (`getAvailablePurchases`).
+    - If GOOGLE_PLAY_SERVICE_ACCOUNT_JSON is NOT set on the backend, we return
+      status="unverified" and entitled=False. Client must not treat this as
+      premium unlock — user should be routed back to paywall.
+    """
+    token = (payload.purchase_token or "").strip()
+    product_id = (payload.product_id or "").strip()
+    if not token or not product_id:
+        raise HTTPException(400, "purchase_token and product_id are required")
+
+    pkg = (payload.package_name or "com.cryptostockapps.aicryptostockpro").strip()
+
+    result = verify_purchase(token, product_id, pkg)
+    status = result["status"]
+    entitled = bool(result.get("entitled"))
+    expiry_dt = result.get("expiry_time")
+    source = result.get("source", "unknown")
+
+    await _upsert_entitlement(
+        device_id=payload.device_id,
+        purchase_token=token,
+        product_id=product_id,
+        package_name=pkg,
+        status=status,
+        entitled=entitled,
+        expiry_dt=expiry_dt,
+        source=source,
+    )
+
+    return SubscriptionStatusResponse(
+        status=status,
+        entitled=entitled,
+        expiry_time=expiry_dt.isoformat() if expiry_dt else None,
+        product_id=product_id,
+        source=source,
+    )
+
+
+@api.get("/subscription/status", response_model=SubscriptionStatusResponse)
+async def subscription_status(device_id: str | None = None) -> SubscriptionStatusResponse:
+    """Look up cached entitlement for a device.
+
+    Returns the most-recent entitlement row for the device. If none exists or
+    the last-known expiry is in the past, entitled=False.
+    Note: This is a **cache** — the authoritative flow is `POST /verify`. Use
+    this endpoint on cold-start to quickly gate UI, then re-verify in background.
+    """
+    if not device_id:
+        return SubscriptionStatusResponse(
+            status="none", entitled=False, source="none",
+        )
+    row = await db.subscriptions.find_one(
+        {"device_id": device_id},
+        sort=[("updated_at", -1)],
+    )
+    if not row:
+        return SubscriptionStatusResponse(status="none", entitled=False, source="none")
+
+    status = row.get("status", "invalid")
+    expiry_iso = row.get("expiry_time")
+    entitled = status in ENTITLED_STATUSES
+    # Belt-and-suspenders: expiry passed → not entitled
+    if entitled and expiry_iso:
+        try:
+            if datetime.fromisoformat(expiry_iso.replace("Z", "+00:00")) <= datetime.now(timezone.utc):
+                entitled = False
+                status = "expired"
+        except Exception:
+            pass
+    return SubscriptionStatusResponse(
+        status=status,
+        entitled=entitled,
+        expiry_time=expiry_iso,
+        product_id=row.get("product_id"),
+        source=row.get("source", "cached"),
+    )
 
 
 app.include_router(api)

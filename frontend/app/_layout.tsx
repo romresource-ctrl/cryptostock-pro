@@ -7,6 +7,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider } from "@/src/auth/AuthContext";
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { I18nProvider } from "@/src/i18n/I18nContext";
+import { SubscriptionProvider } from "@/src/lib/subscriptionContext";
 import { ThemeProvider, useTheme } from "@/src/theme/ThemeContext";
 
 // Keep the native splash visible from cold start until icon fonts register.
@@ -49,7 +50,9 @@ export default function RootLayout() {
       <ThemeProvider>
         <I18nProvider>
           <AuthProvider>
-            <RootStack />
+            <SubscriptionProvider>
+              <RootStack />
+            </SubscriptionProvider>
           </AuthProvider>
         </I18nProvider>
       </ThemeProvider>

@@ -29,6 +29,7 @@ import {
   formatPct,
   formatPrice,
 } from "@/src/lib/api";
+import { useSubscription } from "@/src/lib/subscriptionContext";
 import { APP_VERSION } from "@/src/lib/version";
 import { useTheme } from "@/src/theme/ThemeContext";
 
@@ -151,6 +152,8 @@ export default function Dashboard() {
   const { colors, mode, toggle } = useTheme();
   const router = useRouter();
   const { isUnlocked, email, logout, loaded: authLoaded } = useAuth();
+  const { isPremium } = useSubscription();
+  const hasAccess = isUnlocked || isPremium;
   const { lang, toggle: toggleLang, t } = useI18n();
 
   const [view, setView] = useState<Category[]>(["crypto", "stock_id"]);
@@ -236,7 +239,7 @@ export default function Dashboard() {
   }, [load, timeframe, view]);
 
   const handleAssetPress = (a: AssetSignal) => {
-    if (!isUnlocked) {
+    if (!hasAccess) {
       setVipOpen(true);
       return;
     }
@@ -451,7 +454,7 @@ export default function Dashboard() {
                   data={filterAssets(data[k], searchQuery)}
                   loading={loadingMap[k]}
                   onPress={handleAssetPress}
-                  locked={!isUnlocked}
+                  locked={!hasAccess}
                 />
               </View>
             );

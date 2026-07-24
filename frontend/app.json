@@ -39,12 +39,22 @@
           "resizeMode": "contain"
         }
       ],
-      "expo-font"
+      "expo-font",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableProguardInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "extraProguardRules": "# --- react-native-iap / Play Billing ---\n-keep class com.android.vending.billing.**\n-keep class com.android.billingclient.api.** { *; }\n-dontwarn com.android.billingclient.api.**\n-keep class com.dooboolab.rniap.** { *; }\n-dontwarn com.dooboolab.rniap.**\n# --- react-native-nitro-modules ---\n-keep class com.margelo.nitro.** { *; }\n-dontwarn com.margelo.nitro.**\n"
+          }
+        }
+      ]
     ],
     "scheme": "aicryptostockpro",
     "slug": "ai-crypto-stock-pro",
     "userInterfaceStyle": "automatic",
-    "version": "3.0.7",
+    "version": "3.0.8",
     "web": {
       "bundler": "metro",
       "favicon": "./assets/images/favicon.png",
