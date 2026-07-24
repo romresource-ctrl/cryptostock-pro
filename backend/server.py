@@ -1196,6 +1196,20 @@ async def data_deletion_html() -> HTMLResponse:
         return HTMLResponse("<h1>Data deletion page not deployed</h1>", status_code=404)
 
 
+@app.get("/api/store-assets/{filename}", include_in_schema=False)
+async def store_asset(filename: str) -> FileResponse:
+    """Serve Play Store submission assets (feature graphic, screenshots).
+    Admin/dev only — link the specific URL to download.
+    """
+    # sanitize
+    if "/" in filename or ".." in filename or not filename.endswith(".png"):
+        return HTMLResponse("<h1>Invalid asset</h1>", status_code=400)
+    path = os.path.join(os.path.dirname(__file__), "static", "store-assets", filename)
+    if not os.path.exists(path):
+        return HTMLResponse(f"<h1>Not found: {filename}</h1>", status_code=404)
+    return FileResponse(path, media_type="image/png", filename=filename)
+
+
 @app.get("/api/admin-source.zip", include_in_schema=False)
 async def admin_source_zip() -> FileResponse:
     """Download the admin-app source ZIP (for offline APK build via EAS Cloud).
