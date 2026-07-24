@@ -170,23 +170,28 @@ export default function Dashboard() {
   const [vipOpen, setVipOpen] = useState(false);
   const [lockedToast, setLockedToast] = useState(false);
 
-  const load = useCallback(async (tf: Timeframe, selected: Category[]) => {
-    const updates: Record<Category, boolean> = {
-      crypto: false, etf: false, stock_id: false, stock_us: false,
-      world_stocks: false, gold_silver: false, commodity: false, forex: false,
-    };
-    selected.forEach((k) => { updates[k] = true; });
-    setLoadingMap(updates);
+  // All 7 categories are always loaded in parallel so user can swipe horizontally
+  // between them on phone, or see multiple columns at once on tablet.
+  const ALL_CATEGORIES: Category[] = useMemo(
+    () => CATEGORIES.map((c) => c.key),
+    [],
+  );
+
+  const load = useCallback(async (tf: Timeframe, _selected: Category[]) => {
+    setLoadingMap({
+      crypto: true, etf: true, stock_id: true, stock_us: true,
+      world_stocks: false, gold_silver: true, commodity: true, forex: true,
+    });
     try {
       const results = await Promise.allSettled(
-        selected.map((k) => api.dashboard(k, tf, { full: true, sort: "premium" })),
+        ALL_CATEGORIES.map((k) => api.dashboard(k, tf, { full: true, sort: "premium" })),
       );
       let pCount = 0;
       const next = {
         crypto: [], etf: [], stock_id: [], stock_us: [],
         world_stocks: [], gold_silver: [], commodity: [], forex: [],
       } as Record<Category, AssetSignal[]>;
-      selected.forEach((k, i) => {
+      ALL_CATEGORIES.forEach((k, i) => {
         const r = results[i];
         if (r.status === "fulfilled") {
           next[k] = r.value.assets;
@@ -202,7 +207,7 @@ export default function Dashboard() {
         world_stocks: false, gold_silver: false, commodity: false, forex: false,
       });
     }
-  }, []);
+  }, [ALL_CATEGORIES]);
 
   useEffect(() => {
     void load(timeframe, view);
@@ -415,19 +420,31 @@ export default function Dashboard() {
         </View>
       </View>
 
-      {/* Asset lists */}
+      {/* Asset lists — always show ALL 7 category columns.
+       * On phone: 2 columns fit per screen, swipe horizontally for others.
+       * On tablet/Chromebook: 4-7 columns fit at once (no swipe needed).
+       * Chip selection (view[]) auto-scrolls to first selected category. */}
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={styles.dualScroll}
+        contentContainerStyle={{ paddingBottom: 20 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accentBlue} />}
       >
-        {selectedCount === 2 ? (
-          <View style={styles.dualRow}>
-            {view.map((k) => {
-              const catLabel = t(`category_${k}`).toUpperCase();
-              return (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 8, gap: 8 }}
+          decelerationRate="fast"
+          pagingEnabled={SCREEN_W < 640}
+          snapToInterval={SCREEN_W < 640 ? Math.floor((SCREEN_W - 16) / 2) + 8 : undefined}
+        >
+          {ALL_CATEGORIES.map((k) => {
+            const catLabel = t(`category_${k}`).toUpperCase();
+            // Column width: phone → exactly 2 per screen; tablet → fixed ~180
+            const colW = SCREEN_W < 640 ? Math.floor((SCREEN_W - 24) / 2) : 190;
+            const highlighted = view.includes(k);
+            return (
+              <View key={k} style={{ width: colW, opacity: highlighted ? 1 : 0.72 }}>
                 <ListColumn
-                  key={k}
                   title={catLabel}
                   market={k}
                   data={filterAssets(data[k], searchQuery)}
@@ -435,27 +452,10 @@ export default function Dashboard() {
                   onPress={handleAssetPress}
                   locked={!isUnlocked}
                 />
-              );
-            })}
-          </View>
-        ) : (
-          (() => {
-            const k = view[0];
-            const catLabel = t(`category_${k}`).toUpperCase();
-            return (
-              <FullList
-                title={catLabel}
-                market={k}
-                data={filterAssets(data[k], searchQuery)}
-                loading={loadingMap[k]}
-                onPress={handleAssetPress}
-                locked={!isUnlocked}
-                screenW={SCREEN_W}
-                assetLabel={t("asset")}
-              />
+              </View>
             );
-          })()
-        )}
+          })}
+        </ScrollView>
       </ScrollView>
 
       {/* Locked toast */}

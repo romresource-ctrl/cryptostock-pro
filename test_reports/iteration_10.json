@@ -1,0 +1,47 @@
+{
+  "summary": "Frontend-only regression for v3.0.2 responsive multi-column layout PASSED. Verified across 3 viewports (390x844 phone, 800x1280 tab7, 1200x1920 tab10). All 7 category columns are always rendered in a horizontal ScrollView. Phone shows 2 full columns (CRYPTO + ETF) with a hint of the 3rd at right edge (col width ~183px, 2 fit per screen). Tablet 7\" & 10\" both render all 7 columns with narrow ~178px cards (not stretched). Chip selection only highlights (opacity 1 vs 0.72) without removing columns. Search 'BTC' correctly filters to BTC + FBTC only. Language toggle ID→EN→RU→CN translates both version label ('Ver'/'Вер'/'版本') and category chips ('Crypto'/'Крипто'/'加密'). All 7 categories loaded real price data (crypto:23, etf:22, stock_id:23, stock_us:66, gold_silver:4, commodity:8, forex:12). App version confirmed 3.0.2 in version.ts and app.json.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Dashboard header (phone 390px)",
+        "issues": [
+          "Header title is auto-shrunk further than request expected — actually renders as 'AI Cryp...' (not 'AI Crypto St...') due to 5 action buttons + login button competing for horizontal space. adjustsFontSizeToFit + numberOfLines=1 is doing its job, but readability at 390px is borderline. Consider hiding login-button text or the disclaimer icon on <400px to give the title more room."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {
+        "component": "index.tsx toggleCategory / chip UX",
+        "issue": "Comment on line 340 says 'multi-select, max 2' and toggleCategory (lines 218-229) still enforces max 2 selections. Since chip selection now only affects opacity highlight (not filtering), the 'max 2' constraint feels arbitrary — user can't highlight >2 categories. Reference: /app/frontend/app/index.tsx:218-229 and :340."
+      },
+      {
+        "component": "index.tsx data state",
+        "issue": "Data state on line 158-161 initialises a `world_stocks` key that is not part of the Category/Market union (only stock_us exists). Same in loadingMap resets (lines 163-166, 181-184, 205-208) and load next-object (lines 190-193). Harmless dead field but type-unsafe. Reference: /app/frontend/app/index.tsx:158-208."
+      }
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Update stale comment on index.tsx:340 ('multi-select, max 2') to reflect new highlight-only behavior.",
+    "Decide whether to keep or lift the 'max 2 selected' constraint in toggleCategory (lines 218-229) — since selection no longer filters columns, the cap may be unintuitive.",
+    "Optional: clean up dead `world_stocks` key from the data/loadingMap objects in index.tsx (not part of Market type).",
+    "Optional (design polish): the phone header title collapses to 'AI Cryp...' due to crowded action bar; consider hiding the 'LOGIN' text on narrow viewports."
+  ],
+  "critical_code_review_comments": [
+    "index.tsx is 646 lines — approaching the 700-line split threshold. Consider extracting AssetCard, ListColumn, and header into separate components.",
+    "SCREEN_W is captured from Dimensions at render time (line 254); it will not react to web viewport resizes. Use useWindowDimensions() so column width recalculates on rotation/browser resize. Reference: /app/frontend/app/index.tsx:254."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (backend not tested per request)", "frontend": "100%"},
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "v3.0.2 layout verified across 3 viewports. Backend intentionally not tested. If main agent adjusts chip max-selection or SCREEN_W→useWindowDimensions, rerun the phone/tab7/tab10 viewport checks and the chip-selection sanity test.",
+  "rca_of_issue": "N/A — no bugs found; all 6 test scenarios from review_request passed."
+}
