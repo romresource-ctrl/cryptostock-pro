@@ -11,63 +11,185 @@ import httpx
 
 # Crypto symbol -> Binance trading pair (USDT-quoted spot)
 CRYPTO_BINANCE_MAP: dict[str, str] = {
+    # Top 30 by market cap
     "BTC": "BTCUSDT", "ETH": "ETHUSDT", "HYPE": "HYPEUSDT",
-    "AVAX": "AVAXUSDT",
-    "USDT": "USDCUSDT",
+    "AVAX": "AVAXUSDT", "USDT": "USDCUSDT",
     "ASTER": "ASTERUSDT", "BNB": "BNBUSDT", "XRP": "XRPUSDT",
     "SOL": "SOLUSDT", "DOGE": "DOGEUSDT", "PEPE": "PEPEUSDT",
     "SUI": "SUIUSDT", "ADA": "ADAUSDT", "TRX": "TRXUSDT",
     "LTC": "LTCUSDT", "LINK": "LINKUSDT", "HBAR": "HBARUSDT",
     "SHIB": "SHIBUSDT", "DOT": "DOTUSDT", "BCH": "BCHUSDT",
     "SAND": "SANDUSDT", "ALGO": "ALGOUSDT", "XAUT": "PAXGUSDT",
+    # Layer-1/Layer-2 & DeFi
+    "MATIC": "MATICUSDT", "ATOM": "ATOMUSDT", "NEAR": "NEARUSDT",
+    "FIL": "FILUSDT", "APT": "APTUSDT", "ARB": "ARBUSDT",
+    "OP": "OPUSDT", "INJ": "INJUSDT", "STX": "STXUSDT",
+    "TIA": "TIAUSDT", "SEI": "SEIUSDT", "IMX": "IMXUSDT",
+    "MNT": "MNTUSDT", "TON": "TONUSDT", "GRT": "GRTUSDT",
+    "AAVE": "AAVEUSDT", "MKR": "MKRUSDT", "UNI": "UNIUSDT",
+    "LDO": "LDOUSDT", "CRV": "CRVUSDT", "COMP": "COMPUSDT",
+    "SNX": "SNXUSDT", "SUSHI": "SUSHIUSDT",
+    # Memecoins & narratives
+    "WIF": "WIFUSDT", "BONK": "BONKUSDT", "FLOKI": "FLOKIUSDT",
+    "TRUMP": "TRUMPUSDT", "MEME": "MEMEUSDT",
+    # AI/Compute
+    "RENDER": "RENDERUSDT", "FET": "FETUSDT", "TAO": "TAOUSDT",
+    "WLD": "WLDUSDT", "AGIX": "AGIXUSDT",
+    # Gaming/Metaverse
+    "AXS": "AXSUSDT", "GALA": "GALAUSDT", "APE": "APEUSDT",
+    "ENJ": "ENJUSDT", "MANA": "MANAUSDT",
+    # Storage & Infrastructure
+    "ICP": "ICPUSDT", "AR": "ARUSDT", "RUNE": "RUNEUSDT",
+    "KAS": "KASUSDT", "FLOW": "FLOWUSDT", "EOS": "EOSUSDT",
+    "XLM": "XLMUSDT", "VET": "VETUSDT", "XTZ": "XTZUSDT",
+    "EGLD": "EGLDUSDT", "THETA": "THETAUSDT", "CHZ": "CHZUSDT",
+    "QNT": "QNTUSDT", "KAVA": "KAVAUSDT", "CFX": "CFXUSDT",
+    "PYTH": "PYTHUSDT", "JUP": "JUPUSDT", "STRK": "STRKUSDT",
+    "ONDO": "ONDOUSDT", "ENA": "ENAUSDT", "W": "WUSDT",
+    "ETHFI": "ETHFIUSDT", "AI16Z": "AI16ZUSDT", "VIRTUAL": "VIRTUALUSDT",
+    "MOVE": "MOVEUSDT", "JASMY": "JASMYUSDT", "1INCH": "1INCHUSDT",
+    "BAT": "BATUSDT", "ZIL": "ZILUSDT", "ZEC": "ZECUSDT",
+    "DASH": "DASHUSDT", "GMT": "GMTUSDT", "DYDX": "DYDXUSDT",
+    "OCEAN": "OCEANUSDT",
 }
 
 # IDX (Indonesia) stocks -> Yahoo Finance with .JK suffix
 STOCK_YAHOO_MAP: dict[str, str] = {
+    # Big 4 banks & top financials
     "BBCA": "BBCA.JK", "BBRI": "BBRI.JK", "BMRI": "BMRI.JK",
+    "BBNI": "BBNI.JK", "BRIS": "BRIS.JK", "BTPS": "BTPS.JK",
+    "BJBR": "BJBR.JK", "BJTM": "BJTM.JK",
+    # Coal, mining, energy
     "TPIA": "TPIA.JK", "ADRO": "ADRO.JK", "DEWA": "DEWA.JK",
-    "ASII": "ASII.JK", "EMTK": "EMTK.JK", "ADMR": "ADMR.JK",
-    "BRMS": "BRMS.JK", "PANI": "PANI.JK", "CBRE": "CBRE.JK",
-    "RAJA": "RAJA.JK", "PTRO": "PTRO.JK", "INET": "INET.JK",
+    "ADMR": "ADMR.JK", "BRMS": "BRMS.JK", "PTRO": "PTRO.JK",
     "ANTM": "ANTM.JK", "MBMA": "MBMA.JK", "MDKA": "MDKA.JK",
-    "TLKM": "TLKM.JK", "AMMN": "AMMN.JK", "PGEO": "PGEO.JK",
-    "SIDO": "SIDO.JK", "UNVR": "UNVR.JK",
+    "AMMN": "AMMN.JK", "PGEO": "PGEO.JK", "PTBA": "PTBA.JK",
+    "ITMG": "ITMG.JK", "MEDC": "MEDC.JK", "ELSA": "ELSA.JK",
+    "INCO": "INCO.JK", "HRUM": "HRUM.JK", "AKRA": "AKRA.JK",
+    "PGAS": "PGAS.JK", "ENRG": "ENRG.JK", "RAJA": "RAJA.JK",
+    # Conglomerates & industrials
+    "ASII": "ASII.JK", "EMTK": "EMTK.JK", "PANI": "PANI.JK",
+    "CBRE": "CBRE.JK", "INET": "INET.JK", "TLKM": "TLKM.JK",
+    "ISAT": "ISAT.JK", "EXCL": "EXCL.JK", "TOWR": "TOWR.JK",
+    "MTEL": "MTEL.JK", "MAPA": "MAPA.JK", "MAPI": "MAPI.JK",
+    "ACES": "ACES.JK", "MIDI": "MIDI.JK", "AMRT": "AMRT.JK",
+    # Consumer & retail
+    "SIDO": "SIDO.JK", "UNVR": "UNVR.JK", "INDF": "INDF.JK",
+    "ICBP": "ICBP.JK", "MYOR": "MYOR.JK", "KLBF": "KLBF.JK",
+    "GGRM": "GGRM.JK", "HMSP": "HMSP.JK", "GOTO": "GOTO.JK",
+    "BUKA": "BUKA.JK", "ARTO": "ARTO.JK", "BBHI": "BBHI.JK",
+    # Property, construction & infra
+    "BSDE": "BSDE.JK", "CTRA": "CTRA.JK", "PWON": "PWON.JK",
+    "SMRA": "SMRA.JK", "PTPP": "PTPP.JK", "WIKA": "WIKA.JK",
+    "WSKT": "WSKT.JK", "JSMR": "JSMR.JK", "SMGR": "SMGR.JK",
+    "INTP": "INTP.JK", "SMCB": "SMCB.JK",
+    # Palm oil, plantations
+    "AALI": "AALI.JK", "LSIP": "LSIP.JK", "SIMP": "SIMP.JK",
+    "SGRO": "SGRO.JK", "TBLA": "TBLA.JK", "DSNG": "DSNG.JK",
+    # Automotive & transportation
+    "IMAS": "IMAS.JK", "GJTL": "GJTL.JK", "GIAA": "GIAA.JK",
+    # Healthcare
+    "MIKA": "MIKA.JK", "HEAL": "HEAL.JK", "SILO": "SILO.JK",
+    "TSPC": "TSPC.JK",
 }
 
 # ETFs -> Yahoo Finance (no suffix, listed in USD)
 ETF_YAHOO_MAP: dict[str, str] = {
-    "QQQ": "QQQ", "VOO": "VOO", "VTI": "VTI", "ARKK": "ARKK",
-    "SMH": "SMH", "TLT": "TLT", "IBIT": "IBIT", "FBTC": "FBTC",
-    "ARKB": "ARKB", "BITO": "BITO", "ETHE": "ETHE", "ETHA": "ETHA",
-    "SCHD": "SCHD", "VYM": "VYM", "INDA": "INDA", "EWJ": "EWJ",
-    "XLF": "XLF", "XLE": "XLE", "XBI": "XBI", "EIDO": "EIDO",
-    "BND": "BND", "LQD": "LQD",
+    # Broad market
+    "QQQ": "QQQ", "VOO": "VOO", "VTI": "VTI", "SPY": "SPY",
+    "IVV": "IVV", "VXUS": "VXUS", "VEA": "VEA", "VWO": "VWO",
+    # Thematic / growth
+    "ARKK": "ARKK", "ARKG": "ARKG", "ARKF": "ARKF", "ARKW": "ARKW",
+    "SMH": "SMH", "SOXX": "SOXX", "IGV": "IGV",
+    # Fixed income
+    "TLT": "TLT", "IEF": "IEF", "SHY": "SHY", "BND": "BND",
+    "LQD": "LQD", "HYG": "HYG", "AGG": "AGG",
+    # Crypto ETFs
+    "IBIT": "IBIT", "FBTC": "FBTC", "ARKB": "ARKB", "BITO": "BITO",
+    "ETHE": "ETHE", "ETHA": "ETHA", "GBTC": "GBTC",
+    # Dividend / income
+    "SCHD": "SCHD", "VYM": "VYM", "DVY": "DVY", "VIG": "VIG",
+    # International & country
+    "INDA": "INDA", "EWJ": "EWJ", "EIDO": "EIDO", "EWH": "EWH",
+    "FXI": "FXI", "ASHR": "ASHR", "EWZ": "EWZ", "EWG": "EWG",
+    "EWU": "EWU",
+    # Sector
+    "XLF": "XLF", "XLE": "XLE", "XBI": "XBI", "XLK": "XLK",
+    "XLV": "XLV", "XLI": "XLI", "XLY": "XLY", "XLP": "XLP",
+    "XLU": "XLU", "XLC": "XLC", "XLB": "XLB", "XLRE": "XLRE",
+    # Commodities & alternatives
+    "GLD": "GLD", "SLV": "SLV", "USO": "USO", "UNG": "UNG",
+    "DBC": "DBC", "PDBC": "PDBC",
+    # Leverage & inverse
+    "TQQQ": "TQQQ", "SQQQ": "SQQQ", "SOXL": "SOXL", "SOXS": "SOXS",
+    "UPRO": "UPRO", "SPXL": "SPXL",
 }
 
 # US stocks -> Yahoo Finance (renamed to "world_stocks" market — kept map name for backward compat)
 STOCK_US_YAHOO_MAP: dict[str, str] = {
+    # Magnificent 7
     "AAPL": "AAPL", "MSFT": "MSFT", "NVDA": "NVDA", "GOOGL": "GOOGL",
-    "AMZN": "AMZN", "TSLA": "TSLA", "META": "META", "SPCX": "SPCX",
-    "AMD": "AMD", "ASML": "ASML", "TSMC": "TSM", "ARM": "ARM",
+    "GOOG": "GOOG", "AMZN": "AMZN", "TSLA": "TSLA", "META": "META",
+    # Semiconductor / AI
+    "AMD": "AMD", "ASML": "ASML", "TSM": "TSM", "TSMC": "TSM",
+    "ARM": "ARM", "AVGO": "AVGO", "MU": "MU", "QCOM": "QCOM",
+    "TXN": "TXN", "AMAT": "AMAT", "LRCX": "LRCX", "KLAC": "KLAC",
+    "MRVL": "MRVL", "SMCI": "SMCI", "ANET": "ANET", "MCHP": "MCHP",
+    "NXPI": "NXPI", "ADI": "ADI", "ON": "ON", "INTC": "INTC",
+    "WOLF": "WOLF", "VRT": "VRT",
+    # Software / SaaS
     "PLTR": "PLTR", "SNOW": "SNOW", "CRWD": "CRWD", "ADBE": "ADBE",
-    "AVGO": "AVGO", "ANET": "ANET", "DELL": "DELL", "MSTR": "MSTR",
+    "NOW": "NOW", "CRM": "CRM", "ORCL": "ORCL", "IBM": "IBM",
+    "INTU": "INTU", "PANW": "PANW", "FTNT": "FTNT", "ZS": "ZS",
+    "DDOG": "DDOG", "NET": "NET", "MDB": "MDB", "TEAM": "TEAM",
+    "WDAY": "WDAY", "OKTA": "OKTA", "SPLK": "SPLK",
+    # China / International
     "BABA": "BABA", "TCEHY": "TCEHY", "PDD": "PDD", "BIDU": "BIDU",
     "JD": "JD", "SHOP": "SHOP", "NU": "NU", "AZN": "AZN",
-    # Indices (world stock indices, tickers Yahoo)
+    "MELI": "MELI", "SPOT": "SPOT", "SE": "SE", "TCOM": "TCOM",
+    "SONY": "SONY", "NVO": "NVO", "LLY": "LLY", "RIO": "RIO",
+    "BHP": "BHP",
+    # Consumer & retail
+    "WMT": "WMT", "COST": "COST", "HD": "HD", "TGT": "TGT",
+    "LOW": "LOW", "NKE": "NKE", "SBUX": "SBUX", "MCD": "MCD",
+    "KO": "KO", "PEP": "PEP", "PG": "PG", "CL": "CL",
+    "EL": "EL", "DIS": "DIS", "NFLX": "NFLX", "SPCX": "SPCX",
+    # Financials
+    "JPM": "JPM", "BAC": "BAC", "WFC": "WFC", "GS": "GS",
+    "MS": "MS", "C": "C", "BLK": "BLK", "SCHW": "SCHW",
+    "AXP": "AXP", "V": "V", "MA": "MA", "PYPL": "PYPL",
+    "BRK-B": "BRK-B", "BRK-A": "BRK-A", "HOOD": "HOOD", "COIN": "COIN",
+    "SOFI": "SOFI", "SQ": "SQ", "BX": "BX",
+    # Healthcare / Pharma
+    "JNJ": "JNJ", "UNH": "UNH", "PFE": "PFE", "MRK": "MRK",
+    "ABBV": "ABBV", "ABT": "ABT", "TMO": "TMO", "DHR": "DHR",
+    "AMGN": "AMGN", "GILD": "GILD", "BMY": "BMY", "MRNA": "MRNA",
+    "BNTX": "BNTX", "REGN": "REGN", "VRTX": "VRTX",
+    # Industrials / Auto / Aerospace
+    "BA": "BA", "CAT": "CAT", "GE": "GE", "LMT": "LMT",
+    "RTX": "RTX", "HON": "HON", "MMM": "MMM", "DE": "DE",
+    "F": "F", "GM": "GM", "RIVN": "RIVN", "LCID": "LCID",
+    "NIO": "NIO", "LI": "LI", "XPEV": "XPEV", "RKLB": "RKLB",
+    "UBER": "UBER", "LYFT": "LYFT", "ABNB": "ABNB",
+    # Energy / Utilities
+    "XOM": "XOM", "CVX": "CVX", "COP": "COP", "EOG": "EOG",
+    "SLB": "SLB", "OXY": "OXY", "NEE": "NEE", "DUK": "DUK",
+    # Comms / Telecom
+    "T": "T", "VZ": "VZ", "TMUS": "TMUS", "CSCO": "CSCO",
+    "CMCSA": "CMCSA",
+    # Retail / Other
+    "EBAY": "EBAY", "ZM": "ZM", "DKNG": "DKNG", "GME": "GME",
+    "AMC": "AMC", "MSTR": "MSTR", "DELL": "DELL", "HPQ": "HPQ",
+    "HPE": "HPE",
+    # ETFs commonly traded like stocks (leveraged)
+    "TQQQ": "TQQQ", "SQQQ": "SQQQ", "SOXL": "SOXL",
+    # Global indices
     "US30": "^DJI", "NAS100": "^IXIC", "SPX500": "^GSPC",
     "JP225": "^N225", "HK50": "^HSI", "GER40": "^GDAXI",
-    "UK100": "^FTSE", "IDX30": "^JKSE",
-    # Extra world stocks per v3.0.1 request
-    "HOOD": "HOOD", "COIN": "COIN", "INTC": "INTC", "SPY": "SPY",
-    "MU": "MU", "QCOM": "QCOM", "ORCL": "ORCL", "DIS": "DIS",
-    "UBER": "UBER", "CSCO": "CSCO", "HD": "HD", "SOXL": "SOXL",
-    "MRVL": "MRVL", "WMT": "WMT", "JPM": "JPM", "V": "V",
-    "BRK-B": "BRK-B", "IBM": "IBM", "NOW": "NOW", "CRM": "CRM",
-    "AMAT": "AMAT", "NFLX": "NFLX", "COST": "COST", "EBAY": "EBAY",
-    "ZM": "ZM", "DKNG": "DKNG", "RIVN": "RIVN", "GME": "GME",
-    "TQQQ": "TQQQ", "SQQQ": "SQQQ", "CAT": "CAT", "TXN": "TXN",
-    "SMCI": "SMCI", "LRCX": "LRCX", "KLAC": "KLAC", "SONY": "SONY",
-    "LLY": "LLY", "NVO": "NVO", "PYPL": "PYPL", "RKLB": "RKLB",
+    "UK100": "^FTSE", "IDX30": "^JKSE", "AUS200": "^AXJO",
+    "FR40": "^FCHI", "EU50": "^STOXX50E", "IN50": "^NSEI",
+    "KR200": "^KS11", "TW50": "^TWII",
+    "VIX": "^VIX", "DXY": "DX-Y.NYB",
 }
 
 # Gold / Silver / Precious metals -> Yahoo Finance FX/commodity symbols
@@ -83,27 +205,67 @@ COMMODITY_YAHOO_MAP: dict[str, str] = {
     "WTI":     "CL=F",   # WTI Crude Oil
     "BRENT":   "BZ=F",   # Brent Crude Oil
     "NATGAS":  "NG=F",   # Natural Gas
+    "GASOLINE": "RB=F",  # RBOB Gasoline
+    "HEATOIL": "HO=F",   # Heating Oil
     "CORN":    "ZC=F",   # Corn
     "COFFEE":  "KC=F",   # Coffee Beans
     "SUGAR":   "SB=F",   # Sugar
     "COPPER":  "HG=F",   # Copper
     "WHEAT":   "ZW=F",   # Wheat
+    "SOYBEAN": "ZS=F",   # Soybean
+    "COCOA":   "CC=F",   # Cocoa
+    "COTTON":  "CT=F",   # Cotton
+    "OJ":      "OJ=F",   # Orange Juice
+    "LUMBER":  "LBS=F",  # Lumber
+    "OATS":    "ZO=F",   # Oats
+    "RICE":    "ZR=F",   # Rough Rice
+    "CATTLE":  "LE=F",   # Live Cattle
+    "HOGS":    "HE=F",   # Lean Hogs
+    "URANIUM": "URA",    # URA ETF proxy
 }
 
 # Forex -> Yahoo Finance FX symbols (XXX=X or XXXYYY=X)
 FOREX_YAHOO_MAP: dict[str, str] = {
+    # Majors
     "EUR/USD": "EURUSD=X",
     "GBP/USD": "GBPUSD=X",
     "USD/JPY": "JPY=X",
     "AUD/USD": "AUDUSD=X",
+    "NZD/USD": "NZDUSD=X",
+    "USD/CHF": "CHF=X",
+    "USD/CAD": "CAD=X",
+    # Cross rates (EUR)
     "EUR/GBP": "EURGBP=X",
     "EUR/JPY": "EURJPY=X",
+    "EUR/CHF": "EURCHF=X",
+    "EUR/AUD": "EURAUD=X",
+    # Cross rates (GBP)
+    "GBP/JPY": "GBPJPY=X",
+    "GBP/CHF": "GBPCHF=X",
+    "GBP/AUD": "GBPAUD=X",
+    # Cross rates (AUD/NZD)
+    "AUD/JPY": "AUDJPY=X",
+    "AUD/NZD": "AUDNZD=X",
+    "NZD/JPY": "NZDJPY=X",
+    # Emerging markets vs USD
     "USD/IDR": "IDR=X",
     "USD/TRY": "TRY=X",
     "USD/ZAR": "ZAR=X",
     "USD/CNY": "CNY=X",
     "USD/RUB": "RUB=X",
-    "NZD/USD": "NZDUSD=X",
+    "USD/INR": "INR=X",
+    "USD/BRL": "BRL=X",
+    "USD/MXN": "MXN=X",
+    "USD/SGD": "SGD=X",
+    "USD/HKD": "HKD=X",
+    "USD/KRW": "KRW=X",
+    "USD/THB": "THB=X",
+    "USD/MYR": "MYR=X",
+    "USD/PHP": "PHP=X",
+    "USD/VND": "VND=X",
+    # Precious metal FX pairs
+    "XAU/USD": "XAUUSD=X",
+    "XAG/USD": "XAGUSD=X",
 }
 
 # Map app timeframe -> (binance_interval, yahoo_range, yahoo_interval, candles_needed)

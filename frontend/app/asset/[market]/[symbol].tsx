@@ -13,7 +13,9 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import CandlestickChart from "@/src/components/CandlestickChart";
 import PriceChart from "@/src/components/PriceChart";
+import TargetProfit from "@/src/components/TargetProfit";
 import { useI18n } from "@/src/i18n/I18nContext";
 import {
   TIMEFRAMES,
@@ -83,6 +85,7 @@ export default function AssetDetail() {
   const [translatedRiskFactors, setTranslatedRiskFactors] = useState<string[] | null>(null);
   const [translatedSummary, setTranslatedSummary] = useState<string | null>(null);
   const [translatedTfView, setTranslatedTfView] = useState<string | null>(null);
+  const [chartType, setChartType] = useState<"candlestick" | "line">("candlestick");
 
   const loadChart = useCallback(
     async (tf: Timeframe) => {
@@ -258,10 +261,76 @@ export default function AssetDetail() {
 
         {/* Chart */}
         <View style={[styles.chartBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          {/* Chart type toggle */}
+          <View style={styles.chartToggleRow}>
+            <TouchableOpacity
+              testID="chart-toggle-candlestick"
+              onPress={() => setChartType("candlestick")}
+              style={[
+                styles.chartToggleBtn,
+                {
+                  backgroundColor:
+                    chartType === "candlestick" ? colors.accentBlue + "26" : "transparent",
+                  borderColor:
+                    chartType === "candlestick" ? colors.accentBlue : colors.border,
+                },
+              ]}
+            >
+              <Ionicons
+                name="stats-chart"
+                size={12}
+                color={chartType === "candlestick" ? colors.accentBlue : colors.textMuted}
+              />
+              <Text
+                style={[
+                  styles.chartToggleText,
+                  {
+                    color:
+                      chartType === "candlestick" ? colors.accentBlue : colors.textMuted,
+                  },
+                ]}
+              >
+                Candlestick
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="chart-toggle-line"
+              onPress={() => setChartType("line")}
+              style={[
+                styles.chartToggleBtn,
+                {
+                  backgroundColor:
+                    chartType === "line" ? colors.accentBlue + "26" : "transparent",
+                  borderColor:
+                    chartType === "line" ? colors.accentBlue : colors.border,
+                },
+              ]}
+            >
+              <Ionicons
+                name="analytics"
+                size={12}
+                color={chartType === "line" ? colors.accentBlue : colors.textMuted}
+              />
+              <Text
+                style={[
+                  styles.chartToggleText,
+                  { color: chartType === "line" ? colors.accentBlue : colors.textMuted },
+                ]}
+              >
+                Line
+              </Text>
+            </TouchableOpacity>
+          </View>
           {loadingChart ? (
             <View style={styles.chartLoader}>
               <ActivityIndicator color={colors.accentBlue} />
             </View>
+          ) : chartType === "candlestick" ? (
+            <CandlestickChart
+              candles={chart?.candles || []}
+              width={screenW - 24}
+              height={220}
+            />
           ) : (
             <PriceChart candles={chart?.candles || []} width={screenW - 24} height={180} />
           )}
@@ -426,6 +495,19 @@ export default function AssetDetail() {
                 <EntryCell label={t("detail_ai_tp")} value={formatPrice(analysis.consensus.take_profit, market)} color={colors.accentUp} colors={colors} />
               </View>
 
+              {/* Multi-level Target Profit (Fase 3) — ATR-based TP1/TP2/TP3 + SL */}
+              <TargetProfit
+                action={analysis.consensus.action}
+                entryPrice={
+                  analysis.consensus.entry ??
+                  analysis.price ??
+                  (chart?.candles?.[chart.candles.length - 1]?.close ?? 0)
+                }
+                candles={chart?.candles ?? []}
+                confidence={analysis.consensus.confidence}
+                label={analysis.consensus.label}
+              />
+
               {/* News & Risk */}
               {analysis.consensus.news_factors.length > 0 && (
                 <View style={{ marginTop: 16 }}>
@@ -580,6 +662,22 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   chartLoader: { height: 180, alignItems: "center", justifyContent: "center" },
+  chartToggleRow: {
+    flexDirection: "row",
+    gap: 6,
+    marginBottom: 10,
+    justifyContent: "flex-end",
+  },
+  chartToggleBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  chartToggleText: { fontSize: 10, fontWeight: "700", letterSpacing: 0.4 },
   statsRow: { flexDirection: "row", marginTop: 12, gap: 8 },
   statItem: { flex: 1 },
   statLabel: { fontSize: 9, letterSpacing: 0.6 },
