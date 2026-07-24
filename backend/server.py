@@ -1183,6 +1183,19 @@ async def terms_html() -> HTMLResponse:
         return HTMLResponse("<h1>Terms of service not deployed</h1>", status_code=404)
 
 
+@app.get("/api/data-deletion", include_in_schema=False)
+async def data_deletion_html() -> HTMLResponse:
+    """PUBLIC Account/Data Deletion Request page — required by Google Play Console
+    Data Safety section (users must have a URL to request account deletion).
+    """
+    try:
+        path = os.path.join(os.path.dirname(__file__), "static", "data-deletion.html")
+        with open(path, "r", encoding="utf-8") as f:
+            return HTMLResponse(f.read())
+    except Exception:
+        return HTMLResponse("<h1>Data deletion page not deployed</h1>", status_code=404)
+
+
 @app.get("/api/admin-source.zip", include_in_schema=False)
 async def admin_source_zip() -> FileResponse:
     """Download the admin-app source ZIP (for offline APK build via EAS Cloud).
