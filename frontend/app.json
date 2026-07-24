@@ -6,7 +6,12 @@
         "foregroundImage": "./assets/images/adaptive-icon.png"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.cryptostockapps.aicryptostockpro"
+      "package": "com.cryptostockapps.aicryptostockpro",
+      "permissions": [
+        "com.android.vending.BILLING",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE"
+      ]
     },
     "androidStatusBar": {
       "backgroundColor": "#000000",
@@ -39,7 +44,7 @@
     "scheme": "aicryptostockpro",
     "slug": "ai-crypto-stock-pro",
     "userInterfaceStyle": "automatic",
-    "version": "3.0.2",
+    "version": "3.0.3",
     "web": {
       "bundler": "metro",
       "favicon": "./assets/images/favicon.png",
