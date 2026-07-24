@@ -31,7 +31,7 @@ export default function DisclaimerPage() {
         {/* Warning banner */}
         <View style={[styles.banner, { borderColor: colors.accentDown, backgroundColor: colors.accentDown + "18" }]}>
           <Ionicons name="warning" size={20} color={colors.accentDown} />
-          <Text style={[styles.bannerText, { color: colors.textPrimary }]}>⚠️ HARAP BACA DENGAN SEKSAMA</Text>
+          <Text style={[styles.bannerText, { color: colors.textPrimary }]}>{t("disclaimer_read_carefully")}</Text>
         </View>
 
         {/* Main disclaimer body */}
