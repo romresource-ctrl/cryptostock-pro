@@ -12,6 +12,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -251,7 +252,7 @@ export default function Dashboard() {
     };
   }, [data, view]);
 
-  const SCREEN_W = Dimensions.get("window").width;
+  const { width: SCREEN_W } = useWindowDimensions();
   const selectedCount = view.length;
 
   return (
