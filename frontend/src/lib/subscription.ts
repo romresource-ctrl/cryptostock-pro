@@ -1,18 +1,14 @@
 /**
  * Google Play Billing subscription flow for AI Crypto Stock Pro.
  *
- * We use the imperative API of react-native-iap (initConnection,
- * requestSubscription, purchaseUpdatedListener, finishTransaction,
- * getAvailablePurchases) inside a lazy-loaded module so Web and iOS builds
- * never try to import the native Nitro Modules.
+ * Uses react-native-iap v15.x (Nitro-based) imperative API:
+ *   - fetchProducts({ skus, type: 'subs' })    → returns ProductSubscriptionAndroid[]
+ *   - requestPurchase({ type: 'subs', request: { android: { skus, subscriptionOffers } } })
+ *   - purchaseUpdatedListener / purchaseErrorListener
+ *   - finishTransaction({ purchase, isConsumable: false })
+ *   - getAvailablePurchases()  → active entitlements for restore
  *
- * Flow:
- *   1. `initIap()` — connects to Play Store once per process
- *   2. `fetchSubscription()` — fetches product metadata (price, trial)
- *   3. `purchaseSubscription()` — opens Google Play purchase sheet
- *   4. `setupPurchaseListener()` — global listener, verifies with backend,
- *      finishes transaction, stores entitlement in AsyncStorage
- *   5. `restorePurchases()` — restore for reinstall
+ * The module is lazy-loaded so Web/iOS builds don't try to import Nitro modules.
  */
 import { Platform } from "react-native";
 
@@ -67,7 +63,7 @@ function backendBase(): string {
 }
 
 // ---- Lazy-loaded native module (Android only) ----
-type IapModule = any; // react-native-iap doesn't ship types for imperative API
+type IapModule = any; // v15 does export types but we treat imperative funcs as any for lazy shape
 
 let _iap: IapModule | null = null;
 let _iapConnected = false;
@@ -76,7 +72,6 @@ async function loadIap(): Promise<IapModule | null> {
   if (Platform.OS !== "android") return null;
   if (_iap) return _iap;
   try {
-    // Metro will still bundle this into the AAB thanks to the static string.
     const mod = await import("react-native-iap");
     _iap = mod;
     return mod;
@@ -91,18 +86,8 @@ export async function initIap(): Promise<IapModule | null> {
   if (!iap) return null;
   if (_iapConnected) return iap;
   try {
-    // react-native-iap 15.x supports both `initConnection()` and the newer
-    // `initConnection({})` shape. Passing no-args is universally safe.
     if (typeof iap.initConnection === "function") {
       await iap.initConnection();
-    }
-    // Optional Android clean-up of stuck pending purchases
-    if (typeof iap.flushFailedPurchasesCachedAsPendingAndroid === "function") {
-      try {
-        await iap.flushFailedPurchasesCachedAsPendingAndroid();
-      } catch {
-        /* non-fatal */
-      }
     }
     _iapConnected = true;
     return iap;
@@ -130,46 +115,125 @@ export type SubProduct = {
   title: string | null;
   description: string | null;
   localizedPrice: string | null;
+  // Android offer token (from Play Console base plan / offer).
+  // We need this to trigger requestPurchase for subscriptions in v15.x.
+  offerToken: string | null;
+  offerId: string | null;
+  basePlanId: string | null;
 };
+
+// Cache last-fetched product so purchase button doesn't need to re-fetch.
+let _cachedProduct: SubProduct | null = null;
+
+/**
+ * Extract the best offer for our subscription:
+ * 1. Prefer offer with offerId matching SUBSCRIPTION_OFFER_ID (3-day free trial)
+ * 2. Fall back to first offer for base plan `monthly`
+ * 3. Fall back to first available offer
+ */
+function pickOfferAndroid(product: any): {
+  offerToken: string | null;
+  offerId: string | null;
+  basePlanId: string | null;
+} {
+  const details: any[] = product?.subscriptionOfferDetailsAndroid ?? [];
+  if (!details || details.length === 0) {
+    return { offerToken: null, offerId: null, basePlanId: null };
+  }
+  const preferred =
+    details.find((d) => d.offerId === SUBSCRIPTION_OFFER_ID) ??
+    details.find((d) => d.basePlanId === SUBSCRIPTION_BASE_PLAN_ID) ??
+    details[0];
+  return {
+    offerToken: preferred?.offerToken ?? null,
+    offerId: preferred?.offerId ?? null,
+    basePlanId: preferred?.basePlanId ?? null,
+  };
+}
 
 export async function fetchSubscription(): Promise<SubProduct | null> {
   const iap = await initIap();
   if (!iap) return null;
   try {
-    // 15.x exposes both `getSubscriptions` and `fetchSubscriptions` — try both.
-    const fn: any =
-      iap.fetchSubscriptions ?? iap.getSubscriptions ?? iap.subscriptions;
-    if (typeof fn !== "function") return null;
-    const list = await fn({ skus: [SUBSCRIPTION_SKU] });
+    if (typeof iap.fetchProducts !== "function") {
+      console.warn("[IAP] fetchProducts is not available");
+      return null;
+    }
+    const list = await iap.fetchProducts({
+      skus: [SUBSCRIPTION_SKU],
+      type: "subs",
+    });
     if (!Array.isArray(list) || list.length === 0) return null;
-    const p = list.find((x: any) => x.productId === SUBSCRIPTION_SKU) ?? list[0];
-    return {
-      productId: p.productId ?? SUBSCRIPTION_SKU,
-      title: p.title ?? p.name ?? null,
+    const p = list.find((x: any) => x.id === SUBSCRIPTION_SKU) ?? list[0];
+    const offer = pickOfferAndroid(p);
+    const displayPrice: string | null =
+      p.displayPrice ??
+      p.subscriptionOffers?.[0]?.displayPrice ??
+      null;
+    const prod: SubProduct = {
+      productId: p.id ?? SUBSCRIPTION_SKU,
+      title: p.title ?? p.nameAndroid ?? p.displayName ?? null,
       description: p.description ?? null,
-      localizedPrice: p.localizedPrice ?? p.price ?? null,
+      localizedPrice: displayPrice,
+      offerToken: offer.offerToken,
+      offerId: offer.offerId,
+      basePlanId: offer.basePlanId,
     };
+    _cachedProduct = prod;
+    return prod;
   } catch (e) {
     console.warn("[IAP] fetchSubscription failed:", e);
     return null;
   }
 }
 
-// ---- Purchase / Restore ----
+// ---- Purchase ----
 export async function purchaseSubscription(): Promise<void> {
   const iap = await initIap();
   if (!iap) throw new Error("Google Play Billing is not available on this device.");
+
+  // Make sure we have an offer token before calling requestPurchase (Android v15
+  // requires subscriptionOffers[] with offerToken).
+  let product = _cachedProduct;
+  if (!product?.offerToken) {
+    product = await fetchSubscription();
+  }
+  if (!product) {
+    throw new Error(
+      "Subscription product is not available yet. Please check that the subscription is Active in Play Console and try again in a few minutes.",
+    );
+  }
+  if (!product.offerToken) {
+    throw new Error(
+      "This subscription has no offers configured. Please open Play Console → Monetize → Subscriptions and make sure your base plan and offer are Active.",
+    );
+  }
+
   try {
-    // requestSubscription is the imperative call; result comes through the
-    // purchaseUpdatedListener. In 15.x the arg shape is { sku }.
-    await iap.requestSubscription({ sku: SUBSCRIPTION_SKU });
+    await iap.requestPurchase({
+      type: "subs",
+      request: {
+        android: {
+          skus: [SUBSCRIPTION_SKU],
+          subscriptionOffers: [
+            { sku: SUBSCRIPTION_SKU, offerToken: product.offerToken },
+          ],
+        },
+      },
+    });
   } catch (e: any) {
-    const msg = e?.message ?? String(e);
-    if (msg.toLowerCase().includes("cancel")) return;
+    const msg = String(e?.message ?? e ?? "");
+    if (
+      msg.toLowerCase().includes("cancel") ||
+      e?.code === "E_USER_CANCELLED"
+    ) {
+      return;
+    }
     throw e;
   }
 }
 
+// ---- Backend verify ----
 async function _postVerify(
   purchaseToken: string,
   productId: string,
@@ -201,29 +265,44 @@ async function _postVerify(
   return ent;
 }
 
-/** Restore a previous purchase (reinstall / new device with same Play account). */
+// ---- Restore ----
 export async function restorePurchases(
   deviceId: string,
   packageName: string,
 ): Promise<Entitlement | null> {
   const iap = await initIap();
   if (!iap) return null;
-  const getAvail: any = iap.getAvailablePurchases ?? iap.availablePurchases;
-  if (typeof getAvail !== "function") return null;
+  // In v15 both restorePurchases (mutation) + getAvailablePurchases (query) exist.
+  // The reliable pattern is: call restorePurchases (no-op on Android but harmless),
+  // then read active purchases via getAvailablePurchases.
   try {
-    const purchases = await getAvail();
+    if (typeof iap.restorePurchases === "function") {
+      try {
+        await iap.restorePurchases();
+      } catch {
+        /* ignore — Android returns immediately */
+      }
+    }
+    if (typeof iap.getAvailablePurchases !== "function") return null;
+    const purchases = await iap.getAvailablePurchases();
     if (!Array.isArray(purchases) || purchases.length === 0) return null;
     const p =
-      purchases.find((x: any) => x.productId === SUBSCRIPTION_SKU) ?? purchases[0];
-    const token = p.purchaseToken ?? p.purchaseTokenAndroid ?? p.transactionReceipt;
+      purchases.find((x: any) => {
+        const pid = x.productId ?? x.id ?? "";
+        return pid === SUBSCRIPTION_SKU;
+      }) ?? purchases[0];
+    const token =
+      p.purchaseToken ??
+      p.purchaseTokenAndroid ??
+      p.transactionReceipt ??
+      null;
     if (!token) return null;
     const ent = await _postVerify(
       String(token),
-      String(p.productId ?? SUBSCRIPTION_SKU),
+      String(p.productId ?? p.id ?? SUBSCRIPTION_SKU),
       deviceId,
       packageName,
     );
-    // Ack transaction so Play knows we honoured it
     try {
       if (typeof iap.finishTransaction === "function") {
         await iap.finishTransaction({ purchase: p, isConsumable: false });
@@ -249,8 +328,7 @@ type PurchaseHandlers = {
 
 /**
  * Attach global purchase listeners. Returns a cleanup function.
- * MUST be called once at app startup (root layout) so purchases made from
- * anywhere in the app are captured.
+ * MUST be called once at app startup (root layout).
  */
 export function setupPurchaseListener(handlers: PurchaseHandlers): () => void {
   let disposed = false;
@@ -268,7 +346,8 @@ export function setupPurchaseListener(handlers: PurchaseHandlers): () => void {
             purchase.purchaseToken ??
             purchase.purchaseTokenAndroid ??
             purchase.transactionReceipt;
-          const productId = purchase.productId ?? SUBSCRIPTION_SKU;
+          const productId =
+            purchase.productId ?? purchase.id ?? SUBSCRIPTION_SKU;
           if (!token) {
             handlers.onError("Purchase token missing from Play response.");
             return;
@@ -281,10 +360,13 @@ export function setupPurchaseListener(handlers: PurchaseHandlers): () => void {
           );
           try {
             if (typeof iap.finishTransaction === "function") {
-              await iap.finishTransaction({ purchase, isConsumable: false });
+              await iap.finishTransaction({
+                purchase,
+                isConsumable: false,
+              });
             }
           } catch {
-            /* non-fatal — Play will retry ack */
+            /* Play will retry ack */
           }
           handlers.onSuccess(ent);
         } catch (e: any) {
