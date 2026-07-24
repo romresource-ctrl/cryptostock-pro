@@ -16,8 +16,8 @@ import { storage } from "@/src/utils/storage";
 
 // ==== Product config — MUST match Play Console Product ID ====
 export const SUBSCRIPTION_SKU = "ai_cryptostockpro_monthly";
-export const SUBSCRIPTION_BASE_PLAN_ID = "monthly";
-export const SUBSCRIPTION_OFFER_ID = "freetrial3days";
+export const SUBSCRIPTION_BASE_PLAN_ID = "pro-1m";
+export const SUBSCRIPTION_OFFER_ID = "freetrial-3days";
 export const SUBSCRIPTION_PRICE = "$20.00";
 export const SUBSCRIPTION_TRIAL_DAYS = 3;
 
@@ -127,9 +127,12 @@ let _cachedProduct: SubProduct | null = null;
 
 /**
  * Extract the best offer for our subscription:
- * 1. Prefer offer with offerId matching SUBSCRIPTION_OFFER_ID (3-day free trial)
- * 2. Fall back to first offer for base plan `monthly`
- * 3. Fall back to first available offer
+ * 1. Prefer any offer whose pricingPhases contains a free/trial phase
+ *    (price=0 or paymentMode='FreeTrial'). This makes us always show trial
+ *    even when Play Console offer IDs don't match.
+ * 2. Fall back to offer with offerId === SUBSCRIPTION_OFFER_ID
+ * 3. Fall back to base plan `SUBSCRIPTION_BASE_PLAN_ID`
+ * 4. Fall back to first available offer
  */
 function pickOfferAndroid(product: any): {
   offerToken: string | null;
@@ -140,7 +143,23 @@ function pickOfferAndroid(product: any): {
   if (!details || details.length === 0) {
     return { offerToken: null, offerId: null, basePlanId: null };
   }
+  const hasFreePhase = (d: any): boolean => {
+    const phases: any[] =
+      d?.pricingPhases?.pricingPhaseList ??
+      d?.pricingPhases ??
+      [];
+    if (!Array.isArray(phases)) return false;
+    return phases.some((ph: any) => {
+      const price = ph?.priceAmountMicros ?? ph?.priceAmount ?? ph?.formattedPrice;
+      const mode = String(ph?.paymentMode ?? ph?.recurrenceMode ?? "").toLowerCase();
+      if (mode.includes("free") || mode.includes("trial")) return true;
+      if (price === 0 || price === "0" || price === "0.0") return true;
+      if (typeof price === "string" && /^\D*0(\.0+)?\D*$/.test(price)) return true;
+      return false;
+    });
+  };
   const preferred =
+    details.find((d) => hasFreePhase(d)) ??
     details.find((d) => d.offerId === SUBSCRIPTION_OFFER_ID) ??
     details.find((d) => d.basePlanId === SUBSCRIPTION_BASE_PLAN_ID) ??
     details[0];
