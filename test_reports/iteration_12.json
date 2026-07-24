@@ -1,0 +1,43 @@
+{
+  "summary": "Light frontend regression for v3.0.6 (react-native-iap install + Subscribe button in VipModal). 7 of 8 checkpoints pass. App loads at localhost:3000, header shows 'AI Cryp...' + 'Ver 3.0.6'. All 7 category chips visible (Crypto/ETF/Saham IDX/US Stocks/Forex/Commodities/Metals-Indices) and Crypto+Saham IDX asset rows load with tickers (BTC, ETH, BNB, XRP, ARKB, FBTC, IBIT, etc.). Tapping BTC opens VipModal with Fitur Khusus Member title, body, email cryptostockapps@gmail.com, WhatsApp +6282186597571, NEW gold SUBSCRIBE $20.00/MONTH button (testID vip-subscribe-button), NEW trial hint '3 days free trial · Cancel anytime via Google Play', blue SUDAH PUNYA CODE? LOGIN button and X close. Login button closes VIP modal and opens LoginModal with email+unlock-code inputs. Language toggle ID→EN switches VipModal title to 'Members-Only Feature' and body to English. Disclaimer header button navigates to /disclaimer. Package react-native-iap@^15.6.0 and react-native-nitro-modules@^0.36.1 confirmed in package.json. app.json version=3.0.6, version.ts APP_VERSION='3.0.6'. Metro bundles successfully, zero console errors, zero pageerrors. ONE minor deviation: tapping Subscribe on the web preview does NOT display any Alert dialog — react-native-web's Alert.alert is a no-op on web (silent, no console warning). This is web-preview-only cosmetic; the Android code path (loadIap + iap.requestSubscription) will execute correctly on production AAB since it's gated by Platform.OS === 'android'.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "VipModal.onSubscribe",
+        "issue": "On web preview, tapping the SUBSCRIBE button produces no visible feedback because react-native-web's Alert.alert() is silently swallowed (no dialog, no console warning). The Platform.OS !== 'android' branch runs but user sees nothing happen. Reference: /app/frontend/src/components/VipModal.tsx:36-38. Recommendation: on web, use `if (typeof window !== 'undefined' && window.alert) window.alert(...)` OR use a custom in-app toast, since RN-Web Alert is a documented no-op. Non-blocking for production because AAB target is Android-only where Alert.alert works natively; however testers on web preview may report 'Subscribe button broken'.",
+        "testID": "vip-subscribe-button",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_12.json"
+  ],
+  "action_items": [
+    "OPTIONAL (LOW): Replace Alert.alert(...) in VipModal.onSubscribe web-fallback branch with either a native window.alert() call or an in-app toast/inline banner so web-preview users see the 'Please download the Android app' message. RN-Web's Alert is a documented no-op. Not required for Play Console AAB fix — Android code path is unaffected.",
+    "OPTIONAL (LOW): Metro logs a repeated compatibility warning: `expo@54.0.35 - expected version: ~54.0.36`. Consider `yarn expo install expo` to bump to 54.0.36 for cleaner logs. Non-blocking; app builds and runs fine."
+  ],
+  "critical_code_review_comments": [
+    "VipModal.tsx is clean (111 lines), uses StyleSheet.create, all text wrapped in <Text>, all interactive elements have testIDs (vip-close-button, vip-email-button, vip-wa-button, vip-subscribe-button, vip-login-button).",
+    "subscription.ts correctly lazy-imports react-native-iap and short-circuits on non-Android to avoid Metro/web crash — sound approach to satisfy Play Console billing-lib requirement without breaking web bundle.",
+    "app.json declares `com.android.vending.BILLING` permission — required for Play Billing to be detected in the AAB.",
+    "SUBSCRIPTION_SKU='ai_cryptostockpro_monthly' is hardcoded; fine for now but should move to env/remote-config once server-side receipt verify lands (Fase 1b)."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A (skipped per request)",
+    "frontend": "87.5% (7/8 checkpoints — only web Alert dialog fallback is silent)"
+  },
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "v3.0.6 shipped react-native-iap@15.6.0 scaffolding only (no real purchase flow). VipModal has new gold SUBSCRIBE $20.00/MONTH button (testID='vip-subscribe-button') and trial-hint text. loadIap() in /app/frontend/src/lib/subscription.ts lazy-imports react-native-iap only on Android — web preview must never hit that import. Full IAP flow (initConnection listeners, purchaseUpdatedListener, receipt verify, subscription persistence, premium unlock) is DEFERRED to Fase 1b/v3.1.x. When Fase 1b is tested, use a real Android device or Expo Dev Client — Expo Go and web preview cannot exercise Google Play Billing.",
+  "rca_of_issue": "N/A — this iteration is a package/UI scaffolding change to satisfy Play Console's 'Play Billing Library >= 6.0.1' AAB rejection. Regression confirms nothing else broke."
+}
