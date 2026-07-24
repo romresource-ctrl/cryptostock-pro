@@ -71,11 +71,6 @@ export default function VipModal({ visible, onClose, onLogin }: Props) {
             <Text style={[styles.contactText, { color: colors.textPrimary }]} numberOfLines={1}>{CONTACT_EMAIL}</Text>
             <Ionicons name="open-outline" size={14} color={colors.textMuted} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={openWa} style={[styles.contactRow, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]} testID="vip-wa-button">
-            <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
-            <Text style={[styles.contactText, { color: colors.textPrimary }]} numberOfLines={1}>+{CONTACT_WA}</Text>
-            <Ionicons name="open-outline" size={14} color={colors.textMuted} />
-          </TouchableOpacity>
           <TouchableOpacity onPress={onSubscribe} style={[styles.subscribeBtn, { backgroundColor: "#F0B90B" }]} testID="vip-subscribe-button">
             <Ionicons name="star" size={16} color="#000" />
             <Text style={styles.subscribeText}>SUBSCRIBE {SUBSCRIPTION_PRICE}/MONTH</Text>
@@ -83,10 +78,6 @@ export default function VipModal({ visible, onClose, onLogin }: Props) {
           <Text style={[styles.trialHint, { color: colors.textMuted }]}>
             {SUBSCRIPTION_TRIAL_DAYS} days free trial · Cancel anytime via Google Play
           </Text>
-          <TouchableOpacity onPress={() => { onClose(); onLogin(); }} style={[styles.loginBtn, { backgroundColor: colors.accentBlue }]} testID="vip-login-button">
-            <Ionicons name="key" size={16} color="#fff" />
-            <Text style={styles.loginText}>{t("vip_login_btn")}</Text>
-          </TouchableOpacity>
         </View>
       </View>
     </Modal>
