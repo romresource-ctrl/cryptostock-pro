@@ -1202,12 +1202,13 @@ async def store_asset(filename: str) -> FileResponse:
     Admin/dev only — link the specific URL to download.
     """
     # sanitize
-    if "/" in filename or ".." in filename or not filename.endswith(".png"):
+    if "/" in filename or ".." in filename or not (filename.endswith(".png") or filename.endswith(".jpg")):
         return HTMLResponse("<h1>Invalid asset</h1>", status_code=400)
     path = os.path.join(os.path.dirname(__file__), "static", "store-assets", filename)
     if not os.path.exists(path):
         return HTMLResponse(f"<h1>Not found: {filename}</h1>", status_code=404)
-    return FileResponse(path, media_type="image/png", filename=filename)
+    media = "image/jpeg" if filename.endswith(".jpg") else "image/png"
+    return FileResponse(path, media_type=media, filename=filename)
 
 
 @app.get("/api/admin-source.zip", include_in_schema=False)
