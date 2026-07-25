@@ -1164,6 +1164,7 @@ async def _upsert_entitlement(
     entitled: bool,
     expiry_dt: datetime | None,
     source: str,
+    debug: str | None = None,
 ) -> None:
     now = datetime.now(timezone.utc).isoformat()
     doc = {
@@ -1176,12 +1177,43 @@ async def _upsert_entitlement(
         "expiry_time": expiry_dt.isoformat() if expiry_dt else None,
         "source": source,
         "updated_at": now,
+        "debug": debug,
     }
     await db.subscriptions.update_one(
         {"purchase_token": purchase_token, "package_name": package_name},
         {"$set": doc, "$setOnInsert": {"created_at": now}},
         upsert=True,
     )
+
+
+@api.get("/subscription/debug/latest")
+async def subscription_debug_latest(device_id: str | None = None) -> dict[str, Any]:
+    """Return the most recent verify attempt for debugging.
+
+    Includes the raw Google Play API error/debug string so we can figure out why
+    a purchase was rejected. Safe: does not return the full purchase token to
+    client (truncated).
+    """
+    query: dict[str, Any] = {}
+    if device_id:
+        query["device_id"] = device_id
+    row = await db.subscriptions.find_one(query, sort=[("updated_at", -1)])
+    if not row:
+        return {"found": False}
+    token = row.get("purchase_token", "")
+    return {
+        "found": True,
+        "status": row.get("status"),
+        "entitled": row.get("entitled"),
+        "expiry_time": row.get("expiry_time"),
+        "product_id": row.get("product_id"),
+        "package_name": row.get("package_name"),
+        "device_id": row.get("device_id"),
+        "source": row.get("source"),
+        "debug": row.get("debug"),
+        "updated_at": row.get("updated_at"),
+        "token_prefix": (token[:12] + "…") if token else None,
+    }
 
 
 @api.post("/subscription/verify", response_model=SubscriptionStatusResponse)
@@ -1216,6 +1248,7 @@ async def subscription_verify(payload: SubscriptionVerifyPayload) -> Subscriptio
         entitled=entitled,
         expiry_dt=expiry_dt,
         source=source,
+        debug=result.get("debug"),
     )
 
     return SubscriptionStatusResponse(
