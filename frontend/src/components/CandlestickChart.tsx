@@ -183,6 +183,68 @@ export default function CandlestickChart({
           Vol
         </SvgText>
       ) : null}
+
+      {/* Swing high/low price labels (issue #5) — pivot-detected local extrema */}
+      {(() => {
+        // Detect swing highs & lows using a 3-bar window on each side.
+        const win = Math.max(2, Math.floor(displayed.length / 30));
+        const highs: { i: number; price: number }[] = [];
+        const lows: { i: number; price: number }[] = [];
+        for (let i = win; i < displayed.length - win; i++) {
+          const h = displayed[i].high;
+          const l = displayed[i].low;
+          let isHigh = true;
+          let isLow = true;
+          for (let k = 1; k <= win; k++) {
+            if (displayed[i - k].high >= h || displayed[i + k].high >= h) {
+              isHigh = false;
+              break;
+            }
+          }
+          for (let k = 1; k <= win; k++) {
+            if (displayed[i - k].low <= l || displayed[i + k].low <= l) {
+              isLow = false;
+              break;
+            }
+          }
+          if (isHigh) highs.push({ i, price: h });
+          if (isLow) lows.push({ i, price: l });
+        }
+        // Cap labels to avoid overdraw
+        const maxLabels = 5;
+        const pickTop = (arr: { i: number; price: number }[], top: boolean) => {
+          const sorted = arr
+            .slice()
+            .sort((a, b) => (top ? b.price - a.price : a.price - b.price));
+          return sorted.slice(0, maxLabels);
+        };
+        const nodes = [
+          ...pickTop(highs, true).map((p) => ({ ...p, isHigh: true })),
+          ...pickTop(lows, false).map((p) => ({ ...p, isHigh: false })),
+        ];
+        return nodes.map((n, idx) => {
+          const x = n.i * step + candleGap / 2 + candleWidth / 2;
+          const y = priceToY(n.price);
+          const yLabel = n.isHigh ? Math.max(y - 6, 8) : Math.min(y + 12, chartH - 2);
+          const color = n.isHigh ? upColor : downColor;
+          return (
+            <SvgText
+              key={`sw-${idx}`}
+              x={x}
+              y={yLabel}
+              fontSize={8.5}
+              fontWeight="700"
+              fill={color}
+              textAnchor="middle"
+              stroke={colors.background}
+              strokeWidth={0.4}
+              paintOrder="stroke"
+            >
+              {formatPriceLabel(n.price)}
+            </SvgText>
+          );
+        });
+      })()}
     </Svg>
   );
 }

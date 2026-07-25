@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { useAuth } from "@/src/auth/AuthContext";
 import CandlestickChart from "@/src/components/CandlestickChart";
 import PriceChart from "@/src/components/PriceChart";
 import TargetProfit from "@/src/components/TargetProfit";
@@ -29,6 +30,7 @@ import {
   formatPct,
   formatPrice,
 } from "@/src/lib/api";
+import { useSubscription } from "@/src/lib/subscriptionContext";
 import { useTheme } from "@/src/theme/ThemeContext";
 
 function signalColors(colors: ReturnType<typeof useTheme>["colors"], action: string) {
@@ -86,6 +88,25 @@ export default function AssetDetail() {
   const [translatedSummary, setTranslatedSummary] = useState<string | null>(null);
   const [translatedTfView, setTranslatedTfView] = useState<string | null>(null);
   const [chartType, setChartType] = useState<"candlestick" | "line">("candlestick");
+  const [showPrediction, setShowPrediction] = useState(false);
+
+  // Access gating (issue #2, #3) — kick user back to home if entitlement expires
+  const { isPremium } = useSubscription();
+  const { isUnlocked, loaded: authLoaded } = useAuth();
+  const hasAccess = isPremium || isUnlocked;
+  useEffect(() => {
+    if (authLoaded && !hasAccess) {
+      // Small delay so late-arriving cache doesn't cause instant flicker on cold start.
+      const t = setTimeout(() => {
+        try {
+          router.replace("/");
+        } catch {
+          /* ignore */
+        }
+      }, 300);
+      return () => clearTimeout(t);
+    }
+  }, [hasAccess, authLoaded]);
 
   const loadChart = useCallback(
     async (tf: Timeframe) => {
@@ -202,6 +223,19 @@ export default function AssetDetail() {
   const change = ticker.change_pct_24h ?? 0;
   const changeColor = change >= 0 ? colors.accentUp : colors.accentDown;
 
+  // Target Profit % (issue #6) — from technical signal (chart.signal) which is
+  // always present. Falls back to null when the market is HOLD or SL/TP invalid.
+  const tpPct: number | null = (() => {
+    if (!sig || !sig.take_profit || !sig.entry) return null;
+    if (sig.action === "HOLD") return null;
+    const pct = ((sig.take_profit - sig.entry) / sig.entry) * 100;
+    return Number.isFinite(pct) ? pct : null;
+  })();
+  const tpColor =
+    sig?.action === "SHORT" || sig?.action === "SELL"
+      ? colors.accentDown
+      : colors.accentUp;
+
   const screenW = Dimensions.get("window").width - 32;
 
   return (
@@ -216,14 +250,36 @@ export default function AssetDetail() {
           <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 12 }}>
-          <Text style={[styles.symbolTitle, { color: colors.textPrimary }]}>
-            {symbol} <Text style={[styles.marketBadge, { color: colors.textMuted }]}>{t(
-              market === "crypto" ? "badge_crypto" :
-              market === "etf" ? "badge_etf" :
-              market === "stock_us" ? "badge_stock_us" :
-              "badge_stock_id"
-            )}</Text>
-          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <Text style={[styles.symbolTitle, { color: colors.textPrimary, flexShrink: 1 }]} numberOfLines={1}>
+              {symbol} <Text style={[styles.marketBadge, { color: colors.textMuted }]}>{t(
+                market === "crypto" ? "badge_crypto" :
+                market === "etf" ? "badge_etf" :
+                market === "stock_us" ? "badge_stock_us" :
+                "badge_stock_id"
+              )}</Text>
+            </Text>
+            {tpPct !== null ? (
+              <View
+                style={{
+                  paddingHorizontal: 8,
+                  paddingVertical: 3,
+                  borderRadius: 6,
+                  backgroundColor: tpColor + "22",
+                  borderWidth: 1,
+                  borderColor: tpColor,
+                  marginLeft: 8,
+                }}
+              >
+                <Text style={{ fontSize: 9, color: colors.textMuted, letterSpacing: 0.5, fontWeight: "600" }}>
+                  TARGET
+                </Text>
+                <Text style={{ fontSize: 13, color: tpColor, fontWeight: "900", fontVariant: ["tabular-nums"] }}>
+                  {tpPct >= 0 ? "+" : ""}{tpPct.toFixed(2)}%
+                </Text>
+              </View>
+            ) : null}
+          </View>
           <Text style={[styles.priceBig, { color: colors.textPrimary }]}>
             {formatPrice(ticker.price ?? null, market)}{" "}
             <Text style={{ color: changeColor, fontSize: 14, fontWeight: "600" }}>{formatPct(ticker.change_pct_24h)}</Text>
@@ -430,22 +486,104 @@ export default function AssetDetail() {
         <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>{t("detail_ai_section")}</Text>
-            <TouchableOpacity
-              onPress={runAnalysis}
-              disabled={analyzing}
-              testID="run-ai-analysis-button"
-              style={[styles.analyzeBtn, { backgroundColor: analyzing ? colors.surfaceHighlight : colors.accentBlue }]}
-            >
-              {analyzing ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <>
-                  <Ionicons name="sparkles" size={14} color="#fff" />
-                  <Text style={styles.analyzeBtnText}>{analysis ? t("detail_ai_repeat") : t("detail_ai_btn")}</Text>
-                </>
-              )}
-            </TouchableOpacity>
+            <View style={{ flexDirection: "row", gap: 6 }}>
+              <TouchableOpacity
+                onPress={() => setShowPrediction((s) => !s)}
+                testID="run-ai-prediction-button"
+                style={[
+                  styles.analyzeBtn,
+                  {
+                    backgroundColor: showPrediction ? colors.accentUp : colors.accentUp + "22",
+                    borderWidth: showPrediction ? 0 : 1,
+                    borderColor: colors.accentUp,
+                  },
+                ]}
+              >
+                <Ionicons name="flash" size={14} color={showPrediction ? "#fff" : colors.accentUp} />
+                <Text style={[styles.analyzeBtnText, { color: showPrediction ? "#fff" : colors.accentUp }]}>
+                  AI PREDICTION
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={runAnalysis}
+                disabled={analyzing}
+                testID="run-ai-analysis-button"
+                style={[styles.analyzeBtn, { backgroundColor: analyzing ? colors.surfaceHighlight : colors.accentBlue }]}
+              >
+                {analyzing ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="sparkles" size={14} color="#fff" />
+                    <Text style={styles.analyzeBtnText}>{analysis ? t("detail_ai_repeat") : t("detail_ai_btn")}</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
+
+          {/* AI Prediction card (instant, no API call) */}
+          {showPrediction && chart?.signal ? (
+            <View
+              style={{
+                backgroundColor: colors.accentUp + "10",
+                borderColor: colors.accentUp + "55",
+                borderWidth: 1,
+                borderRadius: 10,
+                padding: 12,
+                marginBottom: 12,
+              }}
+            >
+              {(() => {
+                const s = chart.signal!;
+                const isUp = s.action === "BUY" || s.action === "LONG";
+                const isDown = s.action === "SELL" || s.action === "SHORT";
+                const dirLabel = isUp ? "UP ↑" : isDown ? "DOWN ↓" : "SIDEWAYS →";
+                const dirColor = isUp ? colors.accentUp : isDown ? colors.accentDown : colors.accentHold;
+                const conf = s.confidence ?? 0;
+                const horizonLabel = `Next ${timeframe}`;
+                const suggestion = isUp
+                  ? `Prepare BUY. Watch entry ~${formatPrice(s.entry, market)}, TP ${formatPrice(s.take_profit, market)}, SL ${formatPrice(s.stop_loss, market)}.`
+                  : isDown
+                    ? `Prepare SHORT. Watch entry ~${formatPrice(s.entry, market)}, TP ${formatPrice(s.take_profit, market)}, SL ${formatPrice(s.stop_loss, market)}.`
+                    : "Wait — no clear momentum yet. Watch break of recent high/low for next signal.";
+                return (
+                  <>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                      <Ionicons name="flash" size={16} color={dirColor} />
+                      <Text style={{ fontSize: 12, fontWeight: "800", color: colors.textPrimary }}>
+                        AI PREDICTION · {horizonLabel}
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                      <Text style={{ fontSize: 22, fontWeight: "900", color: dirColor, letterSpacing: 0.6 }}>
+                        {dirLabel}
+                      </Text>
+                      <View style={{ alignItems: "flex-end" }}>
+                        <Text style={{ fontSize: 10, color: colors.textMuted, letterSpacing: 0.5 }}>CONFIDENCE</Text>
+                        <Text style={{ fontSize: 18, fontWeight: "900", color: dirColor, fontVariant: ["tabular-nums"] }}>
+                          {conf.toFixed(0)}%
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={{ fontSize: 12, color: colors.textPrimary, lineHeight: 18 }}>{suggestion}</Text>
+                    {s.reasons && s.reasons.length > 0 ? (
+                      <View style={{ marginTop: 8 }}>
+                        {s.reasons.slice(0, 3).map((r, i) => (
+                          <Text key={i} style={{ fontSize: 11, color: colors.textMuted, marginTop: 2 }}>
+                            • {r}
+                          </Text>
+                        ))}
+                      </View>
+                    ) : null}
+                    <Text style={{ fontSize: 9, color: colors.textMuted, marginTop: 8, fontStyle: "italic" }}>
+                      Instant prediction from technical indicators. Tap ANALISA AI for full multi-model deep analysis.
+                    </Text>
+                  </>
+                );
+              })()}
+            </View>
+          ) : null}
 
           {!analysis && !analyzing && (
             <Text style={[styles.aiHint, { color: colors.textMuted }]}>

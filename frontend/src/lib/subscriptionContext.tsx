@@ -7,7 +7,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Alert, Platform } from "react-native";
+import { Alert, AppState, Platform } from "react-native";
 
 import { getDeviceId } from "@/src/lib/deviceId";
 import {
@@ -152,6 +152,39 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     setEntitlement(cached);
   }, []);
 
+  // ---- Auto-lock on expiry (issue #2, #3) ----
+  // Every 30s, force a re-check of isEntitled by bumping a tick counter. This
+  // ensures `isPremium` transitions from true → false the moment expiryTime
+  // passes, without requiring the app to be restarted.
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((x) => x + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
+  // Also re-check on app-foreground (background→active) so users returning
+  // from a long absence see the correct locked state immediately.
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") setTick((x) => x + 1);
+    });
+    return () => sub.remove();
+  }, []);
+  // Trigger re-fetch of getAvailablePurchases in background occasionally in
+  // case the user cancelled from Play Store settings while offline.
+  useEffect(() => {
+    if (!connected || Platform.OS !== "android") return;
+    const id = setInterval(async () => {
+      try {
+        const deviceId = deviceIdRef.current || (await getDeviceId());
+        const ent = await restorePurchases(deviceId, ANDROID_PACKAGE);
+        if (ent) setEntitlement(ent);
+      } catch {
+        /* silent */
+      }
+    }, 5 * 60_000); // every 5 minutes
+    return () => clearInterval(id);
+  }, [connected]);
+
   const value = useMemo<SubscriptionState>(
     () => ({
       loaded,
@@ -164,7 +197,8 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       restore,
       refresh,
     }),
-    [loaded, entitlement, product, loading, connected, subscribe, restore, refresh],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [loaded, entitlement, product, loading, connected, subscribe, restore, refresh, tick],
   );
 
   return (

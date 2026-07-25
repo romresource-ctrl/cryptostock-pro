@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import {
   ActivityIndicator,
   Linking,
@@ -35,6 +35,18 @@ export default function VipModal({ visible, onClose }: Props) {
   const { t } = useI18n();
   const { subscribe, restore, loading, isPremium, entitlement, product } =
     useSubscription();
+
+  // Auto-close modal when entitlement becomes active (issue #1, #4).
+  // We track visible edge so we only close once per open cycle.
+  const wasPremiumRef = useRef(isPremium);
+  useEffect(() => {
+    if (visible && isPremium && !wasPremiumRef.current) {
+      const t = setTimeout(() => onClose(), 900);
+      wasPremiumRef.current = true;
+      return () => clearTimeout(t);
+    }
+    if (!visible) wasPremiumRef.current = isPremium;
+  }, [visible, isPremium, onClose]);
 
   const openEmail = () =>
     Linking.openURL(`mailto:${CONTACT_EMAIL}`).catch(() => {});
