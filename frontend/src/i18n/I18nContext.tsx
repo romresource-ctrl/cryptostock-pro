@@ -4,7 +4,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 export type Lang = "id" | "en" | "ru" | "cn";
 
 const STORAGE_KEY = "aicryptostockpro:lang";
-export const LANG_ORDER: Lang[] = ["id", "en", "ru", "cn"];
+export const LANG_ORDER: Lang[] = ["en", "id", "ru", "cn"];
 export const LANG_LABEL: Record<Lang, string> = { id: "ID", en: "EN", ru: "RU", cn: "CN" };
 
 // Static UI translations. Dynamic content (news, AI analysis, asset detail
@@ -166,7 +166,9 @@ type Ctx = {
 const I18nContext = createContext<Ctx | null>(null);
 
 export function I18nProvider({ children }: { children: React.ReactNode }) {
-  const [lang, setLangState] = useState<Lang>("id");
+  // First install defaults to EN (English) — this is a global-audience app.
+  // Existing users keep whatever they saved in AsyncStorage.
+  const [lang, setLangState] = useState<Lang>("en");
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
