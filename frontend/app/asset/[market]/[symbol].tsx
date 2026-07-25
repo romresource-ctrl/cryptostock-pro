@@ -223,18 +223,21 @@ export default function AssetDetail() {
   const change = ticker.change_pct_24h ?? 0;
   const changeColor = change >= 0 ? colors.accentUp : colors.accentDown;
 
-  // Target Profit % (issue #6) — from technical signal (chart.signal) which is
-  // always present. Falls back to null when the market is HOLD or SL/TP invalid.
+  // Target Profit % (issue #6) — POSITIVE profit target regardless of direction.
+  // For BUY/LONG: (take_profit - entry) / entry
+  // For SELL/SHORT: (entry - take_profit) / entry
+  // Always displayed as a positive % because it represents PROFIT if the trade succeeds.
   const tpPct: number | null = (() => {
     if (!sig || !sig.take_profit || !sig.entry) return null;
     if (sig.action === "HOLD") return null;
-    const pct = ((sig.take_profit - sig.entry) / sig.entry) * 100;
-    return Number.isFinite(pct) ? pct : null;
+    const isShort = sig.action === "SHORT" || sig.action === "SELL";
+    const raw = isShort
+      ? ((sig.entry - sig.take_profit) / sig.entry) * 100
+      : ((sig.take_profit - sig.entry) / sig.entry) * 100;
+    return Number.isFinite(raw) ? Math.abs(raw) : null;
   })();
-  const tpColor =
-    sig?.action === "SHORT" || sig?.action === "SELL"
-      ? colors.accentDown
-      : colors.accentUp;
+  // Always green (profit target)
+  const tpColor = colors.accentUp;
 
   const screenW = Dimensions.get("window").width - 32;
 
@@ -262,20 +265,26 @@ export default function AssetDetail() {
             {tpPct !== null ? (
               <View
                 style={{
-                  paddingHorizontal: 8,
-                  paddingVertical: 3,
-                  borderRadius: 6,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  borderRadius: 8,
                   backgroundColor: tpColor + "22",
-                  borderWidth: 1,
+                  borderWidth: 1.5,
                   borderColor: tpColor,
                   marginLeft: 8,
+                  alignItems: "center",
+                  minWidth: 76,
                 }}
+                testID="header-target-profit"
               >
-                <Text style={{ fontSize: 9, color: colors.textMuted, letterSpacing: 0.5, fontWeight: "600" }}>
-                  TARGET
+                <Text style={{ fontSize: 9, color: tpColor, letterSpacing: 0.6, fontWeight: "700", lineHeight: 11 }}>
+                  Target
                 </Text>
-                <Text style={{ fontSize: 13, color: tpColor, fontWeight: "900", fontVariant: ["tabular-nums"] }}>
-                  {tpPct >= 0 ? "+" : ""}{tpPct.toFixed(2)}%
+                <Text style={{ fontSize: 9, color: tpColor, letterSpacing: 0.6, fontWeight: "700", lineHeight: 11 }}>
+                  Profit
+                </Text>
+                <Text style={{ fontSize: 15, color: tpColor, fontWeight: "900", fontVariant: ["tabular-nums"], marginTop: 2 }}>
+                  +{tpPct.toFixed(2)}%
                 </Text>
               </View>
             ) : null}
@@ -485,13 +494,13 @@ export default function AssetDetail() {
         {/* AI Ensemble */}
         <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>{t("detail_ai_section")}</Text>
-            <View style={{ flexDirection: "row", gap: 6 }}>
+            <Text style={[styles.sectionTitle, { color: colors.textPrimary, flexShrink: 1 }]} numberOfLines={1}>{t("detail_ai_section")}</Text>
+            <View style={{ flexDirection: "row", gap: 4, flexShrink: 0 }}>
               <TouchableOpacity
                 onPress={() => setShowPrediction((s) => !s)}
                 testID="run-ai-prediction-button"
                 style={[
-                  styles.analyzeBtn,
+                  styles.aiSmallBtn,
                   {
                     backgroundColor: showPrediction ? colors.accentUp : colors.accentUp + "22",
                     borderWidth: showPrediction ? 0 : 1,
@@ -499,23 +508,23 @@ export default function AssetDetail() {
                   },
                 ]}
               >
-                <Ionicons name="flash" size={14} color={showPrediction ? "#fff" : colors.accentUp} />
-                <Text style={[styles.analyzeBtnText, { color: showPrediction ? "#fff" : colors.accentUp }]}>
-                  AI PREDICTION
+                <Ionicons name="flash" size={11} color={showPrediction ? "#fff" : colors.accentUp} />
+                <Text style={[styles.aiSmallBtnText, { color: showPrediction ? "#fff" : colors.accentUp }]}>
+                  PREDIKSI
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={runAnalysis}
                 disabled={analyzing}
                 testID="run-ai-analysis-button"
-                style={[styles.analyzeBtn, { backgroundColor: analyzing ? colors.surfaceHighlight : colors.accentBlue }]}
+                style={[styles.aiSmallBtn, { backgroundColor: analyzing ? colors.surfaceHighlight : colors.accentBlue }]}
               >
                 {analyzing ? (
                   <ActivityIndicator color="#fff" size="small" />
                 ) : (
                   <>
-                    <Ionicons name="sparkles" size={14} color="#fff" />
-                    <Text style={styles.analyzeBtnText}>{analysis ? t("detail_ai_repeat") : t("detail_ai_btn")}</Text>
+                    <Ionicons name="sparkles" size={11} color="#fff" />
+                    <Text style={[styles.aiSmallBtnText, { color: "#fff" }]}>ANALISA</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -853,6 +862,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8,
   },
   analyzeBtnText: { color: "#fff", fontSize: 12, fontWeight: "700", letterSpacing: 0.5 },
+  aiSmallBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 6,
+    minWidth: 74,
+    justifyContent: "center",
+  },
+  aiSmallBtnText: { fontSize: 10, fontWeight: "800", letterSpacing: 0.3 },
   aiHint: { fontSize: 12, lineHeight: 18, marginTop: 10 },
   consensusBox: {
     marginTop: 12,

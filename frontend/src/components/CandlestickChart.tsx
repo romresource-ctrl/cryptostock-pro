@@ -186,8 +186,8 @@ export default function CandlestickChart({
 
       {/* Swing high/low price labels (issue #5) — pivot-detected local extrema */}
       {(() => {
-        // Detect swing highs & lows using a 3-bar window on each side.
-        const win = Math.max(2, Math.floor(displayed.length / 30));
+        // Detect swing highs & lows using a 2-bar window on each side (denser labels).
+        const win = 2;
         const highs: { i: number; price: number }[] = [];
         const lows: { i: number; price: number }[] = [];
         for (let i = win; i < displayed.length - win; i++) {
@@ -210,22 +210,36 @@ export default function CandlestickChart({
           if (isHigh) highs.push({ i, price: h });
           if (isLow) lows.push({ i, price: l });
         }
-        // Cap labels to avoid overdraw
-        const maxLabels = 5;
+        // Show up to 12 highs + 12 lows for good coverage without overdraw.
+        // Prefer larger-magnitude pivots when we have too many.
+        const maxLabels = 12;
         const pickTop = (arr: { i: number; price: number }[], top: boolean) => {
+          if (arr.length <= maxLabels) return arr;
           const sorted = arr
             .slice()
             .sort((a, b) => (top ? b.price - a.price : a.price - b.price));
           return sorted.slice(0, maxLabels);
         };
-        const nodes = [
+        const nodes: { i: number; price: number; isHigh: boolean }[] = [
           ...pickTop(highs, true).map((p) => ({ ...p, isHigh: true })),
           ...pickTop(lows, false).map((p) => ({ ...p, isHigh: false })),
         ];
-        return nodes.map((n, idx) => {
+        // Avoid overlapping labels: sort by x, then skip any node closer than ~28px to the previous.
+        nodes.sort((a, b) => a.i - b.i);
+        const minPx = 26;
+        let lastX = -Infinity;
+        const filtered: typeof nodes = [];
+        for (const n of nodes) {
+          const x = n.i * step;
+          if (x - lastX >= minPx || filtered.length === 0) {
+            filtered.push(n);
+            lastX = x;
+          }
+        }
+        return filtered.map((n, idx) => {
           const x = n.i * step + candleGap / 2 + candleWidth / 2;
           const y = priceToY(n.price);
-          const yLabel = n.isHigh ? Math.max(y - 6, 8) : Math.min(y + 12, chartH - 2);
+          const yLabel = n.isHigh ? Math.max(y - 6, 9) : Math.min(y + 12, chartH - 2);
           const color = n.isHigh ? upColor : downColor;
           return (
             <SvgText
@@ -237,7 +251,7 @@ export default function CandlestickChart({
               fill={color}
               textAnchor="middle"
               stroke={colors.background}
-              strokeWidth={0.4}
+              strokeWidth={0.6}
               paintOrder="stroke"
             >
               {formatPriceLabel(n.price)}
