@@ -222,9 +222,11 @@ def verify_purchase(
             "entitled": False,
             "raw": None,
             "source": "unverified",
+            "debug": "service_account_not_configured",
         }
 
     # Try v2 first (recommended by Google), fall back to v1
+    debug_v2: str | None = None
     try:
         v2 = (
             client.purchases()
@@ -239,10 +241,13 @@ def verify_purchase(
             "entitled": status in ENTITLED_STATUSES,
             "raw": v2,
             "source": "google_play_v2",
+            "debug": None,
         }
     except Exception as e_v2:
+        debug_v2 = str(e_v2)[:400]
         logger.info("v2 subscription lookup failed (%s), trying v1", e_v2)
 
+    debug_v1: str | None = None
     try:
         v1 = (
             client.purchases()
@@ -257,8 +262,10 @@ def verify_purchase(
             "entitled": status in ENTITLED_STATUSES,
             "raw": v1,
             "source": "google_play_v1",
+            "debug": None,
         }
     except Exception as e_v1:
+        debug_v1 = str(e_v1)[:400]
         logger.warning("v1 subscription lookup failed: %s", e_v1)
         return {
             "status": "invalid",
@@ -266,4 +273,5 @@ def verify_purchase(
             "entitled": False,
             "raw": None,
             "source": "unverified",
+            "debug": f"v2={debug_v2}; v1={debug_v1}",
         }

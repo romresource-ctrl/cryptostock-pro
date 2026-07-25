@@ -1151,6 +1151,7 @@ class SubscriptionStatusResponse(BaseModel):
     expiry_time: str | None = None
     product_id: str | None = None
     source: str = "unknown"
+    debug: str | None = None
 
 
 async def _upsert_entitlement(
@@ -1223,6 +1224,7 @@ async def subscription_verify(payload: SubscriptionVerifyPayload) -> Subscriptio
         expiry_time=expiry_dt.isoformat() if expiry_dt else None,
         product_id=product_id,
         source=source,
+        debug=result.get("debug"),
     )
 
 
@@ -1264,6 +1266,27 @@ async def subscription_status(device_id: str | None = None) -> SubscriptionStatu
         product_id=row.get("product_id"),
         source=row.get("source", "cached"),
     )
+
+
+@api.get("/subscription/health")
+async def subscription_health() -> dict[str, Any]:
+    """Self-diagnostic endpoint — reports whether backend can talk to Google Play.
+    Safe to call publicly; returns no PII, only configuration status.
+    """
+    import os as _os
+    from subscription_service import _CachedClient, _package_name
+
+    sa_env = _os.environ.get("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON", "").strip()
+    sa_path_exists = bool(sa_env and _os.path.isfile(sa_env))
+    sa_inline_json = bool(sa_env.startswith("{"))
+    client = _CachedClient.get()
+    return {
+        "service_account_env_set": bool(sa_env),
+        "service_account_path_exists": sa_path_exists,
+        "service_account_inline_json": sa_inline_json,
+        "publisher_client_initialised": client is not None,
+        "package_name": _package_name(),
+    }
 
 
 app.include_router(api)
