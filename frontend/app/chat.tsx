@@ -8,7 +8,6 @@ import {
   Alert,
   FlatList,
   Image,
-  KeyboardAvoidingView,
   Linking,
   Platform,
   StyleSheet,
@@ -17,6 +16,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getDeviceId } from "@/src/lib/deviceId";
@@ -306,11 +306,11 @@ export default function ChatScreen() {
   const canSend = isPremium && !sending && (input.trim().length > 0 || !!attachment);
   return (
     <KeyboardAvoidingView
-      // On Android the manifest uses adjustResize (default), which already
-      // shifts the content up. Wrapping with padding causes double-adjustment
-      // and hides the composer. Only enable KAV on iOS.
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      enabled={Platform.OS === "ios"}
+      // `translate-with-padding` on chat screens is the recommended behavior
+      // per react-native-keyboard-controller docs: the whole view (message
+      // list + composer) slides up smoothly with the keyboard so the input
+      // and last messages stay visible above the keyboard on both platforms.
+      behavior="translate-with-padding"
       keyboardVerticalOffset={0}
       style={[styles.container, { backgroundColor: colors.background }]}
     >
@@ -326,6 +326,8 @@ export default function ChatScreen() {
           data={messages}
           keyExtractor={(m) => m.id}
           contentContainerStyle={{ padding: 12, paddingBottom: 16 }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           renderItem={({ item }) => {
             const isMine = item.device_id === deviceIdRef.current;
             const bubbleColor = isMine ? colors.accentBlue : colors.surface;

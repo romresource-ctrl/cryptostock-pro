@@ -335,9 +335,10 @@ export async function purchaseSubscription(basePlanId?: string): Promise<void> {
   }
 
   // Detect existing subscription so we can UPGRADE instead of erroring out.
-  // WITH_TIME_PRORATION = new plan starts immediately, remaining time is
-  // credited/added — which is what the user asked for ("existing expiry + new
-  // period"). This is Google Play's built-in behaviour when switching plans.
+  // Google Play Billing 8.1+ requires the replacement mode as an INTEGER
+  // (not a string) and only accepts specific field names on the Nitro
+  // request. Extra / mis-named fields make the native side throw
+  // "Cannot convert [object Object] to any type in variant<...>".
   let oldPurchaseToken: string | null = null;
   try {
     const getAvail: any = iap.getAvailablePurchases;
@@ -360,26 +361,38 @@ export async function purchaseSubscription(basePlanId?: string): Promise<void> {
     /* ignore — treat as new purchase */
   }
 
+  // Build request that matches `RequestSubscriptionAndroidProps` in
+  // react-native-iap v15 (Nitro). Only whitelisted fields are allowed:
+  //   skus, subscriptionOffers, purchaseToken, replacementMode (integer),
+  //   obfuscatedAccountId, obfuscatedProfileId, isOfferPersonalized,
+  //   originalExternalTransactionId, developerBillingOption,
+  //   subscriptionProductReplacementParams
+  // Google Play Billing replacement mode integers:
+  //   1 = WITH_TIME_PRORATION   (default — new plan starts NOW, remaining
+  //                              time is credited pro-rata)
+  //   2 = CHARGE_PRORATED_PRICE
+  //   3 = WITHOUT_PRORATION
+  //   5 = CHARGE_FULL_PRICE
+  //   6 = DEFERRED              (new plan queues, starts after old expires)
+  // For consumer clarity ("subscribe = get full new period immediately") we
+  // use WITH_TIME_PRORATION when upgrading between our tiers, which is the
+  // default Google Play behavior.
   const androidReq: any = {
     skus: [SUBSCRIPTION_SKU],
     subscriptionOffers: [{ sku: SUBSCRIPTION_SKU, offerToken }],
   };
   if (oldPurchaseToken) {
-    // Upgrade flow — DEFERRED mode: new plan queues and starts ONLY after the
-    // current billing period ends. Effect: expiry = old_expiry + new_period
-    // (literally added, no proration). This matches the user's request:
-    // "durasi ditambah, plan baru otomatis lanjut setelah plan lama expire."
-    androidReq.replacementMode = "DEFERRED";
-    androidReq.replacementModeAndroid = "DEFERRED";
-    androidReq.purchaseTokenAndroid = oldPurchaseToken;
-    androidReq.oldSku = SUBSCRIPTION_SKU;
-    androidReq.oldPurchaseToken = oldPurchaseToken;
+    androidReq.purchaseToken = oldPurchaseToken;
+    androidReq.replacementMode = 1; // WITH_TIME_PRORATION (integer!)
   }
 
   try {
     await iap.requestPurchase({
       type: "subs",
-      request: { android: androidReq },
+      // Use `google:` (preferred in Nitro spec). `android:` is deprecated
+      // and passing both variants causes the native converter to reject
+      // the payload.
+      request: { google: androidReq },
     });
   } catch (e: any) {
     const msg = String(e?.message ?? e ?? "");

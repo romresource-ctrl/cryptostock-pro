@@ -2,6 +2,7 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
+import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AuthProvider } from "@/src/auth/AuthContext";
@@ -47,15 +48,17 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <ThemeProvider>
-        <I18nProvider>
-          <AuthProvider>
-            <SubscriptionProvider>
-              <RootStack />
-            </SubscriptionProvider>
-          </AuthProvider>
-        </I18nProvider>
-      </ThemeProvider>
+      <KeyboardProvider>
+        <ThemeProvider>
+          <I18nProvider>
+            <AuthProvider>
+              <SubscriptionProvider>
+                <RootStack />
+              </SubscriptionProvider>
+            </AuthProvider>
+          </I18nProvider>
+        </ThemeProvider>
+      </KeyboardProvider>
     </SafeAreaProvider>
   );
 }
