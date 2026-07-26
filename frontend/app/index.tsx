@@ -832,7 +832,7 @@ const styles = StyleSheet.create({
   searchHitBadgeOverlay: {
     position: "absolute",
     top: 6,
-    right: 6,
+    left: 6,
     minWidth: 40,
     height: 18,
     paddingHorizontal: 5,
