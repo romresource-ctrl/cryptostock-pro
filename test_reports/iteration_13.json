@@ -1,0 +1,42 @@
+{
+  "summary": "v5.0.1 dashboard cold-start load-speed fix VERIFIED. Backend: 14/14 pytest cases pass (test_iter14_dashboard_load_speed.py). Default (full=false) returns capped lists (crypto=10, stock_us=29, stock_id=0 via active 'spot' profile) while full=true returns 92 crypto / 80 IDX / 176 US stocks. Measured single-market cold-call times: crypto default=1.13s vs full=3.27s; crypto default @15m=1.60s (previously >6s). Parallel 7-category cold-call (mimicking frontend): full=false wall=12.62s, full=true wall=17.40s — the fix shaves ~28% wall time on the very first fetch and >70% on warm reloads (frontend cache TTL 45s). Frontend (mobile viewport 390x844): 'Ver 5.0.1' text visible 0.32s after nav; all 7 category chips render; first asset cards populate at 3.90s; 124 asset cards after 7s. Well under the 10s target on subsequent loads. All header controls (disclaimer, news, theme, lang, login) and asset search input are visible with correct testIDs. Zero page errors, zero JS runtime errors. Regressions: /api/subscription/{health,status,verify} all 200 (fake token correctly returns entitled=false status=invalid per Google Play rejection); /api/chat/messages GET returns empty list, POST correctly 403s for non-premium device; /api/asset/crypto/BTC/chart returns candles + signal. React Native issues: NONE (no deprecated packages introduced by this fix). Minor console warning noted for 'shadow*' style deprecation (react-native-web informational, unchanged from prior iterations).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/dashboard?market=stock_id&full=false",
+        "issue": "Returns 0 assets because active 'spot' profile has stocks=[] and the fallback list (line 660) only applies to etf/stock_us/gold_silver/commodity/forex — NOT stock_id. Not a v5.0.1 regression, pre-existing behaviour; but if user first switches to Saham IDX chip with no profile stocks configured they see an empty column. Consider adding 'stock_id': DEFAULT_STOCKS to that fallback dict."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter14_dashboard_load_speed.py",
+    "/app/test_reports/pytest/iter14.xml"
+  ],
+  "action_items": [
+    "OPTIONAL (LOW): Add 'stock_id': DEFAULT_STOCKS to the empty-symbol fallback dict at server.py:660 so first-time users of the Saham IDX chip see a populated list even before configuring a profile.",
+    "OPTIONAL (INFO): The 7-category parallel cold-start still reads ~12s wall on a truly cold backend because each Yahoo/Binance call for a new market/timeframe misses the 45s snapshot cache. If a tighter <10s target is desired, either (a) increase DASHBOARD_CACHE_TTL_SEC, (b) warm the cache with a startup task, or (c) sequence category fetches with the user-selected pair first (crypto+stock_us) and defer the other five."
+  ],
+  "critical_code_review_comments": [
+    "server.py:151-167 correctly separates DEFAULT_* (capped by _TOP_N=30) from FULL_* lists; dashboard endpoint selects the right set based on the ?full= query param. Clean, minimal change.",
+    "app/index.tsx:200 passes `full: false` in api.dashboard(...) — matches the backend contract.",
+    "app.json + src/lib/version.ts both bumped to 5.0.1; header renders 'Ver 5.0.1' correctly.",
+    "server.py is now 1557 lines — exceeds the 700-line guideline. Suggest splitting into modules (dashboard.py, subscription.py, chat.py, admin.py) in a future refactor; not blocking."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (14/14 pytest cases)",
+    "frontend": "100% (Ver 5.0.1 shown, 7 chips, 124 asset cards, all header controls + search input functional)"
+  },
+  "seed_data_creation": "None — only TEST_ prefixed device_ids used for subscription/chat regression, all rejected (non-entitled).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "v5.0.1 fix: dashboard endpoint accepts ?full=true|false; frontend cold start passes full=false to keep initial load small. Pytest file /app/backend/tests/test_iter14_dashboard_load_speed.py is the regression baseline — reuse for future dashboard changes. Full-map counts to remember for assertions: crypto=92-95, stock_id=80, etf=66, stock_us=176, gold=4, commodity=20, forex=32-34. Note: stock_id under default profile still returns 0 because 'spot' profile has stocks=[] and no fallback; documented as minor issue.",
+  "rca_of_issue": "User's complaint 'loading tampilan awal setelah instalasi versi terakhir menjadi sangat lambat' traced to Fase 4 asset expansion (148→475 tickers) combined with frontend requesting `full=true` on every category. This spawned 475 parallel upstream Binance/Yahoo Finance calls on cold start, saturating the backend and taking 20+ seconds. Fix (v5.0.1): 1) frontend/app/index.tsx line 200 changed `full: true` → `full: false`, 2) backend/server.py added _TOP_N=30 cap on DEFAULT_* lists while keeping FULL_* available via ?full=true. Verified: single-market default cold-call is now 1.1-1.6s (was ~5-6s); 7-market parallel cold wall is 12.6s (was 20+); warm loads are ~sub-second thanks to 45s snapshot cache."
+}

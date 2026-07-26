@@ -146,13 +146,25 @@ from market_data import (  # noqa: E402
     FOREX_YAHOO_MAP,
 )
 
-DEFAULT_CRYPTO = list(CRYPTO_BINANCE_MAP.keys())
-DEFAULT_STOCKS = list(STOCK_YAHOO_MAP.keys())
-DEFAULT_ETF = list(ETF_YAHOO_MAP.keys())
-DEFAULT_STOCK_US = list(STOCK_US_YAHOO_MAP.keys())
+# Top-N presets for FAST dashboard load. When ?full=true is passed, backend
+# returns the whole map instead. Reduces initial fetch from 475 to ~200 assets.
+_TOP_N = 30
+
+DEFAULT_CRYPTO = list(CRYPTO_BINANCE_MAP.keys())[:_TOP_N]
+DEFAULT_STOCKS = list(STOCK_YAHOO_MAP.keys())[:_TOP_N]
+DEFAULT_ETF = list(ETF_YAHOO_MAP.keys())[:_TOP_N]
+DEFAULT_STOCK_US = list(STOCK_US_YAHOO_MAP.keys())[:_TOP_N]
 DEFAULT_GOLD_SILVER = list(GOLD_SILVER_YAHOO_MAP.keys())
-DEFAULT_COMMODITY = list(COMMODITY_YAHOO_MAP.keys())
-DEFAULT_FOREX = list(FOREX_YAHOO_MAP.keys())
+DEFAULT_COMMODITY = list(COMMODITY_YAHOO_MAP.keys())[:_TOP_N]
+DEFAULT_FOREX = list(FOREX_YAHOO_MAP.keys())[:_TOP_N]
+
+# Full lists — used when ?full=true is requested
+FULL_CRYPTO = list(CRYPTO_BINANCE_MAP.keys())
+FULL_STOCKS = list(STOCK_YAHOO_MAP.keys())
+FULL_ETF = list(ETF_YAHOO_MAP.keys())
+FULL_STOCK_US = list(STOCK_US_YAHOO_MAP.keys())
+FULL_COMMODITY = list(COMMODITY_YAHOO_MAP.keys())
+FULL_FOREX = list(FOREX_YAHOO_MAP.keys())
 
 # Default seed profiles for new installs
 DEFAULT_PROFILES = [
@@ -631,13 +643,13 @@ async def dashboard(
     prof = await _get_active_profile()
     if full:
         symbols = {
-            "crypto": DEFAULT_CRYPTO,
-            "stock_id": DEFAULT_STOCKS,
-            "etf": DEFAULT_ETF,
-            "stock_us": DEFAULT_STOCK_US,
+            "crypto": FULL_CRYPTO,
+            "stock_id": FULL_STOCKS,
+            "etf": FULL_ETF,
+            "stock_us": FULL_STOCK_US,
             "gold_silver": DEFAULT_GOLD_SILVER,
-            "commodity": DEFAULT_COMMODITY,
-            "forex": DEFAULT_FOREX,
+            "commodity": FULL_COMMODITY,
+            "forex": FULL_FOREX,
         }.get(eff_market, [])
         profile_name = "Semua Aset"
         profile_id = "all"

@@ -197,7 +197,7 @@ export default function Dashboard() {
     });
     try {
       const results = await Promise.allSettled(
-        ALL_CATEGORIES.map((k) => api.dashboard(k, tf, { full: true, sort: "premium" })),
+        ALL_CATEGORIES.map((k) => api.dashboard(k, tf, { full: false, sort: "premium" })),
       );
       let pCount = 0;
       const next = {
