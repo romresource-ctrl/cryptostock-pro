@@ -634,16 +634,16 @@ const styles = StyleSheet.create({
   },
   chatBtnText: { fontSize: 11, fontWeight: "800", letterSpacing: 0.6 },
   searchChatBtn: {
+    flex: 0.3,
     height: 40,
-    paddingHorizontal: 12,
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 6,
-    marginLeft: 8,
   },
-  searchChatBtnText: { fontSize: 12, fontWeight: "800", letterSpacing: 0.6 },
+  searchChatBtnText: { fontSize: 11, fontWeight: "800", letterSpacing: 0.4 },
   viewRow: { height: 50, justifyContent: "center" },
   viewPill: {
     height: 36, paddingHorizontal: 14, borderRadius: 18, borderWidth: 1, flexShrink: 0,
@@ -671,6 +671,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     flexDirection: "row",
     alignItems: "center",
+    gap: 8,
   },
   searchBox: {
     flexDirection: "row",
