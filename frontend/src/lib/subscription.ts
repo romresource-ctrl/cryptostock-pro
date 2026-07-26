@@ -365,12 +365,12 @@ export async function purchaseSubscription(basePlanId?: string): Promise<void> {
     subscriptionOffers: [{ sku: SUBSCRIPTION_SKU, offerToken }],
   };
   if (oldPurchaseToken) {
-    // Upgrade flow — pass old purchase token + replacement mode.
-    // "WithTimeProration" (a.k.a. CHARGE_FULL_PRICE variant that credits
-    // remaining time) => remaining balance of the old plan is applied as a
-    // pro-rated credit against the new plan.
-    androidReq.replacementMode = "WITH_TIME_PRORATION";
-    androidReq.replacementModeAndroid = "WITH_TIME_PRORATION";
+    // Upgrade flow — DEFERRED mode: new plan queues and starts ONLY after the
+    // current billing period ends. Effect: expiry = old_expiry + new_period
+    // (literally added, no proration). This matches the user's request:
+    // "durasi ditambah, plan baru otomatis lanjut setelah plan lama expire."
+    androidReq.replacementMode = "DEFERRED";
+    androidReq.replacementModeAndroid = "DEFERRED";
     androidReq.purchaseTokenAndroid = oldPurchaseToken;
     androidReq.oldSku = SUBSCRIPTION_SKU;
     androidReq.oldPurchaseToken = oldPurchaseToken;
