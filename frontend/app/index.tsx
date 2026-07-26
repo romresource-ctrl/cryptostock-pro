@@ -355,48 +355,6 @@ export default function Dashboard() {
               </TouchableOpacity>
             )
           )}
-          {/* Chatroom button — always visible, gated on tap. Placed at the
-              far right of the header row so premium members reach it in one
-              tap from the dashboard. */}
-          <TouchableOpacity
-            onPress={() => {
-              if (isPremium || isUnlocked) {
-                router.push("/chat");
-              } else {
-                Alert.alert(
-                  t("chat_members_only_title") || "Members Only",
-                  t("chat_members_only_body") ||
-                    "Chatroom is only available for premium subscribers. Subscribe to unlock.",
-                  [
-                    { text: "Cancel", style: "cancel" },
-                    { text: "Subscribe", onPress: () => setVipOpen(true) },
-                  ],
-                );
-              }
-            }}
-            testID="dashboard-chatroom-button"
-            style={[
-              styles.chatBtn,
-              {
-                backgroundColor: (isPremium || isUnlocked) ? "#F0B90B" : colors.surface,
-                borderColor: (isPremium || isUnlocked) ? "#F0B90B" : colors.border,
-              },
-            ]}
-          >
-            <Ionicons
-              name="chatbubbles"
-              size={14}
-              color={(isPremium || isUnlocked) ? "#000" : colors.textSecondary}
-            />
-            <Text
-              style={[
-                styles.chatBtnText,
-                { color: (isPremium || isUnlocked) ? "#000" : colors.textSecondary },
-              ]}
-            >
-              CHAT
-            </Text>
-          </TouchableOpacity>
         </View>
       </View>
 
@@ -461,9 +419,18 @@ export default function Dashboard() {
         </View>
       </View>
 
-      {/* Search bar (replaces TF row in v3.0.1 — TF now only on detail page) */}
+      {/* Search bar (v6.0.3: 70% width + CHATROOM button next to it) */}
       <View style={styles.tfRow}>
-        <View style={[styles.searchBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <View
+          style={[
+            styles.searchBox,
+            {
+              flex: 0.7,
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+            },
+          ]}
+        >
           <Ionicons name="search" size={16} color={colors.textMuted} style={{ marginLeft: 10 }} />
           <TextInput
             testID="asset-search-input"
@@ -481,6 +448,47 @@ export default function Dashboard() {
             </TouchableOpacity>
           ) : null}
         </View>
+        {/* CHATROOM button (moved from header row → next to search).
+            Premium/unlocked: gold clickable → open Chatroom.
+            Non-premium: grey → tap shows Members Only popup. */}
+        <TouchableOpacity
+          onPress={() => {
+            if (isPremium || isUnlocked) {
+              router.push("/chat");
+            } else {
+              Alert.alert(
+                "Members Only",
+                "Chatroom is only available for premium subscribers. Subscribe to unlock.",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  { text: "Subscribe", onPress: () => setVipOpen(true) },
+                ],
+              );
+            }
+          }}
+          testID="dashboard-chatroom-button"
+          style={[
+            styles.searchChatBtn,
+            {
+              backgroundColor: (isPremium || isUnlocked) ? "#F0B90B" : colors.surface,
+              borderColor: (isPremium || isUnlocked) ? "#F0B90B" : colors.border,
+            },
+          ]}
+        >
+          <Ionicons
+            name="chatbubbles"
+            size={16}
+            color={(isPremium || isUnlocked) ? "#000" : colors.textSecondary}
+          />
+          <Text
+            style={[
+              styles.searchChatBtnText,
+              { color: (isPremium || isUnlocked) ? "#000" : colors.textSecondary },
+            ]}
+          >
+            CHATROOM
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {/* Asset lists — always show ALL 7 category columns.
@@ -632,6 +640,17 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   chatBtnText: { fontSize: 11, fontWeight: "800", letterSpacing: 0.6 },
+  searchChatBtn: {
+    height: 40,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginLeft: 8,
+  },
+  searchChatBtnText: { fontSize: 12, fontWeight: "800", letterSpacing: 0.6 },
   viewRow: { height: 50, justifyContent: "center" },
   viewPill: {
     height: 36, paddingHorizontal: 14, borderRadius: 18, borderWidth: 1, flexShrink: 0,
@@ -653,9 +672,14 @@ const styles = StyleSheet.create({
   consensusNum: { fontSize: 18, fontWeight: "700" },
   consensusLabel: { fontSize: 10, marginTop: 2, letterSpacing: 0.5 },
   consensusDivider: { width: 1, marginVertical: 6 },
-  tfRow: { height: 56, justifyContent: "center", marginTop: 2 },
+  tfRow: {
+    height: 56,
+    marginTop: 2,
+    paddingHorizontal: 16,
+    flexDirection: "row",
+    alignItems: "center",
+  },
   searchBox: {
-    marginHorizontal: 12,
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
