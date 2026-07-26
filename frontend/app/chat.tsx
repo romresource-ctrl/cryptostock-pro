@@ -213,8 +213,8 @@ export default function ChatScreen() {
   // ---- Main chat screen ----
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={80}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={0}
       style={[styles.container, { backgroundColor: colors.background }]}
     >
       <Stack.Screen options={{ title: `Chat · ${nickname}` }} />
@@ -309,6 +309,8 @@ export default function ChatScreen() {
           editable={isPremium}
           multiline
           maxLength={MAX_MSG_LEN}
+          blurOnSubmit={false}
+          textAlignVertical="top"
           style={[
             styles.input,
             {
@@ -321,18 +323,21 @@ export default function ChatScreen() {
         />
         <TouchableOpacity
           onPress={isPremium ? sendMessage : () => router.back()}
-          disabled={sending}
+          disabled={sending || !input.trim()}
           style={[
             styles.sendBtn,
-            { backgroundColor: isPremium ? colors.accentBlue : colors.surfaceHighlight },
+            {
+              backgroundColor: isPremium && input.trim() ? colors.accentBlue : colors.surfaceHighlight,
+              opacity: sending ? 0.6 : 1,
+            },
           ]}
         >
           {sending ? (
             <ActivityIndicator size="small" color="#fff" />
           ) : (
             <Ionicons
-              name={isPremium ? "send" : "star"}
-              size={16}
+              name={isPremium ? "arrow-up" : "star"}
+              size={18}
               color="#fff"
             />
           )}

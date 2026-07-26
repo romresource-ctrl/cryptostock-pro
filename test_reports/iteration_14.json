@@ -1,0 +1,31 @@
+{
+  "summary": "v5.0.3 verification PASS. Backend: 11/11 pytest (test_iter15_v503_seven_markets.py). All 7 markets return non-empty assets on the default full=false path (crypto>=10, stock_id>=20, etf>=20, stock_us>=20, gold_silver>=3, commodity>=15, forex>=20) — confirming the empty-symbol fallback dict at server.py:660 now covers stock_id, crypto, etf, stock_us, gold_silver, commodity, forex. Regression endpoints /api/subscription/health, /api/subscription/verify (fake token -> entitled=false), /api/chat/messages GET (empty list), POST (correctly 4xx for non-premium) all pass. Frontend (mobile 390x844): 'Ver 5.0.3' shown in header; dashboard renders Crypto/ETF/IDX Stocks/World Stocks chips with 124+ asset cards populating; /chat route shows the nickname setup screen with placeholder 'Your nickname (e.g. Trader_BTC)' and JOIN CHAT button. After saving nickname, main chat screen renders with a bottom input bar (placeholder 'Premium only — subscribe to chat') and a send button. TextInput computed style shows color rgb(234,236,239) on background rgb(30,35,41) — confirming the text-visibility fix. Send icon in code renders 'arrow-up' when isPremium else 'star'; test device is non-premium so the star (Ionicon \\uf595) is displayed as expected (arrow-up path is unreachable in the web preview without a real Play Billing purchase). blurOnSubmit=false, textAlignVertical='top', explicit color color: colors.textPrimary, and KeyboardAvoidingView behavior='height' on Android are all present in chat.tsx. Zero page errors, zero JS runtime errors. Console: only pre-existing 'shadow*' style props deprecation warning from react-native-web (unchanged from iter 13).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter15_v503_seven_markets.py",
+    "/app/test_reports/pytest/iter15.xml"
+  ],
+  "action_items": [
+    "None — v5.0.3 fixes verified. Note: arrow-up send icon can only be visually confirmed with a premium (entitled) device; code path is correct per chat.tsx:339 (name={isPremium ? 'arrow-up' : 'star'}). Recommend a native/emulator smoke test after IAP purchase to observe the arrow-up icon and keyboard-open send behavior end-to-end, since the web preview cannot exercise soft-keyboard-open send interaction."
+  ],
+  "critical_code_review_comments": [
+    "server.py:660-666 fallback dict now covers all 7 markets — matches PRD.",
+    "chat.tsx:304-323 TextInput has textAlignVertical='top', color=colors.textPrimary, blurOnSubmit=false, multiline=true, editable gated on isPremium — all four v5.0.2 chat bugs addressed.",
+    "chat.tsx:324-344 send button disabled when input empty, opacity feedback while sending, icon toggled between arrow-up (premium) and star (upsell CTA that routes back to sub screen).",
+    "chat.tsx:215-217 KeyboardAvoidingView behavior='padding' on iOS and 'height' on Android with keyboardVerticalOffset=0 — appropriate for keeping the input bar tappable while keyboard is open.",
+    "server.py at 1558 lines still exceeds the 700-line guideline; consider splitting into dashboard.py / subscription.py / chat.py in a future refactor (non-blocking, carried forward from iter 13)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (11/11)", "frontend": "100% (dashboard + chat nickname + chat main all render, text-visibility fix confirmed)"},
+  "seed_data_creation": "Only TEST_ prefixed device_ids used for subscription/chat regression; no persisted data (non-premium POST rejected).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "v5.0.3 fixes: (1) backend server.py:660 fallback dict expanded to all 7 markets, (2) chat.tsx TextInput text visibility + blurOnSubmit=false + arrow-up icon + Android KeyboardAvoidingView='height'. Regression baselines to re-run for chat/subscription/dashboard: /app/backend/tests/test_iter15_v503_seven_markets.py. Web preview cannot visually confirm arrow-up icon (requires premium entitlement); confirmed via source only. All other v5.0.1 metrics (cold start speed) unaffected by this change.",
+  "rca_of_issue": "v5.0.2 user reports mapped to two root causes: (a) BACKEND — the fallback dict introduced in v5.0.1 only listed etf/stock_us/gold_silver/commodity/forex, so any market whose active profile had an empty symbols list (stock_id under the 'spot' profile which has stocks=[]) returned an empty column; v5.0.3 fix adds crypto/stock_id entries, covering all 7 markets. (b) FRONTEND chat — the TextInput had no explicit color prop, so on some Android themes the text color resolved to placeholder/transparent making typed text invisible; additionally, tapping send while keyboard was open caused blur+re-render race with the parent KeyboardAvoidingView on Android because blurOnSubmit defaulted to true and behavior='padding' shifts layout, dropping the tap. Fix pins color to colors.textPrimary, sets textAlignVertical='top', blurOnSubmit=false, and switches Android KAV behavior to 'height' so the send button remains hit-testable. Icon updated to Ionicons 'arrow-up' size 18 for premium users. Verified via backend pytest (11/11) and web-preview rendering (dashboard + chat)."
+}
