@@ -892,6 +892,25 @@ async def asset_track_record(
 
 # -------- News --------
 
+@api.get("/ai/models")
+async def get_ai_models() -> dict[str, Any]:
+    """Return the list of AI models currently powering the ensemble analysis.
+
+    Frontend uses this to display an up-to-date hint like
+    "Press AI ANALYSIS for consensus from X + Y + Z" — so whenever the
+    backend swaps in a newer model (e.g. Sonnet 4.6 → Sonnet 5), the UI
+    text updates automatically without a mobile rebuild.
+    """
+    from ai_engine import MODELS as _AI_MODELS  # local import to avoid circulars
+    return {
+        "models": [
+            {"name": m.get("label"), "provider": m.get("provider")}
+            for m in _AI_MODELS
+        ],
+    }
+
+
+
 @api.get("/news", response_model=NewsResponse)
 async def news_global(
     market: Literal["crypto", "stock", "etf", "stock_id", "stock_us", "world_stocks", "gold_silver", "commodity", "forex", "all"] = Query("all"),

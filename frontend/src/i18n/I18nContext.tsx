@@ -102,6 +102,16 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     ru: "Нажмите AI АНАЛИЗ для консенсуса Claude Fable 5 + Opus 4.8 + Sonnet 4.6 по техническому анализу и макро.",
     cn: "点击 AI 分析获取 Claude Fable 5 + Opus 4.8 + Sonnet 4.6 基于技术面、宏观和政治的共识。",
   },
+  // Dynamic template — `{models}` is replaced at runtime with the current
+  // AI model labels fetched from GET /api/ai/models so the hint text
+  // never becomes stale when the backend upgrades to a newer Claude / GPT
+  // / Gemini version.
+  detail_ai_hint_template: {
+    id: "Tekan ANALISA AI untuk konsensus {models} berdasarkan teknikal, berita global, makro & politik terkini.",
+    en: "Press AI ANALYSIS for consensus from {models} based on technicals, global news, macro & politics.",
+    ru: "Нажмите AI АНАЛИЗ для консенсуса {models} по техническому анализу и макро.",
+    cn: "点击 AI 分析获取 {models} 基于技术面、宏观和政治的共识。",
+  },
   detail_consensus: { id: "KONSENSUS AI", en: "AI CONSENSUS", ru: "AI КОНСЕНСУС", cn: "AI 共识" },
   detail_models: { id: "Detail Model", en: "Model Details", ru: "Детали моделей", cn: "模型详情" },
   detail_news: { id: "Berita Terkait", en: "Related News", ru: "Новости", cn: "相关新闻" },

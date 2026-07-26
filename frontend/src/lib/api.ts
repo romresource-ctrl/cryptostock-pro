@@ -243,6 +243,9 @@ export const api = {
 
   translate: (texts: string[], target_lang: "en" | "id" = "en") =>
     send<{ target_lang: string; items: string[] }>(`/translate`, "POST", { texts, target_lang }),
+
+  aiModels: () =>
+    get<{ models: { name: string; provider: string }[] }>(`/ai/models`),
 };
 
 export const TIMEFRAMES: Timeframe[] = ["1m", "3m", "5m", "15m", "30m", "1h", "3h", "6h", "12h", "18h", "24h", "7d", "14d", "30d"];

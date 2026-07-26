@@ -79,6 +79,10 @@ export default function AssetDetail() {
   const [chart, setChart] = useState<ChartResponse | null>(null);
   const [analysis, setAnalysis] = useState<AnalyzeResponse | null>(null);
   const [trackRecord, setTrackRecord] = useState<TrackRecordResponse | null>(null);
+  // Live-fetched AI model labels from backend. If backend swaps models
+  // (e.g. Sonnet 4.6 → Sonnet 5), the hint text updates without a
+  // mobile rebuild. Falls back to a generic label if endpoint is down.
+  const [aiModelLabels, setAiModelLabels] = useState<string[]>([]);
   const [loadingChart, setLoadingChart] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string>("");
@@ -216,6 +220,26 @@ export default function AssetDetail() {
       live = false;
     };
   }, [market, symbol]);
+
+  // Fetch current AI model labels once on mount (backend-driven, so
+  // Sonnet/Opus/Fable versions stay in sync with whatever the backend
+  // actually uses right now).
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try {
+        const r = await api.aiModels();
+        if (live && Array.isArray(r?.models)) {
+          setAiModelLabels(r.models.map((m) => m.name).filter(Boolean));
+        }
+      } catch {
+        /* ignore — fallback text will render */
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const ticker = chart?.ticker ?? {};
   const sig = chart?.signal;
@@ -622,7 +646,10 @@ export default function AssetDetail() {
 
           {!analysis && !analyzing && (
             <Text style={[styles.aiHint, { color: colors.textMuted }]}>
-              {t("detail_ai_hint")}
+              {aiModelLabels.length >= 2
+                ? t("detail_ai_hint_template")
+                    .replace("{models}", aiModelLabels.join(" + "))
+                : t("detail_ai_hint")}
             </Text>
           )}
 
