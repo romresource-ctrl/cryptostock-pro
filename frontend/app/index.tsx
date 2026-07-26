@@ -574,6 +574,7 @@ function SearchResults({
   locked: boolean;
 }) {
   const { colors } = useTheme();
+  const { width: screenW } = useWindowDimensions();
   const q = query.toUpperCase();
 
   // Flatten matches from ALL categories → single ranked list.
@@ -595,32 +596,42 @@ function SearchResults({
     return (a.asset.symbol || "").localeCompare(b.asset.symbol || "");
   });
 
+  // Same 2-column responsive grid as main dashboard columns.
+  const numCols = screenW < 640 ? 2 : Math.max(3, Math.floor(screenW / 200));
+  const cardW = (screenW - 24 - 8 * (numCols - 1)) / numCols;
+
+  if (hits.length === 0) {
+    return (
+      <View style={{ flex: 1, paddingTop: 60, alignItems: "center", gap: 8 }}>
+        <Ionicons name="search" size={28} color={colors.textMuted} />
+        <Text style={{ color: colors.textMuted, fontSize: 13, fontWeight: "600" }}>
+          {`No matches for "${query}"`}
+        </Text>
+        <Text style={{ color: colors.textMuted, fontSize: 11 }}>
+          Try a different symbol, e.g. BTC, AAPL, SIDO
+        </Text>
+      </View>
+    );
+  }
+
   return (
-    <FlatList
+    <ScrollView
       style={{ flex: 1 }}
-      data={hits}
-      keyExtractor={(h) => `${h.market}-${h.asset.symbol}`}
-      contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 24, gap: 6 }}
+      contentContainerStyle={{ padding: 12, paddingBottom: 24 }}
       keyboardShouldPersistTaps="handled"
-      renderItem={({ item }) => (
-        <SearchHitRow hit={item} onPress={onPress} locked={locked} />
-      )}
-      ListEmptyComponent={
-        <View style={{ paddingTop: 60, alignItems: "center", gap: 8 }}>
-          <Ionicons name="search" size={28} color={colors.textMuted} />
-          <Text style={{ color: colors.textMuted, fontSize: 13, fontWeight: "600" }}>
-            {`No matches for "${query}"`}
-          </Text>
-          <Text style={{ color: colors.textMuted, fontSize: 11 }}>
-            Try a different symbol, e.g. BTC, AAPL, SIDO
-          </Text>
-        </View>
-      }
-    />
+    >
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        {hits.map((h) => (
+          <View key={`${h.market}-${h.asset.symbol}`} style={{ width: cardW }}>
+            <SearchHitCard hit={h} onPress={onPress} locked={locked} />
+          </View>
+        ))}
+      </View>
+    </ScrollView>
   );
 }
 
-function SearchHitRow({
+function SearchHitCard({
   hit,
   onPress,
   locked,
@@ -629,11 +640,7 @@ function SearchHitRow({
   onPress: (a: AssetSignal) => void;
   locked: boolean;
 }) {
-  const { colors } = useTheme();
   const { asset, market } = hit;
-  const sig = signalColors(colors, asset.action);
-  const change = asset.change_pct_24h ?? 0;
-  const changeColor = change >= 0 ? colors.accentUp : colors.accentDown;
 
   const marketLabel: Record<Market, string> = {
     crypto: "CRYPTO",
@@ -657,56 +664,28 @@ function SearchHitRow({
   };
 
   return (
-    <TouchableOpacity
-      onPress={() => onPress(asset)}
-      style={[
-        styles.searchHit,
-        {
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-          opacity: locked && asset.is_premium ? 0.7 : 1,
-        },
-      ]}
-      testID={`search-hit-${asset.symbol}`}
-    >
-      {/* Market badge */}
+    <View style={{ position: "relative" }}>
+      <AssetCard
+        asset={asset}
+        market={market}
+        locked={locked}
+        onPress={() => onPress(asset)}
+      />
+      {/* Market badge overlay (top-right corner) so users know which
+          category the matched asset came from. */}
       <View
         style={[
-          styles.searchHitBadge,
-          { backgroundColor: marketBadgeColor[market] + "22", borderColor: marketBadgeColor[market] },
+          styles.searchHitBadgeOverlay,
+          {
+            backgroundColor: marketBadgeColor[market] + "E6",
+            borderColor: marketBadgeColor[market],
+          },
         ]}
+        pointerEvents="none"
       >
-        <Text style={[styles.searchHitBadgeText, { color: marketBadgeColor[market] }]}>
-          {marketLabel[market]}
-        </Text>
+        <Text style={styles.searchHitBadgeOverlayText}>{marketLabel[market]}</Text>
       </View>
-      {/* Symbol + action */}
-      <View style={{ flex: 1 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-          <Text style={[styles.searchHitSymbol, { color: colors.textPrimary }]} numberOfLines={1}>
-            {asset.symbol}
-          </Text>
-          {asset.is_premium ? (
-            <Ionicons name="star" size={10} color="#F0B90B" />
-          ) : null}
-          {locked && asset.is_premium ? (
-            <Ionicons name="lock-closed" size={10} color={colors.textMuted} />
-          ) : null}
-        </View>
-        <Text style={[styles.searchHitAction, { color: sig.text }]} numberOfLines={1}>
-          {asset.action}
-        </Text>
-      </View>
-      {/* Price + change */}
-      <View style={{ alignItems: "flex-end" }}>
-        <Text style={[styles.searchHitPrice, { color: colors.textPrimary }]} numberOfLines={1}>
-          {asset.price != null ? asset.price.toLocaleString(undefined, { maximumFractionDigits: 6 }) : "—"}
-        </Text>
-        <Text style={[styles.searchHitChange, { color: changeColor }]} numberOfLines={1}>
-          {change >= 0 ? "+" : ""}{change.toFixed(2)}%
-        </Text>
-      </View>
-    </TouchableOpacity>
+    </View>
   );
 }
 
@@ -850,29 +829,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
-  searchHit: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  searchHitBadge: {
-    minWidth: 44,
-    height: 22,
-    paddingHorizontal: 6,
-    borderRadius: 6,
+  searchHitBadgeOverlay: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    minWidth: 40,
+    height: 18,
+    paddingHorizontal: 5,
+    borderRadius: 5,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
+    zIndex: 10,
   },
-  searchHitBadgeText: { fontSize: 9, fontWeight: "900", letterSpacing: 0.4 },
-  searchHitSymbol: { fontSize: 14, fontWeight: "800", letterSpacing: 0.3 },
-  searchHitAction: { fontSize: 10, fontWeight: "700", letterSpacing: 0.4, marginTop: 2 },
-  searchHitPrice: { fontSize: 13, fontWeight: "800" },
-  searchHitChange: { fontSize: 11, fontWeight: "700", marginTop: 2 },
+  searchHitBadgeOverlayText: {
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 0.4,
+    color: "#fff",
+  },
   tfPill: {
     height: 36, minWidth: 50, paddingHorizontal: 14, borderRadius: 18, borderWidth: 1, flexShrink: 0,
     alignItems: "center", justifyContent: "center",
