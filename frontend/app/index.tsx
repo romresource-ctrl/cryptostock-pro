@@ -487,7 +487,19 @@ export default function Dashboard() {
       {/* Asset lists — always show ALL 7 category columns.
        * On phone: 2 columns fit per screen, swipe horizontally for others.
        * On tablet/Chromebook: 4-7 columns fit at once (no swipe needed).
-       * Chip selection (view[]) auto-scrolls to first selected category. */}
+       * Chip selection (view[]) auto-scrolls to first selected category.
+       * When user is searching (v6.0.7): show a UNIFIED cross-market
+       * results list instead of forcing the user to swipe between columns.
+       */}
+      {searchQuery.trim() ? (
+        <SearchResults
+          query={searchQuery.trim()}
+          data={data}
+          categories={ALL_CATEGORIES}
+          onPress={handleAssetPress}
+          locked={!hasAccess}
+        />
+      ) : (
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: 20 }}
@@ -521,6 +533,7 @@ export default function Dashboard() {
           })}
         </ScrollView>
       </ScrollView>
+      )}
 
       {/* Locked toast */}
       {lockedToast && (
@@ -544,6 +557,156 @@ export default function Dashboard() {
         }}
       />
     </SafeAreaView>
+  );
+}
+
+function SearchResults({
+  query,
+  data,
+  categories,
+  onPress,
+  locked,
+}: {
+  query: string;
+  data: Record<Category, AssetSignal[]>;
+  categories: Category[];
+  onPress: (a: AssetSignal) => void;
+  locked: boolean;
+}) {
+  const { colors } = useTheme();
+  const q = query.toUpperCase();
+
+  // Flatten matches from ALL categories → single ranked list.
+  // Ranking: exact-symbol match first, then symbol-prefix match, then contains.
+  type Hit = { asset: AssetSignal; market: Market; rank: number };
+  const hits: Hit[] = [];
+  categories.forEach((k) => {
+    (data[k] || []).forEach((a) => {
+      const sym = (a.symbol || "").toUpperCase();
+      let rank = -1;
+      if (sym === q) rank = 0;
+      else if (sym.startsWith(q)) rank = 1;
+      else if (sym.includes(q)) rank = 2;
+      if (rank >= 0) hits.push({ asset: a, market: k, rank });
+    });
+  });
+  hits.sort((a, b) => {
+    if (a.rank !== b.rank) return a.rank - b.rank;
+    return (a.asset.symbol || "").localeCompare(b.asset.symbol || "");
+  });
+
+  return (
+    <FlatList
+      style={{ flex: 1 }}
+      data={hits}
+      keyExtractor={(h) => `${h.market}-${h.asset.symbol}`}
+      contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 24, gap: 6 }}
+      keyboardShouldPersistTaps="handled"
+      renderItem={({ item }) => (
+        <SearchHitRow hit={item} onPress={onPress} locked={locked} />
+      )}
+      ListEmptyComponent={
+        <View style={{ paddingTop: 60, alignItems: "center", gap: 8 }}>
+          <Ionicons name="search" size={28} color={colors.textMuted} />
+          <Text style={{ color: colors.textMuted, fontSize: 13, fontWeight: "600" }}>
+            {`No matches for "${query}"`}
+          </Text>
+          <Text style={{ color: colors.textMuted, fontSize: 11 }}>
+            Try a different symbol, e.g. BTC, AAPL, SIDO
+          </Text>
+        </View>
+      }
+    />
+  );
+}
+
+function SearchHitRow({
+  hit,
+  onPress,
+  locked,
+}: {
+  hit: { asset: AssetSignal; market: Market };
+  onPress: (a: AssetSignal) => void;
+  locked: boolean;
+}) {
+  const { colors } = useTheme();
+  const { asset, market } = hit;
+  const sig = signalColors(colors, asset.action);
+  const change = asset.change_pct_24h ?? 0;
+  const changeColor = change >= 0 ? colors.accentUp : colors.accentDown;
+
+  const marketLabel: Record<Market, string> = {
+    crypto: "CRYPTO",
+    etf: "ETF",
+    stock_id: "IDX",
+    stock_us: "US",
+    world_stocks: "US",
+    gold_silver: "GOLD",
+    commodity: "COMM",
+    forex: "FX",
+  };
+  const marketBadgeColor: Record<Market, string> = {
+    crypto: "#F0B90B",
+    etf: "#8B5CF6",
+    stock_id: "#E53935",
+    stock_us: "#1E66F5",
+    world_stocks: "#1E66F5",
+    gold_silver: "#FFC107",
+    commodity: "#FF7043",
+    forex: "#00BFA5",
+  };
+
+  return (
+    <TouchableOpacity
+      onPress={() => onPress(asset)}
+      style={[
+        styles.searchHit,
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+          opacity: locked && asset.is_premium ? 0.7 : 1,
+        },
+      ]}
+      testID={`search-hit-${asset.symbol}`}
+    >
+      {/* Market badge */}
+      <View
+        style={[
+          styles.searchHitBadge,
+          { backgroundColor: marketBadgeColor[market] + "22", borderColor: marketBadgeColor[market] },
+        ]}
+      >
+        <Text style={[styles.searchHitBadgeText, { color: marketBadgeColor[market] }]}>
+          {marketLabel[market]}
+        </Text>
+      </View>
+      {/* Symbol + action */}
+      <View style={{ flex: 1 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <Text style={[styles.searchHitSymbol, { color: colors.textPrimary }]} numberOfLines={1}>
+            {asset.symbol}
+          </Text>
+          {asset.is_premium ? (
+            <Ionicons name="star" size={10} color="#F0B90B" />
+          ) : null}
+          {locked && asset.is_premium ? (
+            <Ionicons name="lock-closed" size={10} color={colors.textMuted} />
+          ) : null}
+        </View>
+        <Text style={[styles.searchHitAction, { color: sig.text }]} numberOfLines={1}>
+          {asset.action}
+        </Text>
+      </View>
+      {/* Price + change */}
+      <View style={{ alignItems: "flex-end" }}>
+        <Text style={[styles.searchHitPrice, { color: colors.textPrimary }]} numberOfLines={1}>
+          {asset.price != null ? asset.price.toLocaleString(undefined, { maximumFractionDigits: 6 }) : "—"}
+        </Text>
+        <Text style={[styles.searchHitChange, { color: changeColor }]} numberOfLines={1}>
+          {change >= 0 ? "+" : ""}{change.toFixed(2)}%
+        </Text>
+      </View>
+    </TouchableOpacity>
   );
 }
 
@@ -687,6 +850,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
+  searchHit: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  searchHitBadge: {
+    minWidth: 44,
+    height: 22,
+    paddingHorizontal: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  searchHitBadgeText: { fontSize: 9, fontWeight: "900", letterSpacing: 0.4 },
+  searchHitSymbol: { fontSize: 14, fontWeight: "800", letterSpacing: 0.3 },
+  searchHitAction: { fontSize: 10, fontWeight: "700", letterSpacing: 0.4, marginTop: 2 },
+  searchHitPrice: { fontSize: 13, fontWeight: "800" },
+  searchHitChange: { fontSize: 11, fontWeight: "700", marginTop: 2 },
   tfPill: {
     height: 36, minWidth: 50, paddingHorizontal: 14, borderRadius: 18, borderWidth: 1, flexShrink: 0,
     alignItems: "center", justifyContent: "center",
