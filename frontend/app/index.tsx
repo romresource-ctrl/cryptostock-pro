@@ -274,22 +274,15 @@ export default function Dashboard() {
         <View style={styles.headerTitleWrap}>
           <Text
             style={[styles.appTitle, { color: colors.textPrimary }]}
-            numberOfLines={1}
+            numberOfLines={2}
             adjustsFontSizeToFit
-            minimumFontScale={0.6}
+            minimumFontScale={0.7}
           >{t("app_title")}</Text>
           <Text style={[styles.appSub, { color: colors.textMuted }]} numberOfLines={1}>
             {`${t("ver_label")} ${APP_VERSION}`}
           </Text>
         </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity
-            onPress={() => router.push("/disclaimer" as never)}
-            testID="disclaimer-button"
-            style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          >
-            <Ionicons name="warning-outline" size={16} color={colors.accentDown} />
-          </TouchableOpacity>
           <TouchableOpacity
             onPress={() => router.push("/news" as never)}
             testID="news-button"
@@ -615,10 +608,10 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", paddingHorizontal: 16,
     paddingTop: 8, paddingBottom: 10,
   },
-  appTitle: { fontSize: 18, fontWeight: "800", letterSpacing: 0.2 },
-  headerTitleWrap: { flex: 1, paddingRight: 8, maxWidth: 180 },
+  appTitle: { fontSize: 15, fontWeight: "800", letterSpacing: 0.2, lineHeight: 18 },
+  headerTitleWrap: { flex: 1, paddingRight: 8 },
   appSub: { fontSize: 11, marginTop: 2 },
-  headerActions: { flexDirection: "row", gap: 8, alignItems: "center" },
+  headerActions: { flexDirection: "row", gap: 8, alignItems: "center", flexShrink: 0 },
   iconBtn: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center", borderWidth: 1 },
   loginBtn: {
     height: 36, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1,

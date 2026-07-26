@@ -76,7 +76,8 @@ function NewsRow({ item }: { item: NewsItem }) {
 export default function NewsScreen() {
   const { colors } = useTheme();
   const router = useRouter();
-  const { lang } = useI18n();
+  const { lang, t } = useI18n();
+  const [tab, setTab] = useState<"news" | "disclaimer">("news");
   const [marketFilter, setMarketFilter] = useState<MarketFilter>("all");
   const [symbolFilter, setSymbolFilter] = useState<{ symbol: string; market: Market } | null>(null);
   const [items, setItems] = useState<NewsItem[]>([]);
@@ -152,13 +153,93 @@ export default function NewsScreen() {
           <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 12 }}>
-          <Text style={[styles.appTitle, { color: colors.textPrimary }]}>Berita Live</Text>
+          <Text style={[styles.appTitle, { color: colors.textPrimary }]}>
+            {tab === "news" ? "Berita Live" : (t("disclaimer_title") || "Disclaimer")}
+          </Text>
           <Text style={[styles.appSub, { color: colors.textMuted }]}>
-            RSS publik • {fetchedAt ? `update ${fetchedAt}` : "memuat…"}
-            {symbolFilter ? ` • ${symbolFilter.symbol}` : ""}
+            {tab === "news"
+              ? `RSS publik • ${fetchedAt ? `update ${fetchedAt}` : "memuat…"}${symbolFilter ? ` • ${symbolFilter.symbol}` : ""}`
+              : "Please read carefully before making decisions"}
           </Text>
         </View>
       </View>
+
+      {/* Tab switcher: News | Disclaimer */}
+      <View style={styles.tabRow}>
+        <TouchableOpacity
+          onPress={() => setTab("news")}
+          testID="tab-news"
+          style={[
+            styles.tabBtn,
+            {
+              backgroundColor: tab === "news" ? colors.accentBlue : colors.surface,
+              borderColor: tab === "news" ? colors.accentBlue : colors.border,
+            },
+          ]}
+        >
+          <Ionicons
+            name="newspaper-outline"
+            size={14}
+            color={tab === "news" ? "#fff" : colors.textSecondary}
+          />
+          <Text style={[styles.tabText, { color: tab === "news" ? "#fff" : colors.textSecondary }]}>
+            News
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => setTab("disclaimer")}
+          testID="tab-disclaimer"
+          style={[
+            styles.tabBtn,
+            {
+              backgroundColor: tab === "disclaimer" ? colors.accentDown : colors.surface,
+              borderColor: tab === "disclaimer" ? colors.accentDown : colors.border,
+            },
+          ]}
+        >
+          <Ionicons
+            name="warning-outline"
+            size={14}
+            color={tab === "disclaimer" ? "#fff" : colors.textSecondary}
+          />
+          <Text style={[styles.tabText, { color: tab === "disclaimer" ? "#fff" : colors.textSecondary }]}>
+            Disclaimer
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {tab === "disclaimer" ? (
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingHorizontal: 12, paddingTop: 8, paddingBottom: 32 }}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={[styles.disclaimerBanner, { borderColor: colors.accentDown, backgroundColor: colors.accentDown + "18" }]}>
+            <Ionicons name="warning" size={20} color={colors.accentDown} />
+            <Text style={[styles.disclaimerBannerText, { color: colors.textPrimary }]}>
+              {t("disclaimer_read_carefully") || "Read carefully before making any decisions"}
+            </Text>
+          </View>
+          <View style={[styles.disclaimerCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[styles.disclaimerBody, { color: colors.textPrimary }]}>
+              {t("disclaimer_body") || "This app is for informational purposes only and does not constitute financial advice."}
+            </Text>
+          </View>
+          <View style={[styles.disclaimerCard, { backgroundColor: colors.surface, borderColor: colors.border, marginTop: 12 }]}>
+            <View style={styles.contactRow}>
+              <Ionicons name="mail" size={16} color={colors.accentBlue} />
+              <Text style={[styles.contactLabel, { color: colors.textMuted }]}>Support</Text>
+            </View>
+            <Text style={[styles.contactValue, { color: colors.textPrimary }]} selectable>
+              cryptostockapps@gmail.com
+            </Text>
+          </View>
+        </ScrollView>
+      ) : (
+        <>{null}</>
+      )}
+      {tab === "news" && (
+        <>
 
       {/* Market filter pills */}
       <View style={styles.filterRow}>
@@ -245,12 +326,50 @@ export default function NewsScreen() {
           }
         />
       )}
+        </>
+      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  tabRow: {
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  tabBtn: {
+    flex: 1,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  tabText: { fontSize: 12, fontWeight: "800", letterSpacing: 0.4 },
+  disclaimerBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderWidth: 1.5,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+  },
+  disclaimerBannerText: { fontSize: 12, fontWeight: "800", letterSpacing: 0.4, flex: 1 },
+  disclaimerCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+  },
+  disclaimerBody: { fontSize: 12.5, lineHeight: 19, textAlign: "justify" },
+  contactRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 },
+  contactLabel: { fontSize: 11, fontWeight: "600", letterSpacing: 0.4 },
+  contactValue: { fontSize: 13, fontWeight: "800" },
   header: {
     flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12,
   },
