@@ -109,9 +109,9 @@ def compute_signal(candles: list[dict[str, Any]], market: str) -> dict[str, Any]
 
     # Price vs EMA20
     if price > ema20 * 1.002:
-        _vote(1, "Harga di atas EMA20")
+        _vote(1, "Price above EMA20")
     elif price < ema20 * 0.998:
-        _vote(-1, "Harga di bawah EMA20")
+        _vote(-1, "Price below EMA20")
 
     # MACD histogram
     if macd:

@@ -156,7 +156,7 @@ export default function Dashboard() {
   const hasAccess = isUnlocked || isPremium;
   const { lang, toggle: toggleLang, t } = useI18n();
 
-  const [view, setView] = useState<Category[]>(["crypto", "stock_id"]);
+  const [view, setView] = useState<Category[]>(["crypto", "stock_us"]);
   const [timeframe, setTimeframe] = useState<Timeframe>("1h");
   const [searchQuery, setSearchQuery] = useState("");
   const [data, setData] = useState<Record<Category, AssetSignal[]>>({
@@ -165,7 +165,7 @@ export default function Dashboard() {
   });
   const [premiumCount, setPremiumCount] = useState(0);
   const [loadingMap, setLoadingMap] = useState<Record<Category, boolean>>({
-    crypto: true, etf: false, stock_id: true, stock_us: false,
+    crypto: true, etf: false, stock_id: false, stock_us: true,
     world_stocks: false, gold_silver: false, commodity: false, forex: false,
   });
   const [refreshing, setRefreshing] = useState(false);

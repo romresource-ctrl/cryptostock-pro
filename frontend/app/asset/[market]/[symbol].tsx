@@ -510,7 +510,7 @@ export default function AssetDetail() {
               >
                 <Ionicons name="flash" size={11} color={showPrediction ? "#fff" : colors.accentUp} />
                 <Text style={[styles.aiSmallBtnText, { color: showPrediction ? "#fff" : colors.accentUp }]}>
-                  PREDIKSI
+                  {t("detail_ai_predict_btn")}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -524,7 +524,7 @@ export default function AssetDetail() {
                 ) : (
                   <>
                     <Ionicons name="sparkles" size={11} color="#fff" />
-                    <Text style={[styles.aiSmallBtnText, { color: "#fff" }]}>ANALISA</Text>
+                    <Text style={[styles.aiSmallBtnText, { color: "#fff" }]}>{analysis ? t("detail_ai_repeat") : t("detail_ai_btn")}</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -586,7 +586,7 @@ export default function AssetDetail() {
                       </View>
                     ) : null}
                     <Text style={{ fontSize: 9, color: colors.textMuted, marginTop: 8, fontStyle: "italic" }}>
-                      Instant prediction from technical indicators. Tap ANALISA AI for full multi-model deep analysis.
+                      Instant prediction from technical indicators. Tap {t("detail_ai_btn")} for full multi-model deep analysis.
                     </Text>
                   </>
                 );
