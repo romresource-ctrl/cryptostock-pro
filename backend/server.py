@@ -1319,6 +1319,113 @@ async def subscription_health() -> dict[str, Any]:
     }
 
 
+# ---------------- Global Chatroom (Premium subscribers only) ----------------
+
+CHAT_RATE_LIMIT_SECONDS = 3
+CHAT_MESSAGE_MAX_LENGTH = 500
+CHAT_HISTORY_LIMIT = 200
+
+class ChatMessagePayload(BaseModel):
+    text: str
+    nickname: str
+    device_id: str
+
+
+class ChatMessage(BaseModel):
+    id: str
+    text: str
+    nickname: str
+    device_id: str
+    created_at: str
+
+
+async def _is_device_entitled(device_id: str) -> bool:
+    """Check if a device has an active premium entitlement."""
+    if not device_id:
+        return False
+    row = await db.subscriptions.find_one(
+        {"device_id": device_id}, sort=[("updated_at", -1)]
+    )
+    if not row:
+        return False
+    if not row.get("entitled"):
+        return False
+    expiry = row.get("expiry_time")
+    if expiry:
+        try:
+            exp_dt = datetime.fromisoformat(expiry.replace("Z", "+00:00"))
+            if exp_dt <= datetime.now(timezone.utc):
+                return False
+        except Exception:
+            pass
+    return True
+
+
+@api.post("/chat/messages", response_model=ChatMessage)
+async def chat_send_message(payload: ChatMessagePayload) -> ChatMessage:
+    """Send a message to the global chatroom. Only premium subscribers can post."""
+    text = (payload.text or "").strip()
+    nickname = (payload.nickname or "").strip()
+    device_id = (payload.device_id or "").strip()
+
+    if not text or not nickname or not device_id:
+        raise HTTPException(400, "text, nickname, and device_id are required")
+    if len(text) > CHAT_MESSAGE_MAX_LENGTH:
+        raise HTTPException(400, f"Message too long (max {CHAT_MESSAGE_MAX_LENGTH})")
+    if len(nickname) > 20:
+        raise HTTPException(400, "Nickname too long (max 20)")
+
+    # Entitlement check
+    if not await _is_device_entitled(device_id):
+        raise HTTPException(403, "Only premium subscribers can post in the chatroom.")
+
+    # Rate limit
+    last = await db.chat_messages.find_one(
+        {"device_id": device_id}, sort=[("created_at", -1)]
+    )
+    if last:
+        try:
+            last_dt = datetime.fromisoformat(last["created_at"].replace("Z", "+00:00"))
+            elapsed = (datetime.now(timezone.utc) - last_dt).total_seconds()
+            if elapsed < CHAT_RATE_LIMIT_SECONDS:
+                raise HTTPException(
+                    429,
+                    f"Please wait {int(CHAT_RATE_LIMIT_SECONDS - elapsed) + 1}s before sending another message.",
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
+    now = datetime.now(timezone.utc)
+    msg = {
+        "id": str(uuid.uuid4()),
+        "text": text,
+        "nickname": nickname[:20],
+        "device_id": device_id,
+        "created_at": now.isoformat(),
+    }
+    await db.chat_messages.insert_one(dict(msg))
+    return ChatMessage(**msg)
+
+
+@api.get("/chat/messages")
+async def chat_get_messages(
+    after: str | None = None,
+    limit: int = Query(100, ge=1, le=CHAT_HISTORY_LIMIT),
+) -> dict[str, Any]:
+    """Get recent chat messages. Pass `after` (ISO timestamp) to fetch only new ones."""
+    query: dict[str, Any] = {}
+    if after:
+        query["created_at"] = {"$gt": after}
+    cursor = db.chat_messages.find(query, projection={"_id": False}).sort(
+        "created_at", -1
+    ).limit(limit)
+    rows = await cursor.to_list(length=limit)
+    rows.reverse()  # oldest first for client convenience
+    return {"messages": rows, "server_time": _now_iso()}
+
+
 app.include_router(api)
 app.add_middleware(
     CORSMiddleware,

@@ -253,46 +253,72 @@ export default function AssetDetail() {
           <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 12 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-            <Text style={[styles.symbolTitle, { color: colors.textPrimary, flexShrink: 1 }]} numberOfLines={1}>
-              {symbol} <Text style={[styles.marketBadge, { color: colors.textMuted }]}>{t(
-                market === "crypto" ? "badge_crypto" :
-                market === "etf" ? "badge_etf" :
-                market === "stock_us" ? "badge_stock_us" :
-                "badge_stock_id"
-              )}</Text>
-            </Text>
-            {tpPct !== null ? (
-              <View
+          <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" }}>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <Text style={[styles.symbolTitle, { color: colors.textPrimary }]} numberOfLines={1}>
+                {symbol} <Text style={[styles.marketBadge, { color: colors.textMuted }]}>{t(
+                  market === "crypto" ? "badge_crypto" :
+                  market === "etf" ? "badge_etf" :
+                  market === "stock_us" ? "badge_stock_us" :
+                  "badge_stock_id"
+                )}</Text>
+              </Text>
+              <Text style={[styles.priceBig, { color: colors.textPrimary }]}>
+                {formatPrice(ticker.price ?? null, market)}{" "}
+                <Text style={{ color: changeColor, fontSize: 14, fontWeight: "600" }}>{formatPct(ticker.change_pct_24h)}</Text>
+              </Text>
+            </View>
+            <View style={{ alignItems: "flex-end", gap: 6 }}>
+              {tpPct !== null ? (
+                <View
+                  style={{
+                    paddingHorizontal: 10,
+                    paddingVertical: 6,
+                    borderRadius: 8,
+                    backgroundColor: tpColor + "22",
+                    borderWidth: 1.5,
+                    borderColor: tpColor,
+                    alignItems: "center",
+                    minWidth: 76,
+                  }}
+                  testID="header-target-profit"
+                >
+                  <Text style={{ fontSize: 9, color: tpColor, letterSpacing: 0.6, fontWeight: "700", lineHeight: 11 }}>
+                    Target
+                  </Text>
+                  <Text style={{ fontSize: 9, color: tpColor, letterSpacing: 0.6, fontWeight: "700", lineHeight: 11 }}>
+                    Profit
+                  </Text>
+                  <Text style={{ fontSize: 15, color: tpColor, fontWeight: "900", fontVariant: ["tabular-nums"], marginTop: 2 }}>
+                    +{tpPct.toFixed(2)}%
+                  </Text>
+                </View>
+              ) : null}
+              {/* Chatroom button — same width as Target Profit box, below it */}
+              <TouchableOpacity
+                onPress={() => router.push("/chat" as never)}
+                testID="chat-button"
                 style={{
+                  minWidth: 76,
                   paddingHorizontal: 10,
                   paddingVertical: 6,
                   borderRadius: 8,
-                  backgroundColor: tpColor + "22",
+                  backgroundColor: colors.accentBlue + "22",
                   borderWidth: 1.5,
-                  borderColor: tpColor,
-                  marginLeft: 8,
+                  borderColor: colors.accentBlue,
                   alignItems: "center",
-                  minWidth: 76,
+                  flexDirection: "row",
+                  justifyContent: "center",
+                  gap: 4,
                 }}
-                testID="header-target-profit"
               >
-                <Text style={{ fontSize: 9, color: tpColor, letterSpacing: 0.6, fontWeight: "700", lineHeight: 11 }}>
-                  Target
+                <Ionicons name="chatbubbles" size={13} color={colors.accentBlue} />
+                <Text style={{ fontSize: 10, color: colors.accentBlue, fontWeight: "800", letterSpacing: 0.4 }}>
+                  CHAT
                 </Text>
-                <Text style={{ fontSize: 9, color: tpColor, letterSpacing: 0.6, fontWeight: "700", lineHeight: 11 }}>
-                  Profit
-                </Text>
-                <Text style={{ fontSize: 15, color: tpColor, fontWeight: "900", fontVariant: ["tabular-nums"], marginTop: 2 }}>
-                  +{tpPct.toFixed(2)}%
-                </Text>
-              </View>
-            ) : null}
+              </TouchableOpacity>
+            </View>
           </View>
-          <Text style={[styles.priceBig, { color: colors.textPrimary }]}>
-            {formatPrice(ticker.price ?? null, market)}{" "}
-            <Text style={{ color: changeColor, fontSize: 14, fontWeight: "600" }}>{formatPct(ticker.change_pct_24h)}</Text>
-          </Text>
         </View>
       </View>
 
