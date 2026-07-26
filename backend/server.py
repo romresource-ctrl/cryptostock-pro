@@ -150,11 +150,11 @@ from market_data import (  # noqa: E402
 # returns the whole map instead. Reduces initial fetch from 475 to ~200 assets.
 _TOP_N = 50
 
-# Per-market default asset counts (v5.0.10 — user request):
-#   Crypto: 100  |  IDX Stocks: 100  |  World Stocks: 150
+# Per-market default asset counts (v6.0.10 — extended IDX universe):
+#   Crypto: 100  |  IDX Stocks: 150  |  World Stocks: 150
 #   ETF/Gold/Silver/Commodity/Forex: use full map (small enough)
 DEFAULT_CRYPTO = list(CRYPTO_BINANCE_MAP.keys())[:100]
-DEFAULT_STOCKS = list(STOCK_YAHOO_MAP.keys())[:100]
+DEFAULT_STOCKS = list(STOCK_YAHOO_MAP.keys())[:150]
 DEFAULT_ETF = list(ETF_YAHOO_MAP.keys())
 DEFAULT_STOCK_US = list(STOCK_US_YAHOO_MAP.keys())[:150]
 DEFAULT_GOLD_SILVER = list(GOLD_SILVER_YAHOO_MAP.keys())

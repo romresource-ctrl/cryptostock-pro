@@ -122,6 +122,19 @@ STOCK_YAHOO_MAP: dict[str, str] = {
     "TKIM": "TKIM.JK", "FASW": "FASW.JK", "SRIL": "SRIL.JK",
     # Shipping
     "SMDR": "SMDR.JK", "PSSI": "PSSI.JK",
+    # Additional 34 IDX tickers requested (v6.0.10)
+    "AADI": "AADI.JK", "DSSA": "DSSA.JK", "TAPG": "TAPG.JK",
+    "CUAN": "CUAN.JK", "POLY": "POLY.JK", "BIPI": "BIPI.JK",
+    "OASA": "OASA.JK", "INKP": "INKP.JK", "BUVA": "BUVA.JK",
+    "BRPT": "BRPT.JK", "RATU": "RATU.JK", "BREN": "BREN.JK",
+    "BNBR": "BNBR.JK", "GTSI": "GTSI.JK", "PRDL": "PRDL.JK",
+    "JELI": "JELI.JK", "ARCI": "ARCI.JK", "BULL": "BULL.JK",
+    "SGER": "SGER.JK", "NCKL": "NCKL.JK", "FORE": "FORE.JK",
+    "BIRD": "BIRD.JK", "CMPP": "CMPP.JK", "RANS": "RANS.JK",
+    "EMMI": "EMMI.JK", "BACH": "BACH.JK", "JECX": "JECX.JK",
+    "MDIA": "MDIA.JK", "BBYB": "BBYB.JK", "SSMS": "SSMS.JK",
+    "MBSS": "MBSS.JK", "TOBA": "TOBA.JK", "MINA": "MINA.JK",
+    "CDIA": "CDIA.JK",
 }
 
 # ETFs -> Yahoo Finance (no suffix, listed in USD)
