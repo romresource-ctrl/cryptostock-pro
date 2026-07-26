@@ -134,28 +134,25 @@ client = AsyncIOMotorClient(
 )
 db = client[os.environ["DB_NAME"]]
 
-DEFAULT_CRYPTO = ["BTC", "ETH", "HYPE", "AVAX", "USDT", "ASTER", "BNB", "XRP", "SOL", "DOGE", "PEPE",
-                  "SUI", "ADA", "TRX", "LTC", "LINK", "HBAR", "SHIB", "DOT", "BCH", "SAND", "ALGO", "XAUT"]
-DEFAULT_STOCKS = ["BBCA", "BBRI", "BMRI", "TPIA", "ADRO", "DEWA", "ASII", "EMTK", "ADMR",
-                  "BRMS", "PANI", "CBRE", "RAJA", "PTRO", "INET", "ANTM", "MBMA", "MDKA",
-                  "TLKM", "AMMN", "PGEO", "SIDO", "UNVR"]
-DEFAULT_ETF = ["QQQ", "VOO", "VTI", "ARKK", "SMH", "TLT", "IBIT", "FBTC", "ARKB", "BITO",
-               "ETHE", "ETHA", "SCHD", "VYM", "INDA", "EWJ", "XLF", "XLE", "XBI", "EIDO", "BND", "LQD"]
-DEFAULT_STOCK_US = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "TSLA", "META", "AMD", "ASML",
-                    "TSMC", "ARM", "PLTR", "SNOW", "CRWD", "ADBE", "AVGO", "ANET", "DELL",
-                    "MSTR", "BABA", "TCEHY", "PDD", "BIDU", "JD", "SHOP", "NU", "AZN", "SPCX",
-                    # Indices
-                    "US30", "NAS100", "SPX500", "JP225", "HK50", "GER40", "UK100", "IDX30",
-                    # Extra world stocks per v3.0.1
-                    "HOOD", "COIN", "INTC", "SPY", "MU", "QCOM", "ORCL", "DIS", "UBER", "CSCO",
-                    "HD", "SOXL", "MRVL", "WMT", "JPM", "V", "IBM", "NOW", "CRM", "AMAT",
-                    "NFLX", "COST", "SMCI", "LRCX", "KLAC", "SONY", "LLY", "NVO", "PYPL", "RKLB"]
+# Default lists — pulled from the full expanded maps in market_data.py so the
+# dashboard "full=true" mode always returns every asset we support.
+from market_data import (  # noqa: E402
+    CRYPTO_BINANCE_MAP,
+    STOCK_YAHOO_MAP,
+    ETF_YAHOO_MAP,
+    STOCK_US_YAHOO_MAP,
+    GOLD_SILVER_YAHOO_MAP,
+    COMMODITY_YAHOO_MAP,
+    FOREX_YAHOO_MAP,
+)
 
-# NEW v3.0.1 categories
-DEFAULT_GOLD_SILVER = ["XAU/USD", "XAG/USD", "XPT/USD", "XPD/USD"]
-DEFAULT_COMMODITY = ["WTI", "BRENT", "NATGAS", "CORN", "COFFEE", "SUGAR", "COPPER", "WHEAT"]
-DEFAULT_FOREX = ["EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "EUR/GBP",
-                 "EUR/JPY", "USD/IDR", "USD/TRY", "USD/ZAR", "USD/CNY", "USD/RUB", "NZD/USD"]
+DEFAULT_CRYPTO = list(CRYPTO_BINANCE_MAP.keys())
+DEFAULT_STOCKS = list(STOCK_YAHOO_MAP.keys())
+DEFAULT_ETF = list(ETF_YAHOO_MAP.keys())
+DEFAULT_STOCK_US = list(STOCK_US_YAHOO_MAP.keys())
+DEFAULT_GOLD_SILVER = list(GOLD_SILVER_YAHOO_MAP.keys())
+DEFAULT_COMMODITY = list(COMMODITY_YAHOO_MAP.keys())
+DEFAULT_FOREX = list(FOREX_YAHOO_MAP.keys())
 
 # Default seed profiles for new installs
 DEFAULT_PROFILES = [

@@ -181,6 +181,15 @@ export default function Dashboard() {
     [],
   );
 
+  // Ordered categories — put user-selected (view[]) FIRST so they appear at the
+  // start of the horizontal scroll on phones (2 visible per screen). This lets
+  // the user pick which two columns they see first on the dashboard.
+  const orderedCategories: Category[] = useMemo(() => {
+    const selected = view.filter((v) => ALL_CATEGORIES.includes(v));
+    const rest = ALL_CATEGORIES.filter((k) => !selected.includes(k));
+    return [...selected, ...rest];
+  }, [view, ALL_CATEGORIES]);
+
   const load = useCallback(async (tf: Timeframe, _selected: Category[]) => {
     setLoadingMap({
       crypto: true, etf: true, stock_id: true, stock_us: true,
@@ -441,7 +450,7 @@ export default function Dashboard() {
           pagingEnabled={SCREEN_W < 640}
           snapToInterval={SCREEN_W < 640 ? Math.floor((SCREEN_W - 16) / 2) + 8 : undefined}
         >
-          {ALL_CATEGORIES.map((k) => {
+          {orderedCategories.map((k) => {
             const catLabel = t(`category_${k}`).toUpperCase();
             // Column width: phone → exactly 2 per screen; tablet → fixed ~180
             const colW = SCREEN_W < 640 ? Math.floor((SCREEN_W - 24) / 2) : 190;
