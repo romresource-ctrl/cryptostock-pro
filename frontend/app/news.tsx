@@ -23,18 +23,21 @@ type MarketFilter = "all" | Market;
 
 const AUTO_REFRESH_MS = 60_000;
 
-function formatRelative(iso: string | null): string {
+// Locale-aware relative time formatter (v6.0.6). Uses translation keys so
+// news timestamps switch language along with the rest of the UI. Follows
+// the compact `<n><unit> ago` pattern used in most Live News feeds.
+function formatRelative(iso: string | null, t: (k: string) => string): string {
   if (!iso) return "";
-  const t = new Date(iso).getTime();
-  if (isNaN(t)) return "";
-  const diff = Math.floor((Date.now() - t) / 1000);
-  if (diff < 60) return `${diff}d lalu`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m lalu`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}j lalu`;
-  return `${Math.floor(diff / 86400)}h lalu`;
+  const ts = new Date(iso).getTime();
+  if (isNaN(ts)) return "";
+  const diff = Math.floor((Date.now() - ts) / 1000);
+  if (diff < 60) return `${diff}${t("news_time_second_short")} ${t("news_time_ago")}`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}${t("news_time_minute_short")} ${t("news_time_ago")}`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}${t("news_time_hour_short")} ${t("news_time_ago")}`;
+  return `${Math.floor(diff / 86400)}${t("news_time_day_short")} ${t("news_time_ago")}`;
 }
 
-function NewsRow({ item }: { item: NewsItem }) {
+function NewsRow({ item, t }: { item: NewsItem; t: (k: string) => string }) {
   const { colors } = useTheme();
   const open = () => {
     if (item.url) Linking.openURL(item.url).catch(() => {});
@@ -58,7 +61,7 @@ function NewsRow({ item }: { item: NewsItem }) {
           <Text style={[styles.source, { color: colors.accentBlue }]} numberOfLines={1}>
             {item.source}
           </Text>
-          <Text style={[styles.time, { color: colors.textMuted }]}>{formatRelative(item.published)}</Text>
+          <Text style={[styles.time, { color: colors.textMuted }]}>{formatRelative(item.published, t)}</Text>
         </View>
         <Text style={[styles.title, { color: colors.textPrimary }]} numberOfLines={3}>
           {item.title}
@@ -314,7 +317,7 @@ export default function NewsScreen() {
         <FlatList
           data={items}
           keyExtractor={(i, idx) => `${idx}-${i.title.slice(0, 30)}`}
-          renderItem={({ item }) => <NewsRow item={item} />}
+          renderItem={({ item }) => <NewsRow item={item} t={t} />}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32, gap: 8, paddingTop: 8 }}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accentBlue} />

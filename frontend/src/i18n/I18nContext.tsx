@@ -140,6 +140,12 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   news_market_commodity: { id: "KOMODITAS", en: "COMMODITY", ru: "СЫРЬЁ", cn: "大宗商品" },
   news_market_forex: { id: "FOREX", en: "FOREX", ru: "ФОРЕКС", cn: "外汇" },
   news_empty: { id: "Belum ada berita.", en: "No news yet.", ru: "Пока нет новостей.", cn: "暂无新闻。" },
+  // Relative time formatter units (used in news feed timestamps).
+  news_time_ago: { id: "lalu", en: "ago", ru: "назад", cn: "前" },
+  news_time_second_short: { id: "d", en: "s", ru: "с", cn: "秒" },
+  news_time_minute_short: { id: "m", en: "m", ru: "м", cn: "分" },
+  news_time_hour_short: { id: "j", en: "h", ru: "ч", cn: "小时" },
+  news_time_day_short: { id: "h", en: "d", ru: "д", cn: "天" },
   news_tab_news: { id: "Berita", en: "News", ru: "Новости", cn: "新闻" },
   news_tab_disclaimer: { id: "Disclaimer", en: "Disclaimer", ru: "Дисклеймер", cn: "免责声明" },
   news_disclaimer_subtitle: {
