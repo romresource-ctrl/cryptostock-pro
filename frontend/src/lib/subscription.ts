@@ -305,23 +305,19 @@ export async function purchaseSubscription(basePlanId?: string): Promise<void> {
   const iap = await initIap();
   if (!iap) throw new Error("Google Play Billing is not available on this device.");
 
-  // Make sure we have offers before calling requestPurchase (Android v15
-  // requires subscriptionOffers[] with offerToken).
   let product = _cachedProduct;
   if (!product || product.allOffers.length === 0) {
     product = await fetchSubscription();
   }
   if (!product) {
     throw new Error(
-      "Subscription product is not available yet. Please check that the subscription is Active in Play Console and try again in a few minutes.",
+      "Subscription product is not available yet. Please try again in a few minutes.",
     );
   }
 
-  // Pick the target offer based on the requested basePlanId. Falls back to
-  // the legacy offerToken (freetrial-3days of pro-1m) when no tier specified.
+  // Pick target offer
   let offerToken: string | null = null;
   if (basePlanId) {
-    // Prefer a free-trial offer for this base plan (nicer UX)
     const freeMatch = product.allOffers.find(
       (o) => o.basePlanId === basePlanId && o.isFreeTrial,
     );
@@ -330,24 +326,60 @@ export async function purchaseSubscription(basePlanId?: string): Promise<void> {
   } else {
     offerToken = product.offerToken;
   }
-
   if (!offerToken) {
     throw new Error(
       basePlanId
-        ? `The "${basePlanId}" plan is not active in Play Console yet, or the offer failed to load. Please try again in a few minutes.`
-        : "This subscription has no offers configured. Please check Play Console.",
+        ? `The "${basePlanId}" plan is not active in Play Console yet. Please try again in a few minutes.`
+        : "This subscription has no offers configured.",
     );
+  }
+
+  // Detect existing subscription so we can UPGRADE instead of erroring out.
+  // WITH_TIME_PRORATION = new plan starts immediately, remaining time is
+  // credited/added — which is what the user asked for ("existing expiry + new
+  // period"). This is Google Play's built-in behaviour when switching plans.
+  let oldPurchaseToken: string | null = null;
+  try {
+    const getAvail: any = iap.getAvailablePurchases;
+    if (typeof getAvail === "function") {
+      const active: any[] = await getAvail();
+      if (Array.isArray(active) && active.length > 0) {
+        const same = active.find(
+          (p: any) => (p.productId ?? p.id) === SUBSCRIPTION_SKU,
+        );
+        if (same) {
+          oldPurchaseToken =
+            same.purchaseToken ??
+            same.purchaseTokenAndroid ??
+            same.transactionReceipt ??
+            null;
+        }
+      }
+    }
+  } catch {
+    /* ignore — treat as new purchase */
+  }
+
+  const androidReq: any = {
+    skus: [SUBSCRIPTION_SKU],
+    subscriptionOffers: [{ sku: SUBSCRIPTION_SKU, offerToken }],
+  };
+  if (oldPurchaseToken) {
+    // Upgrade flow — pass old purchase token + replacement mode.
+    // "WithTimeProration" (a.k.a. CHARGE_FULL_PRICE variant that credits
+    // remaining time) => remaining balance of the old plan is applied as a
+    // pro-rated credit against the new plan.
+    androidReq.replacementMode = "WITH_TIME_PRORATION";
+    androidReq.replacementModeAndroid = "WITH_TIME_PRORATION";
+    androidReq.purchaseTokenAndroid = oldPurchaseToken;
+    androidReq.oldSku = SUBSCRIPTION_SKU;
+    androidReq.oldPurchaseToken = oldPurchaseToken;
   }
 
   try {
     await iap.requestPurchase({
       type: "subs",
-      request: {
-        android: {
-          skus: [SUBSCRIPTION_SKU],
-          subscriptionOffers: [{ sku: SUBSCRIPTION_SKU, offerToken }],
-        },
-      },
+      request: { android: androidReq },
     });
   } catch (e: any) {
     const msg = String(e?.message ?? e ?? "");
