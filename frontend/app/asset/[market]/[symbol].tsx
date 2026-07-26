@@ -294,13 +294,13 @@ export default function AssetDetail() {
                   </Text>
                 </View>
               ) : null}
-              {/* Chatroom button — same width as Target Profit box, below it */}
+              {/* Chatroom button — full-width label */}
               <TouchableOpacity
                 onPress={() => router.push("/chat" as never)}
                 testID="chat-button"
                 style={{
-                  minWidth: 76,
-                  paddingHorizontal: 10,
+                  minWidth: 100,
+                  paddingHorizontal: 12,
                   paddingVertical: 6,
                   borderRadius: 8,
                   backgroundColor: colors.accentBlue + "22",
@@ -309,12 +309,12 @@ export default function AssetDetail() {
                   alignItems: "center",
                   flexDirection: "row",
                   justifyContent: "center",
-                  gap: 4,
+                  gap: 5,
                 }}
               >
                 <Ionicons name="chatbubbles" size={13} color={colors.accentBlue} />
-                <Text style={{ fontSize: 10, color: colors.accentBlue, fontWeight: "800", letterSpacing: 0.4 }}>
-                  CHAT
+                <Text style={{ fontSize: 11, color: colors.accentBlue, fontWeight: "800", letterSpacing: 0.4 }}>
+                  CHATROOM
                 </Text>
               </TouchableOpacity>
             </View>

@@ -656,13 +656,14 @@ async def dashboard(
     else:
         symbols = prof.get("crypto") if eff_market == "crypto" else prof.get("stocks")
         symbols = symbols or []
-        # For new asset categories (gold, commodity, forex, etf, us stocks) always show defaults
-        if not symbols and eff_market in ("etf", "stock_us", "gold_silver", "commodity", "forex"):
+        # For any category with empty active-profile list, fall back to sensible defaults.
+        if not symbols:
             symbols = {
+                "crypto": DEFAULT_CRYPTO, "stock_id": DEFAULT_STOCKS,
                 "etf": DEFAULT_ETF, "stock_us": DEFAULT_STOCK_US,
                 "gold_silver": DEFAULT_GOLD_SILVER, "commodity": DEFAULT_COMMODITY,
                 "forex": DEFAULT_FOREX,
-            }[eff_market]
+            }.get(eff_market, [])
         profile_id = prof["_id"]
         profile_name = prof.get("name", "Default")
     if not symbols:
