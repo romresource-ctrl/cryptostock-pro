@@ -148,7 +148,7 @@ from market_data import (  # noqa: E402
 
 # Top-N presets for FAST dashboard load. When ?full=true is passed, backend
 # returns the whole map instead. Reduces initial fetch from 475 to ~200 assets.
-_TOP_N = 30
+_TOP_N = 50
 
 DEFAULT_CRYPTO = list(CRYPTO_BINANCE_MAP.keys())[:_TOP_N]
 DEFAULT_STOCKS = list(STOCK_YAHOO_MAP.keys())[:_TOP_N]
