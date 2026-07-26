@@ -16,6 +16,55 @@ import { storage } from "@/src/utils/storage";
 
 // ==== Product config — MUST match Play Console Product ID ====
 export const SUBSCRIPTION_SKU = "ai_cryptostockpro_monthly";
+
+// Tier catalog — 4 subscription options (durations & prices).
+// Each maps to a Base Plan ID in Play Console.
+export type SubscriptionTier = {
+  basePlanId: string;
+  months: number;
+  priceUSD: number;
+  label: string;      // Short label shown in the paywall
+  perMonth: string;   // Effective per-month cost
+  saveBadge?: string; // "Save X%" badge — optional
+  popular?: boolean;  // Recommended tier
+};
+
+export const SUBSCRIPTION_TIERS: SubscriptionTier[] = [
+  {
+    basePlanId: "pro-1m",
+    months: 1,
+    priceUSD: 20,
+    label: "1 Month",
+    perMonth: "$20/mo",
+  },
+  {
+    basePlanId: "pro-3m",
+    months: 3,
+    priceUSD: 50,
+    label: "3 Months",
+    perMonth: "$16.67/mo",
+    saveBadge: "Save 17%",
+  },
+  {
+    basePlanId: "pro-6m",
+    months: 6,
+    priceUSD: 100,
+    label: "6 Months",
+    perMonth: "$16.67/mo",
+    saveBadge: "Save 17%",
+    popular: true,
+  },
+  {
+    basePlanId: "pro-1y",
+    months: 12,
+    priceUSD: 180,
+    label: "12 Months",
+    perMonth: "$15/mo",
+    saveBadge: "Save 25%",
+  },
+];
+
+// Legacy exports (kept for backward compatibility) — points to the default 1-month tier
 export const SUBSCRIPTION_BASE_PLAN_ID = "pro-1m";
 export const SUBSCRIPTION_OFFER_ID = "freetrial-3days";
 export const SUBSCRIPTION_PRICE = "$20.00";
@@ -110,20 +159,63 @@ export async function endIap(): Promise<void> {
 }
 
 // ---- Product fetch ----
+export type SubOffer = {
+  offerToken: string;
+  offerId: string | null;
+  basePlanId: string | null;
+  localizedPrice: string | null;
+  isFreeTrial: boolean;
+};
+
 export type SubProduct = {
   productId: string;
   title: string | null;
   description: string | null;
   localizedPrice: string | null;
-  // Android offer token (from Play Console base plan / offer).
-  // We need this to trigger requestPurchase for subscriptions in v15.x.
+  // Legacy fields used by 1-tier flow (freetrial-3days offer of pro-1m)
   offerToken: string | null;
   offerId: string | null;
   basePlanId: string | null;
+  // Full offer catalog — used by 4-tier paywall
+  allOffers: SubOffer[];
 };
 
 // Cache last-fetched product so purchase button doesn't need to re-fetch.
 let _cachedProduct: SubProduct | null = null;
+
+function _extractAllOffers(product: any): SubOffer[] {
+  const details: any[] = product?.subscriptionOfferDetailsAndroid ?? [];
+  const list: SubOffer[] = [];
+  for (const d of details) {
+    if (!d?.offerToken) continue;
+    const phases: any[] =
+      d?.pricingPhases?.pricingPhaseList ??
+      d?.pricingPhases ??
+      [];
+    const isFreeTrial = phases.some((ph: any) => {
+      const p = ph?.priceAmountMicros ?? ph?.priceAmount ?? ph?.formattedPrice;
+      return p === 0 || p === "0" || p === "0.0";
+    });
+    // Localized recurring price = last phase (post-trial)
+    const nonFree = phases.filter((ph: any) => {
+      const p = ph?.priceAmountMicros ?? ph?.priceAmount ?? ph?.formattedPrice;
+      return !(p === 0 || p === "0" || p === "0.0");
+    });
+    const lastPhase = nonFree[nonFree.length - 1] ?? phases[phases.length - 1];
+    const localizedPrice =
+      lastPhase?.formattedPrice ??
+      lastPhase?.priceAmount ??
+      null;
+    list.push({
+      offerToken: String(d.offerToken),
+      offerId: d.offerId ?? null,
+      basePlanId: d.basePlanId ?? null,
+      localizedPrice: localizedPrice ? String(localizedPrice) : null,
+      isFreeTrial,
+    });
+  }
+  return list;
+}
 
 /**
  * Extract the best offer for our subscription:
@@ -185,6 +277,7 @@ export async function fetchSubscription(): Promise<SubProduct | null> {
     if (!Array.isArray(list) || list.length === 0) return null;
     const p = list.find((x: any) => x.id === SUBSCRIPTION_SKU) ?? list[0];
     const offer = pickOfferAndroid(p);
+    const allOffers = _extractAllOffers(p);
     const displayPrice: string | null =
       p.displayPrice ??
       p.subscriptionOffers?.[0]?.displayPrice ??
@@ -197,6 +290,7 @@ export async function fetchSubscription(): Promise<SubProduct | null> {
       offerToken: offer.offerToken,
       offerId: offer.offerId,
       basePlanId: offer.basePlanId,
+      allOffers,
     };
     _cachedProduct = prod;
     return prod;
@@ -207,14 +301,14 @@ export async function fetchSubscription(): Promise<SubProduct | null> {
 }
 
 // ---- Purchase ----
-export async function purchaseSubscription(): Promise<void> {
+export async function purchaseSubscription(basePlanId?: string): Promise<void> {
   const iap = await initIap();
   if (!iap) throw new Error("Google Play Billing is not available on this device.");
 
-  // Make sure we have an offer token before calling requestPurchase (Android v15
+  // Make sure we have offers before calling requestPurchase (Android v15
   // requires subscriptionOffers[] with offerToken).
   let product = _cachedProduct;
-  if (!product?.offerToken) {
+  if (!product || product.allOffers.length === 0) {
     product = await fetchSubscription();
   }
   if (!product) {
@@ -222,9 +316,26 @@ export async function purchaseSubscription(): Promise<void> {
       "Subscription product is not available yet. Please check that the subscription is Active in Play Console and try again in a few minutes.",
     );
   }
-  if (!product.offerToken) {
+
+  // Pick the target offer based on the requested basePlanId. Falls back to
+  // the legacy offerToken (freetrial-3days of pro-1m) when no tier specified.
+  let offerToken: string | null = null;
+  if (basePlanId) {
+    // Prefer a free-trial offer for this base plan (nicer UX)
+    const freeMatch = product.allOffers.find(
+      (o) => o.basePlanId === basePlanId && o.isFreeTrial,
+    );
+    const anyMatch = product.allOffers.find((o) => o.basePlanId === basePlanId);
+    offerToken = (freeMatch ?? anyMatch)?.offerToken ?? null;
+  } else {
+    offerToken = product.offerToken;
+  }
+
+  if (!offerToken) {
     throw new Error(
-      "This subscription has no offers configured. Please open Play Console → Monetize → Subscriptions and make sure your base plan and offer are Active.",
+      basePlanId
+        ? `The "${basePlanId}" plan is not active in Play Console yet, or the offer failed to load. Please try again in a few minutes.`
+        : "This subscription has no offers configured. Please check Play Console.",
     );
   }
 
@@ -234,9 +345,7 @@ export async function purchaseSubscription(): Promise<void> {
       request: {
         android: {
           skus: [SUBSCRIPTION_SKU],
-          subscriptionOffers: [
-            { sku: SUBSCRIPTION_SKU, offerToken: product.offerToken },
-          ],
+          subscriptionOffers: [{ sku: SUBSCRIPTION_SKU, offerToken }],
         },
       },
     });
