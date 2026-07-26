@@ -654,28 +654,22 @@ async def dashboard(
         profile_name = "Semua Aset"
         profile_id = "all"
     else:
-        # Profile currently only stores per-user selections for CRYPTO and
-        # IDX STOCKS (legacy "stocks" field). Non-IDX Yahoo markets (etf,
-        # stock_us, gold_silver, commodity, forex) must NOT reuse the
-        # `stocks` field — otherwise IDX symbols get sent to ETF_YAHOO_MAP
-        # lookup and every fetch returns None, producing an empty column
-        # for those markets on installs whose seeded profile has a
-        # non-empty stocks list. Always fall back to the market's DEFAULT_*
-        # list for those markets.
-        if eff_market == "crypto":
-            symbols = prof.get("crypto") or []
-        elif eff_market == "stock_id":
-            symbols = prof.get("stocks") or []
-        else:
-            symbols = []
-        # For any category with empty active-profile list, fall back to sensible defaults.
-        if not symbols:
-            symbols = {
-                "crypto": DEFAULT_CRYPTO, "stock_id": DEFAULT_STOCKS,
-                "etf": DEFAULT_ETF, "stock_us": DEFAULT_STOCK_US,
-                "gold_silver": DEFAULT_GOLD_SILVER, "commodity": DEFAULT_COMMODITY,
-                "forex": DEFAULT_FOREX,
-            }.get(eff_market, [])
+        # HARDCODED asset lists per market (user's explicit request v5.0.9):
+        # Do NOT filter by profile.crypto / profile.stocks at all. The
+        # profile system was causing IDX Stocks to show only 18 symbols
+        # (matching the stale seed list in production Mongo) and other
+        # markets to show 0 when the profile had non-matching symbols.
+        # Instead, always serve the canonical DEFAULT_* list per market
+        # so every install shows the same, predictable asset universe.
+        symbols = {
+            "crypto": DEFAULT_CRYPTO,
+            "stock_id": DEFAULT_STOCKS,
+            "etf": DEFAULT_ETF,
+            "stock_us": DEFAULT_STOCK_US,
+            "gold_silver": DEFAULT_GOLD_SILVER,
+            "commodity": DEFAULT_COMMODITY,
+            "forex": DEFAULT_FOREX,
+        }.get(eff_market, [])
         profile_id = prof["_id"]
         profile_name = prof.get("name", "Default")
     if not symbols:
