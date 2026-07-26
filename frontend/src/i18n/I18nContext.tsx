@@ -127,8 +127,27 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
 
   // News page
   news_title: { id: "Berita", en: "News", ru: "Новости", cn: "新闻" },
+  news_live_title: { id: "Berita Live", en: "Live News", ru: "Live новости", cn: "实时新闻" },
+  news_rss_source: { id: "RSS publik", en: "Public RSS", ru: "Публичный RSS", cn: "公开 RSS" },
+  news_loading: { id: "memuat…", en: "loading…", ru: "загрузка…", cn: "加载中…" },
+  news_update: { id: "update", en: "updated", ru: "обновлено", cn: "更新" },
   news_all: { id: "SEMUA", en: "ALL", ru: "ВСЕ", cn: "全部" },
+  news_market_crypto: { id: "CRYPTO", en: "CRYPTO", ru: "КРИПТО", cn: "加密" },
+  news_market_etf: { id: "ETF", en: "ETF", ru: "ETF", cn: "ETF" },
+  news_market_stock_id: { id: "SAHAM IDX", en: "IDX STOCKS", ru: "АКЦИИ IDX", cn: "IDX 股票" },
+  news_market_stock_us: { id: "SAHAM US", en: "US STOCKS", ru: "АКЦИИ US", cn: "美股" },
+  news_market_gold_silver: { id: "EMAS/PERAK", en: "GOLD/SILVER", ru: "ЗОЛОТО/СЕРЕБРО", cn: "黄金/白银" },
+  news_market_commodity: { id: "KOMODITAS", en: "COMMODITY", ru: "СЫРЬЁ", cn: "大宗商品" },
+  news_market_forex: { id: "FOREX", en: "FOREX", ru: "ФОРЕКС", cn: "外汇" },
   news_empty: { id: "Belum ada berita.", en: "No news yet.", ru: "Пока нет новостей.", cn: "暂无新闻。" },
+  news_tab_news: { id: "Berita", en: "News", ru: "Новости", cn: "新闻" },
+  news_tab_disclaimer: { id: "Disclaimer", en: "Disclaimer", ru: "Дисклеймер", cn: "免责声明" },
+  news_disclaimer_subtitle: {
+    id: "Harap baca dengan cermat sebelum mengambil keputusan",
+    en: "Please read carefully before making decisions",
+    ru: "Пожалуйста, прочитайте внимательно перед принятием решений",
+    cn: "请在做出决定前仔细阅读",
+  },
 
   // Disclaimer
   disclaimer_title: { id: "Disclaimer & Info Live", en: "Disclaimer & Live Info", ru: "Дисклеймер и Live", cn: "免责声明和实时信息" },

@@ -127,11 +127,11 @@ export default function NewsScreen() {
   }, [load, marketFilter, symbolFilter]);
 
   const markets: { key: MarketFilter; label: string }[] = [
-    { key: "all", label: "SEMUA" },
-    { key: "crypto", label: "CRYPTO" },
-    { key: "etf", label: "ETF" },
-    { key: "stock_id", label: "SAHAM IDX" },
-    { key: "stock_us", label: "SAHAM US" },
+    { key: "all", label: t("news_all") },
+    { key: "crypto", label: t("news_market_crypto") },
+    { key: "etf", label: t("news_market_etf") },
+    { key: "stock_id", label: t("news_market_stock_id") },
+    { key: "stock_us", label: t("news_market_stock_us") },
   ];
 
   const symbolChips: { symbol: string; market: Market }[] = [
@@ -154,12 +154,12 @@ export default function NewsScreen() {
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={[styles.appTitle, { color: colors.textPrimary }]}>
-            {tab === "news" ? "Berita Live" : (t("disclaimer_title") || "Disclaimer")}
+            {tab === "news" ? t("news_live_title") : t("disclaimer_title")}
           </Text>
           <Text style={[styles.appSub, { color: colors.textMuted }]}>
             {tab === "news"
-              ? `RSS publik • ${fetchedAt ? `update ${fetchedAt}` : "memuat…"}${symbolFilter ? ` • ${symbolFilter.symbol}` : ""}`
-              : "Please read carefully before making decisions"}
+              ? `${t("news_rss_source")} • ${fetchedAt ? `${t("news_update")} ${fetchedAt}` : t("news_loading")}${symbolFilter ? ` • ${symbolFilter.symbol}` : ""}`
+              : t("news_disclaimer_subtitle")}
           </Text>
         </View>
       </View>
@@ -183,7 +183,7 @@ export default function NewsScreen() {
             color={tab === "news" ? "#fff" : colors.textSecondary}
           />
           <Text style={[styles.tabText, { color: tab === "news" ? "#fff" : colors.textSecondary }]}>
-            News
+            {t("news_tab_news")}
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -203,7 +203,7 @@ export default function NewsScreen() {
             color={tab === "disclaimer" ? "#fff" : colors.textSecondary}
           />
           <Text style={[styles.tabText, { color: tab === "disclaimer" ? "#fff" : colors.textSecondary }]}>
-            Disclaimer
+            {t("news_tab_disclaimer")}
           </Text>
         </TouchableOpacity>
       </View>
@@ -217,12 +217,12 @@ export default function NewsScreen() {
           <View style={[styles.disclaimerBanner, { borderColor: colors.accentDown, backgroundColor: colors.accentDown + "18" }]}>
             <Ionicons name="warning" size={20} color={colors.accentDown} />
             <Text style={[styles.disclaimerBannerText, { color: colors.textPrimary }]}>
-              {t("disclaimer_read_carefully") || "Read carefully before making any decisions"}
+              {t("disclaimer_read_carefully")}
             </Text>
           </View>
           <View style={[styles.disclaimerCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Text style={[styles.disclaimerBody, { color: colors.textPrimary }]}>
-              {t("disclaimer_body") || "This app is for informational purposes only and does not constitute financial advice."}
+              {t("disclaimer_body")}
             </Text>
           </View>
           <View style={[styles.disclaimerCard, { backgroundColor: colors.surface, borderColor: colors.border, marginTop: 12 }]}>
@@ -321,7 +321,7 @@ export default function NewsScreen() {
           }
           ListEmptyComponent={
             <Text style={{ color: colors.textMuted, textAlign: "center", marginTop: 40 }}>
-              Belum ada berita.
+              {t("news_empty")}
             </Text>
           }
         />
