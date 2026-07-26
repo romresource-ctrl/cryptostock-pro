@@ -150,13 +150,16 @@ from market_data import (  # noqa: E402
 # returns the whole map instead. Reduces initial fetch from 475 to ~200 assets.
 _TOP_N = 50
 
-DEFAULT_CRYPTO = list(CRYPTO_BINANCE_MAP.keys())[:_TOP_N]
-DEFAULT_STOCKS = list(STOCK_YAHOO_MAP.keys())[:_TOP_N]
-DEFAULT_ETF = list(ETF_YAHOO_MAP.keys())[:_TOP_N]
-DEFAULT_STOCK_US = list(STOCK_US_YAHOO_MAP.keys())[:_TOP_N]
+# Per-market default asset counts (v5.0.10 — user request):
+#   Crypto: 100  |  IDX Stocks: 100  |  World Stocks: 150
+#   ETF/Gold/Silver/Commodity/Forex: use full map (small enough)
+DEFAULT_CRYPTO = list(CRYPTO_BINANCE_MAP.keys())[:100]
+DEFAULT_STOCKS = list(STOCK_YAHOO_MAP.keys())[:100]
+DEFAULT_ETF = list(ETF_YAHOO_MAP.keys())
+DEFAULT_STOCK_US = list(STOCK_US_YAHOO_MAP.keys())[:150]
 DEFAULT_GOLD_SILVER = list(GOLD_SILVER_YAHOO_MAP.keys())
-DEFAULT_COMMODITY = list(COMMODITY_YAHOO_MAP.keys())[:_TOP_N]
-DEFAULT_FOREX = list(FOREX_YAHOO_MAP.keys())[:_TOP_N]
+DEFAULT_COMMODITY = list(COMMODITY_YAHOO_MAP.keys())
+DEFAULT_FOREX = list(FOREX_YAHOO_MAP.keys())
 
 # Full lists — used when ?full=true is requested
 FULL_CRYPTO = list(CRYPTO_BINANCE_MAP.keys())

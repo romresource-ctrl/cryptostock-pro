@@ -51,6 +51,12 @@ CRYPTO_BINANCE_MAP: dict[str, str] = {
     "BAT": "BATUSDT", "ZIL": "ZILUSDT", "ZEC": "ZECUSDT",
     "DASH": "DASHUSDT", "GMT": "GMTUSDT", "DYDX": "DYDXUSDT",
     "OCEAN": "OCEANUSDT",
+    # Additional 15 for wider coverage → total ~110
+    "ORDI": "ORDIUSDT", "SATS": "1000SATSUSDT", "PEOPLE": "PEOPLEUSDT",
+    "ANKR": "ANKRUSDT", "ROSE": "ROSEUSDT", "CAKE": "CAKEUSDT",
+    "MASK": "MASKUSDT", "YFI": "YFIUSDT", "C98": "C98USDT",
+    "ILV": "ILVUSDT", "ARKM": "ARKMUSDT", "TRB": "TRBUSDT",
+    "PENDLE": "PENDLEUSDT", "BLUR": "BLURUSDT", "GMX": "GMXUSDT",
 }
 
 # IDX (Indonesia) stocks -> Yahoo Finance with .JK suffix
@@ -91,6 +97,31 @@ STOCK_YAHOO_MAP: dict[str, str] = {
     # Healthcare
     "MIKA": "MIKA.JK", "HEAL": "HEAL.JK", "SILO": "SILO.JK",
     "TSPC": "TSPC.JK",
+    # Additional 30 IDX tickers → total ~110
+    # Energy / coal / oil / heavy equipment
+    "UNTR": "UNTR.JK", "BYAN": "BYAN.JK", "BUMI": "BUMI.JK",
+    "INDY": "INDY.JK", "HEXA": "HEXA.JK", "TINS": "TINS.JK",
+    # Banks (secondary)
+    "BBTN": "BBTN.JK", "MEGA": "MEGA.JK", "BFIN": "BFIN.JK",
+    # Consumer / F&B / retail
+    "CPIN": "CPIN.JK", "JPFA": "JPFA.JK", "MAIN": "MAIN.JK",
+    "ULTJ": "ULTJ.JK", "ROTI": "ROTI.JK",
+    # Pharma / healthcare
+    "KAEF": "KAEF.JK", "INAF": "INAF.JK",
+    # Property (extended)
+    "LPKR": "LPKR.JK",
+    # Construction & infra
+    "ADHI": "ADHI.JK", "WSBP": "WSBP.JK",
+    # Steel / basic materials
+    "KRAS": "KRAS.JK", "ISSP": "ISSP.JK", "ARNA": "ARNA.JK",
+    # Auto & industrials
+    "SMSM": "SMSM.JK", "MPMX": "MPMX.JK",
+    # Telco / IT
+    "LINK": "LINK.JK",
+    # Paper & textiles
+    "TKIM": "TKIM.JK", "FASW": "FASW.JK", "SRIL": "SRIL.JK",
+    # Shipping
+    "SMDR": "SMDR.JK", "PSSI": "PSSI.JK",
 }
 
 # ETFs -> Yahoo Finance (no suffix, listed in USD)
@@ -555,12 +586,34 @@ async def _fetch_yahoo_chart_by_symbol(client: httpx.AsyncClient, yahoo_sym: str
         return None
 
 
+# Yahoo Finance throttles/blocks bursts of concurrent requests from a single
+# egress IP. Capping to ~30 in-flight Yahoo calls keeps us well below their
+# soft-limit while still delivering a 100-150 asset column in ~4-6 seconds
+# on a warm Emergent production pod.
+_YAHOO_SEM = asyncio.Semaphore(30)
+
+
+async def _yahoo_throttled(coro):
+    async with _YAHOO_SEM:
+        return await coro
+
+
 async def get_batch(market: str, symbols: list[str], timeframe: str) -> list[dict[str, Any]]:
     """Fetch many symbols concurrently. Returns only successful results."""
     if market == "crypto":
-        results = await asyncio.gather(*[get_crypto_snapshot(s, timeframe) for s in symbols], return_exceptions=True)
+        # Binance's public API tolerates our load; no need to throttle.
+        results = await asyncio.gather(
+            *[get_crypto_snapshot(s, timeframe) for s in symbols],
+            return_exceptions=True,
+        )
     else:
-        results = await asyncio.gather(*[get_stock_snapshot(s, timeframe, market) for s in symbols], return_exceptions=True)
+        results = await asyncio.gather(
+            *[
+                _yahoo_throttled(get_stock_snapshot(s, timeframe, market))
+                for s in symbols
+            ],
+            return_exceptions=True,
+        )
     out: list[dict[str, Any]] = []
     for r in results:
         if isinstance(r, dict):
