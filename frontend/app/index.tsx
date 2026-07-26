@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   FlatList,
   RefreshControl,
@@ -325,10 +326,17 @@ export default function Dashboard() {
             <Text style={styles.langBtnText}>{lang.toUpperCase()}</Text>
           </TouchableOpacity>
           {authLoaded && (
-            isUnlocked ? (
+            (isUnlocked || isPremium) ? (
               <TouchableOpacity
-                onPress={() => logout()}
-                testID="logout-button"
+                onPress={() => {
+                  // For admin-code unlock, allow logout on press. For
+                  // subscription-based premium, keep as read-only status
+                  // (user cancels in Play Store).
+                  if (isUnlocked && !isPremium) {
+                    logout();
+                  }
+                }}
+                testID="logged-button"
                 style={[styles.unlockedBtn, { backgroundColor: colors.accentBlue, borderColor: colors.accentBlue }]}
               >
                 <Ionicons name="checkmark-circle" size={14} color="#fff" />
@@ -338,7 +346,7 @@ export default function Dashboard() {
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
-                onPress={() => setLoginOpen(true)}
+                onPress={() => setVipOpen(true)}
                 testID="login-button"
                 style={[styles.loginBtn, { backgroundColor: colors.accentBlue, borderColor: colors.accentBlue }]}
               >
@@ -347,6 +355,48 @@ export default function Dashboard() {
               </TouchableOpacity>
             )
           )}
+          {/* Chatroom button — always visible, gated on tap. Placed at the
+              far right of the header row so premium members reach it in one
+              tap from the dashboard. */}
+          <TouchableOpacity
+            onPress={() => {
+              if (isPremium || isUnlocked) {
+                router.push("/chat");
+              } else {
+                Alert.alert(
+                  t("chat_members_only_title") || "Members Only",
+                  t("chat_members_only_body") ||
+                    "Chatroom is only available for premium subscribers. Subscribe to unlock.",
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    { text: "Subscribe", onPress: () => setVipOpen(true) },
+                  ],
+                );
+              }
+            }}
+            testID="dashboard-chatroom-button"
+            style={[
+              styles.chatBtn,
+              {
+                backgroundColor: (isPremium || isUnlocked) ? "#F0B90B" : colors.surface,
+                borderColor: (isPremium || isUnlocked) ? "#F0B90B" : colors.border,
+              },
+            ]}
+          >
+            <Ionicons
+              name="chatbubbles"
+              size={14}
+              color={(isPremium || isUnlocked) ? "#000" : colors.textSecondary}
+            />
+            <Text
+              style={[
+                styles.chatBtnText,
+                { color: (isPremium || isUnlocked) ? "#000" : colors.textSecondary },
+              ]}
+            >
+              CHAT
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -485,7 +535,12 @@ export default function Dashboard() {
       <VipModal
         visible={vipOpen}
         onClose={() => setVipOpen(false)}
-        onLogin={() => setLoginOpen(true)}
+        onLogin={() => {
+          // Close paywall first, then open admin unlock modal on next tick
+          // to avoid overlapping-modal race on Android.
+          setVipOpen(false);
+          setTimeout(() => setLoginOpen(true), 250);
+        }}
       />
     </SafeAreaView>
   );
@@ -567,6 +622,16 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", gap: 5, maxWidth: 140,
   },
   unlockedText: { fontSize: 11, fontWeight: "700", maxWidth: 90 },
+  chatBtn: {
+    height: 36,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  chatBtnText: { fontSize: 11, fontWeight: "800", letterSpacing: 0.6 },
   viewRow: { height: 50, justifyContent: "center" },
   viewPill: {
     height: 36, paddingHorizontal: 14, borderRadius: 18, borderWidth: 1, flexShrink: 0,

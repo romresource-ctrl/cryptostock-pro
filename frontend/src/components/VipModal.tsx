@@ -29,7 +29,7 @@ type Props = {
 const CONTACT_EMAIL = "cryptostockapps@gmail.com";
 const GOLD = "#F0B90B";
 
-export default function VipModal({ visible, onClose }: Props) {
+export default function VipModal({ visible, onClose, onLogin }: Props) {
   const { colors } = useTheme();
   const { t } = useI18n();
   const { subscribe, restore, loading, isPremium, entitlement, product } =
@@ -219,6 +219,23 @@ export default function VipModal({ visible, onClose }: Props) {
               Restore Purchase
             </Text>
           </TouchableOpacity>
+
+          {/* Admin Login — same size/style as Restore Purchase. Used by
+              admins holding an unlock code from the generator; hidden for
+              users who are already premium via subscription (no need). */}
+          {onLogin && !isPremium ? (
+            <TouchableOpacity
+              onPress={onLogin}
+              disabled={loading}
+              style={[styles.restoreBtn, { borderColor: colors.border }]}
+              testID="vip-admin-login-button"
+            >
+              <Ionicons name="key-outline" size={14} color={colors.textMuted} />
+              <Text style={[styles.restoreText, { color: colors.textMuted }]}>
+                Login Admin
+              </Text>
+            </TouchableOpacity>
+          ) : null}
 
           {/* Contact */}
           <TouchableOpacity
