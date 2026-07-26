@@ -154,6 +154,28 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
           [{ text: "OK" }],
         );
       } else if (
+        lower.includes("already have an active") ||
+        lower.includes("already subscribed")
+      ) {
+        Alert.alert(
+          "Already Subscribed",
+          raw,
+          [{ text: "OK" }],
+        );
+      } else if (
+        lower.includes("invalid argument") ||
+        lower.includes("invalid arguments")
+      ) {
+        Alert.alert(
+          "Purchase Issue",
+          "Google Play rejected this purchase.\n\n" +
+            "Most likely you already have an active or recently-cancelled subscription. Please:\n" +
+            "1. Open Play Store → profile → Payments & subscriptions → Subscriptions.\n" +
+            "2. Cancel any existing AI Crypto Stock Pro plan.\n" +
+            "3. Wait 2–5 minutes for Google to sync.\n" +
+            "4. Try again.",
+        );
+      } else if (
         lower.includes("not active") ||
         lower.includes("basePlan") ||
         lower.includes("base plan")

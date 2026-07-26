@@ -334,12 +334,13 @@ export async function purchaseSubscription(basePlanId?: string): Promise<void> {
     );
   }
 
-  // Detect existing subscription so we can UPGRADE instead of erroring out.
-  // Google Play Billing 8.1+ requires the replacement mode as an INTEGER
-  // (not a string) and only accepts specific field names on the Nitro
-  // request. Extra / mis-named fields make the native side throw
-  // "Cannot convert [object Object] to any type in variant<...>".
-  let oldPurchaseToken: string | null = null;
+  // Detect existing subscription. If user already has an active plan and
+  // tries to buy a DIFFERENT tier, Google Play's upgrade flow is fragile in
+  // testing (test tokens get auto-consumed after ~5 min → "Invalid arguments"
+  // error). For MVP reliability, require the user to cancel the current
+  // subscription in Play Store first, then re-subscribe to the new tier.
+  // Real production users rarely switch plans mid-cycle anyway.
+  let existingBasePlan: string | null = null;
   try {
     const getAvail: any = iap.getAvailablePurchases;
     if (typeof getAvail === "function") {
@@ -349,10 +350,11 @@ export async function purchaseSubscription(basePlanId?: string): Promise<void> {
           (p: any) => (p.productId ?? p.id) === SUBSCRIPTION_SKU,
         );
         if (same) {
-          oldPurchaseToken =
-            same.purchaseToken ??
-            same.purchaseTokenAndroid ??
-            same.transactionReceipt ??
+          // Try to identify which base plan the existing purchase is on.
+          existingBasePlan =
+            same.basePlanId ??
+            same.subscriptionBasePlanId ??
+            same.autoRenewingPlan ??
             null;
         }
       }
@@ -361,30 +363,24 @@ export async function purchaseSubscription(basePlanId?: string): Promise<void> {
     /* ignore — treat as new purchase */
   }
 
+  // If user has an active subscription and is picking a different plan,
+  // stop and instruct them how to switch. This avoids the "Invalid
+  // arguments" native error caused by stale/consumed upgrade tokens.
+  if (existingBasePlan && basePlanId && existingBasePlan !== basePlanId) {
+    throw new Error(
+      `You already have an active "${existingBasePlan}" subscription. ` +
+        `To switch to "${basePlanId}", please open Play Store → ` +
+        `Payments & subscriptions → Subscriptions → cancel the current ` +
+        `plan first, then subscribe again.`,
+    );
+  }
+
   // Build request that matches `RequestSubscriptionAndroidProps` in
-  // react-native-iap v15 (Nitro). Only whitelisted fields are allowed:
-  //   skus, subscriptionOffers, purchaseToken, replacementMode (integer),
-  //   obfuscatedAccountId, obfuscatedProfileId, isOfferPersonalized,
-  //   originalExternalTransactionId, developerBillingOption,
-  //   subscriptionProductReplacementParams
-  // Google Play Billing replacement mode integers:
-  //   1 = WITH_TIME_PRORATION   (default — new plan starts NOW, remaining
-  //                              time is credited pro-rata)
-  //   2 = CHARGE_PRORATED_PRICE
-  //   3 = WITHOUT_PRORATION
-  //   5 = CHARGE_FULL_PRICE
-  //   6 = DEFERRED              (new plan queues, starts after old expires)
-  // For consumer clarity ("subscribe = get full new period immediately") we
-  // use WITH_TIME_PRORATION when upgrading between our tiers, which is the
-  // default Google Play behavior.
+  // react-native-iap v15 (Nitro). Only whitelisted fields are allowed.
   const androidReq: any = {
     skus: [SUBSCRIPTION_SKU],
     subscriptionOffers: [{ sku: SUBSCRIPTION_SKU, offerToken }],
   };
-  if (oldPurchaseToken) {
-    androidReq.purchaseToken = oldPurchaseToken;
-    androidReq.replacementMode = 1; // WITH_TIME_PRORATION (integer!)
-  }
 
   try {
     await iap.requestPurchase({
