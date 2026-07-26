@@ -185,14 +185,15 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "3.0.8"
-  test_sequence: 11
+  version: "5.0.4"
+  test_sequence: 15
   run_ui: false
 
 test_plan:
   current_focus:
-    - "Subscription verification endpoint (Google Play Developer API)"
-    - "Subscription hook, provider, and VipModal integration (react-native-iap 15.6)"
+    - "Chat message with optional photo attachment (image_data)"
+    - "Subscription entitlement source-of-truth sync from backend"
+    - "Premium gating: fresh device → paywall; expired subscription → auto-lock"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -200,21 +201,35 @@ test_plan:
 agent_communication:
   - agent: "main"
     message: |
-      v3.0.8 delivered: real Google Play Billing scaffolding + backend verifier
-      + R8 enabled. Please test:
-      1. Backend endpoints:
-         - POST /api/subscription/verify — with fake token returns unverified/entitled=false (correct dev behavior)
-         - GET  /api/subscription/status?device_id=X — returns cached entitlement or "none"
-         - Confirm no regressions in existing endpoints (/api/dashboard, /api/auth/verify, /api/asset/*)
-      2. Frontend (web preview http://localhost:3000):
-         - App loads showing "Ver 3.0.8"
-         - Dashboard shows all 7 categories with data
-         - Tapping any asset while not unlocked opens VipModal
-         - VipModal shows SUBSCRIBE $20.00/MONTH button, Restore Purchase button,
-           and Android-only footer message
-         - No blue "Login" button in VipModal (only in header)
-         - No WhatsApp/contact button
-         - Email cryptostockapps@gmail.com button opens mailto
-         - i18n switcher works (ID/EN/RU/CN)
-      3. DO NOT test IAP purchase flow on web/Expo Go — it requires real Android
-         Internal Testing build. Just verify UI renders correctly and no JS errors.
+      v5.0.4 — please test the following (backend + frontend web):
+
+      BACKEND CHANGES:
+      1. POST /api/chat/messages now accepts optional `image_data` (base64 data
+         URL). Test:
+         a. Non-premium device_id → 403 "Only premium subscribers can post"
+         b. text="", no image → 400 "Message text or image is required"
+         c. image_data not starting with "data:image/" → 400 "must be a data URL"
+         d. image_data > 750,000 chars → 400 "Image too large"
+      2. GET /api/chat/messages returns messages with optional image_data field.
+      3. GET /api/subscription/status?device_id=X for unknown device →
+         { status:"none", entitled:false } (source of truth for fresh install)
+      4. GET /api/subscription/health → publisher_client_initialised:true
+         (service account key was rotated by user, new one is active)
+
+      FRONTEND CHANGES (web preview):
+      1. Dashboard shows "Ver 5.0.4" and all 7 category chips render.
+      2. Tapping any asset row while not premium opens the VipModal paywall
+         (do NOT navigate to asset detail).
+      3. Direct navigating to /asset/crypto/BTC while non-premium should
+         redirect back to "/" (home), because subscription context loaded=true
+         and hasAccess=false.
+      4. /chat page: attach button visible next to send button; premium-only
+         gate message shown when not subscribed.
+      5. No lint errors introduced.
+
+      NOT TO TEST (out of scope for web):
+      - Real Google Play Billing purchase flow (requires physical Android)
+      - Native image picker + camera roll (requires physical device)
+      - Android soft keyboard behavior (requires physical device)
+
+      Existing test credentials: /app/memory/test_credentials.md

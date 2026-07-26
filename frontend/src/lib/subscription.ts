@@ -573,3 +573,39 @@ export async function loadEntitlement(): Promise<Entitlement | null> {
 export async function clearEntitlement(): Promise<void> {
   await storage.removeItem(ENTITLEMENT_KEY);
 }
+
+/**
+ * Backend-first entitlement sync: asks the server for the freshest known
+ * status for this device. This is the source of truth for premium access —
+ * local cache can be stale (e.g. Google Play cancelled the subscription
+ * while the app was closed). Falls back silently on network error.
+ */
+export async function syncEntitlementFromBackend(
+  deviceId: string,
+): Promise<Entitlement | null> {
+  if (!deviceId) return null;
+  try {
+    const res = await fetch(
+      `${backendBase()}/subscription/status?device_id=${encodeURIComponent(deviceId)}`,
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const ent: Entitlement = {
+      status: (data.status ?? "none") as SubStatus,
+      entitled: Boolean(data.entitled),
+      expiryTime: data.expiry_time ?? null,
+      productId: data.product_id ?? null,
+      purchaseToken: null,
+      source: data.source ?? "backend",
+      updatedAt: new Date().toISOString(),
+    };
+    // Persist only if we have a meaningful entitlement — avoid overwriting a
+    // richer local cache (with purchaseToken) with a bare "none".
+    if (ent.entitled || ent.status !== "none") {
+      await storage.setItem(ENTITLEMENT_KEY, ent);
+    }
+    return ent;
+  } catch {
+    return null;
+  }
+}

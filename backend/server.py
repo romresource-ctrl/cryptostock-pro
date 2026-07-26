@@ -1337,11 +1337,16 @@ async def subscription_health() -> dict[str, Any]:
 CHAT_RATE_LIMIT_SECONDS = 3
 CHAT_MESSAGE_MAX_LENGTH = 500
 CHAT_HISTORY_LIMIT = 200
+# Image data URL (base64) cap: ~700KB string ≈ ~500KB image binary after base64
+# overhead. Anything larger is rejected to protect Mongo document limits.
+CHAT_IMAGE_MAX_CHARS = 750_000
 
 class ChatMessagePayload(BaseModel):
-    text: str
+    text: str = ""
     nickname: str
     device_id: str
+    # Optional base64 data URL for image attachment (e.g. "data:image/jpeg;base64,...")
+    image_data: str | None = None
 
 
 class ChatMessage(BaseModel):
@@ -1350,6 +1355,7 @@ class ChatMessage(BaseModel):
     nickname: str
     device_id: str
     created_at: str
+    image_data: str | None = None
 
 
 async def _is_device_entitled(device_id: str) -> bool:
@@ -1380,13 +1386,24 @@ async def chat_send_message(payload: ChatMessagePayload) -> ChatMessage:
     text = (payload.text or "").strip()
     nickname = (payload.nickname or "").strip()
     device_id = (payload.device_id or "").strip()
+    image_data = (payload.image_data or "").strip() or None
 
-    if not text or not nickname or not device_id:
-        raise HTTPException(400, "text, nickname, and device_id are required")
+    if not nickname or not device_id:
+        raise HTTPException(400, "nickname and device_id are required")
+    if not text and not image_data:
+        raise HTTPException(400, "Message text or image is required")
     if len(text) > CHAT_MESSAGE_MAX_LENGTH:
         raise HTTPException(400, f"Message too long (max {CHAT_MESSAGE_MAX_LENGTH})")
     if len(nickname) > 20:
         raise HTTPException(400, "Nickname too long (max 20)")
+    if image_data is not None:
+        if not image_data.startswith("data:image/"):
+            raise HTTPException(400, "image_data must be a data URL (data:image/...)")
+        if len(image_data) > CHAT_IMAGE_MAX_CHARS:
+            raise HTTPException(
+                400,
+                f"Image too large (max ~{CHAT_IMAGE_MAX_CHARS // 1024}KB after base64).",
+            )
 
     # Entitlement check
     if not await _is_device_entitled(device_id):
@@ -1417,6 +1434,7 @@ async def chat_send_message(payload: ChatMessagePayload) -> ChatMessage:
         "nickname": nickname[:20],
         "device_id": device_id,
         "created_at": now.isoformat(),
+        "image_data": image_data,
     }
     await db.chat_messages.insert_one(dict(msg))
     return ChatMessage(**msg)

@@ -10,8 +10,10 @@
       "permissions": [
         "com.android.vending.BILLING",
         "INTERNET",
-        "ACCESS_NETWORK_STATE"
-      ]
+        "ACCESS_NETWORK_STATE",
+        "READ_MEDIA_IMAGES"
+      ],
+      "softwareKeyboardLayoutMode": "resize"
     },
     "androidStatusBar": {
       "backgroundColor": "#000000",
@@ -41,6 +43,13 @@
       ],
       "expo-font",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Attach photos in the premium chatroom.",
+          "cameraPermission": "Take a photo to share in the chatroom."
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "android": {
@@ -54,7 +63,7 @@
     "scheme": "aicryptostockpro",
     "slug": "ai-crypto-stock-pro",
     "userInterfaceStyle": "automatic",
-    "version": "5.0.3",
+    "version": "5.0.4",
     "web": {
       "bundler": "metro",
       "favicon": "./assets/images/favicon.png",

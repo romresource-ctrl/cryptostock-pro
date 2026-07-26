@@ -22,6 +22,7 @@ import {
   SubProduct,
   setupPurchaseListener,
   SUBSCRIPTION_SKU,
+  syncEntitlementFromBackend,
 } from "@/src/lib/subscription";
 
 const ANDROID_PACKAGE = "com.cryptostockapps.aicryptostockpro";
@@ -48,7 +49,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
   const [connected, setConnected] = useState(false);
   const deviceIdRef = useRef<string>("");
 
-  // ---- Bootstrap: load cached entitlement + init IAP + wire listener ----
+  // ---- Bootstrap: load cached entitlement + sync backend + init IAP + wire listener ----
   useEffect(() => {
     let cleanup: (() => void) | null = null;
     (async () => {
@@ -57,6 +58,20 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
 
       const deviceId = await getDeviceId();
       deviceIdRef.current = deviceId;
+
+      // Backend is source of truth. Sync BEFORE marking loaded so paywall
+      // doesn't briefly flash "unlocked" on cold start when entitlement is
+      // actually expired server-side. Timeout after 2.5s to avoid blocking UI
+      // on flaky networks.
+      try {
+        const synced = await Promise.race([
+          syncEntitlementFromBackend(deviceId),
+          new Promise<null>((r) => setTimeout(() => r(null), 2500)),
+        ]);
+        if (synced) setEntitlement(synced);
+      } catch {
+        /* ignore — trust local cache */
+      }
 
       if (Platform.OS === "android") {
         const iap = await initIap();
@@ -165,9 +180,35 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
   // from a long absence see the correct locked state immediately.
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") setTick((x) => x + 1);
+      if (state === "active") {
+        setTick((x) => x + 1);
+        // Also refresh entitlement from backend (source of truth).
+        (async () => {
+          const deviceId = deviceIdRef.current || (await getDeviceId());
+          try {
+            const synced = await syncEntitlementFromBackend(deviceId);
+            if (synced) setEntitlement(synced);
+          } catch {
+            /* ignore */
+          }
+        })();
+      }
     });
     return () => sub.remove();
+  }, []);
+  // Backend re-sync every 2 min so expired subscriptions get locked without
+  // requiring app restart / background transition.
+  useEffect(() => {
+    const id = setInterval(async () => {
+      const deviceId = deviceIdRef.current || (await getDeviceId());
+      try {
+        const synced = await syncEntitlementFromBackend(deviceId);
+        if (synced) setEntitlement(synced);
+      } catch {
+        /* silent */
+      }
+    }, 2 * 60_000);
+    return () => clearInterval(id);
   }, []);
   // Trigger re-fetch of getAvailablePurchases in background occasionally in
   // case the user cancelled from Play Store settings while offline.

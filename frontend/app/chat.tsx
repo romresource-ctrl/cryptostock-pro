@@ -1,11 +1,15 @@
 import { Ionicons } from "@expo/vector-icons";
+import * as ImageManipulator from "expo-image-manipulator";
+import * as ImagePicker from "expo-image-picker";
 import { router, Stack } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Image,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   StyleSheet,
   Text,
@@ -25,6 +29,9 @@ const POLL_INTERVAL_MS = 3000;
 const RATE_LIMIT_MS = 3000;
 const MAX_MSG_LEN = 500;
 const MAX_NICK_LEN = 20;
+// Image compression targets — keep base64 payload well under backend cap.
+const IMG_TARGET_WIDTH = 900;
+const IMG_JPEG_QUALITY = 0.55;
 
 type Msg = {
   id: string;
@@ -32,6 +39,7 @@ type Msg = {
   nickname: string;
   device_id: string;
   created_at: string;
+  image_data?: string | null;
 };
 
 function backendBase(): string {
@@ -57,6 +65,8 @@ export default function ChatScreen() {
   const [sending, setSending] = useState(false);
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [attachment, setAttachment] = useState<string | null>(null); // base64 data URL
+  const [attaching, setAttaching] = useState(false);
   const lastSentRef = useRef<number>(0);
   const deviceIdRef = useRef<string>("");
   const listRef = useRef<FlatList<Msg>>(null);
@@ -112,7 +122,7 @@ export default function ChatScreen() {
 
   const sendMessage = async () => {
     const text = input.trim();
-    if (!text) return;
+    if (!text && !attachment) return;
     if (!isPremium) {
       Alert.alert("Premium Only", "Only premium subscribers can post in the chatroom.");
       return;
@@ -140,6 +150,7 @@ export default function ChatScreen() {
           text,
           nickname: nickname ?? "guest",
           device_id: deviceIdRef.current,
+          image_data: attachment ?? undefined,
         }),
       });
       if (!res.ok) {
@@ -147,6 +158,7 @@ export default function ChatScreen() {
         Alert.alert("Send Failed", err.detail ?? "Please try again");
       } else {
         setInput("");
+        setAttachment(null);
         lastSentRef.current = now;
         fetchMessages();
       }
@@ -154,6 +166,73 @@ export default function ChatScreen() {
       Alert.alert("Network Error", e?.message ?? String(e));
     } finally {
       setSending(false);
+    }
+  };
+
+  const pickAttachment = async () => {
+    if (!isPremium) {
+      Alert.alert("Premium Only", "Only premium subscribers can send photos.");
+      return;
+    }
+    setAttaching(true);
+    try {
+      // Request permission first (handles undetermined / previously-denied
+      // states — respects `canAskAgain`).
+      const perm = await ImagePicker.getMediaLibraryPermissionsAsync();
+      let granted = perm.status === "granted";
+      if (!granted) {
+        if (perm.canAskAgain) {
+          const asked = await ImagePicker.requestMediaLibraryPermissionsAsync();
+          granted = asked.status === "granted";
+        }
+        if (!granted) {
+          Alert.alert(
+            "Photo Access Denied",
+            "Please enable photo access in Settings to attach images.",
+            [
+              { text: "Cancel", style: "cancel" },
+              { text: "Open Settings", onPress: () => Linking.openSettings() },
+            ],
+          );
+          return;
+        }
+      }
+
+      const picked = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 1,
+        allowsEditing: false,
+        allowsMultipleSelection: false,
+      });
+      if (picked.canceled || !picked.assets?.[0]) return;
+      const asset = picked.assets[0];
+      // Compress + resize to keep base64 payload under backend cap.
+      const manipulated = await ImageManipulator.manipulateAsync(
+        asset.uri,
+        [{ resize: { width: IMG_TARGET_WIDTH } }],
+        {
+          compress: IMG_JPEG_QUALITY,
+          format: ImageManipulator.SaveFormat.JPEG,
+          base64: true,
+        },
+      );
+      if (!manipulated.base64) {
+        Alert.alert("Attach Failed", "Could not read that image.");
+        return;
+      }
+      const dataUrl = `data:image/jpeg;base64,${manipulated.base64}`;
+      if (dataUrl.length > 750_000) {
+        Alert.alert(
+          "Image Too Large",
+          "Please choose a smaller or lower-resolution photo.",
+        );
+        return;
+      }
+      setAttachment(dataUrl);
+    } catch (e: any) {
+      Alert.alert("Attach Failed", e?.message ?? String(e));
+    } finally {
+      setAttaching(false);
     }
   };
 
@@ -211,9 +290,14 @@ export default function ChatScreen() {
   }
 
   // ---- Main chat screen ----
+  const canSend = isPremium && !sending && (input.trim().length > 0 || !!attachment);
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      // On Android the manifest uses adjustResize (default), which already
+      // shifts the content up. Wrapping with padding causes double-adjustment
+      // and hides the composer. Only enable KAV on iOS.
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      enabled={Platform.OS === "ios"}
       keyboardVerticalOffset={0}
       style={[styles.container, { backgroundColor: colors.background }]}
     >
@@ -257,9 +341,18 @@ export default function ChatScreen() {
                   >
                     {item.nickname}
                   </Text>
-                  <Text style={[styles.msgText, { color: textColor }]}>
-                    {item.text}
-                  </Text>
+                  {item.image_data ? (
+                    <Image
+                      source={{ uri: item.image_data }}
+                      style={styles.attachmentImage}
+                      resizeMode="cover"
+                    />
+                  ) : null}
+                  {item.text ? (
+                    <Text style={[styles.msgText, { color: textColor }]}>
+                      {item.text}
+                    </Text>
+                  ) : null}
                   <Text
                     style={[
                       styles.ts,
@@ -301,36 +394,75 @@ export default function ChatScreen() {
           },
         ]}
       >
-        <TextInput
-          value={input}
-          onChangeText={setInput}
-          placeholder={isPremium ? "Type a message…" : "Premium only — subscribe to chat"}
-          placeholderTextColor={colors.textMuted}
-          editable={isPremium}
-          multiline
-          maxLength={MAX_MSG_LEN}
-          blurOnSubmit={false}
-          textAlignVertical="top"
+        {/* Attach button */}
+        <TouchableOpacity
+          onPress={pickAttachment}
+          disabled={!isPremium || attaching || sending}
           style={[
-            styles.input,
+            styles.attachBtn,
             {
               backgroundColor: colors.surfaceAlt,
-              color: colors.textPrimary,
               borderColor: colors.border,
-              opacity: isPremium ? 1 : 0.5,
+              opacity: isPremium ? 1 : 0.4,
             },
           ]}
-        />
+          testID="chat-attach-button"
+        >
+          {attaching ? (
+            <ActivityIndicator size="small" color={colors.accentBlue} />
+          ) : (
+            <Ionicons name="image-outline" size={20} color={colors.accentBlue} />
+          )}
+        </TouchableOpacity>
+
+        <View style={{ flex: 1 }}>
+          {attachment ? (
+            <View style={[styles.previewRow, { backgroundColor: colors.surfaceAlt }]}>
+              <Image source={{ uri: attachment }} style={styles.previewImg} />
+              <Text style={[styles.previewLabel, { color: colors.textMuted }]} numberOfLines={1}>
+                Photo attached
+              </Text>
+              <TouchableOpacity
+                onPress={() => setAttachment(null)}
+                hitSlop={8}
+                testID="chat-remove-attachment"
+              >
+                <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+          ) : null}
+          <TextInput
+            value={input}
+            onChangeText={setInput}
+            placeholder={isPremium ? "Type a message…" : "Premium only — subscribe to chat"}
+            placeholderTextColor={colors.textMuted}
+            editable={isPremium}
+            multiline
+            maxLength={MAX_MSG_LEN}
+            blurOnSubmit={false}
+            textAlignVertical="top"
+            style={[
+              styles.input,
+              {
+                backgroundColor: colors.surfaceAlt,
+                color: colors.textPrimary,
+                borderColor: colors.border,
+                opacity: isPremium ? 1 : 0.5,
+              },
+            ]}
+          />
+        </View>
         <TouchableOpacity
           onPress={isPremium ? sendMessage : () => router.back()}
-          disabled={sending || !input.trim()}
+          disabled={isPremium ? !canSend : false}
           style={[
             styles.sendBtn,
             {
-              backgroundColor: isPremium && input.trim() ? colors.accentBlue : colors.surfaceHighlight,
+              backgroundColor: canSend ? colors.accentBlue : colors.surfaceHighlight,
               opacity: sending ? 0.6 : 1,
             },
           ]}
+          testID="chat-send-button"
         >
           {sending ? (
             <ActivityIndicator size="small" color="#fff" />
@@ -367,6 +499,39 @@ const styles = StyleSheet.create({
     gap: 8,
     padding: 8,
     borderTopWidth: 0.5,
+  },
+  attachBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  previewRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    padding: 6,
+    borderRadius: 10,
+    marginBottom: 6,
+  },
+  previewImg: {
+    width: 40,
+    height: 40,
+    borderRadius: 6,
+  },
+  previewLabel: {
+    flex: 1,
+    fontSize: 11,
+    fontStyle: "italic",
+  },
+  attachmentImage: {
+    width: 220,
+    height: 220,
+    borderRadius: 8,
+    marginBottom: 4,
+    backgroundColor: "#00000022",
   },
   input: {
     flex: 1,

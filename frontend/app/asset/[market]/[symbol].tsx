@@ -91,22 +91,22 @@ export default function AssetDetail() {
   const [showPrediction, setShowPrediction] = useState(false);
 
   // Access gating (issue #2, #3) — kick user back to home if entitlement expires
-  const { isPremium } = useSubscription();
+  const { isPremium, loaded: subLoaded } = useSubscription();
   const { isUnlocked, loaded: authLoaded } = useAuth();
   const hasAccess = isPremium || isUnlocked;
   useEffect(() => {
-    if (authLoaded && !hasAccess) {
-      // Small delay so late-arriving cache doesn't cause instant flicker on cold start.
-      const t = setTimeout(() => {
-        try {
-          router.replace("/");
-        } catch {
-          /* ignore */
-        }
-      }, 300);
-      return () => clearTimeout(t);
+    // Wait until BOTH auth and subscription state are fully loaded (including
+    // backend sync) before deciding to redirect. Prevents a false-negative
+    // flash where subscribed users are briefly kicked to home on cold start.
+    if (!authLoaded || !subLoaded) return;
+    if (!hasAccess) {
+      try {
+        router.replace("/");
+      } catch {
+        /* ignore */
+      }
     }
-  }, [hasAccess, authLoaded]);
+  }, [hasAccess, authLoaded, subLoaded]);
 
   const loadChart = useCallback(
     async (tf: Timeframe) => {
