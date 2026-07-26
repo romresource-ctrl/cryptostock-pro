@@ -654,8 +654,20 @@ async def dashboard(
         profile_name = "Semua Aset"
         profile_id = "all"
     else:
-        symbols = prof.get("crypto") if eff_market == "crypto" else prof.get("stocks")
-        symbols = symbols or []
+        # Profile currently only stores per-user selections for CRYPTO and
+        # IDX STOCKS (legacy "stocks" field). Non-IDX Yahoo markets (etf,
+        # stock_us, gold_silver, commodity, forex) must NOT reuse the
+        # `stocks` field — otherwise IDX symbols get sent to ETF_YAHOO_MAP
+        # lookup and every fetch returns None, producing an empty column
+        # for those markets on installs whose seeded profile has a
+        # non-empty stocks list. Always fall back to the market's DEFAULT_*
+        # list for those markets.
+        if eff_market == "crypto":
+            symbols = prof.get("crypto") or []
+        elif eff_market == "stock_id":
+            symbols = prof.get("stocks") or []
+        else:
+            symbols = []
         # For any category with empty active-profile list, fall back to sensible defaults.
         if not symbols:
             symbols = {
