@@ -127,7 +127,45 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       await purchaseSubscription(basePlanId);
       // Success is handled by the global purchaseUpdatedListener
     } catch (e: any) {
-      Alert.alert("Subscription", `Could not start purchase: ${e?.message ?? e}`);
+      const raw = String(e?.message ?? e ?? "");
+      const lower = raw.toLowerCase();
+
+      // "Something went wrong on our end" and similar generic Google Play
+      // errors are almost always caused by test-environment state on the
+      // device, NOT by a bug in our code. Give the user actionable
+      // troubleshooting steps rather than a cryptic error string.
+      const isGooglePlayGenericError =
+        lower.includes("something went wrong") ||
+        lower.includes("try again") ||
+        lower.includes("play services") ||
+        lower.includes("unavailable") ||
+        e?.code === "E_UNKNOWN" ||
+        e?.code === "E_SERVICE_ERROR";
+
+      if (isGooglePlayGenericError) {
+        Alert.alert(
+          "Google Play Issue",
+          "Google Play could not process this request right now.\n\n" +
+            "This is usually caused by:\n" +
+            "• Play Store cache — clear it in Settings → Apps → Google Play Store → Storage → Clear cache.\n" +
+            "• A previous test subscription still active — open Play Store → Payments & subscriptions → Subscriptions and cancel any AI Crypto Stock Pro entry.\n" +
+            "• Recent Play Console change still propagating — wait 15–60 min and retry.\n\n" +
+            "Real (production) users will not see this issue.",
+          [{ text: "OK" }],
+        );
+      } else if (
+        lower.includes("not active") ||
+        lower.includes("basePlan") ||
+        lower.includes("base plan")
+      ) {
+        Alert.alert(
+          "Plan Not Available",
+          "This subscription plan is not yet active in Google Play Console. " +
+            "Please try a different plan or contact support.",
+        );
+      } else {
+        Alert.alert("Subscription", `Could not start purchase: ${raw}`);
+      }
     } finally {
       setLoading(false);
     }
