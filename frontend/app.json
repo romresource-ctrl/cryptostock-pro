@@ -10,8 +10,7 @@
       "permissions": [
         "com.android.vending.BILLING",
         "INTERNET",
-        "ACCESS_NETWORK_STATE",
-        "READ_MEDIA_IMAGES"
+        "ACCESS_NETWORK_STATE"
       ],
       "softwareKeyboardLayoutMode": "resize"
     },
@@ -63,7 +62,7 @@
     "scheme": "aicryptostockpro",
     "slug": "ai-crypto-stock-pro",
     "userInterfaceStyle": "automatic",
-    "version": "5.0.4",
+    "version": "5.0.5",
     "web": {
       "bundler": "metro",
       "favicon": "./assets/images/favicon.png",

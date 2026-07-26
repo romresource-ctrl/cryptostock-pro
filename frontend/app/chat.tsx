@@ -176,25 +176,38 @@ export default function ChatScreen() {
     }
     setAttaching(true);
     try {
-      // Request permission first (handles undetermined / previously-denied
-      // states — respects `canAskAgain`).
-      const perm = await ImagePicker.getMediaLibraryPermissionsAsync();
-      let granted = perm.status === "granted";
-      if (!granted) {
-        if (perm.canAskAgain) {
-          const asked = await ImagePicker.requestMediaLibraryPermissionsAsync();
-          granted = asked.status === "granted";
-        }
-        if (!granted) {
-          Alert.alert(
-            "Photo Access Denied",
-            "Please enable photo access in Settings to attach images.",
-            [
-              { text: "Cancel", style: "cancel" },
-              { text: "Open Settings", onPress: () => Linking.openSettings() },
-            ],
-          );
-          return;
+      // On Android 13+, launchImageLibraryAsync uses the system PhotoPicker
+      // which requires NO permission at all. On iOS, the picker prompts for
+      // photo access automatically (using the `photosPermission` string from
+      // expo-image-picker plugin config in app.json). We only need to handle
+      // the permission explicitly for iOS if the user previously denied.
+      if (Platform.OS === "ios") {
+        const perm = await ImagePicker.getMediaLibraryPermissionsAsync();
+        if (perm.status !== "granted") {
+          if (perm.canAskAgain) {
+            const asked = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (asked.status !== "granted") {
+              Alert.alert(
+                "Photo Access Denied",
+                "Please enable photo access in Settings to attach images.",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  { text: "Open Settings", onPress: () => Linking.openSettings() },
+                ],
+              );
+              return;
+            }
+          } else {
+            Alert.alert(
+              "Photo Access Denied",
+              "Please enable photo access in Settings to attach images.",
+              [
+                { text: "Cancel", style: "cancel" },
+                { text: "Open Settings", onPress: () => Linking.openSettings() },
+              ],
+            );
+            return;
+          }
         }
       }
 
