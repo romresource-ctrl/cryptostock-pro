@@ -185,15 +185,16 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "5.0.4"
-  test_sequence: 15
+  version: "7.0.7"
+  test_sequence: 16
   run_ui: false
 
 test_plan:
   current_focus:
-    - "Chat message with optional photo attachment (image_data)"
-    - "Subscription entitlement source-of-truth sync from backend"
-    - "Premium gating: fresh device → paywall; expired subscription → auto-lock"
+    - "Asset detail route for slash symbols and all markets (commodity/gold_silver/forex/world_stocks)"
+    - "Dashboard endpoint for forex/gold_silver (previous NameError crash regression)"
+    - "Cross-market search returns correct market for each hit (CORN→commodity, EUR/USD→forex)"
+    - "Chat retention 16h — old messages filtered + purged"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -201,35 +202,59 @@ test_plan:
 agent_communication:
   - agent: "main"
     message: |
-      v5.0.4 — please test the following (backend + frontend web):
+      v7.0.7 — Fixed 2 P0 regressions reported by user:
 
-      BACKEND CHANGES:
-      1. POST /api/chat/messages now accepts optional `image_data` (base64 data
-         URL). Test:
-         a. Non-premium device_id → 403 "Only premium subscribers can post"
-         b. text="", no image → 400 "Message text or image is required"
-         c. image_data not starting with "data:image/" → 400 "must be a data URL"
-         d. image_data > 750,000 chars → 400 "Image too large"
-      2. GET /api/chat/messages returns messages with optional image_data field.
-      3. GET /api/subscription/status?device_id=X for unknown device →
-         { status:"none", entitled:false } (source of truth for fresh install)
-      4. GET /api/subscription/health → publisher_client_initialised:true
-         (service account key was rotated by user, new one is active)
+      ROOT CAUSE #1 (CORN 404, screenshot-confirmed):
+      `/app/frontend/app/asset/[market]/[symbol].tsx` line 73-74 had
+      `validMarkets = ["crypto","etf","stock_id","stock_us"]` — did NOT
+      include commodity, gold_silver, forex, world_stocks. Any tap on
+      those markets forced market → "crypto" → API called
+      `/asset/crypto/CORN/chart` → 404. FIXED: whitelist now includes
+      all 8 markets; added displaySymbol for "EUR-USD" → "EUR/USD" in
+      forex/gold_silver header; added badge labels for the extra 4 markets.
 
-      FRONTEND CHANGES (web preview):
-      1. Dashboard shows "Ver 5.0.4" and all 7 category chips render.
-      2. Tapping any asset row while not premium opens the VipModal paywall
-         (do NOT navigate to asset detail).
-      3. Direct navigating to /asset/crypto/BTC while non-premium should
-         redirect back to "/" (home), because subscription context loaded=true
-         and hasAccess=false.
-      4. /chat page: attach button visible next to send button; premium-only
-         gate message shown when not subscribed.
-      5. No lint errors introduced.
+      ROOT CAUSE #2 (backend dashboard crash on forex/gold_silver):
+      `/app/backend/server.py` `dashboard()` had erroneous copy-paste of
+      the dash-decoder block that referenced an undefined `symbol` var,
+      raising UnboundLocalError → 500. FIXED: removed the stray block.
 
-      NOT TO TEST (out of scope for web):
-      - Real Google Play Billing purchase flow (requires physical Android)
-      - Native image picker + camera roll (requires physical device)
-      - Android soft keyboard behavior (requires physical device)
+      MANUAL VERIFICATION (backend, all return 200 on localhost:
+      - GET /api/dashboard?market=commodity/forex/gold_silver → 200
+      - GET /api/asset/commodity/CORN/chart → 200
+      - GET /api/asset/forex/EUR-USD/chart → 200
+      - GET /api/asset/gold_silver/XAU-USD/chart → 200
+      - GET /api/asset/forex/EUR-USD/track-record → 200
+      - GET /api/asset/commodity/CORN/news → 200
+      - GET /api/asset/gold_silver/XAU-USD/news → 200
 
-      Existing test credentials: /app/memory/test_credentials.md
+      PLEASE TEST (backend + frontend web):
+      BACKEND:
+      1. /api/dashboard for each of the 7 markets returns 200 with assets[] populated.
+      2. /api/asset/{market}/{symbol}/{chart,analyze,track-record,news} for:
+         - commodity/CORN, commodity/BRENT
+         - forex/EUR-USD, forex/GBP-USD
+         - gold_silver/XAU-USD, gold_silver/XAG-USD
+         - world_stocks/AAPL
+         - crypto/BTC (regression baseline)
+      3. /api/search?q=CORN → hit has market="commodity" (NOT crypto).
+      4. /api/search?q=EUR → hits include forex with proper market field.
+      5. Chat 16h: POST message, then verify GET /api/chat/messages filters
+         out anything older than 16h (cutoff computed relative to now).
+
+      FRONTEND (web preview only):
+      1. Header shows "Ver 7.0.7".
+      2. Switch to Commodity chip → dashboard populates (previously crashed).
+      3. Switch to Forex chip → dashboard populates.
+      4. Switch to Gold/Silver chip → dashboard populates.
+      5. Route /asset/commodity/CORN?timeframe=1h renders with header
+         "CORN COMMODITY" (not "CORN CRYPTO"); chart loads.
+      6. Route /asset/forex/EUR-USD?timeframe=1h renders "EUR/USD FOREX".
+      7. Route /asset/gold_silver/XAU-USD?timeframe=1h renders "XAU/USD GOLD/SILVER".
+      8. Search bar: type "CORN" → tap first hit → arrives at commodity detail (200).
+
+      NOT TO TEST (requires real Android):
+      - Google Play Billing purchase flow
+      - Native soft-keyboard ChatSheet behaviour
+      - Native image picker
+
+      Credentials: /app/memory/test_credentials.md

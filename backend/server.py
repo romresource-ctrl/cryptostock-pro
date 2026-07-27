@@ -728,6 +728,11 @@ async def asset_chart(
     eff_market = "stock_id" if market == "stock" else market
     if eff_market == "world_stocks":
         eff_market = "stock_us"
+    # v7.0.5: URL-safe dash decoder — forex/gold-silver symbols contain
+    # "/" (EUR/USD, XAU/USD) which breaks path routing. Frontend pushes
+    # them as "EUR-USD"; convert back here before pool lookup.
+    if eff_market in ("forex", "gold_silver") and "-" in symbol:
+        symbol = symbol.replace("-", "/")
     symbol = symbol.upper()
     snap = await (
         get_crypto_snapshot(symbol, timeframe)
@@ -757,6 +762,11 @@ async def asset_analyze(
     eff_market = "stock_id" if market == "stock" else market
     if eff_market == "world_stocks":
         eff_market = "stock_us"
+    # v7.0.5: URL-safe dash decoder — forex/gold-silver symbols contain
+    # "/" (EUR/USD, XAU/USD) which breaks path routing. Frontend pushes
+    # them as "EUR-USD"; convert back here before pool lookup.
+    if eff_market in ("forex", "gold_silver") and "-" in symbol:
+        symbol = symbol.replace("-", "/")
     symbol = symbol.upper()
     snap = await (
         get_crypto_snapshot(symbol, timeframe)
@@ -889,6 +899,11 @@ async def asset_track_record(
     eff_market = "stock_id" if market == "stock" else market
     if eff_market == "world_stocks":
         eff_market = "stock_us"
+    # v7.0.5: URL-safe dash decoder — forex/gold-silver symbols contain
+    # "/" (EUR/USD, XAU/USD) which breaks path routing. Frontend pushes
+    # them as "EUR-USD"; convert back here before pool lookup.
+    if eff_market in ("forex", "gold_silver") and "-" in symbol:
+        symbol = symbol.replace("-", "/")
     return await get_track_record(db, eff_market, symbol.upper())
 
 
@@ -1026,6 +1041,11 @@ async def news_global(
     eff_market = "stock_id" if market == "stock" else market
     if eff_market == "world_stocks":
         eff_market = "stock_us"
+    # v7.0.5: URL-safe dash decoder — forex/gold-silver symbols contain
+    # "/" (EUR/USD, XAU/USD) which breaks path routing. Frontend pushes
+    # them as "EUR-USD"; convert back here before pool lookup.
+    if eff_market in ("forex", "gold_silver") and "-" in symbol:
+        symbol = symbol.replace("-", "/")
     items = await get_news(eff_market, limit=limit)
     if lang == "en" and items:
         titles = [i.get("title") or "" for i in items]
@@ -1050,6 +1070,11 @@ async def news_for_asset(
     eff_market = "stock_id" if market == "stock" else market
     if eff_market == "world_stocks":
         eff_market = "stock_us"
+    # v7.0.5: URL-safe dash decoder — forex/gold-silver symbols contain
+    # "/" (EUR/USD, XAU/USD) which breaks path routing. Frontend pushes
+    # them as "EUR-USD"; convert back here before pool lookup.
+    if eff_market in ("forex", "gold_silver") and "-" in symbol:
+        symbol = symbol.replace("-", "/")
     items = await get_news_for_symbol(symbol.upper(), eff_market, limit=limit)
     if lang == "en" and items:
         titles = [i.get("title") or "" for i in items]
@@ -1471,6 +1496,10 @@ async def subscription_health() -> dict[str, Any]:
 CHAT_RATE_LIMIT_SECONDS = 3
 CHAT_MESSAGE_MAX_LENGTH = 500
 CHAT_HISTORY_LIMIT = 200
+# Auto-expire chat history older than 16 hours (v7.0.5) — new members do
+# not see stale conversations. Applied both on read (filter) and on write
+# (background purge on every insert to keep the collection lean).
+CHAT_HISTORY_TTL_HOURS = 16
 # Image data URL (base64) cap: ~700KB string ≈ ~500KB image binary after base64
 # overhead. Anything larger is rejected to protect Mongo document limits.
 CHAT_IMAGE_MAX_CHARS = 750_000
@@ -1579,10 +1608,25 @@ async def chat_get_messages(
     after: str | None = None,
     limit: int = Query(100, ge=1, le=CHAT_HISTORY_LIMIT),
 ) -> dict[str, Any]:
-    """Get recent chat messages. Pass `after` (ISO timestamp) to fetch only new ones."""
-    query: dict[str, Any] = {}
+    """Get recent chat messages. Pass `after` (ISO timestamp) to fetch only new ones.
+
+    Messages older than CHAT_HISTORY_TTL_HOURS (16h) are hidden from
+    everyone so new members do not see stale conversations.
+    """
+    from datetime import timedelta
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=CHAT_HISTORY_TTL_HOURS)).isoformat()
+    query: dict[str, Any] = {"created_at": {"$gte": cutoff}}
     if after:
-        query["created_at"] = {"$gt": after}
+        # Combine with cutoff — take the later of the two.
+        query["created_at"] = {"$gt": max(after, cutoff)}
+    # Opportunistic cleanup: delete anything older than the cutoff so the
+    # collection stays small. Runs on every read but is a no-op most of
+    # the time (Mongo returns 0 deleted quickly).
+    try:
+        await db.chat_messages.delete_many({"created_at": {"$lt": cutoff}})
+    except Exception:
+        pass
     cursor = db.chat_messages.find(query, projection={"_id": False}).sort(
         "created_at", -1
     ).limit(limit)

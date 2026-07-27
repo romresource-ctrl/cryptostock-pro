@@ -70,9 +70,17 @@ export default function AssetDetail() {
   const { lang, t } = useI18n();
   const router = useRouter();
   const params = useLocalSearchParams<{ market: string; symbol: string; timeframe?: string }>();
-  const validMarkets = ["crypto", "etf", "stock_id", "stock_us"] as const;
+  const validMarkets = ["crypto", "etf", "stock_id", "stock_us", "world_stocks", "gold_silver", "commodity", "forex"] as const;
   const market = (validMarkets.includes(params.market as Market) ? params.market : "crypto") as Market;
+  // Frontend serialised "/" → "-" for URL safety (EUR/USD → EUR-USD).
+  // Keep the dashed form here; api.ts / backend both accept the dashed
+  // representation and decode it internally for forex / gold_silver only.
   const symbol = String(params.symbol || "").toUpperCase();
+  // For header/UI display we convert back to the original "/" form only
+  // for markets that legitimately contain "/" (forex, gold_silver).
+  const displaySymbol = (market === "forex" || market === "gold_silver")
+    ? symbol.replace(/-/g, "/")
+    : symbol;
   const initialTf = (TIMEFRAMES.includes(params.timeframe as Timeframe) ? params.timeframe : "1h") as Timeframe;
 
   const [timeframe, setTimeframe] = useState<Timeframe>(initialTf);
@@ -280,10 +288,14 @@ export default function AssetDetail() {
           <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" }}>
             <View style={{ flex: 1, marginRight: 8 }}>
               <Text style={[styles.symbolTitle, { color: colors.textPrimary }]} numberOfLines={1}>
-                {symbol} <Text style={[styles.marketBadge, { color: colors.textMuted }]}>{t(
+                {displaySymbol} <Text style={[styles.marketBadge, { color: colors.textMuted }]}>{t(
                   market === "crypto" ? "badge_crypto" :
                   market === "etf" ? "badge_etf" :
                   market === "stock_us" ? "badge_stock_us" :
+                  market === "world_stocks" ? "badge_stock_us" :
+                  market === "gold_silver" ? "badge_gold_silver" :
+                  market === "commodity" ? "badge_commodity" :
+                  market === "forex" ? "badge_forex" :
                   "badge_stock_id"
                 )}</Text>
               </Text>

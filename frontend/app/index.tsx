@@ -259,7 +259,14 @@ export default function Dashboard() {
       return;
     }
     const m = marketOverride ?? a.market ?? "crypto";
-    router.push(`/asset/${m}/${a.symbol}?timeframe=${timeframe}` as never);
+    // Forex / gold-silver symbols contain "/" (EUR/USD, XAU/USD) which
+    // breaks Expo Router path segments AND FastAPI route matching (both
+    // decode %2F back to /). Use "-" as URL-safe separator; backend
+    // translates it back before the pool lookup.
+    const urlSafeSymbol = a.symbol.replace(/\//g, "-");
+    router.push(
+      `/asset/${m}/${urlSafeSymbol}?timeframe=${timeframe}` as never,
+    );
   };
 
   const consensus = useMemo(() => {

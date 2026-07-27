@@ -27,7 +27,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import { KeyboardAvoidingView, useKeyboardHandler } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getDeviceId } from "@/src/lib/deviceId";
@@ -66,6 +66,33 @@ export default function ChatSheet({
   const { colors } = useTheme();
   const { isPremium } = useSubscription();
   const insets = useSafeAreaInsets();
+  // Expand sheet to full-page when keyboard is up so the composer + at
+  // least 7-8 lines of chat history stay visible above the keys.
+  const [keyboardShown, setKeyboardShown] = useState(false);
+  useKeyboardHandler(
+    {
+      onStart: (e) => {
+        "worklet";
+        if (e.height > 0) {
+          // schedule state update on JS thread
+          // eslint-disable-next-line no-undef
+          (globalThis as any)._setKb?.(true);
+        }
+      },
+      onEnd: (e) => {
+        "worklet";
+        // eslint-disable-next-line no-undef
+        (globalThis as any)._setKb?.(e.height > 0);
+      },
+    },
+    [],
+  );
+  useEffect(() => {
+    (globalThis as any)._setKb = setKeyboardShown;
+    return () => {
+      (globalThis as any)._setKb = null;
+    };
+  }, []);
 
   const [nickname, setNickname] = useState<string | null>(null);
   const [nickInput, setNickInput] = useState("");
@@ -209,7 +236,13 @@ export default function ChatSheet({
     <View
       style={[
         styles.sheet,
-        { backgroundColor: colors.background, borderColor: colors.border },
+        {
+          backgroundColor: colors.background,
+          borderColor: colors.border,
+          // When keyboard is up, expand to full page so composer + ~8
+          // lines of chat history remain visible above the keys.
+          height: keyboardShown ? "100%" : "62%",
+        },
       ]}
       pointerEvents="box-none"
     >
