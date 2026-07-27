@@ -246,6 +246,11 @@ export const api = {
 
   aiModels: () =>
     get<{ models: { name: string; provider: string }[] }>(`/ai/models`),
+
+  search: (q: string, timeframe: string = "1h") =>
+    get<{ hits: AssetSignal[]; query: string }>(
+      `/search?q=${encodeURIComponent(q)}&timeframe=${encodeURIComponent(timeframe)}`,
+    ),
 };
 
 export const TIMEFRAMES: Timeframe[] = ["1m", "3m", "5m", "15m", "30m", "1h", "3h", "6h", "12h", "18h", "24h", "7d", "14d", "30d"];

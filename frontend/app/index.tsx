@@ -583,39 +583,90 @@ function SearchResults({
   const { width: screenW } = useWindowDimensions();
   const q = query.toUpperCase();
 
-  // Flatten matches from ALL categories → single ranked list.
-  // Ranking: exact-symbol match first, then symbol-prefix match, then contains.
+  // Backend-powered cross-pool search (v7.0.3) — 300ms debounced. Scans
+  // the FULL universe (not just the top-50 on dashboard) so users can
+  // find any listed symbol they type. Falls back to local filter while
+  // backend response is in flight.
+  const [remoteHits, setRemoteHits] = useState<{ asset: AssetSignal; market: Market }[]>([]);
+  const [searching, setSearching] = useState(false);
+  useEffect(() => {
+    if (!query.trim()) return;
+    let cancelled = false;
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await api.search(query.trim());
+        if (!cancelled) {
+          const arr = (res.hits || []).map((a) => ({
+            asset: a,
+            market: (a.market as Market) ?? "crypto",
+          }));
+          setRemoteHits(arr);
+        }
+      } catch {
+        if (!cancelled) setRemoteHits([]);
+      } finally {
+        if (!cancelled) setSearching(false);
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query]);
+
+  // Merge local (already-loaded dashboard data) + remote (full pool).
+  // De-duplicate by market+symbol; local wins because it has fresher
+  // premium/AI enrichment applied by the dashboard endpoint.
   type Hit = { asset: AssetSignal; market: Market; rank: number };
-  const hits: Hit[] = [];
+  const seen = new Set<string>();
+  const merged: Hit[] = [];
+  const rank = (sym: string) => (sym === q ? 0 : sym.startsWith(q) ? 1 : sym.includes(q) ? 2 : 3);
   categories.forEach((k) => {
     (data[k] || []).forEach((a) => {
       const sym = (a.symbol || "").toUpperCase();
-      let rank = -1;
-      if (sym === q) rank = 0;
-      else if (sym.startsWith(q)) rank = 1;
-      else if (sym.includes(q)) rank = 2;
-      if (rank >= 0) hits.push({ asset: a, market: k, rank });
+      const r = rank(sym);
+      if (r < 3) {
+        const key = `${k}-${a.symbol}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push({ asset: a, market: k, rank: r });
+        }
+      }
     });
   });
-  hits.sort((a, b) => {
+  remoteHits.forEach((h) => {
+    const key = `${h.market}-${h.asset.symbol}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      const sym = (h.asset.symbol || "").toUpperCase();
+      merged.push({ asset: h.asset, market: h.market, rank: rank(sym) });
+    }
+  });
+  merged.sort((a, b) => {
     if (a.rank !== b.rank) return a.rank - b.rank;
     return (a.asset.symbol || "").localeCompare(b.asset.symbol || "");
   });
 
-  // Same 2-column responsive grid as main dashboard columns.
   const numCols = screenW < 640 ? 2 : Math.max(3, Math.floor(screenW / 200));
   const cardW = (screenW - 24 - 8 * (numCols - 1)) / numCols;
 
-  if (hits.length === 0) {
+  if (merged.length === 0) {
     return (
       <View style={{ flex: 1, paddingTop: 60, alignItems: "center", gap: 8 }}>
-        <Ionicons name="search" size={28} color={colors.textMuted} />
-        <Text style={{ color: colors.textMuted, fontSize: 13, fontWeight: "600" }}>
-          {`No matches for "${query}"`}
-        </Text>
-        <Text style={{ color: colors.textMuted, fontSize: 11 }}>
-          Try a different symbol, e.g. BTC, AAPL, SIDO
-        </Text>
+        {searching ? (
+          <ActivityIndicator color={colors.accentBlue} />
+        ) : (
+          <>
+            <Ionicons name="search" size={28} color={colors.textMuted} />
+            <Text style={{ color: colors.textMuted, fontSize: 13, fontWeight: "600" }}>
+              {`No matches for "${query}"`}
+            </Text>
+            <Text style={{ color: colors.textMuted, fontSize: 11 }}>
+              Try a different symbol, e.g. BTC, AAPL, SIDO
+            </Text>
+          </>
+        )}
       </View>
     );
   }
@@ -626,8 +677,13 @@ function SearchResults({
       contentContainerStyle={{ padding: 12, paddingBottom: 24 }}
       keyboardShouldPersistTaps="handled"
     >
+      {searching && (
+        <View style={{ paddingBottom: 8, alignItems: "center" }}>
+          <ActivityIndicator size="small" color={colors.accentBlue} />
+        </View>
+      )}
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-        {hits.map((h) => (
+        {merged.map((h) => (
           <View key={`${h.market}-${h.asset.symbol}`} style={{ width: cardW }}>
             <SearchHitCard hit={h} onPress={onPress} locked={locked} />
           </View>
@@ -703,7 +759,6 @@ function ListColumn({
     <View style={[styles.column, { backgroundColor: colors.surfaceAlt }]}>
       <View style={[styles.columnHeader, { borderColor: colors.border }]}>
         <Text style={[styles.columnTitle, { color: colors.textPrimary }]}>{title}</Text>
-        <Text style={[styles.columnCount, { color: colors.textMuted }]}>{data.length}</Text>
       </View>
       {loading && data.length === 0 ? (
         <View style={{ paddingVertical: 40, alignItems: "center" }}>
@@ -731,7 +786,6 @@ function FullList({
     <View style={[styles.fullPanel, { backgroundColor: colors.surfaceAlt }]}>
       <View style={[styles.columnHeader, { borderColor: colors.border }]}>
         <Text style={[styles.columnTitle, { color: colors.textPrimary }]}>{title}</Text>
-        <Text style={[styles.columnCount, { color: colors.textMuted }]}>{data.length} {assetLabel}</Text>
       </View>
       {loading && data.length === 0 ? (
         <View style={{ paddingVertical: 40, alignItems: "center" }}>

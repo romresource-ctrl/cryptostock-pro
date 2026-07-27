@@ -150,13 +150,15 @@ from market_data import (  # noqa: E402
 # returns the whole map instead. Reduces initial fetch from 475 to ~200 assets.
 _TOP_N = 50
 
-# Per-market default asset counts (v6.0.10 — extended IDX universe):
-#   Crypto: 100  |  IDX Stocks: 150  |  World Stocks: 150
-#   ETF/Gold/Silver/Commodity/Forex: use full map (small enough)
-DEFAULT_CRYPTO = list(CRYPTO_BINANCE_MAP.keys())[:100]
-DEFAULT_STOCKS = list(STOCK_YAHOO_MAP.keys())[:150]
-DEFAULT_ETF = list(ETF_YAHOO_MAP.keys())
-DEFAULT_STOCK_US = list(STOCK_US_YAHOO_MAP.keys())[:150]
+# Per-market default asset counts (v7.0.3 — lightweight dashboard):
+#   All markets capped at 50 for fast cold-start.
+#   Search endpoint `/api/search` scans the FULL universe (not just these
+#   50) so users can still find any symbol they type — even if it's not
+#   shown on the dashboard.
+DEFAULT_CRYPTO = list(CRYPTO_BINANCE_MAP.keys())[:50]
+DEFAULT_STOCKS = list(STOCK_YAHOO_MAP.keys())[:50]
+DEFAULT_ETF = list(ETF_YAHOO_MAP.keys())[:50]
+DEFAULT_STOCK_US = list(STOCK_US_YAHOO_MAP.keys())[:50]
 DEFAULT_GOLD_SILVER = list(GOLD_SILVER_YAHOO_MAP.keys())
 DEFAULT_COMMODITY = list(COMMODITY_YAHOO_MAP.keys())
 DEFAULT_FOREX = list(FOREX_YAHOO_MAP.keys())
@@ -908,6 +910,110 @@ async def get_ai_models() -> dict[str, Any]:
             for m in _AI_MODELS
         ],
     }
+
+
+@api.get("/search")
+async def search_assets(
+    q: str = Query(..., min_length=1, max_length=32),
+    limit: int = Query(30, ge=1, le=60),
+    timeframe: str = Query("1h"),
+) -> dict[str, Any]:
+    """Cross-market symbol search.
+
+    Scans the FULL symbol universe (all Yahoo/Binance maps) — not just the
+    50-per-market that the dashboard renders. Returns up to `limit` best
+    matches with live snapshots, so users can find any listed symbol they
+    type even when it's not on the dashboard.
+
+    Ranking: exact match → prefix match → contains match.
+    """
+    from market_data import (
+        CRYPTO_BINANCE_MAP,
+        STOCK_YAHOO_MAP,
+        ETF_YAHOO_MAP,
+        STOCK_US_YAHOO_MAP,
+        GOLD_SILVER_YAHOO_MAP,
+        COMMODITY_YAHOO_MAP,
+        FOREX_YAHOO_MAP,
+    )
+
+    query = q.strip().upper()
+    if not query:
+        return {"hits": []}
+
+    market_pools: list[tuple[str, list[str]]] = [
+        ("crypto", list(CRYPTO_BINANCE_MAP.keys())),
+        ("stock_id", list(STOCK_YAHOO_MAP.keys())),
+        ("etf", list(ETF_YAHOO_MAP.keys())),
+        ("stock_us", list(STOCK_US_YAHOO_MAP.keys())),
+        ("gold_silver", list(GOLD_SILVER_YAHOO_MAP.keys())),
+        ("commodity", list(COMMODITY_YAHOO_MAP.keys())),
+        ("forex", list(FOREX_YAHOO_MAP.keys())),
+    ]
+
+    matches: list[tuple[str, str, int]] = []  # (market, symbol, rank)
+    for market, syms in market_pools:
+        for sym in syms:
+            s = sym.upper()
+            if s == query:
+                matches.append((market, sym, 0))
+            elif s.startswith(query):
+                matches.append((market, sym, 1))
+            elif query in s:
+                matches.append((market, sym, 2))
+    matches.sort(key=lambda m: (m[2], m[1]))
+    matches = matches[:limit]
+
+    if not matches:
+        return {"hits": []}
+
+    # Fetch snapshots concurrently, respecting the Yahoo throttle semaphore
+    # from market_data.get_batch. We call get_stock_snapshot / get_crypto_snapshot
+    # directly to preserve per-hit market context.
+    from market_data import get_crypto_snapshot, get_stock_snapshot, _yahoo_throttled
+
+    async def fetch_one(market: str, symbol: str):
+        try:
+            if market == "crypto":
+                snap = await get_crypto_snapshot(symbol, timeframe)
+            else:
+                snap = await _yahoo_throttled(
+                    get_stock_snapshot(symbol, timeframe, market)
+                )
+            if snap:
+                snap["market"] = market
+                return snap
+        except Exception:
+            return None
+        return None
+
+    results = await asyncio.gather(
+        *[fetch_one(m, s) for (m, s, _r) in matches],
+        return_exceptions=True,
+    )
+    hits = [r for r in results if isinstance(r, dict)]
+
+    # Enrich each hit with technical signal + track record so cards render
+    # exactly like dashboard columns (same shape, same premium flags).
+    symbols_by_market: dict[str, list[str]] = {}
+    for h in hits:
+        symbols_by_market.setdefault(h["market"], []).append(h["symbol"])
+    tr_by_symbol: dict[str, Any] = {}
+    for m, syms in symbols_by_market.items():
+        tr = await _get_tr_summary_cached(m, syms)
+        tr_by_symbol.update(tr)
+
+    signals = [
+        _build_signal(h, tr_by_symbol.get(h["symbol"])).model_dump()
+        for h in hits
+    ]
+    # Ensure `market` field is present on each hit (client uses it for the
+    # coloured badge overlay). _build_signal already sets it from snapshot.
+    for sig, h in zip(signals, hits):
+        sig["market"] = h["market"]
+
+    return {"hits": signals, "query": query}
+
 
 
 
