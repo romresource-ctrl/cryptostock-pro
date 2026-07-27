@@ -470,23 +470,62 @@ async def _fetch_yahoo_chart(client: httpx.AsyncClient, symbol: str, range_: str
     return await _fetch_yahoo_chart_by_symbol(client, yahoo_sym, range_, interval)
 
 
+# v8.0.4 — Pooled httpx.AsyncClient. Creating a fresh AsyncClient per
+# call is expensive: each one has to open its own TCP + TLS session, and
+# there is no HTTP/2 connection reuse across the pool. On cold dashboard
+# load that added ~30-80 ms per upstream request. A single module-level
+# client (lazily initialised, closed at shutdown) reuses connections and
+# gives us built-in HTTP/2 multiplexing on Yahoo/Binance/OKX.
+_HTTP_CLIENT: httpx.AsyncClient | None = None
+_HTTP_CLIENT_LOCK = asyncio.Lock()
+
+
+async def _http() -> httpx.AsyncClient:
+    """Lazy singleton client. Safe to call concurrently."""
+    global _HTTP_CLIENT
+    if _HTTP_CLIENT is not None and not _HTTP_CLIENT.is_closed:
+        return _HTTP_CLIENT
+    async with _HTTP_CLIENT_LOCK:
+        if _HTTP_CLIENT is None or _HTTP_CLIENT.is_closed:
+            _HTTP_CLIENT = httpx.AsyncClient(
+                timeout=httpx.Timeout(10.0, connect=5.0),
+                limits=httpx.Limits(
+                    max_keepalive_connections=32,
+                    max_connections=64,
+                    keepalive_expiry=30.0,
+                ),
+                http2=True,
+                headers={"User-Agent": "Mozilla/5.0 AITradePro/8"},
+            )
+    return _HTTP_CLIENT
+
+
+async def close_http_client() -> None:
+    """Called from server shutdown to release the pool cleanly."""
+    global _HTTP_CLIENT
+    if _HTTP_CLIENT is not None and not _HTTP_CLIENT.is_closed:
+        try:
+            await _HTTP_CLIENT.aclose()
+        finally:
+            _HTTP_CLIENT = None
+
+
 async def get_crypto_snapshot(symbol: str, timeframe: str) -> dict[str, Any] | None:
     tf = TIMEFRAME_MAP.get(timeframe, TIMEFRAME_MAP["1h"])
+    client = await _http()
     # Route to OKX for symbols not listed on Binance public API
     if symbol in CRYPTO_OKX_MAP:
-        async with httpx.AsyncClient() as client:
-            ticker, klines = await asyncio.gather(
-                _fetch_okx_ticker(client, symbol),
-                _fetch_okx_klines(client, symbol, tf["binance"], tf["limit"]),
-            )
+        ticker, klines = await asyncio.gather(
+            _fetch_okx_ticker(client, symbol),
+            _fetch_okx_klines(client, symbol, tf["binance"], tf["limit"]),
+        )
         if not ticker and not klines:
             return None
         return {"symbol": symbol, "market": "crypto", "ticker": ticker or {}, "candles": klines}
-    async with httpx.AsyncClient() as client:
-        ticker, klines = await asyncio.gather(
-            _fetch_binance_ticker(client, symbol),
-            _fetch_binance_klines(client, symbol, tf["binance"], tf["limit"]),
-        )
+    ticker, klines = await asyncio.gather(
+        _fetch_binance_ticker(client, symbol),
+        _fetch_binance_klines(client, symbol, tf["binance"], tf["limit"]),
+    )
     if not ticker and not klines:
         return None
     return {"symbol": symbol, "market": "crypto", "ticker": ticker or {}, "candles": klines}
@@ -511,8 +550,8 @@ async def get_stock_snapshot(symbol: str, timeframe: str, market: str = "stock_i
     yahoo_sym = sym_map.get(symbol)
     if not yahoo_sym:
         return None
-    async with httpx.AsyncClient() as client:
-        data = await _fetch_yahoo_chart_by_symbol(client, yahoo_sym, tf["yahoo_range"], tf["yahoo_interval"])
+    client = await _http()
+    data = await _fetch_yahoo_chart_by_symbol(client, yahoo_sym, tf["yahoo_range"], tf["yahoo_interval"])
     if not data:
         return None
     return {"symbol": symbol, "market": market, "ticker": data["ticker"], "candles": data["candles"]}
@@ -626,24 +665,142 @@ async def _yahoo_throttled(coro):
         return await coro
 
 
+async def get_batch_yahoo_spark(
+    client: httpx.AsyncClient,
+    symbols: list[str],
+    market: str,
+    range_: str,
+    interval: str,
+) -> dict[str, dict[str, Any]]:
+    """v8.0.5 — Batched Yahoo lookup using /v7/finance/spark.
+
+    Yahoo accepts a comma-separated `symbols` query and returns
+    timestamps + close prices for ALL of them in ONE HTTP round-trip.
+    On the dashboard we don't need full OHLCV per row — a close-price
+    series is enough to compute the sparkline, 24h change % and the
+    rule-based RSI/EMA/MACD signal. Cuts network cost from N per-symbol
+    requests to 1 batched request.
+
+    Falls back gracefully: any symbol that Yahoo omits from the
+    response is filtered out here and re-fetched via the per-symbol
+    chart endpoint by the caller.
+    """
+    if not symbols:
+        return {}
+    if market == "stock_id":
+        sym_map = STOCK_YAHOO_MAP
+    elif market == "etf":
+        sym_map = ETF_YAHOO_MAP
+    elif market in ("stock_us", "world_stocks"):
+        sym_map = STOCK_US_YAHOO_MAP
+    elif market == "gold_silver":
+        sym_map = GOLD_SILVER_YAHOO_MAP
+    elif market == "commodity":
+        sym_map = COMMODITY_YAHOO_MAP
+    elif market == "forex":
+        sym_map = FOREX_YAHOO_MAP
+    else:
+        sym_map = STOCK_YAHOO_MAP
+    # Resolve UI ↔ Yahoo tickers (skip anything without a mapping).
+    pairs: list[tuple[str, str]] = [(s, sym_map[s]) for s in symbols if s in sym_map]
+    if not pairs:
+        return {}
+    ys = ",".join(y for _, y in pairs)
+    rev = {y: ui for ui, y in pairs}
+    try:
+        r = await client.get(
+            f"{YAHOO_BASE}/v7/finance/spark",
+            params={"symbols": ys, "range": range_, "interval": interval},
+            timeout=15.0,
+        )
+        r.raise_for_status()
+        data = r.json()
+    except Exception:
+        return {}
+
+    results = (data.get("spark") or {}).get("result", []) or []
+    out: dict[str, dict[str, Any]] = {}
+    for item in results:
+        ysym = item.get("symbol")
+        ui_sym = rev.get(ysym)
+        if not ui_sym:
+            continue
+        resp = (item.get("response") or [{}])[0]
+        meta = resp.get("meta") or {}
+        ts_list = resp.get("timestamp") or []
+        quote = ((resp.get("indicators") or {}).get("quote") or [{}])[0]
+        closes = quote.get("close") or []
+        candles: list[dict[str, float]] = []
+        for i, t in enumerate(ts_list):
+            c = closes[i] if i < len(closes) else None
+            if c is None:
+                continue
+            fc = float(c)
+            candles.append({
+                "t": int(t) * 1000,
+                "open": fc, "high": fc, "low": fc, "close": fc,
+                "volume": 0.0,
+            })
+        if not candles:
+            continue
+        last = candles[-1]
+        prev_close = float(
+            meta.get("chartPreviousClose")
+            or (candles[-2]["close"] if len(candles) >= 2 else last["close"])
+        )
+        price = float(meta.get("regularMarketPrice") or last["close"])
+        change = ((price - prev_close) / prev_close * 100.0) if prev_close else 0.0
+        out[ui_sym] = {
+            "symbol": ui_sym,
+            "market": market,
+            "ticker": {
+                "price": price,
+                "change_pct_24h": change,
+                "volume_24h": 0.0,
+                "high_24h": float(meta.get("regularMarketDayHigh") or price),
+                "low_24h": float(meta.get("regularMarketDayLow") or price),
+            },
+            "candles": candles,
+        }
+    return out
+
+
 async def get_batch(market: str, symbols: list[str], timeframe: str) -> list[dict[str, Any]]:
-    """Fetch many symbols concurrently. Returns only successful results."""
+    """Fetch many symbols concurrently. Returns only successful results.
+
+    v8.0.5 — For non-crypto markets we first try the batched Yahoo spark
+    endpoint (1 HTTP call). Any symbol Yahoo omits (mismatched region,
+    delisted, etc.) is re-fetched with the per-symbol chart endpoint so
+    the dashboard column doesn't lose rows. In the happy path this
+    reduces N HTTP calls to 1, which is where the previous "heavy" feel
+    was coming from.
+    """
     if market == "crypto":
         # Binance's public API tolerates our load; no need to throttle.
         results = await asyncio.gather(
             *[get_crypto_snapshot(s, timeframe) for s in symbols],
             return_exceptions=True,
         )
-    else:
-        results = await asyncio.gather(
-            *[
-                _yahoo_throttled(get_stock_snapshot(s, timeframe, market))
-                for s in symbols
-            ],
+        out: list[dict[str, Any]] = [r for r in results if isinstance(r, dict)]
+        return out
+
+    tf = TIMEFRAME_MAP.get(timeframe, TIMEFRAME_MAP["1h"])
+    client = await _http()
+    batch = await get_batch_yahoo_spark(
+        client, symbols, market,
+        range_=tf["yahoo_range"], interval=tf["yahoo_interval"],
+    )
+
+    # Anything the batch endpoint didn't return: fall back to per-symbol
+    # chart endpoint (still throttled). This is rare in practice.
+    missing = [s for s in symbols if s not in batch]
+    if missing:
+        fallback = await asyncio.gather(
+            *[_yahoo_throttled(get_stock_snapshot(s, timeframe, market)) for s in missing],
             return_exceptions=True,
         )
-    out: list[dict[str, Any]] = []
-    for r in results:
-        if isinstance(r, dict):
-            out.append(r)
-    return out
+        for r in fallback:
+            if isinstance(r, dict):
+                batch[r["symbol"]] = r
+    # Preserve input order so the dashboard is stable across polls.
+    return [batch[s] for s in symbols if s in batch]

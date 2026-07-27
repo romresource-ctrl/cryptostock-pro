@@ -217,6 +217,26 @@ export const api = {
     if (opts.full) params.append("full", "true");
     return get<DashboardResponse>(`/dashboard?${params.toString()}`);
   },
+  // v8.0.4 — Batch dashboard fetch. Instead of firing N parallel HTTP
+  // requests, hand the backend a comma-separated market list and let it
+  // do the fan-out server-side (one response, one setState).
+  dashboardBatch: (
+    markets: Market[],
+    timeframe: Timeframe,
+    opts: { sort?: DashboardSort; full?: boolean } = {},
+  ) => {
+    const params = new URLSearchParams({
+      markets: markets.join(","),
+      timeframe,
+    });
+    if (opts.sort) params.append("sort", opts.sort);
+    if (opts.full) params.append("full", "true");
+    return get<{
+      timeframe: Timeframe;
+      server_time: string;
+      markets: Record<string, DashboardResponse & { error?: string }>;
+    }>(`/dashboard/batch?${params.toString()}`);
+  },
   watchlist: () => get<WatchlistResponse>("/watchlist"),
   updateWatchlist: (payload: { crypto: string[]; stocks: string[] }) =>
     send<WatchlistResponse>("/watchlist", "POST", payload),

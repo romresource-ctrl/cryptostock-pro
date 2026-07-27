@@ -68,7 +68,12 @@ function wrColor(colors: ReturnType<typeof useTheme>["colors"], wr: number | nul
   return colors.accentDown;
 }
 
-function AssetCard({
+// v8.0.4 — Memoised so column re-renders (poll ticker, other markets
+// finishing their fetch, safe-area updates, etc.) do NOT force every
+// visible card to re-run all its layout + Sparkline SVG work. The
+// custom prop comparator ignores identity changes on the `onPress`
+// closure that the parent inevitably recreates each render.
+const AssetCard = React.memo(function AssetCard({
   asset, onPress, market, locked,
 }: { asset: AssetSignal; onPress: () => void; market: Market; locked: boolean }) {
   const { colors } = useTheme();
@@ -148,7 +153,21 @@ function AssetCard({
       )}
     </TouchableOpacity>
   );
-}
+}, (prev, next) => (
+  // Fast equality — the only things that change per poll are the
+  // metric numbers; deep-compare those and ignore closure identity.
+  prev.market === next.market &&
+  prev.locked === next.locked &&
+  prev.asset.symbol === next.asset.symbol &&
+  prev.asset.price === next.asset.price &&
+  prev.asset.action === next.asset.action &&
+  prev.asset.label === next.asset.label &&
+  prev.asset.confidence === next.asset.confidence &&
+  prev.asset.change_pct_24h === next.asset.change_pct_24h &&
+  prev.asset.is_premium === next.asset.is_premium &&
+  (prev.asset.track_record?.wr_30d ?? null) === (next.asset.track_record?.wr_30d ?? null) &&
+  (prev.asset.track_record?.n_30d ?? 0) === (next.asset.track_record?.n_30d ?? 0)
+));
 
 export default function Dashboard() {
   const { colors, mode, toggle } = useTheme();
@@ -192,37 +211,52 @@ export default function Dashboard() {
     return [...selected, ...rest];
   }, [view, ALL_CATEGORIES]);
 
-  const load = useCallback(async (tf: Timeframe, _selected: Category[]) => {
-    setLoadingMap({
-      crypto: true, etf: true, stock_id: true, stock_us: true,
-      world_stocks: false, gold_silver: true, commodity: true, forex: true,
+  // v8.0.4 — Lazy-load. On the first paint we only fetch the TWO markets
+  // the user currently has on-screen (`view`). The other 6 markets stay
+  // empty until the user actually swipes to them (their `useEffect` will
+  // pick up the change to `view` and fetch on demand). This cuts cold-
+  // start network traffic from 8 HTTP requests → 1 batched request that
+  // returns exactly what the user can see.
+  const load = useCallback(async (tf: Timeframe, selected: Category[]) => {
+    // Mark only the markets we are about to fetch as "loading" so their
+    // columns show a spinner; the invisible columns stay untouched.
+    setLoadingMap((prev) => {
+      const next = { ...prev };
+      selected.forEach((k) => { next[k] = true; });
+      return next;
     });
     try {
-      const results = await Promise.allSettled(
-        ALL_CATEGORIES.map((k) => api.dashboard(k, tf, { full: false, sort: "premium" })),
-      );
-      let pCount = 0;
-      const next = {
-        crypto: [], etf: [], stock_id: [], stock_us: [],
-        world_stocks: [], gold_silver: [], commodity: [], forex: [],
-      } as Record<Category, AssetSignal[]>;
-      ALL_CATEGORIES.forEach((k, i) => {
-        const r = results[i];
-        if (r.status === "fulfilled") {
-          next[k] = r.value.assets;
-          pCount += r.value.premium_count;
-        }
+      // One batched HTTP call covering all visible markets.
+      const res = await api.dashboardBatch(selected as Market[], tf, {
+        sort: "premium",
+        full: false,
       });
-      setData(next);
+      setData((prev) => {
+        const next = { ...prev };
+        selected.forEach((k) => {
+          const m = res.markets?.[k];
+          if (m && Array.isArray(m.assets)) {
+            next[k] = m.assets;
+          }
+        });
+        return next;
+      });
+      // Premium counter reflects ONLY currently-loaded markets — matches
+      // what the user actually sees at the top of the dashboard.
+      let pCount = 0;
+      Object.values(res.markets || {}).forEach((m) => {
+        pCount += m?.premium_count ?? 0;
+      });
       setPremiumCount(pCount);
       setLastUpdate(new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
     } finally {
-      setLoadingMap({
-        crypto: false, etf: false, stock_id: false, stock_us: false,
-        world_stocks: false, gold_silver: false, commodity: false, forex: false,
+      setLoadingMap((prev) => {
+        const next = { ...prev };
+        selected.forEach((k) => { next[k] = false; });
+        return next;
       });
     }
-  }, [ALL_CATEGORIES]);
+  }, []);
 
   useEffect(() => {
     void load(timeframe, view);

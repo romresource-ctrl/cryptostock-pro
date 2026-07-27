@@ -75,9 +75,18 @@ logger = logging.getLogger("aitrade")
 # to avoid hammering upstream APIs on every dashboard refresh.
 import asyncio  # noqa: E402
 
-DASHBOARD_CACHE_TTL = float(os.environ.get("DASHBOARD_CACHE_TTL_SEC", "45"))
+# v8.0.4: raised to 75s so the 60s dashboard refresh interval always
+#         hits the cache.
+# v8.0.5: raised to 300s (5 min) — users no longer wait on Yahoo, and
+#         stale entries are served instantly while a background task
+#         refreshes them (see `_get_snapshots_cached` below).
+DASHBOARD_CACHE_TTL = float(os.environ.get("DASHBOARD_CACHE_TTL_SEC", "300"))
+# Serve a stale cached response IMMEDIATELY if its age is below this
+# hard ceiling. Beyond this, we block on a fresh fetch.
+DASHBOARD_STALE_MAX = float(os.environ.get("DASHBOARD_STALE_MAX_SEC", "900"))
 _snapshot_cache: dict[str, tuple[float, list[dict]]] = {}
 _snapshot_locks: dict[str, asyncio.Lock] = {}
+_snapshot_refresh_inflight: dict[str, bool] = {}
 _tr_cache: dict[str, tuple[float, dict]] = {}
 _tr_locks: dict[str, asyncio.Lock] = {}
 
@@ -91,11 +100,29 @@ def _cache_key_tr(market: str, symbols: list[str]) -> str:
 
 
 async def _get_snapshots_cached(market: str, symbols: list[str], timeframe: str) -> list[dict]:
+    """Cached snapshot fetch with stale-while-revalidate semantics.
+
+    Ladder:
+      1. Cache fresh (< TTL) → return immediately.
+      2. Cache stale but young (< STALE_MAX) → return stale immediately
+         AND fire-and-forget a background refresh so the NEXT call sees
+         fresh data. This is the key optimisation: users no longer wait
+         on Yahoo/Binance.
+      3. Cache absent or too old → block on a fresh fetch (same as before).
+    """
     key = _cache_key_snap(market, symbols, timeframe)
     now = time.time()
     hit = _snapshot_cache.get(key)
-    if hit and now - hit[0] < DASHBOARD_CACHE_TTL:
-        return hit[1]
+    if hit:
+        age = now - hit[0]
+        if age < DASHBOARD_CACHE_TTL:
+            return hit[1]
+        if age < DASHBOARD_STALE_MAX:
+            # Stale-while-revalidate: kick off refresh without blocking.
+            if not _snapshot_refresh_inflight.get(key):
+                _snapshot_refresh_inflight[key] = True
+                asyncio.create_task(_refresh_snapshot(key, market, symbols, timeframe))
+            return hit[1]
     lock = _snapshot_locks.setdefault(key, asyncio.Lock())
     async with lock:
         hit = _snapshot_cache.get(key)
@@ -104,6 +131,21 @@ async def _get_snapshots_cached(market: str, symbols: list[str], timeframe: str)
         data = await get_batch(market, symbols, timeframe)
         _snapshot_cache[key] = (time.time(), data)
         return data
+
+
+async def _refresh_snapshot(key: str, market: str, symbols: list[str], timeframe: str) -> None:
+    """Background snapshot refresh — writes result into the cache and
+    releases the in-flight flag so a subsequent stale request can trigger
+    another refresh."""
+    try:
+        data = await get_batch(market, symbols, timeframe)
+        if data:
+            _snapshot_cache[key] = (time.time(), data)
+    except Exception:
+        # Swallow — the stale cache continues to serve requests.
+        pass
+    finally:
+        _snapshot_refresh_inflight.pop(key, None)
 
 
 async def _get_tr_summary_cached(market: str, symbols: list[str]) -> dict:
@@ -640,6 +682,27 @@ async def dashboard(
 ) -> DashboardResponse:
     if timeframe not in TIMEFRAME_MAP:
         raise HTTPException(400, f"Invalid timeframe. Use one of {TIMEFRAMES}")
+    return await _build_dashboard_response(
+        market=market,
+        timeframe=timeframe,
+        sort=sort,
+        premium_only=premium_only,
+        min_confidence=min_confidence,
+        min_wr=min_wr,
+        full=full,
+    )
+
+
+async def _build_dashboard_response(
+    *,
+    market: str,
+    timeframe: str,
+    sort: str = "default",
+    premium_only: bool = False,
+    min_confidence: int = 85,
+    min_wr: float = 70.0,
+    full: bool = False,
+) -> DashboardResponse:
     # Backward-compat: "stock" -> "stock_id", "world_stocks" -> "stock_us" internally
     eff_market = "stock_id" if market == "stock" else market
     if eff_market == "world_stocks":
@@ -659,13 +722,6 @@ async def dashboard(
         profile_name = "Semua Aset"
         profile_id = "all"
     else:
-        # HARDCODED asset lists per market (user's explicit request v5.0.9):
-        # Do NOT filter by profile.crypto / profile.stocks at all. The
-        # profile system was causing IDX Stocks to show only 18 symbols
-        # (matching the stale seed list in production Mongo) and other
-        # markets to show 0 when the profile had non-matching symbols.
-        # Instead, always serve the canonical DEFAULT_* list per market
-        # so every install shows the same, predictable asset universe.
         symbols = {
             "crypto": DEFAULT_CRYPTO,
             "stock_id": DEFAULT_STOCKS,
@@ -713,6 +769,56 @@ async def dashboard(
         premium_count=premium_count,
         premium_threshold={"min_confidence": min_confidence, "min_wr": min_wr},
     )
+
+
+# v8.0.4 — Batch dashboard endpoint. Frontend used to fire 8 parallel
+# HTTP requests on cold start; even though each is cheap on the server
+# they cost ~50ms round-trip on real networks and force React to
+# schedule 8 setState updates. `/api/dashboard/batch?markets=a,b,c`
+# returns them all inside a single response so the client can perform
+# ONE state update.
+@api.get("/dashboard/batch")
+async def dashboard_batch(
+    markets: str = Query("crypto,stock_us,etf,stock_id,gold_silver,commodity,forex"),
+    timeframe: str = Query("1h"),
+    sort: Literal["default", "premium", "confidence", "wr"] = Query("premium"),
+    full: bool = Query(False),
+    min_confidence: int = Query(85, ge=0, le=100),
+    min_wr: float = Query(70.0, ge=0.0, le=100.0),
+) -> dict[str, Any]:
+    if timeframe not in TIMEFRAME_MAP:
+        raise HTTPException(400, f"Invalid timeframe. Use one of {TIMEFRAMES}")
+    market_keys = [m.strip() for m in markets.split(",") if m.strip()]
+    if not market_keys:
+        raise HTTPException(400, "markets query must be non-empty")
+    # Bound the batch so a malicious caller can't ask for hundreds of
+    # markets (only 8 are known); anything else is silently dropped.
+    known = {"crypto", "stock", "stock_id", "stock_us", "world_stocks",
+             "etf", "gold_silver", "commodity", "forex"}
+    market_keys = [m for m in market_keys if m in known][:9]
+
+    # Fire ALL requested market builds concurrently. The underlying
+    # `_get_snapshots_cached` already de-dupes per-symbol upstream
+    # fetches, so this scales sub-linearly with markets.
+    tasks = [
+        _build_dashboard_response(
+            market=m,
+            timeframe=timeframe,
+            sort=sort,
+            full=full,
+            min_confidence=min_confidence,
+            min_wr=min_wr,
+        )
+        for m in market_keys
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    out: dict[str, Any] = {}
+    for m, r in zip(market_keys, results, strict=False):
+        if isinstance(r, Exception):
+            out[m] = {"error": str(r)[:200], "assets": [], "premium_count": 0}
+        else:
+            out[m] = r.model_dump()
+    return {"timeframe": timeframe, "markets": out, "server_time": _now_iso()}
 
 
 # -------- Asset detail --------
@@ -1779,4 +1885,6 @@ async def _startup_bootstrap() -> None:
 
 @app.on_event("shutdown")
 async def _shutdown() -> None:
+    from market_data import close_http_client
+    await close_http_client()
     client.close()
