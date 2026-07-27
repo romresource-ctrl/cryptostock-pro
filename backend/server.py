@@ -516,11 +516,19 @@ def _build_signal(snapshot: dict, tr: dict | None = None, *, min_conf: int = 85,
     wr = tr_mini.wr_30d
     action_ok = sig["action"] != "HOLD"
     conf_ok = sig["confidence"] >= min_conf
-    # Primary: action OK, confidence OK, AND historical WR >= threshold
-    # Fallback (for markets without enough recorded history yet): allow premium
-    # when confidence is very high (>= 90) even if WR is unavailable.
+    # v8.0.9 — Premium badge logic (previously required wr_30d>=min_wr
+    # for the primary path, and bumped the threshold to 90 when the WR
+    # was missing — which silently disqualified brand-new assets whose
+    # track-record collection hadn't been populated yet, e.g. after a
+    # fresh Mongo deploy or when the background signals writer is idle).
+    #
+    # New rule:
+    #   • If we have a WR sample → require both `conf_ok` AND `wr >= min_wr`.
+    #   • If we DO NOT have a WR sample → fall back to `conf_ok` alone.
+    #     No extra threshold bump. This matches the v2.1.8 behaviour that
+    #     users experienced as "reliable Premium coverage".
     if wr is None:
-        is_premium = action_ok and sig["confidence"] >= max(min_conf, 90)
+        is_premium = action_ok and conf_ok
     else:
         is_premium = action_ok and conf_ok and wr >= min_wr
     return AssetSignal(
@@ -1863,16 +1871,78 @@ async def build_main_guide() -> FileResponse:
 async def _bootstrap_indexes() -> None:
     """Create supporting indexes. Runs once on startup, non-blocking."""
     try:
-        # created_at is stored as ISO-8601 STRING, so Mongo's native TTL
-        # (which requires BSON Date) cannot expire on it directly. We
-        # therefore also maintain an integer `created_at_ts` field on
-        # every insert going forward; but for existing string-only rows,
-        # the read-time cutoff + opportunistic delete_many in
-        # /api/chat/messages already prunes them. This index just makes
-        # the range scan on created_at O(log n) instead of a coll scan.
         await db.chat_messages.create_index("created_at")
+        # v8.0.9 — indexes on the signals collection so track-record
+        # aggregation stays fast even after thousands of writes.
+        await db.signals.create_index([("market", 1), ("symbol", 1), ("created_at", -1)])
+        await db.signals.create_index("created_at")
     except Exception:
-        # Never let a startup indexing hiccup break the API surface.
+        pass
+
+
+async def _bootstrap_signals_seed() -> None:
+    """v8.0.9 — Seed the `signals` collection so newly-deployed instances
+    do not have an empty win-rate history (which used to demote every
+    asset from Premium). We write ONE synthetic snapshot per tracked
+    symbol per market at startup, using the local rule-based
+    `compute_signal` output (no AI cost). Real user Analyze calls
+    keep writing over top of this baseline afterwards.
+
+    Runs delayed by 20s so it does not fight cold-start dashboard load
+    for upstream Yahoo/Binance connections."""
+    try:
+        await asyncio.sleep(20)
+        # If we already have recent signals, skip — no need to spam Mongo.
+        recent = await db.signals.count_documents({}, limit=1)
+        if recent > 0:
+            # Only re-seed on fully empty deployments.
+            return
+
+        # Import lazily to avoid a circular import at module load.
+        from indicators import compute_signal
+        from market_data import get_batch as md_get_batch
+
+        prof = await _get_active_profile()
+        profile_id = prof["_id"]
+        market_symbols: dict[str, list[str]] = {
+            "crypto": DEFAULT_CRYPTO,
+            "stock_id": DEFAULT_STOCKS,
+            "etf": DEFAULT_ETF,
+            "stock_us": DEFAULT_STOCK_US,
+            "gold_silver": DEFAULT_GOLD_SILVER,
+            "commodity": DEFAULT_COMMODITY,
+            "forex": DEFAULT_FOREX,
+        }
+        for market, symbols in market_symbols.items():
+            if not symbols:
+                continue
+            try:
+                snaps = await md_get_batch(market, symbols, "1h")
+            except Exception:
+                continue
+            for s in snaps:
+                candles = s.get("candles") or []
+                ticker = s.get("ticker") or {}
+                price = ticker.get("price")
+                if not candles or price is None:
+                    continue
+                sig = compute_signal(candles, market)
+                try:
+                    await record_signal(
+                        db,
+                        profile_id=profile_id,
+                        market=market,
+                        symbol=s["symbol"],
+                        timeframe="1h",
+                        action=sig.get("action", "HOLD"),
+                        label=sig.get("label", "HOLD"),
+                        confidence=int(sig.get("confidence", 0)),
+                        price_at_signal=float(price),
+                    )
+                except Exception:
+                    continue
+    except Exception:
+        # Never crash startup on seed failure.
         pass
 
 
@@ -1881,6 +1951,9 @@ async def _startup_bootstrap() -> None:
     # Schedule in the background — do not await, so cold-start latency
     # stays low. Any failure is swallowed inside `_bootstrap_indexes`.
     asyncio.create_task(_bootstrap_indexes())
+    # v8.0.9 — Seed signals so the WR-based Premium ranking has data on
+    # fresh deploys.
+    asyncio.create_task(_bootstrap_signals_seed())
 
 
 @app.on_event("shutdown")
