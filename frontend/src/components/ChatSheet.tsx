@@ -374,10 +374,13 @@ export default function ChatSheet({
 
       {/* Body — messages fill remaining space; composer + FlatList are
           wrapped in a KeyboardAvoidingView so the whole content column
-          resizes above the on-screen keyboard. This is the standard
-          react-native-keyboard-controller pattern for chat surfaces. */}
+          resizes above the on-screen keyboard. v8.0.6: added flex:1 on
+          BOTH the KAV and the inner list container so the FlatList can
+          actually take up all remaining height and remain scrollable
+          when the keyboard is open. `flexGrow:1` on contentContainerStyle
+          also lets the list expand to fill the viewport. */}
       <KeyboardAvoidingView
-        behavior="padding"
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={0}
         style={{ flex: 1 }}
       >
@@ -413,52 +416,66 @@ export default function ChatSheet({
             <ActivityIndicator color={colors.accentBlue} />
           </View>
         ) : (
-          <FlatList
-            key={`chat-list-${snapTick}`}
-            ref={listRef}
-            data={messages}
-            keyExtractor={(m) => m.id}
-            contentContainerStyle={{ padding: 10, paddingBottom: 4 }}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
-            renderItem={({ item }) => {
-              const isMine = item.device_id === deviceIdRef.current;
-              return (
-                <View style={[styles.row, { justifyContent: isMine ? "flex-end" : "flex-start" }]}>
-                  <View
-                    style={[
-                      styles.bubble,
-                      {
-                        backgroundColor: isMine ? colors.accentBlue : colors.surface,
-                        borderColor: colors.border,
-                      },
-                    ]}
-                  >
-                    <Text
+          <View style={{ flex: 1 }}>
+            <FlatList
+              key={`chat-list-${snapTick}`}
+              ref={listRef}
+              data={messages}
+              keyExtractor={(m) => m.id}
+              style={{ flex: 1 }}
+              contentContainerStyle={{
+                flexGrow: 1,
+                padding: 10,
+                paddingBottom: 4,
+                justifyContent: "flex-end",
+              }}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              showsVerticalScrollIndicator={true}
+              // v8.0.4 FlatList perf props — cheap virtualisation gains.
+              windowSize={5}
+              maxToRenderPerBatch={10}
+              removeClippedSubviews={true}
+              initialNumToRender={12}
+              renderItem={({ item }) => {
+                const isMine = item.device_id === deviceIdRef.current;
+                return (
+                  <View style={[styles.row, { justifyContent: isMine ? "flex-end" : "flex-start" }]}>
+                    <View
                       style={[
-                        styles.nick,
-                        { color: isMine ? "#fff" : colors.accentBlue },
+                        styles.bubble,
+                        {
+                          backgroundColor: isMine ? colors.accentBlue : colors.surface,
+                          borderColor: colors.border,
+                        },
                       ]}
                     >
-                      {item.nickname}
-                    </Text>
-                    {item.image_data ? (
-                      <Image
-                        source={{ uri: item.image_data }}
-                        style={styles.attachmentImage}
-                        resizeMode="cover"
-                      />
-                    ) : null}
-                    {item.text ? (
-                      <Text style={[styles.text, { color: isMine ? "#fff" : colors.textPrimary }]}>
-                        {item.text}
+                      <Text
+                        style={[
+                          styles.nick,
+                          { color: isMine ? "#fff" : colors.accentBlue },
+                        ]}
+                      >
+                        {item.nickname}
                       </Text>
-                    ) : null}
+                      {item.image_data ? (
+                        <Image
+                          source={{ uri: item.image_data }}
+                          style={styles.attachmentImage}
+                          resizeMode="cover"
+                        />
+                      ) : null}
+                      {item.text ? (
+                        <Text style={[styles.text, { color: isMine ? "#fff" : colors.textPrimary }]}>
+                          {item.text}
+                        </Text>
+                      ) : null}
+                    </View>
                   </View>
-                </View>
-              );
-            }}
-          />
+                );
+              }}
+            />
+          </View>
         )}
 
         {nickname !== null && (

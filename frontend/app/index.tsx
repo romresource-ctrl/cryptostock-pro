@@ -186,8 +186,12 @@ export default function Dashboard() {
   });
   const [premiumCount, setPremiumCount] = useState(0);
   const [loadingMap, setLoadingMap] = useState<Record<Category, boolean>>({
-    crypto: true, etf: false, stock_id: false, stock_us: true,
-    world_stocks: false, gold_silver: false, commodity: false, forex: false,
+    // v8.0.7 — load ALL categories on cold start to eliminate the empty
+    // columns on first swipe. Because the backend now serves via one
+    // batched `/api/dashboard/batch` call (75s cache), the extra cost
+    // over lazy-loading just 2 categories is negligible.
+    crypto: true, etf: true, stock_id: true, stock_us: true,
+    world_stocks: true, gold_silver: true, commodity: true, forex: true,
   });
   const [refreshing, setRefreshing] = useState(false);
   const [, setLastUpdate] = useState<string>("");
@@ -259,10 +263,14 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    void load(timeframe, view);
-    const id = setInterval(() => void load(timeframe, view), REFRESH_INTERVAL_MS);
+    // v8.0.7 — Removed lazy-loading: fetch every category (still ONE
+    // batched HTTP call thanks to /api/dashboard/batch), so users never
+    // hit an empty column when swiping between markets. Cache TTL of
+    // 300s on the backend keeps this cheap on subsequent polls.
+    void load(timeframe, ALL_CATEGORIES);
+    const id = setInterval(() => void load(timeframe, ALL_CATEGORIES), REFRESH_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [timeframe, view, load]);
+  }, [timeframe, ALL_CATEGORIES, load]);
 
   const toggleCategory = (k: Category) => {
     setView((prev) => {
