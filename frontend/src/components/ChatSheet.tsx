@@ -47,7 +47,7 @@ import { storage } from "@/src/utils/storage";
 const NICKNAME_KEY = "aicrypstockpro.chat.nickname";
 const POLL_INTERVAL_MS = 3000;
 const RATE_LIMIT_MS = 3000;
-const MAX_MSG_LEN = 500;
+// v8.0.8 — no client-side message length limit anymore.
 const IMG_TARGET_WIDTH = 900;
 const IMG_JPEG_QUALITY = 0.55;
 
@@ -326,7 +326,12 @@ export default function ChatSheet({
 
   if (!visible) return null;
 
-  const canSend = isPremium && !sending && (input.trim().length > 0 || !!attachment);
+  // v8.0.8 — Send button enablement is now decoupled from `isPremium`
+  // and `sending`. The button turns blue the moment the user types any
+  // non-whitespace character (or attaches an image). If a non-premium
+  // user taps it, `sendMessage` still shows the "Premium Only" alert —
+  // but the UI no longer looks broken/disabled while typing.
+  const canSend = input.trim().length > 0 || !!attachment;
 
   return (
     <Animated.View
@@ -522,7 +527,9 @@ export default function ChatSheet({
                 placeholder="Type a message…"
                 placeholderTextColor={colors.textMuted}
                 multiline
-                maxLength={MAX_MSG_LEN}
+                // v8.0.8 — removed maxLength so long chat messages are
+                // no longer truncated mid-typing. Backend still bounds
+                // stored size (chat_messages schema) as a safety net.
                 blurOnSubmit={false}
                 onFocus={() => {
                   // Expand automatically when the user starts typing so we

@@ -27,7 +27,7 @@ import { storage } from "@/src/utils/storage";
 const NICKNAME_KEY = "aicrypstockpro.chat.nickname";
 const POLL_INTERVAL_MS = 3000;
 const RATE_LIMIT_MS = 3000;
-const MAX_MSG_LEN = 500;
+// v8.0.8 — MAX_MSG_LEN removed (client no longer caps message length).
 const MAX_NICK_LEN = 20;
 // Image compression targets — keep base64 payload well under backend cap.
 const IMG_TARGET_WIDTH = 900;
@@ -128,10 +128,7 @@ export default function ChatScreen() {
       Alert.alert("Premium Only", "Only premium subscribers can post in the chatroom.");
       return;
     }
-    if (text.length > MAX_MSG_LEN) {
-      Alert.alert("Too Long", `Max ${MAX_MSG_LEN} characters.`);
-      return;
-    }
+    // v8.0.8 — no client-side length limit on messages anymore.
     const now = Date.now();
     if (now - lastSentRef.current < RATE_LIMIT_MS) {
       Alert.alert(
@@ -323,7 +320,11 @@ export default function ChatScreen() {
   }
 
   // ---- Main chat screen ----
-  const canSend = isPremium && !sending && (input.trim().length > 0 || !!attachment);
+  // v8.0.8 — Decoupled from `isPremium` and `sending` so the button
+  // turns blue the instant the user types any non-whitespace character.
+  // Premium gating remains inside `sendMessage` (shows "Premium Only"
+  // alert) so the flow is not bypassed.
+  const canSend = input.trim().length > 0 || !!attachment;
   return (
     <KeyboardAvoidingView
       // `translate-with-padding` on chat screens is the recommended behavior
@@ -474,7 +475,7 @@ export default function ChatScreen() {
             placeholderTextColor={colors.textMuted}
             editable={isPremium}
             multiline
-            maxLength={MAX_MSG_LEN}
+            // v8.0.8 — no client-side length cap; server still validates.
             blurOnSubmit={false}
             textAlignVertical="top"
             style={[
@@ -490,7 +491,7 @@ export default function ChatScreen() {
         </View>
         <TouchableOpacity
           onPress={isPremium ? sendMessage : () => router.back()}
-          disabled={isPremium ? !canSend : false}
+          disabled={!canSend}
           style={[
             styles.sendBtn,
             {
