@@ -49,6 +49,31 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
   const [connected, setConnected] = useState(false);
   const deviceIdRef = useRef<string>("");
 
+  /**
+   * Apply a backend sync result to local state — but only if it doesn't
+   * downgrade a still-valid entitlement. Rules:
+   *   • synced is null/undefined  → ignore (network failed, keep local).
+   *   • synced.entitled == true   → always apply (may extend expiry).
+   *   • synced.entitled == false  → apply ONLY if local is also expired /
+   *     unentitled. If local is still active and unexpired, keep local
+   *     (this prevents transient backend blips from kicking premium users
+   *     out of asset detail screens mid-session).
+   */
+  const applySync = useCallback(
+    (synced: Entitlement | null) => {
+      if (!synced) return;
+      // Use functional setState to safely capture the LATEST entitlement,
+      // avoiding stale closures inside intervals / listeners.
+      setEntitlement((prev) => {
+        if (synced.entitled) return synced;
+        // Backend says not entitled. Only trust it if local also thinks so.
+        if (!prev || !isEntitled(prev)) return synced;
+        return prev; // keep still-valid local entitlement
+      });
+    },
+    [],
+  );
+
   // ---- Bootstrap: load cached entitlement + sync backend + init IAP + wire listener ----
   useEffect(() => {
     let cleanup: (() => void) | null = null;
@@ -59,16 +84,18 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       const deviceId = await getDeviceId();
       deviceIdRef.current = deviceId;
 
-      // Backend is source of truth. Sync BEFORE marking loaded so paywall
-      // doesn't briefly flash "unlocked" on cold start when entitlement is
-      // actually expired server-side. Timeout after 2.5s to avoid blocking UI
-      // on flaky networks.
+      // Backend is source of truth for RENEWING entitlement (extending
+      // expiry, catching a new purchase). But we must NOT downgrade a
+      // still-valid local entitlement just because a single request came
+      // back with entitled=false (e.g. transient backend hiccup, service
+      // account key propagation lag). Doing so caused users to be kicked
+      // out of asset detail screens mid-session. See `applySync` below.
       try {
         const synced = await Promise.race([
           syncEntitlementFromBackend(deviceId),
           new Promise<null>((r) => setTimeout(() => r(null), 2500)),
         ]);
-        if (synced) setEntitlement(synced);
+        applySync(synced);
       } catch {
         /* ignore — trust local cache */
       }
@@ -247,7 +274,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
           const deviceId = deviceIdRef.current || (await getDeviceId());
           try {
             const synced = await syncEntitlementFromBackend(deviceId);
-            if (synced) setEntitlement(synced);
+            applySync(synced);
           } catch {
             /* ignore */
           }
@@ -263,7 +290,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       const deviceId = deviceIdRef.current || (await getDeviceId());
       try {
         const synced = await syncEntitlementFromBackend(deviceId);
-        if (synced) setEntitlement(synced);
+        applySync(synced);
       } catch {
         /* silent */
       }

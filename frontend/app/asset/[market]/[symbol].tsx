@@ -498,6 +498,23 @@ export default function AssetDetail() {
                 ))}
               </View>
             )}
+
+            {/* Multi-level Target Profit rendered from TECHNICAL signal
+                data — so it appears immediately when the chart loads,
+                without waiting for the user to run AI analysis. If the
+                user later runs AI analysis, that block re-renders its
+                own TargetProfit with the ensemble's entry price. */}
+            {sig.entry ? (
+              <View style={{ marginTop: 12 }}>
+                <TargetProfit
+                  action={sig.action}
+                  entryPrice={sig.entry}
+                  candles={chart?.candles ?? []}
+                  confidence={sig.confidence}
+                  label={sig.label}
+                />
+              </View>
+            ) : null}
           </View>
         )}
 

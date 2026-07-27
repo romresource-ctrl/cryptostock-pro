@@ -19,6 +19,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAuth } from "@/src/auth/AuthContext";
 import LoginModal from "@/src/components/LoginModal";
+import ChatSheet from "@/src/components/ChatSheet";
 import Sparkline from "@/src/components/Sparkline";
 import VipModal from "@/src/components/VipModal";
 import { useI18n } from "@/src/i18n/I18nContext";
@@ -173,6 +174,7 @@ export default function Dashboard() {
   const [lastUpdate, setLastUpdate] = useState<string>("");
   const [loginOpen, setLoginOpen] = useState(false);
   const [vipOpen, setVipOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [lockedToast, setLockedToast] = useState(false);
 
   // All 7 categories are always loaded in parallel so user can swipe horizontally
@@ -447,7 +449,7 @@ export default function Dashboard() {
         <TouchableOpacity
           onPress={() => {
             if (isPremium || isUnlocked) {
-              router.push("/chat");
+              setChatOpen(true);
             } else {
               Alert.alert(
                 "Members Only",
@@ -556,6 +558,10 @@ export default function Dashboard() {
           setTimeout(() => setLoginOpen(true), 250);
         }}
       />
+      {/* Bottom-sheet chatroom (55% screen height) — leaves top half of
+          the dashboard interactable so premium users can chat while
+          still scrolling through asset columns / candles above. */}
+      <ChatSheet visible={chatOpen} onClose={() => setChatOpen(false)} />
     </SafeAreaView>
   );
 }
