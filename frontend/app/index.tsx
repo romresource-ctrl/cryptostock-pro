@@ -250,12 +250,16 @@ export default function Dashboard() {
     setRefreshing(false);
   }, [load, timeframe, view]);
 
-  const handleAssetPress = (a: AssetSignal) => {
+  // Accepts an optional explicit market — used when the caller knows
+  // exactly which column the user tapped (search results, list column).
+  // Falls back to `a.market` which the backend sets on every AssetSignal.
+  const handleAssetPress = (a: AssetSignal, marketOverride?: Market) => {
     if (!hasAccess) {
       setVipOpen(true);
       return;
     }
-    router.push(`/asset/${a.market}/${a.symbol}?timeframe=${timeframe}` as never);
+    const m = marketOverride ?? a.market ?? "crypto";
+    router.push(`/asset/${m}/${a.symbol}?timeframe=${timeframe}` as never);
   };
 
   const consensus = useMemo(() => {
@@ -576,7 +580,7 @@ function SearchResults({
   query: string;
   data: Record<Category, AssetSignal[]>;
   categories: Category[];
-  onPress: (a: AssetSignal) => void;
+  onPress: (a: AssetSignal, market?: Market) => void;
   locked: boolean;
 }) {
   const { colors } = useTheme();
@@ -699,7 +703,7 @@ function SearchHitCard({
   locked,
 }: {
   hit: { asset: AssetSignal; market: Market };
-  onPress: (a: AssetSignal) => void;
+  onPress: (a: AssetSignal, market?: Market) => void;
   locked: boolean;
 }) {
   const { asset, market } = hit;
@@ -731,7 +735,7 @@ function SearchHitCard({
         asset={asset}
         market={market}
         locked={locked}
-        onPress={() => onPress(asset)}
+        onPress={() => onPress(asset, market)}
       />
       {/* Market badge overlay (top-right corner) so users know which
           category the matched asset came from. */}
@@ -753,7 +757,7 @@ function SearchHitCard({
 
 function ListColumn({
   title, market, data, loading, onPress, locked,
-}: { title: string; market: Market; data: AssetSignal[]; loading: boolean; onPress: (a: AssetSignal) => void; locked: boolean }) {
+}: { title: string; market: Market; data: AssetSignal[]; loading: boolean; onPress: (a: AssetSignal, market?: Market) => void; locked: boolean }) {
   const { colors } = useTheme();
   return (
     <View style={[styles.column, { backgroundColor: colors.surfaceAlt }]}>
@@ -768,7 +772,7 @@ function ListColumn({
         <FlatList
           data={data}
           keyExtractor={(a) => a.symbol}
-          renderItem={({ item }) => <AssetCard asset={item} market={market} locked={locked} onPress={() => onPress(item)} />}
+          renderItem={({ item }) => <AssetCard asset={item} market={market} locked={locked} onPress={() => onPress(item, market)} />}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 24 }}
         />
@@ -779,7 +783,7 @@ function ListColumn({
 
 function FullList({
   title, market, data, loading, onPress, locked, screenW, assetLabel,
-}: { title: string; market: Market; data: AssetSignal[]; loading: boolean; onPress: (a: AssetSignal) => void; locked: boolean; screenW: number; assetLabel: string }) {
+}: { title: string; market: Market; data: AssetSignal[]; loading: boolean; onPress: (a: AssetSignal, market?: Market) => void; locked: boolean; screenW: number; assetLabel: string }) {
   const { colors } = useTheme();
   // Two-column grid for single-market view
   return (
@@ -795,7 +799,7 @@ function FullList({
         <View style={styles.grid}>
           {data.map((a) => (
             <View key={a.symbol} style={{ width: (screenW - 32 - 8) / 2 }}>
-              <AssetCard asset={a} market={market} locked={locked} onPress={() => onPress(a)} />
+              <AssetCard asset={a} market={market} locked={locked} onPress={() => onPress(a, market)} />
             </View>
           ))}
         </View>

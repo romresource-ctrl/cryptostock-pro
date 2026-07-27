@@ -318,29 +318,8 @@ export default function AssetDetail() {
                   </Text>
                 </View>
               ) : null}
-              {/* Chatroom button — full-width label */}
-              <TouchableOpacity
-                onPress={() => router.push("/chat" as never)}
-                testID="chat-button"
-                style={{
-                  minWidth: 100,
-                  paddingHorizontal: 12,
-                  paddingVertical: 6,
-                  borderRadius: 8,
-                  backgroundColor: colors.accentBlue + "22",
-                  borderWidth: 1.5,
-                  borderColor: colors.accentBlue,
-                  alignItems: "center",
-                  flexDirection: "row",
-                  justifyContent: "center",
-                  gap: 5,
-                }}
-              >
-                <Ionicons name="chatbubbles" size={13} color={colors.accentBlue} />
-                <Text style={{ fontSize: 11, color: colors.accentBlue, fontWeight: "800", letterSpacing: 0.4 }}>
-                  CHATROOM
-                </Text>
-              </TouchableOpacity>
+              {/* CHATROOM button removed from asset detail (v7.0.4) — users
+                  now open the bottom-sheet chatroom from the dashboard. */}
             </View>
           </View>
         </View>

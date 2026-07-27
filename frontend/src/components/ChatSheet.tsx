@@ -28,6 +28,7 @@ import {
   View,
 } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getDeviceId } from "@/src/lib/deviceId";
 import { useSubscription } from "@/src/lib/subscriptionContext";
@@ -64,6 +65,7 @@ export default function ChatSheet({
 }) {
   const { colors } = useTheme();
   const { isPremium } = useSubscription();
+  const insets = useSafeAreaInsets();
 
   const [nickname, setNickname] = useState<string | null>(null);
   const [nickInput, setNickInput] = useState("");
@@ -318,7 +320,14 @@ export default function ChatSheet({
             <View
               style={[
                 styles.inputRow,
-                { backgroundColor: colors.surface, borderTopColor: colors.border },
+                {
+                  backgroundColor: colors.surface,
+                  borderTopColor: colors.border,
+                  // Push input up above Android gesture bar / iPhone home
+                  // indicator so it stays fully tappable — the previous
+                  // version got clipped by the system nav on some devices.
+                  paddingBottom: Math.max(insets.bottom, 12) + 6,
+                },
               ]}
             >
               <TouchableOpacity
@@ -392,7 +401,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    height: "55%",
+    height: "62%",
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
     borderTopWidth: 1,
