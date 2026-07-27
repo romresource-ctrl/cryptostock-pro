@@ -755,7 +755,7 @@ async def asset_analyze(
     market: Literal["crypto", "stock", "etf", "stock_id", "stock_us", "world_stocks", "gold_silver", "commodity", "forex"],
     symbol: str,
     timeframe: str = "1h",
-    lang: Literal["id", "en"] = "id",
+    lang: Literal["id", "en", "ru", "cn"] = "en",
 ) -> AnalyzeResponse:
     if timeframe not in TIMEFRAME_MAP:
         raise HTTPException(400, "Invalid timeframe")
@@ -782,7 +782,7 @@ async def asset_analyze(
     if price is None:
         raise HTTPException(503, "Price unavailable")
     news = await get_news_for_symbol(symbol, eff_market, limit=8)
-    result = await ensemble_analyze(symbol, eff_market, timeframe, technical, float(price), news=news)
+    result = await ensemble_analyze(symbol, eff_market, timeframe, technical, float(price), news=news, lang=lang)
     consensus = result["consensus"]
 
     # Record signal into history for backtesting

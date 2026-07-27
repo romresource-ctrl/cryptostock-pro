@@ -181,8 +181,12 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
           [{ text: "OK" }],
         );
       } else if (
-        lower.includes("already have an active") ||
-        lower.includes("already subscribed")
+        // v8.0.3: only show "Already Subscribed" when our own local guard
+        // fired (marker code above). Native Play errors that happen to
+        // contain the word "subscribed" now flow through to the generic
+        // handler further down so users on EXPIRED accounts are not
+        // misdirected into cancelling a subscription they no longer have.
+        e?.code === "APP_ACTIVE_SUB_GUARD"
       ) {
         Alert.alert(
           "Already Subscribed",

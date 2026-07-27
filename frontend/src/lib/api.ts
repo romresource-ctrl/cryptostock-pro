@@ -231,7 +231,7 @@ export const api = {
 
   chart: (market: Market, symbol: string, timeframe: Timeframe) =>
     get<ChartResponse>(`/asset/${market}/${symbol}/chart?timeframe=${timeframe}`),
-  analyze: (market: Market, symbol: string, timeframe: Timeframe, lang: "id" | "en" = "id") =>
+  analyze: (market: Market, symbol: string, timeframe: Timeframe, lang: "id" | "en" | "ru" | "cn" = "en") =>
     send<AnalyzeResponse>(`/asset/${market}/${symbol}/analyze?timeframe=${timeframe}&lang=${lang}`, "POST"),
   trackRecord: (market: Market, symbol: string) =>
     get<TrackRecordResponse>(`/asset/${market}/${symbol}/track-record`),

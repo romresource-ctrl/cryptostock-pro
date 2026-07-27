@@ -340,17 +340,46 @@ export async function purchaseSubscription(basePlanId?: string): Promise<void> {
   // error). For MVP reliability, require the user to cancel the current
   // subscription in Play Store first, then re-subscribe to the new tier.
   // Real production users rarely switch plans mid-cycle anyway.
+  //
+  // v8.0.3 bug-fix: `getAvailablePurchases()` on Android returns *all*
+  // subscription rows including recently-expired ones (test purchases in
+  // particular linger). That was falsely blocking re-purchase on expired
+  // accounts. We now filter for purchases whose expiry timestamp is still
+  // in the future OR whose auto-renewing flag is true; expired ones no
+  // longer trigger the guard.
+  const nowMs = Date.now();
   let existingBasePlan: string | null = null;
   try {
     const getAvail: any = iap.getAvailablePurchases;
     if (typeof getAvail === "function") {
       const active: any[] = await getAvail();
       if (Array.isArray(active) && active.length > 0) {
-        const same = active.find(
-          (p: any) => (p.productId ?? p.id) === SUBSCRIPTION_SKU,
-        );
-        if (same) {
-          // Try to identify which base plan the existing purchase is on.
+        const stillActive = active.filter((p: any) => {
+          if ((p.productId ?? p.id) !== SUBSCRIPTION_SKU) return false;
+          // Prefer explicit expiry timestamp when the platform provides
+          // one. react-native-iap v15 / OpenIAP names vary across
+          // versions; probe all commonly-used keys.
+          const expiryMs =
+            Number(p.expirationDateAndroid) ||
+            Number(p.expiryTimeMillis) ||
+            Number(p.expiryTime) ||
+            Number(p.expirationTimeMillis) ||
+            0;
+          if (expiryMs > 0) return expiryMs > nowMs;
+          // No expiry field returned → fall back to autoRenewing +
+          // purchaseState heuristics. `autoRenewing=false` alone does not
+          // prove expiry (user may just be in a cancelled-but-not-yet-
+          // expired grace period), so we only treat purchases as
+          // definitely-expired when BOTH signals agree.
+          const autoRenew = p.autoRenewingAndroid ?? p.autoRenewing;
+          const purchaseState = p.purchaseStateAndroid ?? p.purchaseState;
+          const isPending = purchaseState === 2; // Android PENDING
+          if (isPending) return false;
+          if (autoRenew === false) return false;
+          return true;
+        });
+        if (stillActive.length > 0) {
+          const same = stillActive[0];
           existingBasePlan =
             same.basePlanId ??
             same.subscriptionBasePlanId ??
@@ -366,13 +395,17 @@ export async function purchaseSubscription(basePlanId?: string): Promise<void> {
   // If user has an active subscription and is picking a different plan,
   // stop and instruct them how to switch. This avoids the "Invalid
   // arguments" native error caused by stale/consumed upgrade tokens.
+  // We tag the error with a machine-readable code so the caller (context)
+  // can distinguish our own guard from a native Google Play error.
   if (existingBasePlan && basePlanId && existingBasePlan !== basePlanId) {
-    throw new Error(
+    const err: any = new Error(
       `You already have an active "${existingBasePlan}" subscription. ` +
         `To switch to "${basePlanId}", please open Play Store → ` +
         `Payments & subscriptions → Subscriptions → cancel the current ` +
         `plan first, then subscribe again.`,
     );
+    err.code = "APP_ACTIVE_SUB_GUARD";
+    throw err;
   }
 
   // Build request that matches `RequestSubscriptionAndroidProps` in
