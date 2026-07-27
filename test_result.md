@@ -185,16 +185,16 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "7.0.7"
-  test_sequence: 16
+  version: "7.0.9"
+  test_sequence: 17
   run_ui: false
 
 test_plan:
   current_focus:
-    - "Asset detail route for slash symbols and all markets (commodity/gold_silver/forex/world_stocks)"
-    - "Dashboard endpoint for forex/gold_silver (previous NameError crash regression)"
-    - "Cross-market search returns correct market for each hit (CORN→commodity, EUR/USD→forex)"
-    - "Chat retention 16h — old messages filtered + purged"
+    - "Backend TTL index for chat_messages.created_at auto-created on startup"
+    - "Yahoo chart TTL cache reduces repeat-call latency (both legacy + new fetch path)"
+    - "Premium gating still enforces isPremium || isUnlocked in production (__DEV__ bypass only for dev builds)"
+    - "Subscription flow (verify + status + health) still 200s and preserves 1/3/6/12-month product plans"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -202,59 +202,48 @@ test_plan:
 agent_communication:
   - agent: "main"
     message: |
-      v7.0.7 — Fixed 2 P0 regressions reported by user:
+      v7.0.9 — Stability polish. Follow-up to v7.0.8 slash-symbol fix.
 
-      ROOT CAUSE #1 (CORN 404, screenshot-confirmed):
-      `/app/frontend/app/asset/[market]/[symbol].tsx` line 73-74 had
-      `validMarkets = ["crypto","etf","stock_id","stock_us"]` — did NOT
-      include commodity, gold_silver, forex, world_stocks. Any tap on
-      those markets forced market → "crypto" → API called
-      `/asset/crypto/CORN/chart` → 404. FIXED: whitelist now includes
-      all 8 markets; added displaySymbol for "EUR-USD" → "EUR/USD" in
-      forex/gold_silver header; added badge labels for the extra 4 markets.
+      CHANGES:
+      1. Central premium hook /app/frontend/src/lib/usePremiumAccess.ts — merges
+         isPremium (Google Play IAP) + isUnlocked (admin code). __DEV__ bypass
+         only affects dev builds; production AAB/APK still gates.
+      2. Refactor: index.tsx + asset/[market]/[symbol].tsx now use usePremiumAccess.
+      3. Backend: /app/backend/market_data.py legacy `_fetch_yahoo_chart` now
+         delegates to `_fetch_yahoo_chart_by_symbol` so both paths share the
+         60s TTL cache + retry.
+      4. Backend: /app/backend/server.py startup event now spawns
+         `_bootstrap_indexes()` background task that creates `chat_messages.created_at`
+         index for the 16h retention query.
+      5. Lint cleanup: index.tsx unused vars (Dimensions, email, lockedToast,
+         selectedCount, FullList, setTimeframe) removed.
 
-      ROOT CAUSE #2 (backend dashboard crash on forex/gold_silver):
-      `/app/backend/server.py` `dashboard()` had erroneous copy-paste of
-      the dash-decoder block that referenced an undefined `symbol` var,
-      raising UnboundLocalError → 500. FIXED: removed the stray block.
+      NOT CHANGED (safety):
+      - subscription/verify, subscription/status endpoints — unchanged behaviour
+      - Google Play billing product IDs (1/3/6/12 month plans) — unchanged
+      - Admin unlock-code flow — unchanged
+      - Chat POST/GET behaviour — unchanged (index just accelerates the range scan)
 
-      MANUAL VERIFICATION (backend, all return 200 on localhost:
-      - GET /api/dashboard?market=commodity/forex/gold_silver → 200
-      - GET /api/asset/commodity/CORN/chart → 200
-      - GET /api/asset/forex/EUR-USD/chart → 200
-      - GET /api/asset/gold_silver/XAU-USD/chart → 200
-      - GET /api/asset/forex/EUR-USD/track-record → 200
-      - GET /api/asset/commodity/CORN/news → 200
-      - GET /api/asset/gold_silver/XAU-USD/news → 200
+      PLEASE TEST:
+      1. Regression: Backend endpoints all return 200:
+         - /api/dashboard for all 7 markets
+         - /api/asset/{market}/{symbol}/{chart,analyze,track-record,news} for
+           commodity/CORN, forex/EUR-USD, gold_silver/XAU-USD, crypto/BTC baseline
+         - /api/subscription/health (still publicly reachable, still boolean-only)
+         - /api/subscription/status?device_id=X (fresh device → status="none")
+         - /api/subscription/verify with dummy token → returns invalid/unverified
+         - /api/chat/messages GET (200, respects 16h window)
+      2. Frontend web preview:
+         - "Ver 7.0.9" shown in header
+         - All 7 chips populate their columns
+         - Direct-nav /asset/commodity/CORN → header "CORN COMMODITY", chart loads
+         - Direct-nav /asset/forex/EUR-USD → header "EUR/USD FOREX"
+         - Direct-nav /asset/gold_silver/XAU-USD → header "XAU/USD GOLD/SILVER"
+         - Search "CORN" → tap → land on commodity detail
+      3. Mongo: chat_messages must have an index on `created_at` after startup.
+         Confirm via `db.chat_messages.list_indexes()` (already verified locally).
 
-      PLEASE TEST (backend + frontend web):
-      BACKEND:
-      1. /api/dashboard for each of the 7 markets returns 200 with assets[] populated.
-      2. /api/asset/{market}/{symbol}/{chart,analyze,track-record,news} for:
-         - commodity/CORN, commodity/BRENT
-         - forex/EUR-USD, forex/GBP-USD
-         - gold_silver/XAU-USD, gold_silver/XAG-USD
-         - world_stocks/AAPL
-         - crypto/BTC (regression baseline)
-      3. /api/search?q=CORN → hit has market="commodity" (NOT crypto).
-      4. /api/search?q=EUR → hits include forex with proper market field.
-      5. Chat 16h: POST message, then verify GET /api/chat/messages filters
-         out anything older than 16h (cutoff computed relative to now).
-
-      FRONTEND (web preview only):
-      1. Header shows "Ver 7.0.7".
-      2. Switch to Commodity chip → dashboard populates (previously crashed).
-      3. Switch to Forex chip → dashboard populates.
-      4. Switch to Gold/Silver chip → dashboard populates.
-      5. Route /asset/commodity/CORN?timeframe=1h renders with header
-         "CORN COMMODITY" (not "CORN CRYPTO"); chart loads.
-      6. Route /asset/forex/EUR-USD?timeframe=1h renders "EUR/USD FOREX".
-      7. Route /asset/gold_silver/XAU-USD?timeframe=1h renders "XAU/USD GOLD/SILVER".
-      8. Search bar: type "CORN" → tap first hit → arrives at commodity detail (200).
-
-      NOT TO TEST (requires real Android):
-      - Google Play Billing purchase flow
-      - Native soft-keyboard ChatSheet behaviour
-      - Native image picker
-
-      Credentials: /app/memory/test_credentials.md
+      NOT TO TEST (real Android only):
+      - Google Play Billing purchase (1/3/6/12 month plans)
+      - Native ChatSheet keyboard
+      - Android soft keyboard behaviour

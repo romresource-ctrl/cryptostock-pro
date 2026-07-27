@@ -13,7 +13,6 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { useAuth } from "@/src/auth/AuthContext";
 import CandlestickChart from "@/src/components/CandlestickChart";
 import PriceChart from "@/src/components/PriceChart";
 import TargetProfit from "@/src/components/TargetProfit";
@@ -30,7 +29,7 @@ import {
   formatPct,
   formatPrice,
 } from "@/src/lib/api";
-import { useSubscription } from "@/src/lib/subscriptionContext";
+import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
 import { useTheme } from "@/src/theme/ThemeContext";
 
 function signalColors(colors: ReturnType<typeof useTheme>["colors"], action: string) {
@@ -103,14 +102,12 @@ export default function AssetDetail() {
   const [showPrediction, setShowPrediction] = useState(false);
 
   // Access gating (issue #2, #3) — kick user back to home if entitlement expires
-  const { isPremium, loaded: subLoaded } = useSubscription();
-  const { isUnlocked, loaded: authLoaded } = useAuth();
-  const hasAccess = isPremium || isUnlocked;
+  const { hasAccess, loaded: accessLoaded } = usePremiumAccess();
   useEffect(() => {
     // Wait until BOTH auth and subscription state are fully loaded (including
     // backend sync) before deciding to redirect. Prevents a false-negative
     // flash where subscribed users are briefly kicked to home on cold start.
-    if (!authLoaded || !subLoaded) return;
+    if (!accessLoaded) return;
     if (!hasAccess) {
       try {
         router.replace("/");
@@ -118,7 +115,7 @@ export default function AssetDetail() {
         /* ignore */
       }
     }
-  }, [hasAccess, authLoaded, subLoaded]);
+  }, [hasAccess, accessLoaded, router]);
 
   const loadChart = useCallback(
     async (tf: Timeframe) => {

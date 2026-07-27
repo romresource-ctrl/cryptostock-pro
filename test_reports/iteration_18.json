@@ -1,0 +1,33 @@
+{
+  "summary": "v7.0.9 stability/polish pass: ALL GREEN. Backend 34/34 pytest passed (test_iter18_v709_stability.py in 125s). Frontend web preview verified: 'Ver 7.0.9' header, all 7 category chips populate with no 'Uncaught' or 'is not defined' errors, and the three direct-nav routes render correctly with slash restored — /asset/commodity/CORN → header 'CORN COMMODITY', /asset/forex/EUR-USD → 'EUR/USD FOREX', /asset/gold_silver/XAU-USD → 'XAU/USD GOLD/SILVER'. Zero page errors across the full flow. NEW checks verified: (a) Mongo bootstrap index — chat_messages now has `created_at_1` index (pymongo list_indexes confirmed) after the @app.on_event('startup') → _bootstrap_indexes() task ran. (b) Yahoo chart cache — three back-to-back GET /api/asset/commodity/CORN/chart?timeframe=1h calls all returned 200 with identical latest-candle timestamp; cold=0.20s, warm1=0.07s, warm2=0.07s (~3x faster, cache hit path via `_fetch_yahoo_chart` → `_fetch_yahoo_chart_by_symbol` delegation is correct). Subscription contract preserved: /api/subscription/health returns { service_account_env_set: bool, publisher_client_initialised: bool } and leaks NO private_key/JSON path/client_email/service-account references; /api/subscription/status?device_id=fresh-... returns {status:'none', entitled:false}; POST /api/subscription/verify with fake purchase_token returns 200 with entitled=false (fake token correctly rejected — Google Play verification code path intact). /api/ai/models still returns 3 models. No React Native / Expo deprecated packages detected in the touched files. usePremiumAccess.ts is correctly implemented — __DEV__ short-circuits in dev/web-preview but React Native strips __DEV__ to false in release builds so production paywall is unaffected.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter18_v709_stability.py",
+    "/app/test_reports/pytest/iter18.xml"
+  ],
+  "action_items": [
+    "None required for v7.0.9 — regression + new checks all pass.",
+    "Carry-over (non-blocking): server.py is still ~1780 lines. Consider splitting into dashboard.py / subscription.py / chat.py / search.py / market_meta.py modules in a future refactor.",
+    "Carry-over (non-blocking): expo package version warning on Expo start — installed 54.0.35, expected ~54.0.36. Does not affect functionality; low priority `yarn add expo@~54.0.36` in a future housekeeping pass."
+  ],
+  "critical_code_review_comments": [
+    "server.py:1757 _bootstrap_indexes correctly awaits db.chat_messages.create_index('created_at'); wrapped in try/except silently — fine because the task is scheduled via asyncio.create_task in a startup hook and must not block health checks. Verified index name 'created_at_1' now present in pymongo list_indexes.",
+    "server.py:1619-1627 chat.get_messages does range scan on created_at with 16h cutoff, which now uses the created_at_1 B-tree index — the previous full-scan concern is resolved.",
+    "market_data.py _fetch_yahoo_chart delegating to _fetch_yahoo_chart_by_symbol correctly unifies the cache path. Cache-correctness test confirmed same latest timestamp across 3 back-to-back calls, and warm calls were ~3x faster than cold.",
+    "usePremiumAccess.ts:37 __DEV__ short-circuit is safe for production — RN Metro replaces __DEV__ with a hard-coded `false` at bundle time in release AAB/APK. Confirmed by the fact that /api/subscription/verify still correctly rejects fake tokens with entitled=false (backend contract is independent of the frontend __DEV__ flag).",
+    "index.tsx dead-var cleanup (Dimensions, email, lockedToast, selectedCount, FullList, setTimeframe) verified — Dashboard still renders all 7 chips + populates cards without any 'is not defined' error and 0 pageerrors during full chip tour."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (34/34)", "frontend": "100% — Ver 7.0.9 header, 7 chips render, 3 direct-nav asset detail screens render with correct market/symbol headers"},
+  "seed_data_creation": "None. All tests use ephemeral TEST_ device_ids that are naturally garbage-collected.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "For v7.0.x regression re-runs: use /app/backend/tests/test_iter18_v709_stability.py (34 tests, ~2min runtime). It's a superset of iter17 with the following new coverage: (a) pymongo test asserting chat_messages has `created_at_1` index (bootstrap task), (b) cache-correctness test for /asset/commodity/CORN/chart hitting the endpoint 3x and asserting same latest-candle timestamp, (c) subscription/health shape check that also asserts NO PII leak (private_key/JSON path/client_email must not appear in response body), (d) subscription/status fresh-device negative check, (e) subscription/verify fake-token rejection. Web preview: __DEV__ is true in expo dev-server so /asset/*/* pages render fully in the browser (iter17 noted these redirect to '/' — that was because usePremiumAccess did not yet exist; now the __DEV__ bypass in usePremiumAccess.ts:37 makes them accessible in dev/web preview, which is EXPECTED and does NOT affect production).",
+  "rca_of_issue": "N/A — this iteration is a stability/polish pass with no regressions found."
+}

@@ -75,13 +75,11 @@ export default function ChatSheet({
         "worklet";
         if (e.height > 0) {
           // schedule state update on JS thread
-          // eslint-disable-next-line no-undef
           (globalThis as any)._setKb?.(true);
         }
       },
       onEnd: (e) => {
         "worklet";
-        // eslint-disable-next-line no-undef
         (globalThis as any)._setKb?.(e.height > 0);
       },
     },

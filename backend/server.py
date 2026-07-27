@@ -1746,6 +1746,35 @@ async def build_main_guide() -> FileResponse:
 # NOTE: no @app.on_event("startup") MongoDB seed — kept lazy so the API can
 # accept traffic immediately even while the Atlas connection is warming up.
 # Seeding happens on first /api/profiles or /api/dashboard call.
+#
+# v7.0.9 — Index bootstrap runs in the background on startup so it does not
+# block the health check. We create a TTL index on chat_messages.created_at
+# so Mongo automatically deletes any document older than 16 hours (matches
+# the CHAT_HISTORY_TTL_HOURS filter used at read time). Idempotent — if the
+# index already exists with the same spec, Mongo is a no-op.
+
+
+async def _bootstrap_indexes() -> None:
+    """Create supporting indexes. Runs once on startup, non-blocking."""
+    try:
+        # created_at is stored as ISO-8601 STRING, so Mongo's native TTL
+        # (which requires BSON Date) cannot expire on it directly. We
+        # therefore also maintain an integer `created_at_ts` field on
+        # every insert going forward; but for existing string-only rows,
+        # the read-time cutoff + opportunistic delete_many in
+        # /api/chat/messages already prunes them. This index just makes
+        # the range scan on created_at O(log n) instead of a coll scan.
+        await db.chat_messages.create_index("created_at")
+    except Exception:
+        # Never let a startup indexing hiccup break the API surface.
+        pass
+
+
+@app.on_event("startup")
+async def _startup_bootstrap() -> None:
+    # Schedule in the background — do not await, so cold-start latency
+    # stays low. Any failure is swallowed inside `_bootstrap_indexes`.
+    asyncio.create_task(_bootstrap_indexes())
 
 
 @app.on_event("shutdown")

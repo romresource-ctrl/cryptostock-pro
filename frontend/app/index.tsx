@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Dimensions,
   FlatList,
   RefreshControl,
   ScrollView,
@@ -32,6 +31,7 @@ import {
   formatPrice,
 } from "@/src/lib/api";
 import { useSubscription } from "@/src/lib/subscriptionContext";
+import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
 import { APP_VERSION } from "@/src/lib/version";
 import { useTheme } from "@/src/theme/ThemeContext";
 
@@ -153,13 +153,13 @@ function AssetCard({
 export default function Dashboard() {
   const { colors, mode, toggle } = useTheme();
   const router = useRouter();
-  const { isUnlocked, email, logout, loaded: authLoaded } = useAuth();
+  const { isUnlocked, logout, loaded: authLoaded } = useAuth();
   const { isPremium } = useSubscription();
-  const hasAccess = isUnlocked || isPremium;
+  const { hasAccess } = usePremiumAccess();
   const { lang, toggle: toggleLang, t } = useI18n();
 
   const [view, setView] = useState<Category[]>(["crypto", "stock_us"]);
-  const [timeframe, setTimeframe] = useState<Timeframe>("1h");
+  const [timeframe] = useState<Timeframe>("1h");
   const [searchQuery, setSearchQuery] = useState("");
   const [data, setData] = useState<Record<Category, AssetSignal[]>>({
     crypto: [], etf: [], stock_id: [], stock_us: [],
@@ -171,11 +171,10 @@ export default function Dashboard() {
     world_stocks: false, gold_silver: false, commodity: false, forex: false,
   });
   const [refreshing, setRefreshing] = useState(false);
-  const [lastUpdate, setLastUpdate] = useState<string>("");
+  const [, setLastUpdate] = useState<string>("");
   const [loginOpen, setLoginOpen] = useState(false);
   const [vipOpen, setVipOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
-  const [lockedToast, setLockedToast] = useState(false);
 
   // All 7 categories are always loaded in parallel so user can swipe horizontally
   // between them on phone, or see multiple columns at once on tablet.
@@ -279,7 +278,6 @@ export default function Dashboard() {
   }, [data, view]);
 
   const { width: SCREEN_W } = useWindowDimensions();
-  const selectedCount = view.length;
 
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: colors.background }]} edges={["top"]}>
@@ -548,16 +546,6 @@ export default function Dashboard() {
       </ScrollView>
       )}
 
-      {/* Locked toast */}
-      {lockedToast && (
-        <View style={[styles.toast, { backgroundColor: colors.surface, borderColor: colors.accentBlue }]} testID="locked-toast">
-          <Ionicons name="lock-closed" size={14} color={colors.accentBlue} />
-          <Text style={[styles.toastText, { color: colors.textPrimary }]}>
-            {lang === "en" ? "Login first to access asset details" : "Login dulu untuk akses detail aset"}
-          </Text>
-        </View>
-      )}
-
       <LoginModal visible={loginOpen} onClose={() => setLoginOpen(false)} />
       <VipModal
         visible={vipOpen}
@@ -783,33 +771,6 @@ function ListColumn({
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 24 }}
         />
-      )}
-    </View>
-  );
-}
-
-function FullList({
-  title, market, data, loading, onPress, locked, screenW, assetLabel,
-}: { title: string; market: Market; data: AssetSignal[]; loading: boolean; onPress: (a: AssetSignal, market?: Market) => void; locked: boolean; screenW: number; assetLabel: string }) {
-  const { colors } = useTheme();
-  // Two-column grid for single-market view
-  return (
-    <View style={[styles.fullPanel, { backgroundColor: colors.surfaceAlt }]}>
-      <View style={[styles.columnHeader, { borderColor: colors.border }]}>
-        <Text style={[styles.columnTitle, { color: colors.textPrimary }]}>{title}</Text>
-      </View>
-      {loading && data.length === 0 ? (
-        <View style={{ paddingVertical: 40, alignItems: "center" }}>
-          <ActivityIndicator color={colors.accentBlue} />
-        </View>
-      ) : (
-        <View style={styles.grid}>
-          {data.map((a) => (
-            <View key={a.symbol} style={{ width: (screenW - 32 - 8) / 2 }}>
-              <AssetCard asset={a} market={market} locked={locked} onPress={() => onPress(a, market)} />
-            </View>
-          ))}
-        </View>
       )}
     </View>
   );

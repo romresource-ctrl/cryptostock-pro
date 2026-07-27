@@ -5,6 +5,7 @@ All functions return native Python types; no MongoDB.
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 
 import httpx
@@ -457,53 +458,16 @@ async def _fetch_binance_ticker(client: httpx.AsyncClient, symbol: str) -> dict[
 
 
 async def _fetch_yahoo_chart(client: httpx.AsyncClient, symbol: str, range_: str, interval: str) -> dict[str, Any] | None:
+    """Legacy wrapper — delegates to `_fetch_yahoo_chart_by_symbol` so this
+    path also benefits from the 60s TTL cache + retry. Symbol here is the
+    canonical UI symbol (e.g. "BBCA"), mapped through STOCK_YAHOO_MAP.
+    Kept for backwards-compat with any external caller that might still
+    import it; current server.py routes go through `get_stock_snapshot`.
+    """
     yahoo_sym = STOCK_YAHOO_MAP.get(symbol)
     if not yahoo_sym:
         return None
-    try:
-        r = await client.get(
-            f"{YAHOO_BASE}/v8/finance/chart/{yahoo_sym}",
-            params={"range": range_, "interval": interval, "includePrePost": "false"},
-            headers={"User-Agent": "Mozilla/5.0"},
-            timeout=10.0,
-        )
-        r.raise_for_status()
-        data = r.json()
-        result = data["chart"]["result"][0]
-        meta = result.get("meta", {})
-        ts = result.get("timestamp", []) or []
-        quote = (result.get("indicators", {}).get("quote") or [{}])[0]
-        opens = quote.get("open") or []
-        highs = quote.get("high") or []
-        lows = quote.get("low") or []
-        closes = quote.get("close") or []
-        volumes = quote.get("volume") or []
-        candles: list[dict[str, float]] = []
-        for i, t in enumerate(ts):
-            o, hi, lo, c, v = opens[i], highs[i], lows[i], closes[i], volumes[i]
-            if None in (o, hi, lo, c):
-                continue
-            candles.append({
-                "t": int(t) * 1000,
-                "open": float(o), "high": float(hi), "low": float(lo),
-                "close": float(c), "volume": float(v or 0),
-            })
-        last = candles[-1] if candles else None
-        prev_close = float(meta.get("chartPreviousClose") or (candles[-2]["close"] if len(candles) >= 2 else (last["close"] if last else 0)))
-        price = float(meta.get("regularMarketPrice") or (last["close"] if last else 0))
-        change_pct = ((price - prev_close) / prev_close * 100.0) if prev_close else 0.0
-        return {
-            "candles": candles,
-            "ticker": {
-                "price": price,
-                "change_pct_24h": change_pct,
-                "volume_24h": float(meta.get("regularMarketVolume") or 0),
-                "high_24h": float(meta.get("regularMarketDayHigh") or (last["high"] if last else 0)),
-                "low_24h": float(meta.get("regularMarketDayLow") or (last["low"] if last else 0)),
-            },
-        }
-    except Exception:
-        return None
+    return await _fetch_yahoo_chart_by_symbol(client, yahoo_sym, range_, interval)
 
 
 async def get_crypto_snapshot(symbol: str, timeframe: str) -> dict[str, Any] | None:
@@ -555,48 +519,99 @@ async def get_stock_snapshot(symbol: str, timeframe: str, market: str = "stock_i
 
 
 async def _fetch_yahoo_chart_by_symbol(client: httpx.AsyncClient, yahoo_sym: str, range_: str, interval: str) -> dict[str, Any] | None:
-    try:
-        r = await client.get(
-            f"{YAHOO_BASE}/v8/finance/chart/{yahoo_sym}",
-            params={"range": range_, "interval": interval, "includePrePost": "false"},
-            headers={"User-Agent": "Mozilla/5.0"},
-            timeout=10.0,
-        )
-        r.raise_for_status()
-        data = r.json()
-        result = data["chart"]["result"][0]
-        meta = result.get("meta", {})
-        ts = result.get("timestamp", []) or []
-        quote = (result.get("indicators", {}).get("quote") or [{}])[0]
-        opens = quote.get("open") or []
-        highs = quote.get("high") or []
-        lows = quote.get("low") or []
-        closes = quote.get("close") or []
-        volumes = quote.get("volume") or []
-        candles: list[dict[str, float]] = []
-        for i, t in enumerate(ts):
-            o, hi, lo, c, v = opens[i], highs[i], lows[i], closes[i], volumes[i]
-            if None in (o, hi, lo, c):
-                continue
-            candles.append({
-                "t": int(t) * 1000, "open": float(o), "high": float(hi),
-                "low": float(lo), "close": float(c), "volume": float(v or 0),
-            })
-        last = candles[-1] if candles else None
-        prev_close = float(meta.get("chartPreviousClose") or (candles[-2]["close"] if len(candles) >= 2 else (last["close"] if last else 0)))
-        price = float(meta.get("regularMarketPrice") or (last["close"] if last else 0))
-        change_pct = ((price - prev_close) / prev_close * 100.0) if prev_close else 0.0
-        return {
-            "candles": candles,
-            "ticker": {
-                "price": price, "change_pct_24h": change_pct,
-                "volume_24h": float(meta.get("regularMarketVolume") or 0),
-                "high_24h": float(meta.get("regularMarketDayHigh") or (last["high"] if last else 0)),
-                "low_24h": float(meta.get("regularMarketDayLow") or (last["low"] if last else 0)),
-            },
-        }
-    except Exception:
-        return None
+    # v7.0.8 — In-memory TTL cache (~60s) keyed by (symbol, range, interval).
+    # Yahoo Finance rate-limits + times out under load, causing the previous
+    # Gold/Silver/Commodity/Forex detail pages to 404 after ~10s. A short
+    # cache absorbs bursty polling from the detail screen (chart + analyze
+    # trigger back-to-back fetches for the same symbol) and also gives a
+    # near-instant response on repeated visits during the same minute.
+    #
+    # We also do ONE retry with a shorter (5s) timeout before returning None
+    # so a single Yahoo hiccup no longer nukes the whole request.
+    cache_key = (yahoo_sym, range_, interval)
+    now = time.monotonic()
+    cached = _YAHOO_CHART_CACHE.get(cache_key)
+    if cached is not None:
+        ts, payload = cached
+        if now - ts < _YAHOO_CHART_TTL_SEC:
+            return payload
+
+    async def _do_fetch(timeout: float) -> dict[str, Any] | None:
+        try:
+            r = await client.get(
+                f"{YAHOO_BASE}/v8/finance/chart/{yahoo_sym}",
+                params={"range": range_, "interval": interval, "includePrePost": "false"},
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=timeout,
+            )
+            r.raise_for_status()
+            data = r.json()
+            result = data["chart"]["result"][0]
+            meta = result.get("meta", {})
+            ts_list = result.get("timestamp", []) or []
+            quote = (result.get("indicators", {}).get("quote") or [{}])[0]
+            opens = quote.get("open") or []
+            highs = quote.get("high") or []
+            lows = quote.get("low") or []
+            closes = quote.get("close") or []
+            volumes = quote.get("volume") or []
+            candles: list[dict[str, float]] = []
+            for i, t in enumerate(ts_list):
+                o, hi, lo, c, v = opens[i], highs[i], lows[i], closes[i], volumes[i]
+                if None in (o, hi, lo, c):
+                    continue
+                candles.append({
+                    "t": int(t) * 1000, "open": float(o), "high": float(hi),
+                    "low": float(lo), "close": float(c), "volume": float(v or 0),
+                })
+            last = candles[-1] if candles else None
+            prev_close = float(meta.get("chartPreviousClose") or (candles[-2]["close"] if len(candles) >= 2 else (last["close"] if last else 0)))
+            price = float(meta.get("regularMarketPrice") or (last["close"] if last else 0))
+            change_pct = ((price - prev_close) / prev_close * 100.0) if prev_close else 0.0
+            return {
+                "candles": candles,
+                "ticker": {
+                    "price": price, "change_pct_24h": change_pct,
+                    "volume_24h": float(meta.get("regularMarketVolume") or 0),
+                    "high_24h": float(meta.get("regularMarketDayHigh") or (last["high"] if last else 0)),
+                    "low_24h": float(meta.get("regularMarketDayLow") or (last["low"] if last else 0)),
+                },
+            }
+        except Exception:
+            return None
+
+    # First attempt: normal 10s timeout.
+    payload = await _do_fetch(10.0)
+    if payload is None:
+        # Single retry with a shorter timeout — Yahoo either responds fast
+        # on the second try or it's truly down; either way we don't want
+        # the client sitting on this for another 10s.
+        payload = await _do_fetch(5.0)
+
+    if payload is not None:
+        _YAHOO_CHART_CACHE[cache_key] = (now, payload)
+        # Opportunistic cache eviction — keep the dict from growing unbounded.
+        if len(_YAHOO_CHART_CACHE) > _YAHOO_CHART_CACHE_MAX:
+            _yahoo_cache_evict(now)
+    return payload
+
+
+# v7.0.8 — module-level cache (bounded, opportunistic eviction).
+_YAHOO_CHART_TTL_SEC = 60.0
+_YAHOO_CHART_CACHE_MAX = 512
+_YAHOO_CHART_CACHE: dict[tuple[str, str, str], tuple[float, dict[str, Any]]] = {}
+
+
+def _yahoo_cache_evict(now: float) -> None:
+    """Drop entries older than TTL; if still too large, drop the oldest half."""
+    dead = [k for k, (ts, _p) in _YAHOO_CHART_CACHE.items() if now - ts >= _YAHOO_CHART_TTL_SEC]
+    for k in dead:
+        _YAHOO_CHART_CACHE.pop(k, None)
+    if len(_YAHOO_CHART_CACHE) > _YAHOO_CHART_CACHE_MAX:
+        # Drop the oldest half by timestamp
+        items = sorted(_YAHOO_CHART_CACHE.items(), key=lambda kv: kv[1][0])
+        for k, _v in items[: len(items) // 2]:
+            _YAHOO_CHART_CACHE.pop(k, None)
 
 
 # Yahoo Finance throttles/blocks bursts of concurrent requests from a single
