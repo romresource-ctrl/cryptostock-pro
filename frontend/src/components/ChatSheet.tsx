@@ -36,7 +36,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useKeyboardAnimation } from "react-native-keyboard-controller";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getDeviceId } from "@/src/lib/deviceId";
@@ -81,10 +81,12 @@ export default function ChatSheet({
   const insets = useSafeAreaInsets();
 
   // ── Keyboard tracking ──────────────────────────────────────────────
-  // `height` here is an Animated.Value in native pixels (0 → kb_height).
-  // We use it directly as paddingBottom of the sheet body so the composer
-  // slides up in perfect sync with the OS keyboard animation.
-  const { height: kbHeight } = useKeyboardAnimation();
+  // The composer is wrapped in a `KeyboardStickyView` from
+  // react-native-keyboard-controller: this native-driven view is
+  // guaranteed to translate above the on-screen keyboard, regardless of
+  // Android softInputMode / iOS adjustments. This replaces the previous
+  // hand-rolled `useKeyboardAnimation` + paddingBottom scheme which
+  // double-compensated on Android with adjustResize.
   const inputRef = useRef<TextInput>(null);
 
   // ── Sheet height snap points + drag gesture ───────────────────────
@@ -307,15 +309,18 @@ export default function ChatSheet({
     } finally {
       setSending(false);
       // Keep the composer focused so the OS keyboard stays open and the
-      // user can continue chatting without re-tapping the field. This
-      // pairs with `blurOnSubmit={false}` on the TextInput.
-      requestAnimationFrame(() => {
+      // user can continue chatting without re-tapping the field. On
+      // Android the Touchable that fires this handler steals focus from
+      // the TextInput first, so we defer the refocus by a small margin
+      // to let the touch release settle before we re-open the keyboard.
+      // This pairs with `blurOnSubmit={false}` on the TextInput.
+      setTimeout(() => {
         try {
           inputRef.current?.focus();
         } catch {
           /* ignore */
         }
-      });
+      }, 50);
     }
   };
 
@@ -367,8 +372,15 @@ export default function ChatSheet({
         </View>
       </View>
 
-      {/* Body — bottom padding tracks keyboard height in real time */}
-      <Animated.View style={{ flex: 1, paddingBottom: kbHeight }}>
+      {/* Body — messages fill remaining space; composer + FlatList are
+          wrapped in a KeyboardAvoidingView so the whole content column
+          resizes above the on-screen keyboard. This is the standard
+          react-native-keyboard-controller pattern for chat surfaces. */}
+      <KeyboardAvoidingView
+        behavior="padding"
+        keyboardVerticalOffset={0}
+        style={{ flex: 1 }}
+      >
         {nickname === null ? (
           <View style={{ padding: 16, gap: 10 }}>
             <Text style={[styles.title, { color: colors.textPrimary, marginLeft: 0 }]}>
@@ -530,7 +542,7 @@ export default function ChatSheet({
             </TouchableOpacity>
           </View>
         )}
-      </Animated.View>
+      </KeyboardAvoidingView>
     </Animated.View>
   );
 }

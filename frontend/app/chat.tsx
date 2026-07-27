@@ -177,15 +177,15 @@ export default function ChatScreen() {
     } finally {
       setSending(false);
       // Keep the composer focused so the OS keyboard stays open — users
-      // can continue chatting without re-tapping the field. Paired with
-      // `blurOnSubmit={false}` on the TextInput.
-      requestAnimationFrame(() => {
+      // can continue chatting without re-tapping the field. On Android
+      // the Touchable steals focus first, so defer refocus slightly.
+      setTimeout(() => {
         try {
           inputRef.current?.focus();
         } catch {
           /* ignore */
         }
-      });
+      }, 50);
     }
   };
 
