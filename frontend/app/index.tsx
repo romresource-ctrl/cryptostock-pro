@@ -457,7 +457,7 @@ export default function Dashboard() {
             Non-premium: grey → tap shows Members Only popup. */}
         <TouchableOpacity
           onPress={() => {
-            if (isPremium || isUnlocked) {
+            if (hasAccess) {
               setChatOpen(true);
             } else {
               Alert.alert(
@@ -474,20 +474,20 @@ export default function Dashboard() {
           style={[
             styles.searchChatBtn,
             {
-              backgroundColor: (isPremium || isUnlocked) ? "#F0B90B" : colors.surface,
-              borderColor: (isPremium || isUnlocked) ? "#F0B90B" : colors.border,
+              backgroundColor: hasAccess ? "#F0B90B" : colors.surface,
+              borderColor: hasAccess ? "#F0B90B" : colors.border,
             },
           ]}
         >
           <Ionicons
             name="chatbubbles"
             size={16}
-            color={(isPremium || isUnlocked) ? "#000" : colors.textSecondary}
+            color={hasAccess ? "#000" : colors.textSecondary}
           />
           <Text
             style={[
               styles.searchChatBtnText,
-              { color: (isPremium || isUnlocked) ? "#000" : colors.textSecondary },
+              { color: hasAccess ? "#000" : colors.textSecondary },
             ]}
           >
             CHATROOM

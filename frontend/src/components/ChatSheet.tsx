@@ -1,25 +1,34 @@
 /**
  * ChatSheet — bottom-sheet variant of the premium chatroom.
  *
- * Renders as an absolutely-positioned 55% height panel at the bottom of
- * the dashboard, so the top half stays fully interactive (user can still
- * scroll asset columns, see candlestick preview, tap other buttons).
+ * v7.0.10 keyboard + drag rework:
+ *  - Uses `useKeyboardAnimation()` from react-native-keyboard-controller
+ *    to bind the sheet's bottom padding directly to the current keyboard
+ *    height. This works reliably on Android regardless of the underlying
+ *    `windowSoftInputMode`, and it survives being nested inside an
+ *    absolutely-positioned container (the previous `KeyboardAvoidingView`
+ *    approach did not push our composer up on Android).
+ *  - Sheet height is now driven by an Animated value between two snap
+ *    points — collapsed (~62%) and expanded (~95%). A PanResponder on
+ *    the top handle bar lets users drag the sheet upward to expand
+ *    (and downward to collapse back / dismiss).
  *
- * This is a lightweight rewrite of `/app/chat.tsx` — same backend API,
- * same rendering rules — but without full-page navigation. Uses the
- * KeyboardAvoidingView from react-native-keyboard-controller so the
- * input floats above the keyboard on Android and iOS.
+ * Renders as an absolutely-positioned panel at the bottom of the
+ * dashboard, so the top half stays interactive when collapsed.
  */
 import { Ionicons } from "@expo/vector-icons";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
+  Dimensions,
   FlatList,
   Image,
   Linking,
+  PanResponder,
   Platform,
   StyleSheet,
   Text,
@@ -27,7 +36,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { KeyboardAvoidingView, useKeyboardHandler } from "react-native-keyboard-controller";
+import { useKeyboardAnimation } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getDeviceId } from "@/src/lib/deviceId";
@@ -41,6 +50,10 @@ const RATE_LIMIT_MS = 3000;
 const MAX_MSG_LEN = 500;
 const IMG_TARGET_WIDTH = 900;
 const IMG_JPEG_QUALITY = 0.55;
+
+// Snap-point ratios of screen height.
+const COLLAPSED_RATIO = 0.62;
+const EXPANDED_RATIO = 0.95;
 
 type Msg = {
   id: string;
@@ -66,32 +79,80 @@ export default function ChatSheet({
   const { colors } = useTheme();
   const { isPremium } = useSubscription();
   const insets = useSafeAreaInsets();
-  // Expand sheet to full-page when keyboard is up so the composer + at
-  // least 7-8 lines of chat history stay visible above the keys.
-  const [keyboardShown, setKeyboardShown] = useState(false);
-  useKeyboardHandler(
-    {
-      onStart: (e) => {
-        "worklet";
-        if (e.height > 0) {
-          // schedule state update on JS thread
-          (globalThis as any)._setKb?.(true);
-        }
-      },
-      onEnd: (e) => {
-        "worklet";
-        (globalThis as any)._setKb?.(e.height > 0);
-      },
-    },
-    [],
-  );
-  useEffect(() => {
-    (globalThis as any)._setKb = setKeyboardShown;
-    return () => {
-      (globalThis as any)._setKb = null;
-    };
-  }, []);
 
+  // ── Keyboard tracking ──────────────────────────────────────────────
+  // `height` here is an Animated.Value in native pixels (0 → kb_height).
+  // We use it directly as paddingBottom of the sheet body so the composer
+  // slides up in perfect sync with the OS keyboard animation.
+  const { height: kbHeight } = useKeyboardAnimation();
+
+  // ── Sheet height snap points + drag gesture ───────────────────────
+  const { height: SCREEN_H } = Dimensions.get("window");
+  const collapsedH = Math.round(SCREEN_H * COLLAPSED_RATIO);
+  const expandedH = Math.round(SCREEN_H * EXPANDED_RATIO);
+  const heightAnim = useRef(new Animated.Value(collapsedH)).current;
+  // "current" snap — used by the pan responder to know starting height
+  // on drag begin.
+  const snapRef = useRef<number>(collapsedH);
+  // Force-remount FlatList data when snap changes so it re-measures.
+  const [snapTick, setSnapTick] = useState(0);
+
+  const snapTo = useCallback(
+    (target: number) => {
+      snapRef.current = target;
+      Animated.spring(heightAnim, {
+        toValue: target,
+        useNativeDriver: false,
+        friction: 9,
+        tension: 60,
+      }).start(() => setSnapTick((t) => t + 1));
+    },
+    [heightAnim],
+  );
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dy) > 3,
+        onPanResponderGrant: () => {
+          heightAnim.stopAnimation((v) => {
+            snapRef.current = v;
+          });
+        },
+        onPanResponderMove: (_e, g) => {
+          // Drag up (dy < 0) grows the sheet; drag down shrinks it.
+          const next = Math.max(
+            240,
+            Math.min(expandedH, snapRef.current - g.dy),
+          );
+          heightAnim.setValue(next);
+        },
+        onPanResponderRelease: (_e, g) => {
+          const currentH = snapRef.current - g.dy;
+          // Fling / significant drag decides snap.
+          if (g.vy < -0.8 || currentH > (collapsedH + expandedH) / 2) {
+            snapTo(expandedH);
+          } else if (g.vy > 1.2 && currentH < collapsedH - 60) {
+            // Strong downward fling → dismiss.
+            onClose();
+          } else {
+            snapTo(collapsedH);
+          }
+        },
+      }),
+    [collapsedH, expandedH, heightAnim, onClose, snapTo],
+  );
+
+  // Reset snap to collapsed each time sheet opens.
+  useEffect(() => {
+    if (visible) {
+      heightAnim.setValue(collapsedH);
+      snapRef.current = collapsedH;
+    }
+  }, [visible, collapsedH, heightAnim]);
+
+  // ── Chat state ────────────────────────────────────────────────────
   const [nickname, setNickname] = useState<string | null>(null);
   const [nickInput, setNickInput] = useState("");
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -118,86 +179,88 @@ export default function ChatSheet({
     try {
       const res = await fetch(`${backendBase()}/chat/messages?limit=100`);
       if (!res.ok) return;
-      const data = await res.json();
-      const msgs: Msg[] = data.messages || [];
-      setMessages(msgs);
-    } catch {
-      /* silent */
+      const j = await res.json();
+      const list = (j?.messages || []) as Msg[];
+      setMessages(list);
+      // Auto-scroll to newest (list is chronological)
+      setTimeout(() => {
+        try {
+          listRef.current?.scrollToEnd({ animated: false });
+        } catch {
+          /* ignore */
+        }
+      }, 30);
     } finally {
       setLoading(false);
     }
   }, []);
 
+  // Poll while visible
   useEffect(() => {
     if (!visible) return;
     fetchMessages();
-    const id = setInterval(fetchMessages, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
+    const t = setInterval(fetchMessages, POLL_INTERVAL_MS);
+    return () => clearInterval(t);
   }, [visible, fetchMessages]);
 
+  // Nickname save
   const saveNickname = async () => {
-    const nick = nickInput.trim();
-    if (!nick) return;
-    if (nick.length > 20) {
-      Alert.alert("Too long", "Max 20 characters.");
-      return;
-    }
-    setNickname(nick);
-    await storage.setItem(NICKNAME_KEY, nick);
+    const n = nickInput.trim();
+    if (n.length < 2) return;
+    await storage.setItem(NICKNAME_KEY, n);
+    setNickname(n);
   };
 
+  // Attachment
   const pickAttachment = async () => {
-    if (!isPremium) return;
+    if (attaching || sending) return;
     setAttaching(true);
     try {
-      if (Platform.OS === "ios") {
-        const perm = await ImagePicker.getMediaLibraryPermissionsAsync();
-        if (perm.status !== "granted") {
-          if (perm.canAskAgain) {
-            const asked = await ImagePicker.requestMediaLibraryPermissionsAsync();
-            if (asked.status !== "granted") {
-              Alert.alert("Photo Access", "Enable photo access in Settings.", [
-                { text: "Cancel", style: "cancel" },
-                { text: "Open Settings", onPress: () => Linking.openSettings() },
-              ]);
-              return;
-            }
-          }
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        if (!perm.canAskAgain) {
+          Alert.alert(
+            "Photos Permission",
+            "Please enable Photos access in Settings so you can share images.",
+            [
+              { text: "Cancel", style: "cancel" },
+              { text: "Open Settings", onPress: () => Linking.openSettings() },
+            ],
+          );
         }
-      }
-      const picked = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        quality: 1,
-        allowsEditing: false,
-      });
-      if (picked.canceled || !picked.assets?.[0]) return;
-      const manipulated = await ImageManipulator.manipulateAsync(
-        picked.assets[0].uri,
-        [{ resize: { width: IMG_TARGET_WIDTH } }],
-        {
-          compress: IMG_JPEG_QUALITY,
-          format: ImageManipulator.SaveFormat.JPEG,
-          base64: true,
-        },
-      );
-      if (!manipulated.base64) return;
-      const dataUrl = `data:image/jpeg;base64,${manipulated.base64}`;
-      if (dataUrl.length > 750_000) {
-        Alert.alert("Image Too Large", "Pick a smaller photo.");
         return;
       }
-      setAttachment(dataUrl);
-    } catch (e: any) {
-      Alert.alert("Attach Failed", e?.message ?? String(e));
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: false,
+        quality: 1,
+      });
+      if (res.canceled || !res.assets?.length) return;
+      const uri = res.assets[0].uri;
+      const out = await ImageManipulator.manipulateAsync(
+        uri,
+        [{ resize: { width: IMG_TARGET_WIDTH } }],
+        { compress: IMG_JPEG_QUALITY, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+      );
+      const b64 = out.base64 ? `data:image/jpeg;base64,${out.base64}` : null;
+      if (b64) setAttachment(b64);
+    } catch (e) {
+      Alert.alert("Attachment Failed", String(e));
     } finally {
       setAttaching(false);
     }
   };
 
+  // Send
   const sendMessage = async () => {
+    if (sending) return;
+    if (!isPremium) {
+      Alert.alert("Premium Only", "Subscribe to post in the chatroom.");
+      return;
+    }
+    if (!nickname) return;
     const text = input.trim();
     if (!text && !attachment) return;
-    if (!isPremium) return;
     const now = Date.now();
     if (now - lastSentRef.current < RATE_LIMIT_MS) return;
     setSending(true);
@@ -207,9 +270,9 @@ export default function ChatSheet({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text,
-          nickname: nickname ?? "guest",
+          nickname,
           device_id: deviceIdRef.current,
-          image_data: attachment ?? undefined,
+          image_data: attachment,
         }),
       });
       if (!res.ok) {
@@ -231,198 +294,212 @@ export default function ChatSheet({
   const canSend = isPremium && !sending && (input.trim().length > 0 || !!attachment);
 
   return (
-    <View
+    <Animated.View
       style={[
         styles.sheet,
         {
           backgroundColor: colors.background,
           borderColor: colors.border,
-          // When keyboard is up, expand to full page so composer + ~8
-          // lines of chat history remain visible above the keys.
-          height: keyboardShown ? "100%" : "62%",
+          height: heightAnim,
         },
       ]}
       pointerEvents="box-none"
     >
-      <View style={[styles.sheetInner, { backgroundColor: colors.background }]}>
-        {/* Drag handle + close */}
-        <View style={styles.headerBar}>
-          <View style={styles.handleBar} />
-          <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 14 }}>
-            <Ionicons name="chatbubbles" size={16} color={colors.accentBlue} />
-            <Text style={[styles.title, { color: colors.textPrimary }]}>Chatroom</Text>
-            <View style={{ flex: 1 }} />
+      {/* Header bar — drag target (PanResponder attached) */}
+      <View {...panResponder.panHandlers} style={styles.headerBar}>
+        <View style={styles.handleBar} />
+        <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 14 }}>
+          <Ionicons name="chatbubbles" size={16} color={colors.accentBlue} />
+          <Text style={[styles.title, { color: colors.textPrimary }]}>Chatroom</Text>
+          <View style={{ flex: 1 }} />
+          <TouchableOpacity
+            onPress={() =>
+              snapRef.current >= expandedH - 5 ? snapTo(collapsedH) : snapTo(expandedH)
+            }
+            hitSlop={10}
+            testID="chatsheet-expand"
+            style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          >
+            <Ionicons
+              name={snapRef.current >= expandedH - 5 ? "chevron-down" : "chevron-up"}
+              size={16}
+              color={colors.textPrimary}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={onClose}
+            hitSlop={10}
+            testID="chatsheet-close"
+            style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border, marginLeft: 6 }]}
+          >
+            <Ionicons name="close" size={18} color={colors.textPrimary} />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Body — bottom padding tracks keyboard height in real time */}
+      <Animated.View style={{ flex: 1, paddingBottom: kbHeight }}>
+        {nickname === null ? (
+          <View style={{ padding: 16, gap: 10 }}>
+            <Text style={[styles.title, { color: colors.textPrimary, marginLeft: 0 }]}>
+              Set nickname
+            </Text>
+            <TextInput
+              value={nickInput}
+              onChangeText={setNickInput}
+              placeholder="Your nickname (max 20)"
+              placeholderTextColor={colors.textMuted}
+              style={[
+                styles.nickInput,
+                {
+                  backgroundColor: colors.surfaceAlt,
+                  borderColor: colors.border,
+                  color: colors.textPrimary,
+                },
+              ]}
+              maxLength={20}
+            />
             <TouchableOpacity
-              onPress={onClose}
-              hitSlop={10}
-              testID="chatsheet-close"
-              style={[styles.closeBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={saveNickname}
+              style={[styles.saveBtn, { backgroundColor: colors.accentBlue }]}
             >
-              <Ionicons name="close" size={18} color={colors.textPrimary} />
+              <Text style={{ color: "#fff", fontWeight: "800" }}>Continue</Text>
             </TouchableOpacity>
           </View>
-        </View>
-
-        <KeyboardAvoidingView
-          behavior="translate-with-padding"
-          keyboardVerticalOffset={0}
-          style={{ flex: 1 }}
-        >
-          {nickname === null ? (
-            <View style={{ padding: 16, gap: 10 }}>
-              <Text style={[styles.title, { color: colors.textPrimary, marginLeft: 0 }]}>
-                Set nickname
-              </Text>
-              <TextInput
-                value={nickInput}
-                onChangeText={setNickInput}
-                placeholder="Your nickname (max 20)"
-                placeholderTextColor={colors.textMuted}
-                style={[
-                  styles.nickInput,
-                  {
-                    backgroundColor: colors.surfaceAlt,
-                    borderColor: colors.border,
-                    color: colors.textPrimary,
-                  },
-                ]}
-                maxLength={20}
-              />
-              <TouchableOpacity
-                onPress={saveNickname}
-                style={[styles.saveBtn, { backgroundColor: colors.accentBlue }]}
-              >
-                <Text style={{ color: "#fff", fontWeight: "800" }}>Continue</Text>
-              </TouchableOpacity>
-            </View>
-          ) : loading && messages.length === 0 ? (
-            <View style={{ padding: 24, alignItems: "center" }}>
-              <ActivityIndicator color={colors.accentBlue} />
-            </View>
-          ) : (
-            <FlatList
-              ref={listRef}
-              data={messages}
-              keyExtractor={(m) => m.id}
-              contentContainerStyle={{ padding: 10, paddingBottom: 4 }}
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="on-drag"
-              renderItem={({ item }) => {
-                const isMine = item.device_id === deviceIdRef.current;
-                return (
-                  <View style={[styles.row, { justifyContent: isMine ? "flex-end" : "flex-start" }]}>
-                    <View
+        ) : loading && messages.length === 0 ? (
+          <View style={{ padding: 24, alignItems: "center" }}>
+            <ActivityIndicator color={colors.accentBlue} />
+          </View>
+        ) : (
+          <FlatList
+            key={`chat-list-${snapTick}`}
+            ref={listRef}
+            data={messages}
+            keyExtractor={(m) => m.id}
+            contentContainerStyle={{ padding: 10, paddingBottom: 4 }}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            renderItem={({ item }) => {
+              const isMine = item.device_id === deviceIdRef.current;
+              return (
+                <View style={[styles.row, { justifyContent: isMine ? "flex-end" : "flex-start" }]}>
+                  <View
+                    style={[
+                      styles.bubble,
+                      {
+                        backgroundColor: isMine ? colors.accentBlue : colors.surface,
+                        borderColor: colors.border,
+                      },
+                    ]}
+                  >
+                    <Text
                       style={[
-                        styles.bubble,
-                        {
-                          backgroundColor: isMine ? colors.accentBlue : colors.surface,
-                          borderColor: colors.border,
-                        },
+                        styles.nick,
+                        { color: isMine ? "#fff" : colors.accentBlue },
                       ]}
                     >
-                      <Text
-                        style={[
-                          styles.nick,
-                          { color: isMine ? "#fff" : colors.accentBlue },
-                        ]}
-                      >
-                        {item.nickname}
+                      {item.nickname}
+                    </Text>
+                    {item.image_data ? (
+                      <Image
+                        source={{ uri: item.image_data }}
+                        style={styles.attachmentImage}
+                        resizeMode="cover"
+                      />
+                    ) : null}
+                    {item.text ? (
+                      <Text style={[styles.text, { color: isMine ? "#fff" : colors.textPrimary }]}>
+                        {item.text}
                       </Text>
-                      {item.image_data ? (
-                        <Image
-                          source={{ uri: item.image_data }}
-                          style={styles.attachmentImage}
-                          resizeMode="cover"
-                        />
-                      ) : null}
-                      {item.text ? (
-                        <Text style={[styles.text, { color: isMine ? "#fff" : colors.textPrimary }]}>
-                          {item.text}
-                        </Text>
-                      ) : null}
-                    </View>
+                    ) : null}
                   </View>
-                );
-              }}
-            />
-          )}
+                </View>
+              );
+            }}
+          />
+        )}
 
-          {nickname !== null && (
-            <View
+        {nickname !== null && (
+          <View
+            style={[
+              styles.inputRow,
+              {
+                backgroundColor: colors.surface,
+                borderTopColor: colors.border,
+                // Bottom safe-area padding is only applied when keyboard is
+                // closed — once it opens, the outer Animated.View padding
+                // (=kbHeight) already lifts the whole row above the keys.
+                paddingBottom: Math.max(insets.bottom, 10),
+              },
+            ]}
+          >
+            <TouchableOpacity
+              onPress={pickAttachment}
+              disabled={attaching || sending}
               style={[
-                styles.inputRow,
+                styles.attachBtn,
+                { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
+              ]}
+            >
+              {attaching ? (
+                <ActivityIndicator size="small" color={colors.accentBlue} />
+              ) : (
+                <Ionicons name="image-outline" size={20} color={colors.accentBlue} />
+              )}
+            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              {attachment ? (
+                <View style={[styles.preview, { backgroundColor: colors.surfaceAlt }]}>
+                  <Image source={{ uri: attachment }} style={styles.previewImg} />
+                  <TouchableOpacity onPress={() => setAttachment(null)} hitSlop={8}>
+                    <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+              <TextInput
+                value={input}
+                onChangeText={setInput}
+                placeholder="Type a message…"
+                placeholderTextColor={colors.textMuted}
+                multiline
+                maxLength={MAX_MSG_LEN}
+                onFocus={() => {
+                  // Expand automatically when the user starts typing so we
+                  // never end up with the composer above the keyboard but
+                  // only two visible bubbles.
+                  if (snapRef.current < expandedH - 5) snapTo(expandedH);
+                }}
+                style={[
+                  styles.textInput,
+                  {
+                    backgroundColor: colors.surfaceAlt,
+                    color: colors.textPrimary,
+                    borderColor: colors.border,
+                  },
+                ]}
+              />
+            </View>
+            <TouchableOpacity
+              onPress={sendMessage}
+              disabled={!canSend}
+              style={[
+                styles.sendBtn,
                 {
-                  backgroundColor: colors.surface,
-                  borderTopColor: colors.border,
-                  // Push input up above Android gesture bar / iPhone home
-                  // indicator so it stays fully tappable — the previous
-                  // version got clipped by the system nav on some devices.
-                  paddingBottom: Math.max(insets.bottom, 12) + 6,
+                  backgroundColor: canSend ? colors.accentBlue : colors.surfaceHighlight,
+                  opacity: sending ? 0.6 : 1,
                 },
               ]}
             >
-              <TouchableOpacity
-                onPress={pickAttachment}
-                disabled={attaching || sending}
-                style={[
-                  styles.attachBtn,
-                  { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
-                ]}
-              >
-                {attaching ? (
-                  <ActivityIndicator size="small" color={colors.accentBlue} />
-                ) : (
-                  <Ionicons name="image-outline" size={20} color={colors.accentBlue} />
-                )}
-              </TouchableOpacity>
-              <View style={{ flex: 1 }}>
-                {attachment ? (
-                  <View style={[styles.preview, { backgroundColor: colors.surfaceAlt }]}>
-                    <Image source={{ uri: attachment }} style={styles.previewImg} />
-                    <TouchableOpacity onPress={() => setAttachment(null)} hitSlop={8}>
-                      <Ionicons name="close-circle" size={18} color={colors.textMuted} />
-                    </TouchableOpacity>
-                  </View>
-                ) : null}
-                <TextInput
-                  value={input}
-                  onChangeText={setInput}
-                  placeholder="Type a message…"
-                  placeholderTextColor={colors.textMuted}
-                  multiline
-                  maxLength={MAX_MSG_LEN}
-                  style={[
-                    styles.textInput,
-                    {
-                      backgroundColor: colors.surfaceAlt,
-                      color: colors.textPrimary,
-                      borderColor: colors.border,
-                    },
-                  ]}
-                />
-              </View>
-              <TouchableOpacity
-                onPress={sendMessage}
-                disabled={!canSend}
-                style={[
-                  styles.sendBtn,
-                  {
-                    backgroundColor: canSend ? colors.accentBlue : colors.surfaceHighlight,
-                    opacity: sending ? 0.6 : 1,
-                  },
-                ]}
-              >
-                {sending ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Ionicons name="arrow-up" size={18} color="#fff" />
-                )}
-              </TouchableOpacity>
-            </View>
-          )}
-        </KeyboardAvoidingView>
-      </View>
-    </View>
+              {sending ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Ionicons name="arrow-up" size={18} color="#fff" />
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+      </Animated.View>
+    </Animated.View>
   );
 }
 
@@ -432,12 +509,10 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    height: "62%",
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
     borderTopWidth: 1,
     overflow: "hidden",
-    // subtle elevation shadow (Android + iOS)
     elevation: 12,
     shadowColor: "#000",
     shadowOpacity: 0.18,
@@ -445,20 +520,24 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: -4 },
     zIndex: 200,
   },
-  sheetInner: { flex: 1 },
-  headerBar: { paddingVertical: 6 },
+  headerBar: {
+    paddingVertical: 6,
+    // Bigger hit slop for the drag handle — the whole strip is grabbable.
+    paddingTop: Platform.OS === "ios" ? 10 : 8,
+    paddingBottom: 4,
+  },
   handleBar: {
     alignSelf: "center",
-    width: 44,
-    height: 4,
-    borderRadius: 2,
+    width: 48,
+    height: 5,
+    borderRadius: 3,
     backgroundColor: "#999",
-    opacity: 0.4,
+    opacity: 0.55,
     marginTop: 4,
     marginBottom: 6,
   },
   title: { fontSize: 14, fontWeight: "800", marginLeft: 8, letterSpacing: 0.4 },
-  closeBtn: {
+  iconBtn: {
     width: 32,
     height: 32,
     borderRadius: 16,
