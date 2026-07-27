@@ -85,6 +85,7 @@ export default function ChatSheet({
   // We use it directly as paddingBottom of the sheet body so the composer
   // slides up in perfect sync with the OS keyboard animation.
   const { height: kbHeight } = useKeyboardAnimation();
+  const inputRef = useRef<TextInput>(null);
 
   // ── Sheet height snap points + drag gesture ───────────────────────
   const { height: SCREEN_H } = Dimensions.get("window");
@@ -144,13 +145,22 @@ export default function ChatSheet({
     [collapsedH, expandedH, heightAnim, onClose, snapTo],
   );
 
-  // Reset snap to collapsed each time sheet opens.
+  // Reset snap to collapsed only when the sheet transitions from
+  // hidden → visible. IMPORTANT: we intentionally do NOT depend on
+  // `collapsedH` / `expandedH` here — on Android with adjustResize the
+  // window height shrinks when the keyboard opens, which would otherwise
+  // trigger this effect and violently snap the sheet back to collapsed
+  // mid-conversation. Recompute the fresh height at the moment of
+  // (re)open using Dimensions.get.
+  const wasVisibleRef = useRef(false);
   useEffect(() => {
-    if (visible) {
-      heightAnim.setValue(collapsedH);
-      snapRef.current = collapsedH;
+    if (visible && !wasVisibleRef.current) {
+      const H = Math.round(Dimensions.get("window").height * COLLAPSED_RATIO);
+      heightAnim.setValue(H);
+      snapRef.current = H;
     }
-  }, [visible, collapsedH, heightAnim]);
+    wasVisibleRef.current = visible;
+  }, [visible, heightAnim]);
 
   // ── Chat state ────────────────────────────────────────────────────
   const [nickname, setNickname] = useState<string | null>(null);
@@ -282,10 +292,30 @@ export default function ChatSheet({
         setInput("");
         setAttachment(null);
         lastSentRef.current = now;
-        fetchMessages();
+        // Refresh list and auto-scroll to the newest message so the
+        // just-sent text stays visible to the user without them having
+        // to scroll manually.
+        await fetchMessages();
+        setTimeout(() => {
+          try {
+            listRef.current?.scrollToEnd({ animated: true });
+          } catch {
+            /* ignore */
+          }
+        }, 60);
       }
     } finally {
       setSending(false);
+      // Keep the composer focused so the OS keyboard stays open and the
+      // user can continue chatting without re-tapping the field. This
+      // pairs with `blurOnSubmit={false}` on the TextInput.
+      requestAnimationFrame(() => {
+        try {
+          inputRef.current?.focus();
+        } catch {
+          /* ignore */
+        }
+      });
     }
   };
 
@@ -457,12 +487,14 @@ export default function ChatSheet({
                 </View>
               ) : null}
               <TextInput
+                ref={inputRef}
                 value={input}
                 onChangeText={setInput}
                 placeholder="Type a message…"
                 placeholderTextColor={colors.textMuted}
                 multiline
                 maxLength={MAX_MSG_LEN}
+                blurOnSubmit={false}
                 onFocus={() => {
                   // Expand automatically when the user starts typing so we
                   // never end up with the composer above the keyboard but

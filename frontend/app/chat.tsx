@@ -70,6 +70,7 @@ export default function ChatScreen() {
   const lastSentRef = useRef<number>(0);
   const deviceIdRef = useRef<string>("");
   const listRef = useRef<FlatList<Msg>>(null);
+  const inputRef = useRef<TextInput>(null);
 
   // Load nickname + device id
   useEffect(() => {
@@ -160,12 +161,31 @@ export default function ChatScreen() {
         setInput("");
         setAttachment(null);
         lastSentRef.current = now;
-        fetchMessages();
+        // Refresh + auto-scroll so the freshly-sent bubble is visible
+        // while the keyboard stays open.
+        await fetchMessages();
+        setTimeout(() => {
+          try {
+            listRef.current?.scrollToEnd({ animated: true });
+          } catch {
+            /* ignore */
+          }
+        }, 60);
       }
     } catch (e: any) {
       Alert.alert("Network Error", e?.message ?? String(e));
     } finally {
       setSending(false);
+      // Keep the composer focused so the OS keyboard stays open — users
+      // can continue chatting without re-tapping the field. Paired with
+      // `blurOnSubmit={false}` on the TextInput.
+      requestAnimationFrame(() => {
+        try {
+          inputRef.current?.focus();
+        } catch {
+          /* ignore */
+        }
+      });
     }
   };
 
@@ -447,6 +467,7 @@ export default function ChatScreen() {
             </View>
           ) : null}
           <TextInput
+            ref={inputRef}
             value={input}
             onChangeText={setInput}
             placeholder={isPremium ? "Type a message…" : "Premium only — subscribe to chat"}
