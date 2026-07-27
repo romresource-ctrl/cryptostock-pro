@@ -43,3 +43,21 @@ signals for Indonesian Stocks (IDX, via Yahoo Finance) and Cryptocurrency
 - Backtesting / historical signal accuracy
 - Order routing to Binance / Sinarmas Sekuritas (requires user API keys, KYC)
 - Portfolio P&L tracking
+
+
+## Versioning Rule (updated by user 2026-06-27)
+Format: `major.minor.patch`. Rollover ladder:
+- `x.y.1 → x.y.2 → … → x.y.10` (patch max 10)
+- After `x.y.10` → next is `x.(y+1).1`  (bump minor)
+- `x.0.x → x.1.x → x.2.x → … → x.8.10` (minor max is 8)
+- After `x.8.10` → next is `(x+1).0.1` (bump major)
+
+Examples of legal transitions:
+- `8.0.10 → 8.1.1`
+- `8.1.10 → 8.2.1`
+- `8.8.10 → 9.0.1`
+
+Files to bump in lockstep every version change:
+- `/app/frontend/src/lib/version.ts`  (`APP_VERSION`)
+- `/app/frontend/app.json`            (`expo.version`)
+- Android `versionCode` in `app.json` (monotonic integer; increment by 1 each release)
