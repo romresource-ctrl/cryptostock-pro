@@ -768,12 +768,17 @@ async def get_batch_yahoo_spark(
 async def get_batch(market: str, symbols: list[str], timeframe: str) -> list[dict[str, Any]]:
     """Fetch many symbols concurrently. Returns only successful results.
 
-    v8.0.5 — For non-crypto markets we first try the batched Yahoo spark
-    endpoint (1 HTTP call). Any symbol Yahoo omits (mismatched region,
-    delisted, etc.) is re-fetched with the per-symbol chart endpoint so
-    the dashboard column doesn't lose rows. In the happy path this
-    reduces N HTTP calls to 1, which is where the previous "heavy" feel
-    was coming from.
+    v8.1.1 — REVERTED to full OHLCV chart endpoint per symbol. The spark
+    batch endpoint (v8.0.5) was faster on cold start but only returned
+    close prices, forcing us to synthesise `open=high=low=close` — that
+    broke ATR (volatility) and any signal reason that depends on the
+    intraday range (high/low breakouts, wick rejects). Signal quality
+    now matches v2.1.8 exactly. Cold-start latency is offset by the
+    300s cache + stale-while-revalidate layer in server.py, so warm hits
+    are still sub-100ms.
+
+    Batch spark helper `get_batch_yahoo_spark` is kept below in case it
+    is useful for lightweight preview views in the future.
     """
     if market == "crypto":
         # Binance's public API tolerates our load; no need to throttle.
@@ -781,26 +786,17 @@ async def get_batch(market: str, symbols: list[str], timeframe: str) -> list[dic
             *[get_crypto_snapshot(s, timeframe) for s in symbols],
             return_exceptions=True,
         )
-        out: list[dict[str, Any]] = [r for r in results if isinstance(r, dict)]
-        return out
-
-    tf = TIMEFRAME_MAP.get(timeframe, TIMEFRAME_MAP["1h"])
-    client = await _http()
-    batch = await get_batch_yahoo_spark(
-        client, symbols, market,
-        range_=tf["yahoo_range"], interval=tf["yahoo_interval"],
-    )
-
-    # Anything the batch endpoint didn't return: fall back to per-symbol
-    # chart endpoint (still throttled). This is rare in practice.
-    missing = [s for s in symbols if s not in batch]
-    if missing:
-        fallback = await asyncio.gather(
-            *[_yahoo_throttled(get_stock_snapshot(s, timeframe, market)) for s in missing],
+    else:
+        # Real OHLCV from /v8/finance/chart (throttled to avoid Yahoo
+        # rate-limiting). Uses the pooled httpx.AsyncClient + 60s TTL
+        # cache inside `_fetch_yahoo_chart_by_symbol`, so repeat calls
+        # cost effectively nothing.
+        results = await asyncio.gather(
+            *[
+                _yahoo_throttled(get_stock_snapshot(s, timeframe, market))
+                for s in symbols
+            ],
             return_exceptions=True,
         )
-        for r in fallback:
-            if isinstance(r, dict):
-                batch[r["symbol"]] = r
-    # Preserve input order so the dashboard is stable across polls.
-    return [batch[s] for s in symbols if s in batch]
+    out: list[dict[str, Any]] = [r for r in results if isinstance(r, dict)]
+    return out
