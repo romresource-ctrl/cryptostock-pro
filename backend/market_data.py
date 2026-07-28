@@ -64,6 +64,27 @@ CRYPTO_BINANCE_MAP: dict[str, str] = {
 
 # IDX (Indonesia) stocks -> Yahoo Finance with .JK suffix
 STOCK_YAHOO_MAP: dict[str, str] = {
+    # v8.1.2 — Batch add per user request. All IDX tickers use ".JK"
+    # Yahoo Finance suffix. Duplicates below are silently ignored by
+    # Python dict-literal (later value wins) — kept explicit so this
+    # extension list is easy to diff against the user's raw list.
+    "AADI": "AADI.JK", "DSSA": "DSSA.JK", "TAPG": "TAPG.JK",
+    "CUAN": "CUAN.JK", "MAPI": "MAPI.JK", "POLY": "POLY.JK",
+    "BFIN": "BFIN.JK", "BIPI": "BIPI.JK", "OASA": "OASA.JK",
+    "INKP": "INKP.JK", "INDF": "INDF.JK", "GOTO": "GOTO.JK",
+    "TINS": "TINS.JK", "BUVA": "BUVA.JK", "BRPT": "BRPT.JK",
+    "RATU": "RATU.JK", "BREN": "BREN.JK", "ADHI": "ADHI.JK",
+    "PGAS": "PGAS.JK", "BNBR": "BNBR.JK", "GTSI": "GTSI.JK",
+    "PRDL": "PRDL.JK", "JELI": "JELI.JK", "ARCI": "ARCI.JK",
+    "BUMI": "BUMI.JK", "BULL": "BULL.JK", "SGER": "SGER.JK",
+    "NCKL": "NCKL.JK", "FORE": "FORE.JK", "BIRD": "BIRD.JK",
+    "JSMR": "JSMR.JK", "CMPP": "CMPP.JK", "MYOR": "MYOR.JK",
+    "RANS": "RANS.JK", "EMMI": "EMMI.JK", "BACH": "BACH.JK",
+    "JECX": "JECX.JK", "MDIA": "MDIA.JK", "ENRG": "ENRG.JK",
+    "AKRA": "AKRA.JK", "HRUM": "HRUM.JK", "INCO": "INCO.JK",
+    "SGRO": "SGRO.JK", "BBYB": "BBYB.JK", "INET": "INET.JK",
+    "SSMS": "SSMS.JK", "MBSS": "MBSS.JK", "TOBA": "TOBA.JK",
+    "MINA": "MINA.JK", "CDIA": "CDIA.JK", "CBRE": "CBRE.JK",
     # Big 4 banks & top financials
     "BBCA": "BBCA.JK", "BBRI": "BBRI.JK", "BMRI": "BMRI.JK",
     "BBNI": "BBNI.JK", "BRIS": "BRIS.JK", "BTPS": "BTPS.JK",
@@ -544,6 +565,11 @@ async def get_crypto_snapshot(symbol: str, timeframe: str) -> dict[str, Any] | N
 
 _CG_ID_CACHE: dict[str, str | None] = {}  # symbol → coingecko coin_id
 _CG_ID_LOCK = asyncio.Lock()
+# v8.1.2 — Snapshot response cache (5 min TTL). CoinGecko free tier is
+# ~30 req/min; without this we get HTTP 429 the moment two users search
+# for popular meme tokens in a row.
+_CG_SNAP_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_CG_SNAP_TTL_SEC = 300.0
 
 
 async def _resolve_coingecko_id(client: httpx.AsyncClient, symbol: str) -> str | None:
@@ -579,36 +605,49 @@ async def _resolve_coingecko_id(client: httpx.AsyncClient, symbol: str) -> str |
 
 
 def _cg_days_for_tf(tf: dict[str, Any]) -> tuple[int, str]:
-    """Map internal timeframe → (days, interval) for CoinGecko market_chart."""
-    # CoinGecko granularity ladder (free tier): days=1 → 5-min candles,
-    # days=7 → hourly, days=30+ → daily. We adapt to the requested
-    # window so RSI/EMA still have enough resolution.
+    """Map internal timeframe → (days, interval) for CoinGecko market_chart.
+
+    v8.1.2 — CoinGecko dropped the `interval` param from the free tier;
+    granularity is auto-picked based on the `days` value:
+      days=1     → 5-minute candles
+      days=2-90  → hourly
+      days=91+   → daily
+    """
     binance = tf.get("binance", "1h")
     if binance in ("15m", "30m"):
-        return (1, "")  # 5-min ~= good enough
+        return (1, "")
     if binance in ("1h", "2h", "4h"):
-        return (7, "hourly")
+        return (7, "")
     if binance in ("6h", "12h", "1d"):
-        return (30, "daily")
-    return (7, "hourly")
+        return (90, "")
+    return (7, "")
 
 
 async def _fetch_coingecko_snapshot(
     client: httpx.AsyncClient, symbol: str, tf: dict[str, Any]
 ) -> dict[str, Any] | None:
+    # Try cache first — vital because CoinGecko free tier rate-limits
+    # us at ~30 req/min. Repeated searches within TTL cost 0 upstream.
+    cache_key = f"{symbol.upper()}:{tf.get('binance', '1h')}"
+    hit = _CG_SNAP_CACHE.get(cache_key)
+    if hit and (time.monotonic() - hit[0]) < _CG_SNAP_TTL_SEC:
+        return hit[1]
+
     coin_id = await _resolve_coingecko_id(client, symbol)
     if not coin_id:
         return None
-    days, interval = _cg_days_for_tf(tf)
+    days, _interval = _cg_days_for_tf(tf)
     try:
-        params: dict[str, Any] = {"vs_currency": "usd", "days": days}
-        if interval:
-            params["interval"] = interval
         r = await client.get(
             f"{COINGECKO_BASE}/coins/{coin_id}/market_chart",
-            params=params,
+            params={"vs_currency": "usd", "days": days},
             timeout=12.0,
         )
+        if r.status_code == 429:
+            # Rate-limited: return stale cache if we have one, else None.
+            if hit:
+                return hit[1]
+            return None
         r.raise_for_status()
         data = r.json()
         prices = data.get("prices") or []       # [[t_ms, price], ...]
@@ -634,7 +673,7 @@ async def _fetch_coingecko_snapshot(
         price = last["close"]
         change_pct = ((price - prev) / prev * 100.0) if prev else 0.0
         highs = [c["close"] for c in candles[-25:]]
-        return {
+        result = {
             "symbol": symbol,
             "market": "crypto",
             "ticker": {
@@ -646,6 +685,8 @@ async def _fetch_coingecko_snapshot(
             },
             "candles": candles,
         }
+        _CG_SNAP_CACHE[cache_key] = (time.monotonic(), result)
+        return result
     except Exception:
         return None
 
