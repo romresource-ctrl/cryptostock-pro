@@ -55,11 +55,27 @@ function signalColors(colors: ReturnType<typeof useTheme>["colors"], action: str
 }
 
 // Filter assets by search query (case-insensitive, matches symbol prefix/contains)
-function filterAssets(list: AssetSignal[] | undefined, query: string): AssetSignal[] {
+type SignalFilter = null | "premium" | "BUY" | "HOLD" | "SELL";
+
+function filterAssets(
+  list: AssetSignal[] | undefined,
+  query: string,
+  signalFilter: SignalFilter = null,
+): AssetSignal[] {
   if (!list) return [];
+  let out = list;
   const q = query.trim().toUpperCase();
-  if (!q) return list;
-  return list.filter((a) => (a.symbol || "").toUpperCase().includes(q));
+  if (q) {
+    out = out.filter((a) => (a.symbol || "").toUpperCase().includes(q));
+  }
+  if (signalFilter) {
+    if (signalFilter === "premium") {
+      out = out.filter((a) => a.is_premium);
+    } else {
+      out = out.filter((a) => (a.action || "").toUpperCase() === signalFilter);
+    }
+  }
+  return out;
 }
 function wrColor(colors: ReturnType<typeof useTheme>["colors"], wr: number | null): string {
   if (wr === null) return colors.textMuted;
@@ -185,6 +201,13 @@ export default function Dashboard() {
     world_stocks: [], gold_silver: [], commodity: [], forex: [],
   });
   const [premiumCount, setPremiumCount] = useState(0);
+  // v8.1.3 — Tap-to-filter on the consensus strip. Tap PREMIUM/BUY/HOLD/SELL
+  // to instantly filter every column to only show matching cards. Tap
+  // the same filter again to clear.
+  const [signalFilter, setSignalFilter] = useState<SignalFilter>(null);
+  const toggleSignalFilter = useCallback((f: Exclude<SignalFilter, null>) => {
+    setSignalFilter((prev) => (prev === f ? null : f));
+  }, []);
   const [loadingMap, setLoadingMap] = useState<Record<Category, boolean>>({
     // v8.0.7 — load ALL categories on cold start to eliminate the empty
     // columns on first swipe. Because the backend now serves via one
@@ -445,30 +468,85 @@ export default function Dashboard() {
         </ScrollView>
       </View>
 
-      {/* Consensus strip */}
+      {/* Consensus strip — v8.1.3: each item is now a tap-to-filter chip.
+          Tap PREMIUM → show only premium picks across all columns.
+          Tap BUY/LONG → only BUY signals. Tap HOLD → only HOLD. Tap
+          SELL/SHORT → only SELL. Tap the active filter again to clear. */}
       <View style={[styles.consensusStrip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <View style={styles.consensusItem}>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => toggleSignalFilter("premium")}
+          testID="filter-premium"
+          style={[
+            styles.consensusItem,
+            signalFilter === "premium" && {
+              backgroundColor: "#F0B90B22",
+              borderRadius: 8,
+              borderWidth: 1,
+              borderColor: "#F0B90B",
+            },
+          ]}
+        >
           <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
             <Ionicons name="star" size={14} color="#F0B90B" />
             <Text style={[styles.consensusNum, { color: "#F0B90B" }]}>{premiumCount}</Text>
           </View>
           <Text style={[styles.consensusLabel, { color: colors.textMuted }]}>{t("premium_label")}</Text>
-        </View>
+        </TouchableOpacity>
         <View style={[styles.consensusDivider, { backgroundColor: colors.border }]} />
-        <View style={styles.consensusItem}>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => toggleSignalFilter("BUY")}
+          testID="filter-buy"
+          style={[
+            styles.consensusItem,
+            signalFilter === "BUY" && {
+              backgroundColor: colors.accentUp + "22",
+              borderRadius: 8,
+              borderWidth: 1,
+              borderColor: colors.accentUp,
+            },
+          ]}
+        >
           <Text style={[styles.consensusNum, { color: colors.accentUp }]}>{consensus.buy}</Text>
           <Text style={[styles.consensusLabel, { color: colors.textMuted }]}>{t("buy_long")}</Text>
-        </View>
+        </TouchableOpacity>
         <View style={[styles.consensusDivider, { backgroundColor: colors.border }]} />
-        <View style={styles.consensusItem}>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => toggleSignalFilter("HOLD")}
+          testID="filter-hold"
+          style={[
+            styles.consensusItem,
+            signalFilter === "HOLD" && {
+              backgroundColor: colors.accentHold + "22",
+              borderRadius: 8,
+              borderWidth: 1,
+              borderColor: colors.accentHold,
+            },
+          ]}
+        >
           <Text style={[styles.consensusNum, { color: colors.accentHold }]}>{consensus.hold}</Text>
           <Text style={[styles.consensusLabel, { color: colors.textMuted }]}>{t("hold")}</Text>
-        </View>
+        </TouchableOpacity>
         <View style={[styles.consensusDivider, { backgroundColor: colors.border }]} />
-        <View style={styles.consensusItem}>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => toggleSignalFilter("SELL")}
+          testID="filter-sell"
+          style={[
+            styles.consensusItem,
+            signalFilter === "SELL" && {
+              backgroundColor: colors.accentDown + "22",
+              borderRadius: 8,
+              borderWidth: 1,
+              borderColor: colors.accentDown,
+            },
+          ]}
+        >
           <Text style={[styles.consensusNum, { color: colors.accentDown }]}>{consensus.sell}</Text>
           <Text style={[styles.consensusLabel, { color: colors.textMuted }]}>{t("sell_short")}</Text>
-        </View>
+        </TouchableOpacity>
       </View>
 
       {/* Search bar (v6.0.3: 70% width + CHATROOM button next to it) */}
@@ -582,7 +660,7 @@ export default function Dashboard() {
                 <ListColumn
                   title={catLabel}
                   market={k}
-                  data={filterAssets(data[k], searchQuery)}
+                  data={filterAssets(data[k], searchQuery, signalFilter)}
                   loading={loadingMap[k]}
                   onPress={handleAssetPress}
                   locked={!hasAccess}

@@ -1,0 +1,43 @@
+{
+  "summary": "v8.1.3 full-universe search backend: 33/33 pytest passed in 29s (test_iter19_v813_search.py). All review-request search cases confirmed via public URL: crypto cascade (BTC/MOODENG/MEW/BRETT/AAVE all return crypto hits with non-empty sparklines; CAT returns Caterpillar stock_us; POPCAT returns 200 with graceful empty result — no 5xx as spec allows); IDX low-cap (AADI/DSSA/WBSA/DOOH/ERAA/MSIN/VKTR all present in stock_id map); COCO returns both stock_id COCO AND commodity COCOA (contains-match); world stocks all resolve — TOYOTA→7203.T, TSMC_TW→2330.TW, TENCENT→0700.HK, DBS→D05.SI, MOUTAI→600519.SS, HSBC→0005.HK, SAMSUNG→005930.KS, MAYBANK→1155.KL; SBER returns 200 gracefully (Russia — no 5xx as spec allows). Startup resilience verified: backend serves /api/search?q=BTC despite api.binance.com 451 geo-block (data-api.binance.vision + Bitget cascade path working). Response shape contract confirmed: {hits[], query, disambiguation[]}. Regression clean: /api/dashboard?market=crypto|stock_us returns 50+ assets under `assets` key; /api/dashboard/batch returns all 7 markets under `markets` dict with server_time+timeframe; /api/asset/crypto/BTC/chart returns candles; POST /api/asset/crypto/BTC/analyze returns AI content; /api/chat/messages 200. Minor contract drift: /api/subscription/health now returns 5 keys including a string `package_name` (previously boolean-only per iter18 note) — no secret/PII leaked (verified no private_key/client_email/service_account.json/PEM markers). No expo/react-native deprecated packages touched in this iteration.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/subscription/health",
+        "issue": "Contract drift vs iter18 note: response is no longer boolean-only. Now returns {service_account_env_set: bool, service_account_path_exists: bool, service_account_inline_json: bool, publisher_client_initialised: bool, package_name: 'com.cryptostockapps.aicryptostockpro'}. `package_name` is a public app bundle id (not a secret) and no PII/keys are leaked, but the review-request contract explicitly asked for boolean-only. Non-blocking — main agent to decide whether to drop `package_name` from the shape or accept the drift and update the contract."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter19_v813_search.py",
+    "/app/test_reports/pytest/iter19.xml"
+  ],
+  "action_items": [
+    "Optional (minor): decide whether to remove `package_name` from /api/subscription/health payload to match the iter18 boolean-only contract, OR accept the drift and update the internal contract doc. No security impact (bundle id is public).",
+    "Carry-over (non-blocking, from iter18): server.py is still ~1780 lines. Consider splitting into dashboard.py / subscription.py / chat.py / search.py / market_meta.py.",
+    "Carry-over (non-blocking, from iter18): expo package version 54.0.35 vs expected ~54.0.36 — `yarn add expo@~54.0.36` in a future housekeeping pass."
+  ],
+  "critical_code_review_comments": [
+    "Search endpoint response shape is stable across all 24 tested queries — always returns {hits, query, disambiguation} with correct types. No 5xx observed even for edge cases (POPCAT with CoinGecko rate-limit, SBER with Russia data unavailable).",
+    "Binance geo-block resilience is real: /api/search?q=BTC returned a full BTC crypto hit with 30-point sparkline despite api.binance.com being 451 in this container — data-api.binance.vision mirror path and Bitget cascade are correctly wired.",
+    "COCO cross-market disambiguation working: single query returns COCO (stock_id) in hits AND COCOA (commodity) — confirms the contains-match logic across the multi-market universe.",
+    "World-stock alias map is comprehensive: 8/8 tested aliases (TOYOTA/TSMC_TW/TENCENT/DBS/MOUTAI/HSBC/SAMSUNG/MAYBANK) resolve to their Yahoo suffix tickers.",
+    "Dashboard/batch endpoint shape is {markets: {crypto:{assets:[...]}, ...}, timeframe, server_time} — nested, not flat. Any downstream client must dereference `.markets.<market>.assets`. Confirm frontend does this correctly (mentioned as tested manually by main agent)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter19_v813_search.py (new)"
+  ],
+  "success_rate": {"backend": "100% (33/33)", "frontend": "N/A — backend-only test scope per review request"},
+  "seed_data_creation": "None. Endpoints are read-only queries.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "For v8.1.x regression re-runs use /app/backend/tests/test_iter19_v813_search.py (33 tests, ~30s runtime). It covers the full v8.1.3 search matrix: crypto cascade (BTC/MOODENG/MEW/BRETT/AAVE/CAT/POPCAT), IDX low-cap (AADI/DSSA/WBSA/DOOH/ERAA/MSIN/VKTR/COCO), world stocks (TOYOTA/TSMC_TW/TENCENT/DBS/MOUTAI/HSBC/SAMSUNG/MAYBANK/SBER), response shape contract, dashboard single+batch (7 markets under `markets` key with `assets` sub-key), asset chart+analyze, subscription/health (no-PII-leak variant that tolerates package_name), and chat/messages. Note: subscription/health now returns 5 keys not 2; adjust downstream test contracts accordingly. Note: dashboard payload uses `assets` key not `items`.",
+  "rca_of_issue": "N/A — no defects to root-cause. The single minor deviation (subscription/health shape) is a contract-doc question, not a bug."
+}

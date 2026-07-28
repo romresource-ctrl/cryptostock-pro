@@ -255,6 +255,184 @@ STOCK_US_YAHOO_MAP: dict[str, str] = {
     "EBAY": "EBAY", "ZM": "ZM", "DKNG": "DKNG", "GME": "GME",
     "AMC": "AMC", "MSTR": "MSTR", "DELL": "DELL", "HPQ": "HPQ",
     "HPE": "HPE",
+
+    # ============================================================
+    # v8.1.3 — S&P 500 extension (~120 more names beyond above)
+    # ============================================================
+    # More Financials / Insurance
+    "ALL": "ALL", "AIG": "AIG", "MET": "MET", "PRU": "PRU",
+    "TRV": "TRV", "PGR": "PGR", "CB": "CB", "AFL": "AFL",
+    "USB": "USB", "PNC": "PNC", "TFC": "TFC", "COF": "COF",
+    "MTB": "MTB", "RF": "RF", "FITB": "FITB", "KEY": "KEY",
+    "SPGI": "SPGI", "MCO": "MCO", "MSCI": "MSCI", "ICE": "ICE",
+    "CME": "CME", "NDAQ": "NDAQ", "CBOE": "CBOE", "AMP": "AMP",
+    "TROW": "TROW", "STT": "STT", "BEN": "BEN", "IVZ": "IVZ",
+    # More Healthcare / Biotech / Med Devices
+    "CI": "CI", "CVS": "CVS", "HUM": "HUM", "ELV": "ELV",
+    "CNC": "CNC", "MOH": "MOH", "HCA": "HCA", "UHS": "UHS",
+    "ISRG": "ISRG", "MDT": "MDT", "SYK": "SYK", "BSX": "BSX",
+    "EW": "EW", "ZBH": "ZBH", "BDX": "BDX", "BAX": "BAX",
+    "IDXX": "IDXX", "IQV": "IQV", "A": "A", "ILMN": "ILMN",
+    "BIIB": "BIIB", "INCY": "INCY", "ALNY": "ALNY", "BMRN": "BMRN",
+    "TECH": "TECH",
+    # More Consumer / Staples / Restaurants
+    "PM": "PM", "MO": "MO", "STZ": "STZ", "TAP": "TAP",
+    "KHC": "KHC", "MDLZ": "MDLZ", "GIS": "GIS", "K": "K",
+    "HSY": "HSY", "CPB": "CPB", "SJM": "SJM", "CAG": "CAG",
+    "TSN": "TSN", "HRL": "HRL", "MKC": "MKC", "CLX": "CLX",
+    "CHD": "CHD", "KMB": "KMB", "KDP": "KDP", "MNST": "MNST",
+    "YUM": "YUM", "CMG": "CMG", "QSR": "QSR", "DPZ": "DPZ",
+    "DRI": "DRI", "TXRH": "TXRH", "EAT": "EAT",
+    # More Consumer Discretionary / Apparel / Leisure
+    "LULU": "LULU", "TJX": "TJX", "ROST": "ROST", "BURL": "BURL",
+    "ULTA": "ULTA", "TPR": "TPR", "RL": "RL", "LEVI": "LEVI",
+    "PVH": "PVH", "ETSY": "ETSY", "W": "W", "CHWY": "CHWY",
+    "DASH": "DASH", "BKNG": "BKNG", "EXPE": "EXPE", "MAR": "MAR",
+    "HLT": "HLT", "H": "H", "RCL": "RCL", "CCL": "CCL",
+    "NCLH": "NCLH", "MGM": "MGM", "WYNN": "WYNN", "LVS": "LVS",
+    "CZR": "CZR", "PENN": "PENN", "F1": "FWONA",
+    # More Industrials / Transportation
+    "UPS": "UPS", "FDX": "FDX", "UNP": "UNP", "CSX": "CSX",
+    "NSC": "NSC", "DAL": "DAL", "UAL": "UAL", "AAL": "AAL",
+    "LUV": "LUV", "JBLU": "JBLU", "ALK": "ALK", "SKYW": "SKYW",
+    "SAVE": "SAVE", "CHRW": "CHRW", "XPO": "XPO", "JBHT": "JBHT",
+    "ODFL": "ODFL", "SAIA": "SAIA", "ARCB": "ARCB", "R": "R",
+    "WM": "WM", "RSG": "RSG", "WCN": "WCN", "SRCL": "SRCL",
+    "GNRC": "GNRC", "IR": "IR", "ETN": "ETN", "EMR": "EMR",
+    "ROK": "ROK", "PH": "PH", "CMI": "CMI", "PCAR": "PCAR",
+    "WAB": "WAB", "URI": "URI", "FAST": "FAST", "GWW": "GWW",
+    "MMC": "MMC", "AON": "AON", "AJG": "AJG", "WTW": "WTW",
+    # More REITs
+    "PLD": "PLD", "AMT": "AMT", "CCI": "CCI", "EQIX": "EQIX",
+    "DLR": "DLR", "PSA": "PSA", "O": "O", "SPG": "SPG",
+    "WELL": "WELL", "AVB": "AVB", "EQR": "EQR", "MAA": "MAA",
+    "EXR": "EXR", "VTR": "VTR", "ARE": "ARE", "SBAC": "SBAC",
+    # More Utilities / Renewables
+    "SO": "SO", "D": "D", "AEP": "AEP", "EXC": "EXC",
+    "XEL": "XEL", "SRE": "SRE", "PEG": "PEG", "ED": "ED",
+    "PCG": "PCG", "AWK": "AWK", "ENPH": "ENPH", "FSLR": "FSLR",
+    "RUN": "RUN", "SEDG": "SEDG", "PLUG": "PLUG",
+    # More Materials / Chemicals
+    "LIN": "LIN", "APD": "APD", "SHW": "SHW", "ECL": "ECL",
+    "DD": "DD", "DOW": "DOW", "PPG": "PPG", "NEM": "NEM",
+    "FCX": "FCX", "NUE": "NUE", "STLD": "STLD", "CLF": "CLF",
+    "X": "X", "AA": "AA", "CENX": "CENX", "MP": "MP",
+    "LAC": "LAC", "ALB": "ALB", "SQM": "SQM",
+    # More Tech / Growth
+    "CDW": "CDW", "ANSS": "ANSS", "CDNS": "CDNS", "SNPS": "SNPS",
+    "KEYS": "KEYS", "FISV": "FISV", "FIS": "FIS", "PAYX": "PAYX",
+    "ADP": "ADP", "GEHC": "GEHC", "ROP": "ROP", "TDG": "TDG",
+    "TDY": "TDY", "TRMB": "TRMB",
+
+    # ============================================================
+    # v8.1.3 — 🇯🇵 JAPAN (Nikkei 225 top ~55)
+    # ============================================================
+    "TOYOTA": "7203.T", "SONYG": "6758.T", "SOFTBANK": "9984.T",
+    "KEYENCE": "6861.T", "MITSUBISHI": "8058.T", "SUMITOMO": "8316.T",
+    "MUFG": "8306.T", "SMFG": "8316.T", "HITACHI": "6501.T",
+    "NINTENDO": "7974.T", "TOKYO_ELECTRON": "8035.T", "FANUC": "6954.T",
+    "SHIN_ETSU": "4063.T", "TAKEDA": "4502.T", "ASTELLAS": "4503.T",
+    "DAIICHI": "4568.T", "HONDA": "7267.T", "NISSAN": "7201.T",
+    "MAZDA": "7261.T", "SUBARU": "7270.T", "SUZUKI": "7269.T",
+    "PANASONIC": "6752.T", "SHARP": "6753.T", "CANON": "7751.T",
+    "NIKON": "7731.T", "FUJIFILM": "4901.T", "OLYMPUS": "7733.T",
+    "KOMATSU": "6301.T", "MURATA": "6981.T", "KYOCERA": "6971.T",
+    "TDK": "6762.T", "ROHM": "6963.T", "ADVANTEST": "6857.T",
+    "RENESAS": "6723.T", "NEC": "6701.T", "FUJITSU": "6702.T",
+    "MITSUI": "8031.T", "MARUBENI": "8002.T", "ITOCHU": "8001.T",
+    "KDDI": "9433.T", "NTT": "9432.T", "DOCOMO": "9437.T",
+    "JR_EAST": "9020.T", "JR_CENTRAL": "9022.T", "ANA": "9202.T",
+    "JAL": "9201.T", "SEVEN_I": "3382.T", "FAST_RETAILING": "9983.T",
+    "MITSUBISHI_ELE": "6503.T", "DENSO": "6902.T", "BRIDGESTONE": "5108.T",
+    "ORIX": "8591.T", "SEGA": "6460.T", "BANDAI": "7832.T",
+    "SQUARE_ENIX": "9684.T", "KIRIN": "2503.T", "ASAHI_BEER": "2502.T",
+
+    # ============================================================
+    # v8.1.3 — 🇨🇳 CHINA A-shares (Shanghai .SS, Shenzhen .SZ) ~40
+    # ============================================================
+    "MOUTAI": "600519.SS", "WULIANGYE": "000858.SZ", "ICBC": "601398.SS",
+    "CCB": "601939.SS", "AGBANK": "601288.SS", "BOC": "601988.SS",
+    "PETROCHINA": "601857.SS", "SINOPEC": "600028.SS", "CNOOC_A": "600938.SS",
+    "PING_AN": "601318.SS", "CHINA_LIFE": "601628.SS", "CITIC": "601066.SS",
+    "MERCHANTS_BANK": "600036.SS", "MINSHENG": "600016.SS", "PUFA": "600000.SS",
+    "GREE": "000651.SZ", "MIDEA": "000333.SZ", "HAIER": "600690.SS",
+    "TCL": "000100.SZ", "BYD_A": "002594.SZ", "CATL": "300750.SZ",
+    "GOTION": "002074.SZ", "EVE": "300014.SZ", "SUNGROW": "300274.SZ",
+    "LONGI": "601012.SS", "TRINA": "688599.SS", "JA_SOLAR": "002459.SZ",
+    "TONGWEI": "600438.SS", "ZTE_A": "000063.SZ", "HIKVISION": "002415.SZ",
+    "DAHUA": "002236.SZ", "WOODY": "603288.SS", "YILI": "600887.SS",
+    "MENGNIU_A": "600887.SS", "GOERTEK": "002241.SZ", "LUXSHARE": "002475.SZ",
+    "SMIC": "688981.SS", "AMEC": "688012.SS", "NAURA": "002371.SZ",
+    "CAMBRICON": "688256.SS", "IFLYTEK": "002230.SZ",
+
+    # ============================================================
+    # v8.1.3 — 🇭🇰 HONG KONG (.HK) ~35 top constituents
+    # ============================================================
+    "TENCENT": "0700.HK", "ALIBABA_HK": "9988.HK", "MEITUAN": "3690.HK",
+    "JD_HK": "9618.HK", "BAIDU_HK": "9888.HK", "NETEASE_HK": "9999.HK",
+    "XIAOMI": "1810.HK", "LENOVO": "0992.HK", "BYD_HK": "1211.HK",
+    "GEELY": "0175.HK", "GREATWALL": "2333.HK", "NIO_HK": "9866.HK",
+    "LI_AUTO_HK": "2015.HK", "XPENG_HK": "9868.HK", "HSBC": "0005.HK",
+    "STANCHART_HK": "2888.HK", "BOC_HK": "2388.HK", "ICBC_HK": "1398.HK",
+    "CCB_HK": "0939.HK", "PING_AN_HK": "2318.HK", "AIA": "1299.HK",
+    "CK_HUTCHISON": "0001.HK", "CK_ASSET": "1113.HK", "SUN_HUNG_KAI": "0016.HK",
+    "HKEX": "0388.HK", "GALAXY_ENT": "0027.HK", "SANDS_CHINA": "1928.HK",
+    "MGM_CHINA": "2282.HK", "WYNN_MACAU": "1128.HK", "CATHAY_PACIFIC": "0293.HK",
+    "CHINA_MOBILE": "0941.HK", "CHINA_UNICOM": "0762.HK", "CHINA_TELECOM_HK": "0728.HK",
+    "SINOPEC_HK": "0386.HK", "CNOOC": "0883.HK", "PETROCHINA_HK": "0857.HK",
+    "TSINGTAO": "0168.HK",
+
+    # ============================================================
+    # v8.1.3 — 🇹🇼 TAIWAN (.TW) ~20 top
+    # ============================================================
+    "TSMC_TW": "2330.TW", "FOXCONN": "2317.TW", "MEDIATEK": "2454.TW",
+    "UNITED_MICRO": "2303.TW", "LARGAN": "3008.TW", "DELTA_TW": "2308.TW",
+    "CATCHER": "2474.TW", "PEGATRON": "4938.TW", "QUANTA": "2382.TW",
+    "COMPAL": "2324.TW", "WISTRON": "3231.TW", "ASUS": "2357.TW",
+    "ACER": "2353.TW", "CATL_TW": "1216.TW", "CHT": "2412.TW",
+    "FORMOSA_PLASTICS": "1301.TW", "NAN_YA": "1303.TW", "CTBC_FIN": "2891.TW",
+    "CATHAY_FIN": "2882.TW", "FUBON_FIN": "2881.TW",
+
+    # ============================================================
+    # v8.1.3 — 🇲🇾 MALAYSIA (.KL) ~20 top
+    # ============================================================
+    "MAYBANK": "1155.KL", "CIMB": "1023.KL", "PBBANK": "1295.KL",
+    "TENAGA": "5347.KL", "PCHEM": "5183.KL", "PETRONAS_GAS": "6033.KL",
+    "PETRONAS_CHEM": "5183.KL", "IHH": "5225.KL", "GENTING": "3182.KL",
+    "GENM": "4715.KL", "SIME": "4197.KL", "AXIATA": "6888.KL",
+    "MAXIS": "6012.KL", "DIGI": "6947.KL", "TM": "4863.KL",
+    "AMBANK": "1015.KL", "HLBANK": "5819.KL", "RHB": "1066.KL",
+    "IOI": "1961.KL", "KLK": "2445.KL",
+
+    # ============================================================
+    # v8.1.3 — 🇸🇬 SINGAPORE (.SI) ~20 top
+    # ============================================================
+    "DBS": "D05.SI", "OCBC": "O39.SI", "UOB": "U11.SI",
+    "SGX": "S68.SI", "SINGTEL": "Z74.SI", "STARHUB": "CC3.SI",
+    "SIA": "C6L.SI", "SATS": "S58.SI", "COMFORTDELGRO": "C52.SI",
+    "SEMBCORP": "U96.SI", "KEPPEL": "BN4.SI", "CAPITALAND": "9CI.SI",
+    "CAPITALAND_INTG": "C38U.SI", "MAPLETREE": "M44U.SI", "WILMAR": "F34.SI",
+    "OLAM": "VC2.SI", "GENTING_SG": "G13.SI", "JARDINE_MATHESON": "J36.SI",
+    "SIA_ENG": "S59.SI", "THAI_BEV": "Y92.SI",
+
+    # ============================================================
+    # v8.1.3 — 🇷🇺 RUSSIA (.ME) ~10 (limited data due to sanctions)
+    # ============================================================
+    "SBER": "SBER.ME", "GAZP": "GAZP.ME", "LKOH": "LKOH.ME",
+    "GMKN": "GMKN.ME", "ROSN": "ROSN.ME", "NVTK": "NVTK.ME",
+    "TATN": "TATN.ME", "MTSS": "MTSS.ME", "MGNT": "MGNT.ME",
+    "YNDX": "YNDX.ME",
+
+    # ============================================================
+    # v8.1.3 — 🇰🇷 KOREA (.KS/.KQ) top ~15 bonus
+    # ============================================================
+    "SAMSUNG": "005930.KS", "SK_HYNIX": "000660.KS", "LG_ENERGY": "373220.KS",
+    "SAMSUNG_BIOLOGICS": "207940.KS", "HYUNDAI_MOTOR": "005380.KS",
+    "KIA": "000270.KS", "POSCO": "005490.KS", "NAVER": "035420.KS",
+    "KAKAO": "035720.KS", "LG_CHEM": "051910.KS", "CELLTRION": "068270.KS",
+    "SK_INNOVATION": "096770.KS", "KB_FIN": "105560.KS", "SHINHAN_FIN": "055550.KS",
+    "HANA_FIN": "086790.KS",
+
     # ETFs commonly traded like stocks (leveraged)
     "TQQQ": "TQQQ", "SQQQ": "SQQQ", "SOXL": "SOXL",
     # Global indices

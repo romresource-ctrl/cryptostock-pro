@@ -185,16 +185,16 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "7.0.9"
-  test_sequence: 17
+  version: "8.1.3"
+  test_sequence: 19
   run_ui: false
 
 test_plan:
   current_focus:
-    - "Backend TTL index for chat_messages.created_at auto-created on startup"
-    - "Yahoo chart TTL cache reduces repeat-call latency (both legacy + new fetch path)"
-    - "Premium gating still enforces isPremium || isUnlocked in production (__DEV__ bypass only for dev builds)"
-    - "Subscription flow (verify + status + health) still 200s and preserves 1/3/6/12-month product plans"
+    - "Full-universe /api/search with Binance + Bitget auto-loaded universe + CoinGecko disambiguation"
+    - "Interactive consensus filter (PREMIUM/BUY/HOLD/SELL) on dashboard"
+    - "Extended world stocks (Japan/China/HK/Taiwan/Malaysia/Singapore/Russia/Korea + S&P500 extension)"
+    - "IDX low-caps additions (COCO/DOOH/EMAS/ERAA/IMPC/KETR/KOTA/MSIN/SCMA/SINI/SOCI/VKTR/WBSA)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -202,46 +202,47 @@ test_plan:
 agent_communication:
   - agent: "main"
     message: |
-      v7.0.9 — Stability polish. Follow-up to v7.0.8 slash-symbol fix.
+      v8.1.3 — Search + world coverage overhaul + interactive filters.
 
       CHANGES:
-      1. Central premium hook /app/frontend/src/lib/usePremiumAccess.ts — merges
-         isPremium (Google Play IAP) + isUnlocked (admin code). __DEV__ bypass
-         only affects dev builds; production AAB/APK still gates.
-      2. Refactor: index.tsx + asset/[market]/[symbol].tsx now use usePremiumAccess.
-      3. Backend: /app/backend/market_data.py legacy `_fetch_yahoo_chart` now
-         delegates to `_fetch_yahoo_chart_by_symbol` so both paths share the
-         60s TTL cache + retry.
-      4. Backend: /app/backend/server.py startup event now spawns
-         `_bootstrap_indexes()` background task that creates `chat_messages.created_at`
-         index for the 16h retention query.
-      5. Lint cleanup: index.tsx unused vars (Dimensions, email, lockedToast,
-         selectedCount, FullList, setTimeframe) removed.
+      1. /api/search now scans (a) all 7 static maps, (b) LIVE Binance USDT
+         universe auto-loaded via /api/v3/exchangeInfo at startup + refreshed
+         every 6h, (c) LIVE Bitget spot universe fallback, and (d) returns
+         CoinGecko multi-match disambiguation for ambiguous short tickers
+         when local hits are weak (e.g. CAT / POPCAT).
+      2. get_crypto_snapshot cascade: Binance → Bitget → CoinGecko (all
+         with OHLCV so AI signal + chart still work on obscure tokens).
+      3. STOCK_US_YAHOO_MAP expanded from 176 → 607 tickers (S&P 500 top,
+         Japan Nikkei ~55, China A-shares ~40, HK ~35, Taiwan ~20,
+         Malaysia ~20, Singapore ~20, Russia ~10, Korea ~15).
+      4. STOCK_YAHOO_MAP IDX expanded from 144 → 157 with user-requested
+         low-caps: COCO, DOOH, EMAS, ERAA, IMPC, KETR, KOTA, MSIN, SCMA,
+         SINI, SOCI, VKTR, WBSA.
+      5. Interactive filter on the 4-item consensus strip: tap PREMIUM
+         to filter all columns to premium picks only; tap BUY / HOLD /
+         SELL to filter each. Tap the active filter again to clear.
+         Visual: 22%-opacity background + coloured border on active chip.
 
-      NOT CHANGED (safety):
-      - subscription/verify, subscription/status endpoints — unchanged behaviour
-      - Google Play billing product IDs (1/3/6/12 month plans) — unchanged
-      - Admin unlock-code flow — unchanged
-      - Chat POST/GET behaviour — unchanged (index just accelerates the range scan)
+      NOT CHANGED:
+      - VipModal, ChatSheet, chat.tsx, AuthContext, subscription* — locked.
+      - Dashboard batch loading path (top-50 per market) unchanged.
+      - Google Play Billing product IDs / admin unlock — unchanged.
 
-      PLEASE TEST:
-      1. Regression: Backend endpoints all return 200:
-         - /api/dashboard for all 7 markets
-         - /api/asset/{market}/{symbol}/{chart,analyze,track-record,news} for
-           commodity/CORN, forex/EUR-USD, gold_silver/XAU-USD, crypto/BTC baseline
-         - /api/subscription/health (still publicly reachable, still boolean-only)
-         - /api/subscription/status?device_id=X (fresh device → status="none")
-         - /api/subscription/verify with dummy token → returns invalid/unverified
-         - /api/chat/messages GET (200, respects 16h window)
-      2. Frontend web preview:
-         - "Ver 7.0.9" shown in header
-         - All 7 chips populate their columns
-         - Direct-nav /asset/commodity/CORN → header "CORN COMMODITY", chart loads
-         - Direct-nav /asset/forex/EUR-USD → header "EUR/USD FOREX"
-         - Direct-nav /asset/gold_silver/XAU-USD → header "XAU/USD GOLD/SILVER"
-         - Search "CORN" → tap → land on commodity detail
-      3. Mongo: chat_messages must have an index on `created_at` after startup.
-         Confirm via `db.chat_messages.list_indexes()` (already verified locally).
+      PLEASE TEST BACKEND:
+      1. /api/search?q=X for the following symbols must return hits or
+         disambiguation (or both) — NEVER a 5xx:
+         - Crypto CEX-listed: BTC, ETH, MOODENG, MEW, BRETT, AAVE, XMR
+         - Crypto ambiguous: CAT (should return stock CAT + disambiguation),
+           POPCAT (best effort — Bitget/CoinGecko rate limits acceptable)
+         - IDX standard: AADI, DSSA, GOTO, BREN, NCKL
+         - IDX low-cap: WBSA, COCO, DOOH, ERAA, MSIN, SCMA, VKTR
+         - World stocks: TOYOTA, TSMC_TW, TENCENT, DBS, MOUTAI, HSBC,
+           SAMSUNG, MAYBANK, SBER
+      2. Startup should not crash even if Binance geo-block or Bitget 429.
+      3. Dashboard batch endpoint MUST remain fast (< 3s p95) —
+         universe loaders run in background task.
+      4. GET /api/dashboard?market=stock_us still returns top-50
+         (no change from before).
 
       NOT TO TEST (real Android only):
       - Google Play Billing purchase (1/3/6/12 month plans)

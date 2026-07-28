@@ -268,7 +268,11 @@ export const api = {
     get<{ models: { name: string; provider: string }[] }>(`/ai/models`),
 
   search: (q: string, timeframe: string = "1h") =>
-    get<{ hits: AssetSignal[]; query: string }>(
+    get<{
+      hits: AssetSignal[];
+      query: string;
+      disambiguation?: { id: string; symbol: string; name: string; market_cap_rank: number | null; thumb: string | null }[];
+    }>(
       `/search?q=${encodeURIComponent(q)}&timeframe=${encodeURIComponent(timeframe)}`,
     ),
 };

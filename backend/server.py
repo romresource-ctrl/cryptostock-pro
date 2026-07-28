@@ -1134,6 +1134,13 @@ async def search_assets(
     matches.sort(key=lambda m: (m[2], m[1]))
     matches = matches[:limit]
 
+    # Track whether we already have a strong crypto match BEFORE the
+    # safety-net prepend below — used to decide whether to also fetch
+    # CoinGecko disambiguation candidates for the user.
+    had_exact_crypto_before_safety_net = any(
+        m[2] == 0 and m[0] == "crypto" for m in matches
+    )
+
     # v8.1.3 — Safety-net on-demand crypto lookup. Even if the query is
     # NOT in our known universes (Binance mirror is limited to ~470 pairs
     # in some geos; Bitget likewise misses some meme coins), the query
@@ -1141,20 +1148,19 @@ async def search_assets(
     # crypto/{query} match and let `get_crypto_snapshot` cascade through
     # Binance → Bitget → CoinGecko to actually fetch OHLCV. If none of
     # them have data, this hit is silently dropped from the response.
-    has_exact_crypto = any(m[2] == 0 and m[0] == "crypto" for m in matches)
-    if not has_exact_crypto and len(query) >= 2 and query.isalnum():
+    if not had_exact_crypto_before_safety_net and len(query) >= 2 and query.isalnum():
         # Only meaningful for symbols that look like a ticker
         # (2+ alphanumeric chars). Prepend so it shows above fuzzy matches
         # when successful.
         matches = [("crypto", query, 0)] + matches
         matches = matches[:limit]
 
-    # v8.1.3 — CoinGecko multi-match ONLY when the query looks like a
-    # short/ambiguous crypto ticker AND we do not already have a strong
-    # exact crypto match. This surfaces CAT / OPUS / etc. candidates.
+    # v8.1.3 — CoinGecko multi-match ONLY when we did NOT already have a
+    # strong crypto match from local universes AND the query looks like a
+    # short/ambiguous crypto ticker. This surfaces CAT / OPUS / etc.
+    # candidates alongside any static-map hits (e.g. CAT stock).
     disambiguation: list[dict[str, Any]] = []
-    has_exact_crypto = any(m[2] == 0 and m[0] == "crypto" for m in matches)
-    if not has_exact_crypto and len(query) >= 2 and query.isalnum():
+    if not had_exact_crypto_before_safety_net and len(query) >= 2 and query.isalnum():
         try:
             from market_data import coingecko_multi_search
             disambiguation = await coingecko_multi_search(query, limit=5)
