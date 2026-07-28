@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -452,20 +453,50 @@ export default function Dashboard() {
                 </Text>
               </TouchableOpacity>
             ) : (
-              <TouchableOpacity
-                onPress={() => setVipOpen(true)}
-                // v8.1.1 — long-press bypasses the paywall and goes
-                // straight to the admin unlock modal. Discoverable via
-                // tooltip on iOS/accessibilityHint on Android.
-                onLongPress={() => setLoginOpen(true)}
-                delayLongPress={400}
-                testID="login-button"
-                accessibilityHint="Long press to enter admin unlock code"
-                style={[styles.loginBtn, { backgroundColor: colors.accentBlue, borderColor: colors.accentBlue }]}
-              >
-                <Ionicons name="log-in-outline" size={14} color="#fff" />
-                <Text style={styles.loginBtnText}>{t("login")}</Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: "row", gap: 6, alignItems: "center" }}>
+                {/* v8.1.4 — Dedicated admin unlock button (🔑). Placed
+                    next to LOGIN so both flows are single-tap
+                    discoverable — no more brittle long-press that
+                    silently fails on React Native Web / some Android
+                    OEMs. Tap = admin unlock modal directly. */}
+                <Pressable
+                  onPress={() => setLoginOpen(true)}
+                  testID="admin-unlock-button"
+                  accessibilityLabel="Admin unlock"
+                  accessibilityHint="Enter admin unlock code"
+                  hitSlop={8}
+                  style={({ pressed }) => [
+                    styles.iconBtn,
+                    {
+                      backgroundColor: pressed ? colors.accentBlue : colors.surface,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  <Ionicons name="key" size={16} color={colors.textPrimary} />
+                </Pressable>
+                <Pressable
+                  onPress={() => setVipOpen(true)}
+                  // Long-press still supported as legacy shortcut.
+                  // Pressable's onLongPress is more reliable than
+                  // TouchableOpacity on RN Web + Android.
+                  onLongPress={() => setLoginOpen(true)}
+                  delayLongPress={400}
+                  testID="login-button"
+                  accessibilityHint="Long press to enter admin unlock code"
+                  style={({ pressed }) => [
+                    styles.loginBtn,
+                    {
+                      backgroundColor: colors.accentBlue,
+                      borderColor: colors.accentBlue,
+                      opacity: pressed ? 0.7 : 1,
+                    },
+                  ]}
+                >
+                  <Ionicons name="log-in-outline" size={14} color="#fff" />
+                  <Text style={styles.loginBtnText}>{t("login")}</Text>
+                </Pressable>
+              </View>
             )
           )}
         </View>
