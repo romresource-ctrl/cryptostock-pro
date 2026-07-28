@@ -159,6 +159,12 @@ STOCK_YAHOO_MAP: dict[str, str] = {
     "MDIA": "MDIA.JK", "BBYB": "BBYB.JK", "SSMS": "SSMS.JK",
     "MBSS": "MBSS.JK", "TOBA": "TOBA.JK", "MINA": "MINA.JK",
     "CDIA": "CDIA.JK",
+    # v8.1.3 — Low-caps batch per user request
+    "COCO": "COCO.JK", "DOOH": "DOOH.JK", "EMAS": "EMAS.JK",
+    "ERAA": "ERAA.JK", "IMPC": "IMPC.JK", "KETR": "KETR.JK",
+    "KOTA": "KOTA.JK", "MSIN": "MSIN.JK", "SCMA": "SCMA.JK",
+    "SINI": "SINI.JK", "SOCI": "SOCI.JK", "VKTR": "VKTR.JK",
+    "WBSA": "WBSA.JK",
 }
 
 # ETFs -> Yahoo Finance (no suffix, listed in USD)
@@ -369,6 +375,186 @@ CRYPTO_OKX_MAP: dict[str, str] = {
     "HYPE": "HYPE-USDT",
 }
 
+# v8.1.3 — Auto-loaded full Binance USDT universe.
+# Populated on backend startup via `_load_binance_universe()` (background
+# task) — one call to `/api/v3/exchangeInfo` gives us ~2000 symbols.
+# Refreshed every 6 hours. Used by /api/search to find ANY currently
+# listed Binance spot pair (MOODENG, POPCAT, BRETT, CAT, etc.) without
+# manual map updates.
+# Structure: base_asset_upper -> "BASE" (canonical crypto symbol).
+BINANCE_UNIVERSE: dict[str, str] = {}
+BINANCE_UNIVERSE_READY = asyncio.Event()
+_BINANCE_UNIVERSE_LOCK = asyncio.Lock()
+_BINANCE_UNIVERSE_LAST_LOAD = 0.0
+BINANCE_UNIVERSE_TTL = 6 * 3600  # 6 hours
+
+
+async def _load_binance_universe(force: bool = False) -> int:
+    """Load / refresh the full Binance spot USDT universe into memory.
+
+    Non-blocking: caller schedules this as an asyncio task from server
+    startup. Failures are swallowed (search silently falls back to the
+    static maps). Returns the number of symbols loaded (0 on failure).
+    """
+    global _BINANCE_UNIVERSE_LAST_LOAD
+    async with _BINANCE_UNIVERSE_LOCK:
+        now = time.time()
+        if not force and BINANCE_UNIVERSE and (now - _BINANCE_UNIVERSE_LAST_LOAD) < BINANCE_UNIVERSE_TTL:
+            return len(BINANCE_UNIVERSE)
+        try:
+            client = await _http()
+            r = await client.get(
+                "https://api.binance.com/api/v3/exchangeInfo",
+                timeout=20.0,
+            )
+            r.raise_for_status()
+            data = r.json()
+            fresh: dict[str, str] = {}
+            for sym in data.get("symbols", []):
+                if sym.get("quoteAsset") != "USDT":
+                    continue
+                if sym.get("status") != "TRADING":
+                    continue
+                # Only include real spot pairs (skip margin-only / leveraged tokens).
+                # isSpotTradingAllowed is present on modern Binance API; if
+                # missing we fall back to `permissions` containing "SPOT".
+                is_spot = sym.get("isSpotTradingAllowed")
+                if is_spot is False:
+                    continue
+                if is_spot is None:
+                    perms = sym.get("permissions") or []
+                    if perms and "SPOT" not in perms:
+                        continue
+                base = (sym.get("baseAsset") or "").upper()
+                if not base:
+                    continue
+                # Skip leveraged token bases (UP/DOWN/BULL/BEAR variants).
+                if any(base.endswith(suf) for suf in ("UPUSDT", "DOWNUSDT", "BULLUSDT", "BEARUSDT")):
+                    continue
+                fresh[base] = base
+            if fresh:
+                BINANCE_UNIVERSE.clear()
+                BINANCE_UNIVERSE.update(fresh)
+                _BINANCE_UNIVERSE_LAST_LOAD = now
+                BINANCE_UNIVERSE_READY.set()
+            return len(BINANCE_UNIVERSE)
+        except Exception:
+            # Do not clear on failure — keep stale-but-usable data.
+            return len(BINANCE_UNIVERSE)
+
+
+async def get_binance_universe() -> dict[str, str]:
+    """Public accessor for the search endpoint. Never blocks — returns
+    whatever universe is currently loaded (may be empty during first
+    30s of startup)."""
+    return BINANCE_UNIVERSE
+
+
+# v8.1.3 — Bitget spot fallback (used when Binance says "no such pair").
+# Public endpoint: https://api.bitget.com/api/v2/spot/market/candles
+BITGET_BASE = "https://api.bitget.com"
+BITGET_UNIVERSE: dict[str, str] = {}  # base_upper -> pair (e.g. "MOODENG" -> "MOODENGUSDT")
+BITGET_UNIVERSE_READY = asyncio.Event()
+_BITGET_UNIVERSE_LOCK = asyncio.Lock()
+_BITGET_UNIVERSE_LAST_LOAD = 0.0
+
+# Bitget uses different granularity strings: 1min/5min/15min/30min/1h/4h/6h/12h/1day/1week
+BITGET_GRANULARITY_MAP: dict[str, str] = {
+    "15m": "15min", "30m": "30min", "1h": "1h", "2h": "4h",
+    "6h": "6h", "12h": "12h", "1d": "1day",
+}
+
+
+async def _load_bitget_universe(force: bool = False) -> int:
+    """Load Bitget spot USDT universe. Same lifecycle as Binance."""
+    global _BITGET_UNIVERSE_LAST_LOAD
+    async with _BITGET_UNIVERSE_LOCK:
+        now = time.time()
+        if not force and BITGET_UNIVERSE and (now - _BITGET_UNIVERSE_LAST_LOAD) < BINANCE_UNIVERSE_TTL:
+            return len(BITGET_UNIVERSE)
+        try:
+            client = await _http()
+            r = await client.get(
+                f"{BITGET_BASE}/api/v2/spot/public/symbols",
+                timeout=20.0,
+            )
+            r.raise_for_status()
+            data = r.json()
+            fresh: dict[str, str] = {}
+            for sym in (data.get("data") or []):
+                if sym.get("status") != "online":
+                    continue
+                quote = (sym.get("quoteCoin") or "").upper()
+                if quote != "USDT":
+                    continue
+                base = (sym.get("baseCoin") or "").upper()
+                pair = sym.get("symbol") or f"{base}USDT"
+                if base:
+                    fresh[base] = pair
+            if fresh:
+                BITGET_UNIVERSE.clear()
+                BITGET_UNIVERSE.update(fresh)
+                _BITGET_UNIVERSE_LAST_LOAD = now
+                BITGET_UNIVERSE_READY.set()
+            return len(BITGET_UNIVERSE)
+        except Exception:
+            return len(BITGET_UNIVERSE)
+
+
+async def _fetch_bitget_klines(client: httpx.AsyncClient, symbol: str, interval: str, limit: int) -> list[dict[str, float]]:
+    pair = BITGET_UNIVERSE.get(symbol.upper()) or f"{symbol.upper()}USDT"
+    granularity = BITGET_GRANULARITY_MAP.get(interval, "1h")
+    try:
+        r = await client.get(
+            f"{BITGET_BASE}/api/v2/spot/market/candles",
+            params={"symbol": pair, "granularity": granularity, "limit": str(min(limit, 200))},
+            timeout=10.0,
+        )
+        r.raise_for_status()
+        data = r.json()
+        rows = data.get("data") or []
+        # Bitget returns oldest-first arrays: [ts, open, high, low, close, baseVol, quoteVol]
+        return [
+            {
+                "t": int(k[0]),
+                "open": float(k[1]),
+                "high": float(k[2]),
+                "low": float(k[3]),
+                "close": float(k[4]),
+                "volume": float(k[5]),
+            }
+            for k in rows
+        ]
+    except Exception:
+        return []
+
+
+async def _fetch_bitget_ticker(client: httpx.AsyncClient, symbol: str) -> dict[str, float] | None:
+    pair = BITGET_UNIVERSE.get(symbol.upper()) or f"{symbol.upper()}USDT"
+    try:
+        r = await client.get(
+            f"{BITGET_BASE}/api/v2/spot/market/tickers",
+            params={"symbol": pair},
+            timeout=8.0,
+        )
+        r.raise_for_status()
+        rows = (r.json().get("data") or [])
+        if not rows:
+            return None
+        d = rows[0]
+        last = float(d.get("lastPr") or 0.0)
+        open_utc0 = float(d.get("openUtc") or last or 0.0) or last
+        change_pct = ((last - open_utc0) / open_utc0 * 100.0) if open_utc0 else 0.0
+        return {
+            "price": last,
+            "change_pct_24h": change_pct,
+            "volume_24h": float(d.get("quoteVolume") or 0.0),
+            "high_24h": float(d.get("high24h") or 0.0),
+            "low_24h": float(d.get("low24h") or 0.0),
+        }
+    except Exception:
+        return None
+
 # OKX timeframe mapping (OKX uses uppercase H/D, lowercase m for minutes)
 OKX_BAR_MAP: dict[str, str] = {
     "15m": "15m", "30m": "30m", "1h": "1H", "2h": "2H", "6h": "6H",
@@ -554,10 +740,24 @@ async def get_crypto_snapshot(symbol: str, timeframe: str) -> dict[str, Any] | N
         _fetch_binance_ticker(client, symbol),
         _fetch_binance_klines(client, symbol, tf["binance"], tf["limit"]),
     )
-    if ticker or klines:
-        return {"symbol": symbol, "market": "crypto", "ticker": ticker or {}, "candles": klines}
-    # v8.1.1 — Binance/OKX said "no such pair" — try CoinGecko for
-    # Solana DEX memes and long-tail alts that never touched a CEX.
+    if ticker and klines:
+        return {"symbol": symbol, "market": "crypto", "ticker": ticker, "candles": klines}
+    # v8.1.3 — Binance said "no such pair" or returned partial data —
+    # try Bitget spot next (broader listing incl. brand-new tokens).
+    bg_ticker, bg_klines = await asyncio.gather(
+        _fetch_bitget_ticker(client, symbol),
+        _fetch_bitget_klines(client, symbol, tf["binance"], tf["limit"]),
+    )
+    if bg_ticker and bg_klines:
+        return {"symbol": symbol, "market": "crypto", "ticker": bg_ticker, "candles": bg_klines}
+    # If we got partial Binance data (ticker OR klines but not both),
+    # combine with Bitget to prefer completeness.
+    combined_ticker = ticker or bg_ticker
+    combined_klines = klines or bg_klines
+    if combined_ticker and combined_klines:
+        return {"symbol": symbol, "market": "crypto", "ticker": combined_ticker, "candles": combined_klines}
+    # v8.1.1 — Final fallback: CoinGecko for Solana DEX memes and
+    # long-tail alts that never touched a CEX.
     return await _fetch_coingecko_snapshot(client, symbol, tf)
 
 
@@ -602,6 +802,65 @@ async def _resolve_coingecko_id(client: httpx.AsyncClient, symbol: str) -> str |
             coin_id = None
         _CG_ID_CACHE[key] = coin_id
         return coin_id
+
+
+# v8.1.3 — CoinGecko multi-match search for disambiguation (e.g. "CAT").
+# Returns top-N candidates sorted by market cap rank.
+_CG_MULTI_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+_CG_MULTI_TTL_SEC = 900.0  # 15 min
+
+
+async def coingecko_multi_search(query: str, limit: int = 5) -> list[dict[str, Any]]:
+    """Return up to `limit` CoinGecko coin candidates matching the query,
+    sorted by market cap rank (best first). Each entry has:
+      {id, symbol, name, market_cap_rank, thumb}
+
+    Silently returns [] on failure or rate-limit — caller must handle
+    empty case gracefully.
+    """
+    key = f"{query.upper()}:{limit}"
+    now = time.time()
+    hit = _CG_MULTI_CACHE.get(key)
+    if hit and (now - hit[0]) < _CG_MULTI_TTL_SEC:
+        return hit[1]
+    try:
+        client = await _http()
+        r = await client.get(
+            f"{COINGECKO_BASE}/search",
+            params={"query": query},
+            timeout=8.0,
+        )
+        r.raise_for_status()
+        coins = (r.json().get("coins") or [])[:20]
+        q_upper = query.upper()
+        # Rank: exact symbol match (0) < exact name (1) < prefix (2) < contains (3)
+        def rank(c: dict[str, Any]) -> tuple[int, int]:
+            sym = (c.get("symbol") or "").upper()
+            name = (c.get("name") or "").upper()
+            mcap = c.get("market_cap_rank") or 999999
+            if sym == q_upper:
+                return (0, mcap)
+            if name == q_upper:
+                return (1, mcap)
+            if sym.startswith(q_upper) or name.startswith(q_upper):
+                return (2, mcap)
+            return (3, mcap)
+        coins.sort(key=rank)
+        out = [
+            {
+                "id": c.get("id"),
+                "symbol": (c.get("symbol") or "").upper(),
+                "name": c.get("name") or "",
+                "market_cap_rank": c.get("market_cap_rank"),
+                "thumb": c.get("thumb") or c.get("large"),
+            }
+            for c in coins[:limit]
+            if c.get("id")
+        ]
+        _CG_MULTI_CACHE[key] = (now, out)
+        return out
+    except Exception:
+        return []
 
 
 def _cg_days_for_tf(tf: dict[str, Any]) -> tuple[int, str]:

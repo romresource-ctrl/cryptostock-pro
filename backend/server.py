@@ -1047,12 +1047,15 @@ async def search_assets(
     limit: int = Query(30, ge=1, le=60),
     timeframe: str = Query("1h"),
 ) -> dict[str, Any]:
-    """Cross-market symbol search.
+    """Cross-market symbol search — v8.1.3 full-universe edition.
 
-    Scans the FULL symbol universe (all Yahoo/Binance maps) — not just the
-    50-per-market that the dashboard renders. Returns up to `limit` best
-    matches with live snapshots, so users can find any listed symbol they
-    type even when it's not on the dashboard.
+    Scans:
+      1. Static maps (all 7 markets: crypto, IDX, ETF, US, gold, commodity, forex)
+      2. Live Binance USDT universe (~2000 symbols, auto-loaded at startup)
+      3. Live Bitget USDT universe (fallback for tokens not on Binance)
+      4. CoinGecko `/search` disambiguation candidates (for ambiguous
+         short tickers like CAT, only fetched when local matches are
+         weak — always returned as `disambiguation` alongside `hits`).
 
     Ranking: exact match → prefix match → contains match.
     """
@@ -1064,12 +1067,15 @@ async def search_assets(
         GOLD_SILVER_YAHOO_MAP,
         COMMODITY_YAHOO_MAP,
         FOREX_YAHOO_MAP,
+        BINANCE_UNIVERSE,
+        BITGET_UNIVERSE,
     )
 
     query = q.strip().upper()
     if not query:
-        return {"hits": []}
+        return {"hits": [], "disambiguation": []}
 
+    # Static curated maps (already have priority — dashboard/premium data).
     market_pools: list[tuple[str, list[str]]] = [
         ("crypto", list(CRYPTO_BINANCE_MAP.keys())),
         ("stock_id", list(STOCK_YAHOO_MAP.keys())),
@@ -1080,7 +1086,8 @@ async def search_assets(
         ("forex", list(FOREX_YAHOO_MAP.keys())),
     ]
 
-    matches: list[tuple[str, str, int]] = []  # (market, symbol, rank)
+    # (market, symbol, rank) — lower rank = better match.
+    matches: list[tuple[str, str, int]] = []
     for market, syms in market_pools:
         for sym in syms:
             s = sym.upper()
@@ -1090,29 +1097,74 @@ async def search_assets(
                 matches.append((market, sym, 1))
             elif query in s:
                 matches.append((market, sym, 2))
+
+    # Track already-added crypto symbols to avoid duplicates from universe scan.
+    seen_crypto = {m[1].upper() for m in matches if m[0] == "crypto"}
+
+    # v8.1.3 — Scan the LIVE Binance USDT universe. This is where meme
+    # tokens like MOODENG, POPCAT, BRETT, CATI, etc. get picked up
+    # without any manual map update.
+    for base in BINANCE_UNIVERSE.keys():
+        if base in seen_crypto:
+            continue
+        if base == query:
+            matches.append(("crypto", base, 0))
+            seen_crypto.add(base)
+        elif base.startswith(query):
+            matches.append(("crypto", base, 1))
+            seen_crypto.add(base)
+        elif len(query) >= 3 and query in base:
+            matches.append(("crypto", base, 2))
+            seen_crypto.add(base)
+
+    # v8.1.3 — Bitget spot universe (tokens NOT on Binance).
+    for base in BITGET_UNIVERSE.keys():
+        if base in seen_crypto:
+            continue
+        if base == query:
+            matches.append(("crypto", base, 0))
+            seen_crypto.add(base)
+        elif base.startswith(query):
+            matches.append(("crypto", base, 1))
+            seen_crypto.add(base)
+        elif len(query) >= 3 and query in base:
+            matches.append(("crypto", base, 2))
+            seen_crypto.add(base)
+
     matches.sort(key=lambda m: (m[2], m[1]))
     matches = matches[:limit]
 
-    # v8.1.1 — On-demand Binance lookup. If the query has no local match
-    # OR the top match isn't exact, ALSO try Binance's `${QUERY}USDT`
-    # symbol directly. This means users can find ANY crypto listed on
-    # Binance (MOODENG, POPCAT, BOME, MEW, etc.) without having to wait
-    # for us to update the local map. Fails silently if Binance says the
-    # symbol doesn't exist.
-    exact_local = any(m[2] == 0 and m[0] == "crypto" for m in matches)
-    if not exact_local and len(query) >= 2 and query.isalnum():
+    # v8.1.3 — Safety-net on-demand crypto lookup. Even if the query is
+    # NOT in our known universes (Binance mirror is limited to ~470 pairs
+    # in some geos; Bitget likewise misses some meme coins), the query
+    # itself might still be a valid CoinGecko token. Prepend a synthetic
+    # crypto/{query} match and let `get_crypto_snapshot` cascade through
+    # Binance → Bitget → CoinGecko to actually fetch OHLCV. If none of
+    # them have data, this hit is silently dropped from the response.
+    has_exact_crypto = any(m[2] == 0 and m[0] == "crypto" for m in matches)
+    if not has_exact_crypto and len(query) >= 2 and query.isalnum():
         # Only meaningful for symbols that look like a ticker
-        # (2+ alphanumeric chars). Prepend so the fresh on-demand hit
-        # shows above the fuzzy matches.
+        # (2+ alphanumeric chars). Prepend so it shows above fuzzy matches
+        # when successful.
         matches = [("crypto", query, 0)] + matches
         matches = matches[:limit]
 
-    if not matches:
-        return {"hits": []}
+    # v8.1.3 — CoinGecko multi-match ONLY when the query looks like a
+    # short/ambiguous crypto ticker AND we do not already have a strong
+    # exact crypto match. This surfaces CAT / OPUS / etc. candidates.
+    disambiguation: list[dict[str, Any]] = []
+    has_exact_crypto = any(m[2] == 0 and m[0] == "crypto" for m in matches)
+    if not has_exact_crypto and len(query) >= 2 and query.isalnum():
+        try:
+            from market_data import coingecko_multi_search
+            disambiguation = await coingecko_multi_search(query, limit=5)
+        except Exception:
+            disambiguation = []
 
-    # Fetch snapshots concurrently, respecting the Yahoo throttle semaphore
-    # from market_data.get_batch. We call get_stock_snapshot / get_crypto_snapshot
-    # directly to preserve per-hit market context.
+    if not matches:
+        return {"hits": [], "disambiguation": disambiguation, "query": query}
+
+    # Fetch snapshots concurrently.
     from market_data import get_crypto_snapshot, get_stock_snapshot, _yahoo_throttled
 
     async def fetch_one(market: str, symbol: str):
@@ -1136,8 +1188,7 @@ async def search_assets(
     )
     hits = [r for r in results if isinstance(r, dict)]
 
-    # Enrich each hit with technical signal + track record so cards render
-    # exactly like dashboard columns (same shape, same premium flags).
+    # Enrich each hit with technical signal + track record.
     symbols_by_market: dict[str, list[str]] = {}
     for h in hits:
         symbols_by_market.setdefault(h["market"], []).append(h["symbol"])
@@ -1150,12 +1201,14 @@ async def search_assets(
         _build_signal(h, tr_by_symbol.get(h["symbol"])).model_dump()
         for h in hits
     ]
-    # Ensure `market` field is present on each hit (client uses it for the
-    # coloured badge overlay). _build_signal already sets it from snapshot.
     for sig, h in zip(signals, hits):
         sig["market"] = h["market"]
 
-    return {"hits": signals, "query": query}
+    return {
+        "hits": signals,
+        "disambiguation": disambiguation,
+        "query": query,
+    }
 
 
 
@@ -1894,6 +1947,35 @@ async def _bootstrap_indexes() -> None:
         pass
 
 
+async def _load_universe_refresh_loop() -> None:
+    """v8.1.3 — On startup, load Binance + Bitget universes IMMEDIATELY,
+    then refresh every 6h. Search relies on these being populated
+    early — but even if the first load is slow, the endpoint gracefully
+    falls back to the static maps."""
+    try:
+        from market_data import _load_binance_universe, _load_bitget_universe
+        # First load — parallel, non-blocking with respect to other startup work.
+        await asyncio.gather(
+            _load_binance_universe(force=True),
+            _load_bitget_universe(force=True),
+            return_exceptions=True,
+        )
+        # Periodic refresh loop (6h).
+        while True:
+            await asyncio.sleep(6 * 3600)
+            try:
+                await asyncio.gather(
+                    _load_binance_universe(force=True),
+                    _load_bitget_universe(force=True),
+                    return_exceptions=True,
+                )
+            except Exception:
+                # Never let the refresh loop die.
+                await asyncio.sleep(60)
+    except Exception:
+        pass
+
+
 async def _bootstrap_signals_seed() -> None:
     """v8.0.9 — Seed the `signals` collection so newly-deployed instances
     do not have an empty win-rate history (which used to demote every
@@ -1968,6 +2050,11 @@ async def _startup_bootstrap() -> None:
     # v8.0.9 — Seed signals so the WR-based Premium ranking has data on
     # fresh deploys.
     asyncio.create_task(_bootstrap_signals_seed())
+    # v8.1.3 — Load Binance + Bitget spot universes into memory so
+    # /api/search can match ANY listed pair (MOODENG, POPCAT, CAT, etc.)
+    # without waiting on hard-coded map updates. Non-blocking. Refreshes
+    # itself every 6 hours in _load_universe_refresh_loop.
+    asyncio.create_task(_load_universe_refresh_loop())
 
 
 @app.on_event("shutdown")
