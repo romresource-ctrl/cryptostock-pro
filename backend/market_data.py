@@ -433,6 +433,108 @@ STOCK_US_YAHOO_MAP: dict[str, str] = {
     "SK_INNOVATION": "096770.KS", "KB_FIN": "105560.KS", "SHINHAN_FIN": "055550.KS",
     "HANA_FIN": "086790.KS",
 
+    # ============================================================
+    # v8.1.3 — 🇬🇧 UK LONDON (.L) ~20 blue chips
+    # ============================================================
+    "HSBC_L": "HSBA.L", "SHELL": "SHEL.L", "BP": "BP.L",
+    "ASTRA_ZENECA": "AZN.L", "GLAXO": "GSK.L", "UNILEVER": "ULVR.L",
+    "DIAGEO": "DGE.L", "RIO_TINTO": "RIO.L", "GLENCORE": "GLEN.L",
+    "ANGLO_AMERICAN": "AAL.L", "BARCLAYS": "BARC.L", "LLOYDS": "LLOY.L",
+    "NATWEST": "NWG.L", "STANDARD_CHARTERED": "STAN.L", "PRUDENTIAL": "PRU.L",
+    "TESCO": "TSCO.L", "SAINSBURYS": "SBRY.L", "M_S": "MKS.L",
+    "VODAFONE": "VOD.L", "BT_GROUP": "BT-A.L", "ROLLS_ROYCE": "RR.L",
+    "BAE_SYSTEMS": "BA.L", "IAG": "IAG.L",
+
+    # ============================================================
+    # v8.1.3 — 🇪🇺 EUROPE Continental (.PA/.DE/.MI/.AS/.MC/.SW) ~30
+    # ============================================================
+    "LVMH": "MC.PA", "TOTAL": "TTE.PA", "SANOFI": "SAN.PA",
+    "AIRBUS": "AIR.PA", "LOREAL": "OR.PA", "HERMES": "RMS.PA",
+    "SCHNEIDER": "SU.PA", "AXA": "CS.PA", "BNP": "BNP.PA",
+    "SOCIETE_GENERALE": "GLE.PA", "STELLANTIS_PA": "STLA.PA", "DANONE": "BN.PA",
+    "PERNOD": "RI.PA", "MICHELIN_PA": "ML.PA", "CARREFOUR": "CA.PA",
+    "SAP": "SAP.DE", "SIEMENS": "SIE.DE", "ALLIANZ": "ALV.DE",
+    "VW": "VOW3.DE", "BMW": "BMW.DE", "MERCEDES": "MBG.DE",
+    "PORSCHE": "P911.DE", "DEUTSCHE_BANK": "DBK.DE", "DEUTSCHE_POST": "DPW.DE",
+    "BASF": "BAS.DE", "BAYER": "BAYN.DE", "ADIDAS": "ADS.DE",
+    "PUMA": "PUM.DE", "INFINEON": "IFX.DE", "MUNICH_RE": "MUV2.DE",
+    "NESTLE": "NESN.SW", "NOVARTIS": "NOVN.SW", "ROCHE": "ROG.SW",
+    "UBS": "UBSG.SW", "ABB": "ABBN.SW", "RICHEMONT": "CFR.SW",
+    "NOVO_NORDISK": "NOVO-B.CO", "MAERSK": "MAERSK-B.CO", "ORSTED": "ORSTED.CO",
+    "ASML_EU": "ASML.AS", "ING": "INGA.AS", "PHILIPS": "PHIA.AS",
+    "HEINEKEN": "HEIA.AS", "STELLANTIS": "STLAM.MI", "FERRARI": "RACE.MI",
+    "ENI": "ENI.MI", "ENEL": "ENEL.MI", "INTESA": "ISP.MI", "UNICREDIT": "UCG.MI",
+    "SANTANDER": "SAN.MC", "BBVA": "BBVA.MC", "IBERDROLA": "IBE.MC",
+    "INDITEX": "ITX.MC", "TELEFONICA": "TEF.MC",
+
+    # ============================================================
+    # v8.1.3 — 🇮🇳 INDIA NSE (.NS) ~30 top
+    # ============================================================
+    "RELIANCE": "RELIANCE.NS", "TCS": "TCS.NS", "INFOSYS": "INFY.NS",
+    "HDFC_BANK": "HDFCBANK.NS", "ICICI_BANK": "ICICIBANK.NS", "SBI": "SBIN.NS",
+    "AXIS_BANK": "AXISBANK.NS", "KOTAK_BANK": "KOTAKBANK.NS", "INDUSIND": "INDUSINDBK.NS",
+    "BAJAJ_FIN": "BAJFINANCE.NS", "WIPRO": "WIPRO.NS", "HCL_TECH": "HCLTECH.NS",
+    "TECH_MAHINDRA": "TECHM.NS", "LT": "LT.NS", "MARUTI": "MARUTI.NS",
+    "M_M": "M&M.NS", "TATA_MOTORS": "TATAMOTORS.NS", "TATA_STEEL": "TATASTEEL.NS",
+    "HINDALCO": "HINDALCO.NS", "JSW_STEEL": "JSWSTEEL.NS", "ONGC": "ONGC.NS",
+    "IOC": "IOC.NS", "COAL_INDIA": "COALINDIA.NS", "NTPC": "NTPC.NS",
+    "POWERGRID": "POWERGRID.NS", "ADANI_ENT": "ADANIENT.NS", "ADANI_PORTS": "ADANIPORTS.NS",
+    "ADANI_GREEN": "ADANIGREEN.NS", "ITC": "ITC.NS", "HINDUSTAN_UNILEVER": "HINDUNILVR.NS",
+    "NESTLE_INDIA": "NESTLEIND.NS", "SUN_PHARMA": "SUNPHARMA.NS", "DR_REDDY": "DRREDDY.NS",
+    "CIPLA": "CIPLA.NS", "APOLLO_HOSP": "APOLLOHOSP.NS", "ZOMATO": "ZOMATO.NS",
+    "NYKAA": "NYKAA.NS", "PAYTM": "PAYTM.NS", "IRCTC": "IRCTC.NS",
+
+    # ============================================================
+    # v8.1.3 — 🇨🇦 CANADA TSX (.TO) ~15 top
+    # ============================================================
+    "SHOPIFY_CA": "SHOP.TO", "RBC": "RY.TO", "TD_BANK": "TD.TO",
+    "BMO": "BMO.TO", "BNS": "BNS.TO", "CIBC": "CM.TO",
+    "ENBRIDGE": "ENB.TO", "TC_ENERGY": "TRP.TO", "CNRL": "CNQ.TO",
+    "SUNCOR": "SU.TO", "CNR_RAIL": "CNR.TO", "CP_RAIL": "CP.TO",
+    "BROOKFIELD": "BN.TO", "NUTRIEN": "NTR.TO", "BARRICK": "ABX.TO",
+    "MANULIFE": "MFC.TO", "BCE": "BCE.TO", "TELUS": "T.TO",
+    "LOBLAW": "L.TO", "COSTCO_CA": "COST.TO",
+
+    # ============================================================
+    # v8.1.3 — 🇦🇺 AUSTRALIA ASX (.AX) ~15 top
+    # ============================================================
+    "BHP_AX": "BHP.AX", "CBA": "CBA.AX", "WESTPAC": "WBC.AX",
+    "ANZ": "ANZ.AX", "NAB": "NAB.AX", "MACQUARIE": "MQG.AX",
+    "TELSTRA": "TLS.AX", "WOOLWORTHS": "WOW.AX", "COLES": "COL.AX",
+    "WESFARMERS": "WES.AX", "FORTESCUE": "FMG.AX", "RIO_AX": "RIO.AX",
+    "SOUTH32": "S32.AX", "NEWCREST": "NCM.AX", "QANTAS": "QAN.AX",
+    "TRANSURBAN": "TCL.AX", "GOODMAN": "GMG.AX", "CSL": "CSL.AX",
+
+    # ============================================================
+    # v8.1.3 — 🛢️ GULF (.SR Saudi / .DFM UAE / .QA Qatar) ~15 top
+    # ============================================================
+    "ARAMCO": "2222.SR", "SAUDI_TELECOM": "7010.SR", "ALINMA": "1150.SR",
+    "SNB": "1180.SR", "AL_RAJHI": "1120.SR", "SABIC": "2010.SR",
+    "MAADEN": "1211.SR", "EMAAR": "EMAAR.DU", "DUBAI_ISLAMIC": "DIB.DU",
+    "EMIRATES_NBD": "EMIRATESNBD.DU", "FIRST_ABU_DHABI": "FAB.AD",
+    "IHC": "IHC.AD", "ADNOC_GAS": "ADNOCGAS.AD", "ADCB": "ADCB.AD",
+    "QATAR_NATIONAL_BANK": "QNBK.QA", "INDUSTRIES_QATAR": "IQCD.QA",
+    "OOREDOO": "ORDS.QA",
+
+    # ============================================================
+    # v8.1.3 — 🌎 LATAM (.SA Brazil / .MX Mexico / .SN Chile) ~15
+    # ============================================================
+    "PETROBRAS": "PETR4.SA", "VALE_BR": "VALE3.SA", "ITAU": "ITUB4.SA",
+    "BRADESCO": "BBDC4.SA", "SANTANDER_BR": "SANB11.SA", "BANCO_BRASIL": "BBAS3.SA",
+    "AMBEV": "ABEV3.SA", "JBS": "JBSS3.SA", "MAGAZINE_LUIZA": "MGLU3.SA",
+    "WEG": "WEGE3.SA", "LOCALIZA": "RENT3.SA", "SUZANO": "SUZB3.SA",
+    "AMERICA_MOVIL": "AMXB.MX", "WALMEX": "WALMEX.MX", "FEMSA": "FEMSAUBD.MX",
+    "CEMEX": "CEMEXCPO.MX", "GRUPO_BIMBO": "BIMBOA.MX",
+    "SQM_CL": "SQM-B.SN", "FALABELLA": "FALABELLA.SN",
+
+    # ============================================================
+    # v8.1.3 — 🇿🇦 SOUTH AFRICA JSE (.JO) ~10 top
+    # ============================================================
+    "NASPERS": "NPN.JO", "PROSUS": "PRX.JO", "MTN": "MTN.JO",
+    "VODACOM": "VOD.JO", "STANDARD_BANK_SA": "SBK.JO", "FIRSTRAND": "FSR.JO",
+    "ABSA": "ABG.JO", "SASOL": "SOL.JO", "ANGLO_AMERICAN_SA": "AGL.JO",
+    "SHOPRITE": "SHP.JO", "WOOLWORTHS_SA": "WHL.JO", "DISCOVERY": "DSY.JO",
+
     # ETFs commonly traded like stocks (leveraged)
     "TQQQ": "TQQQ", "SQQQ": "SQQQ", "SOXL": "SOXL",
     # Global indices
@@ -546,6 +648,85 @@ OKX_BASE = "https://www.okx.com"
 # free API covers 10k+ tokens; we resolve symbol → coin_id via /search
 # then pull OHLC via /coins/{id}/market_chart.
 COINGECKO_BASE = "https://api.coingecko.com/api/v3"
+
+
+# v8.1.3 — Regional filter for World Stocks (derived from Yahoo suffix).
+# Used by /api/dashboard?region=X and frontend filter chips.
+# Order matters: check most-specific suffix first (e.g. .KS before .K).
+_YAHOO_SUFFIX_REGION: list[tuple[str, str]] = [
+    (".JK", "indonesia"),
+    (".T", "japan"),
+    (".SS", "china"),
+    (".SZ", "china"),
+    (".HK", "hongkong"),
+    (".TW", "taiwan"),
+    (".KL", "malaysia"),
+    (".SI", "singapore"),
+    (".KS", "korea"),
+    (".KQ", "korea"),
+    (".ME", "russia"),
+    (".NS", "india"),
+    (".BO", "india"),
+    (".L", "europe"),      # UK LSE
+    (".PA", "europe"),     # Paris
+    (".DE", "europe"),     # Xetra
+    (".F", "europe"),      # Frankfurt
+    (".MI", "europe"),     # Milan
+    (".AS", "europe"),     # Amsterdam
+    (".MC", "europe"),     # Madrid
+    (".SW", "europe"),     # Zurich
+    (".CO", "europe"),     # Copenhagen
+    (".HE", "europe"),     # Helsinki
+    (".ST", "europe"),     # Stockholm
+    (".OL", "europe"),     # Oslo
+    (".BR", "europe"),     # Brussels
+    (".VI", "europe"),     # Vienna
+    (".LS", "europe"),     # Lisbon
+    (".WA", "europe"),     # Warsaw
+    (".PR", "europe"),     # Prague
+    (".BD", "europe"),     # Budapest
+    (".TO", "canada"),
+    (".V", "canada"),      # TSXV
+    (".AX", "australia"),
+    (".NZ", "australia"),  # bundle NZ with AU
+    (".SR", "gulf"),       # Saudi
+    (".DU", "gulf"),       # Dubai
+    (".AD", "gulf"),       # Abu Dhabi
+    (".QA", "gulf"),       # Qatar
+    (".KW", "gulf"),       # Kuwait
+    (".SA", "latam"),      # Brazil
+    (".MX", "latam"),      # Mexico
+    (".SN", "latam"),      # Santiago
+    (".BA", "latam"),      # Buenos Aires
+    (".JO", "africa"),     # South Africa JSE
+]
+
+
+def region_from_yahoo_ticker(yahoo_ticker: str) -> str:
+    """Return region key from Yahoo suffix. Returns 'us' if no suffix
+    (or index tickers like ^GSPC/^N225 which we tag under 'index')."""
+    if not yahoo_ticker:
+        return "us"
+    if yahoo_ticker.startswith("^") or yahoo_ticker.endswith("=F") or yahoo_ticker.endswith("=X"):
+        return "index"
+    tk = yahoo_ticker.upper()
+    for suffix, region in _YAHOO_SUFFIX_REGION:
+        if tk.endswith(suffix.upper()):
+            return region
+    return "us"
+
+
+def region_for_symbol(market: str, symbol: str) -> str | None:
+    """Return region key for a given (market, symbol) tuple. Only
+    meaningful for stock_us / stock_id — other markets return None."""
+    if market == "stock_id":
+        return "indonesia"
+    if market != "stock_us":
+        return None
+    yh = STOCK_US_YAHOO_MAP.get(symbol.upper())
+    if not yh:
+        return None
+    return region_from_yahoo_ticker(yh)
 
 # Symbols that should be fetched from OKX instead of Binance
 # (e.g. HYPE / Hyperliquid is not listed on Binance spot API).

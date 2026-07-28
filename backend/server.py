@@ -205,6 +205,20 @@ DEFAULT_GOLD_SILVER = list(GOLD_SILVER_YAHOO_MAP.keys())
 DEFAULT_COMMODITY = list(COMMODITY_YAHOO_MAP.keys())
 DEFAULT_FOREX = list(FOREX_YAHOO_MAP.keys())
 
+# v8.1.3 — Pre-computed per-region symbol lists for World Stocks.
+# When user taps a region chip on the dashboard, we fetch the first ~50
+# stocks tagged with that region so the column shows meaningful data
+# instead of just the first 50 alphabetical US symbols.
+def _build_region_index() -> dict[str, list[str]]:
+    from market_data import region_from_yahoo_ticker
+    idx: dict[str, list[str]] = {}
+    for sym, yahoo in STOCK_US_YAHOO_MAP.items():
+        r = region_from_yahoo_ticker(yahoo)
+        idx.setdefault(r, []).append(sym)
+    return idx
+
+STOCK_US_BY_REGION: dict[str, list[str]] = _build_region_index()
+
 # Full lists — used when ?full=true is requested
 FULL_CRYPTO = list(CRYPTO_BINANCE_MAP.keys())
 FULL_STOCKS = list(STOCK_YAHOO_MAP.keys())
@@ -361,6 +375,11 @@ class AssetSignal(BaseModel):
     take_profit: float | None = None
     track_record: TrackRecordMini = Field(default_factory=TrackRecordMini)
     is_premium: bool = False
+    # v8.1.3 — Region key for World Stocks filter (japan/china/hongkong/
+    # taiwan/malaysia/singapore/korea/russia/india/europe/canada/
+    # australia/gulf/latam/africa/us/indonesia/index). None for
+    # non-stock markets.
+    region: str | None = None
 
 
 class DashboardResponse(BaseModel):
@@ -531,6 +550,10 @@ def _build_signal(snapshot: dict, tr: dict | None = None, *, min_conf: int = 85,
         is_premium = action_ok and conf_ok
     else:
         is_premium = action_ok and conf_ok and wr >= min_wr
+    # v8.1.3 — Attach region (japan/china/us/etc.) for World Stocks
+    # filter chips on the dashboard.
+    from market_data import region_for_symbol
+    region = region_for_symbol(market, snapshot["symbol"])
     return AssetSignal(
         symbol=snapshot["symbol"],
         market=market,
@@ -550,6 +573,7 @@ def _build_signal(snapshot: dict, tr: dict | None = None, *, min_conf: int = 85,
         take_profit=sig["take_profit"],
         track_record=tr_mini,
         is_premium=is_premium,
+        region=region,
     )
 
 
@@ -687,6 +711,7 @@ async def dashboard(
     min_confidence: int = Query(85, ge=0, le=100),
     min_wr: float = Query(70.0, ge=0.0, le=100.0),
     full: bool = Query(False),
+    region: str | None = Query(None, description="Optional region filter for World Stocks: us/europe/japan/china/hongkong/taiwan/korea/singapore/malaysia/india/canada/australia/gulf/latam/africa/russia"),
 ) -> DashboardResponse:
     if timeframe not in TIMEFRAME_MAP:
         raise HTTPException(400, f"Invalid timeframe. Use one of {TIMEFRAMES}")
@@ -698,6 +723,7 @@ async def dashboard(
         min_confidence=min_confidence,
         min_wr=min_wr,
         full=full,
+        region=region,
     )
 
 
@@ -710,6 +736,7 @@ async def _build_dashboard_response(
     min_confidence: int = 85,
     min_wr: float = 70.0,
     full: bool = False,
+    region: str | None = None,
 ) -> DashboardResponse:
     # Backward-compat: "stock" -> "stock_id", "world_stocks" -> "stock_us" internally
     eff_market = "stock_id" if market == "stock" else market
@@ -717,7 +744,15 @@ async def _build_dashboard_response(
         eff_market = "stock_us"
 
     prof = await _get_active_profile()
-    if full:
+    # v8.1.3 — Region-aware picking for stock_us. `region=japan` returns
+    # the top-50 tickers tagged as japan; `region=all` or None falls back
+    # to the default (first-50 US insertion order).
+    if eff_market == "stock_us" and region and region != "all":
+        region_syms = STOCK_US_BY_REGION.get(region.lower(), [])
+        symbols = region_syms[:50] if not full else region_syms
+        profile_id = f"region-{region}"
+        profile_name = f"Region: {region.title()}"
+    elif full:
         symbols = {
             "crypto": FULL_CRYPTO,
             "stock_id": FULL_STOCKS,
@@ -793,21 +828,17 @@ async def dashboard_batch(
     full: bool = Query(False),
     min_confidence: int = Query(85, ge=0, le=100),
     min_wr: float = Query(70.0, ge=0.0, le=100.0),
+    region: str | None = Query(None, description="Regional filter applied to stock_us only"),
 ) -> dict[str, Any]:
     if timeframe not in TIMEFRAME_MAP:
         raise HTTPException(400, f"Invalid timeframe. Use one of {TIMEFRAMES}")
     market_keys = [m.strip() for m in markets.split(",") if m.strip()]
     if not market_keys:
         raise HTTPException(400, "markets query must be non-empty")
-    # Bound the batch so a malicious caller can't ask for hundreds of
-    # markets (only 8 are known); anything else is silently dropped.
     known = {"crypto", "stock", "stock_id", "stock_us", "world_stocks",
              "etf", "gold_silver", "commodity", "forex"}
     market_keys = [m for m in market_keys if m in known][:9]
 
-    # Fire ALL requested market builds concurrently. The underlying
-    # `_get_snapshots_cached` already de-dupes per-symbol upstream
-    # fetches, so this scales sub-linearly with markets.
     tasks = [
         _build_dashboard_response(
             market=m,
@@ -816,6 +847,8 @@ async def dashboard_batch(
             full=full,
             min_confidence=min_confidence,
             min_wr=min_wr,
+            # v8.1.3 — Only apply region to stock_us; other markets ignore it.
+            region=region if m in ("stock_us", "world_stocks") else None,
         )
         for m in market_keys
     ]

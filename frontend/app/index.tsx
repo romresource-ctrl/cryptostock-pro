@@ -48,6 +48,34 @@ const CATEGORIES: { key: Category; label: string; icon: string }[] = [
   { key: "forex", label: "Forex", icon: "swap-horizontal" },
 ];
 
+// v8.1.3 — Regional filter for the World Stocks column. `all` = default
+// (show every stock regardless of region). Any other value filters
+// `stock_us` cards to only those matching the region key returned by
+// the backend (derived from Yahoo ticker suffix).
+type RegionKey =
+  | "all" | "us" | "europe" | "canada" | "russia" | "china" | "hongkong"
+  | "japan" | "korea" | "taiwan" | "singapore" | "malaysia" | "indonesia"
+  | "india" | "australia" | "gulf" | "latam" | "africa";
+const REGIONS: { key: RegionKey; flag: string; label: string }[] = [
+  { key: "all",       flag: "🌐", label: "All" },
+  { key: "us",        flag: "🇺🇸", label: "US" },
+  { key: "europe",    flag: "🇪🇺", label: "Europe" },
+  { key: "canada",    flag: "🇨🇦", label: "Canada" },
+  { key: "china",     flag: "🇨🇳", label: "China" },
+  { key: "hongkong",  flag: "🇭🇰", label: "HK" },
+  { key: "japan",     flag: "🇯🇵", label: "Japan" },
+  { key: "korea",     flag: "🇰🇷", label: "Korea" },
+  { key: "taiwan",    flag: "🇹🇼", label: "Taiwan" },
+  { key: "singapore", flag: "🇸🇬", label: "SG" },
+  { key: "malaysia",  flag: "🇲🇾", label: "Malaysia" },
+  { key: "india",     flag: "🇮🇳", label: "India" },
+  { key: "australia", flag: "🇦🇺", label: "AU" },
+  { key: "gulf",      flag: "🛢️", label: "Gulf" },
+  { key: "latam",     flag: "🌎", label: "LATAM" },
+  { key: "africa",    flag: "🇿🇦", label: "Africa" },
+  { key: "russia",    flag: "🇷🇺", label: "Russia" },
+];
+
 function signalColors(colors: ReturnType<typeof useTheme>["colors"], action: string) {
   if (action === "BUY") return { fg: colors.accentUp, bg: colors.accentUp + "26" };
   if (action === "SELL") return { fg: colors.accentDown, bg: colors.accentDown + "26" };
@@ -61,6 +89,8 @@ function filterAssets(
   list: AssetSignal[] | undefined,
   query: string,
   signalFilter: SignalFilter = null,
+  regionFilter: RegionKey = "all",
+  market?: Market,
 ): AssetSignal[] {
   if (!list) return [];
   let out = list;
@@ -74,6 +104,12 @@ function filterAssets(
     } else {
       out = out.filter((a) => (a.action || "").toUpperCase() === signalFilter);
     }
+  }
+  // v8.1.3 — Region filter only applies to World Stocks (stock_us).
+  // Other markets (crypto, gold, forex, etc.) pass through unchanged
+  // so tapping a region never hides them.
+  if (regionFilter !== "all" && market === "stock_us") {
+    out = out.filter((a) => (a.region || "us") === regionFilter);
   }
   return out;
 }
@@ -208,6 +244,9 @@ export default function Dashboard() {
   const toggleSignalFilter = useCallback((f: Exclude<SignalFilter, null>) => {
     setSignalFilter((prev) => (prev === f ? null : f));
   }, []);
+  // v8.1.3 — Regional filter for World Stocks. Default "all" shows every
+  // stock; other keys filter stock_us column only.
+  const [regionFilter, setRegionFilter] = useState<RegionKey>("all");
   const [loadingMap, setLoadingMap] = useState<Record<Category, boolean>>({
     // v8.0.7 — load ALL categories on cold start to eliminate the empty
     // columns on first swipe. Because the backend now serves via one
@@ -244,19 +283,17 @@ export default function Dashboard() {
   // pick up the change to `view` and fetch on demand). This cuts cold-
   // start network traffic from 8 HTTP requests → 1 batched request that
   // returns exactly what the user can see.
-  const load = useCallback(async (tf: Timeframe, selected: Category[]) => {
-    // Mark only the markets we are about to fetch as "loading" so their
-    // columns show a spinner; the invisible columns stay untouched.
+  const load = useCallback(async (tf: Timeframe, selected: Category[], regionArg: RegionKey = "all") => {
     setLoadingMap((prev) => {
       const next = { ...prev };
       selected.forEach((k) => { next[k] = true; });
       return next;
     });
     try {
-      // One batched HTTP call covering all visible markets.
       const res = await api.dashboardBatch(selected as Market[], tf, {
         sort: "premium",
         full: false,
+        region: regionArg,
       });
       setData((prev) => {
         const next = { ...prev };
@@ -268,8 +305,6 @@ export default function Dashboard() {
         });
         return next;
       });
-      // Premium counter reflects ONLY currently-loaded markets — matches
-      // what the user actually sees at the top of the dashboard.
       let pCount = 0;
       Object.values(res.markets || {}).forEach((m) => {
         pCount += m?.premium_count ?? 0;
@@ -290,29 +325,32 @@ export default function Dashboard() {
     // batched HTTP call thanks to /api/dashboard/batch), so users never
     // hit an empty column when swiping between markets. Cache TTL of
     // 300s on the backend keeps this cheap on subsequent polls.
-    void load(timeframe, ALL_CATEGORIES);
-    const id = setInterval(() => void load(timeframe, ALL_CATEGORIES), REFRESH_INTERVAL_MS);
+    void load(timeframe, ALL_CATEGORIES, regionFilter);
+    const id = setInterval(() => void load(timeframe, ALL_CATEGORIES, regionFilter), REFRESH_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [timeframe, ALL_CATEGORIES, load]);
+  }, [timeframe, ALL_CATEGORIES, load, regionFilter]);
 
-  const toggleCategory = (k: Category) => {
+  // v8.1.3 — toggleCategory kept for reference but no longer used by
+  // the UI (the old asset-category chips were replaced by region chips).
+  // We keep the `view` state so the ordering/highlight logic in
+  // orderedCategories still works.
+  const _toggleCategory = (k: Category) => {
     setView((prev) => {
       if (prev.includes(k)) {
-        // Don't allow zero selection — keep at least 1
         if (prev.length === 1) return prev;
         return prev.filter((x) => x !== k);
       }
-      // Max 2 selected
       if (prev.length >= 2) return [prev[1], k];
       return [...prev, k];
     });
   };
+  void _toggleCategory; // silence unused-var lint
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await load(timeframe, view);
+    await load(timeframe, view, regionFilter);
     setRefreshing(false);
-  }, [load, timeframe, view]);
+  }, [load, timeframe, view, regionFilter]);
 
   // Accepts an optional explicit market — used when the caller knows
   // exactly which column the user tapped (search results, list column).
@@ -433,20 +471,25 @@ export default function Dashboard() {
         </View>
       </View>
 
-      {/* Category chips (multi-select, max 2) */}
+      {/* v8.1.3 — Region filter chips (replaces old asset-category chips).
+          Filter World Stocks column by country/region. "All" shows all
+          columns as normal. Tap a region → World Stocks column shows
+          only stocks from that region; other columns (crypto/gold/etc.)
+          remain visible. */}
       <View style={styles.viewRow}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ paddingHorizontal: 16, gap: 8, alignItems: "center" }}
         >
-          {CATEGORIES.map((vp) => {
-            const active = view.includes(vp.key);
+          {REGIONS.map((r) => {
+            const active = regionFilter === r.key;
             return (
               <TouchableOpacity
-                key={vp.key}
-                onPress={() => toggleCategory(vp.key)}
-                testID={`category-${vp.key}`}
+                key={r.key}
+                onPress={() => setRegionFilter(active ? "all" : r.key)}
+                testID={`region-${r.key}`}
+                activeOpacity={0.75}
                 style={[
                   styles.viewPill,
                   {
@@ -455,13 +498,8 @@ export default function Dashboard() {
                   },
                 ]}
               >
-                <Ionicons name={vp.icon as never} size={14} color={active ? "#fff" : colors.textSecondary} />
-                <Text style={[styles.viewPillText, { color: active ? "#fff" : colors.textSecondary }]}>{t(`category_${vp.key}`)}</Text>
-                {active && (
-                  <View style={styles.activeOrder}>
-                    <Text style={styles.activeOrderText}>{view.indexOf(vp.key) + 1}</Text>
-                  </View>
-                )}
+                <Text style={{ fontSize: 14 }}>{r.flag}</Text>
+                <Text style={[styles.viewPillText, { color: active ? "#fff" : colors.textSecondary }]}>{r.label}</Text>
               </TouchableOpacity>
             );
           })}
@@ -660,7 +698,7 @@ export default function Dashboard() {
                 <ListColumn
                   title={catLabel}
                   market={k}
-                  data={filterAssets(data[k], searchQuery, signalFilter)}
+                  data={filterAssets(data[k], searchQuery, signalFilter, regionFilter, k)}
                   loading={loadingMap[k]}
                   onPress={handleAssetPress}
                   locked={!hasAccess}

@@ -202,7 +202,55 @@ test_plan:
 agent_communication:
   - agent: "main"
     message: |
-      v8.1.3 — Search + world coverage overhaul + interactive filters.
+      v8.1.3 — Regional filter chips + world stocks expansion (final iter).
+
+      NEW SINCE PREVIOUS TEST:
+      1. Chip row above search bar REPLACED — old Crypto/ETF/IDX asset
+         chips (with "1"/"2" order badges) removed. New chip row lists
+         17 country/region filters with flag emojis:
+         All / US / Europe / Canada / China / HK / Japan / Korea /
+         Taiwan / SG / Malaysia / India / AU / Gulf / LATAM / Africa /
+         Russia. testID: `region-{key}`.
+      2. Tap any region → WORLD STOCKS column loads top-50 tickers from
+         that region via new `/api/dashboard?region=X` and
+         `/api/dashboard/batch?region=X` query parameter. Region is
+         derived server-side from Yahoo suffix (.T→japan, .SS/.SZ→china,
+         .HK→hongkong, .TW→taiwan, .KL→malaysia, .SI→singapore,
+         .KS/.KQ→korea, .ME→russia, .NS/.BO→india, .L/.PA/.DE/.MI/.AS/
+         .MC/.SW/.CO→europe, .TO/.V→canada, .AX/.NZ→australia, .SR/.DU/
+         .AD/.QA→gulf, .SA/.MX/.SN/.BA→latam, .JO→africa).
+      3. Region filter ONLY affects stock_us column. crypto / etf /
+         stock_id / gold_silver / commodity / forex pass-through
+         unchanged so no data is hidden by tapping a region.
+      4. Backend model `AssetSignal` now has optional `region` field on
+         every response (null for non-stock markets).
+      5. STOCK_US_YAHOO_MAP expanded 607 → 809 tickers: added UK (~23),
+         Continental Europe (~50), India NSE (~38), Canada TSX (~20),
+         Australia ASX (~18), Gulf .SR/.DU/.AD/.QA (~17), LATAM
+         .SA/.MX/.SN (~18), South Africa .JO (~12).
+
+      NOT CHANGED (safety):
+      - VipModal, ChatSheet, chat.tsx, AuthContext, subscription* — locked.
+      - Signal filter chips (PREMIUM/BUY/HOLD/SELL) — unchanged behaviour.
+      - CoinGecko disambiguation, Binance/Bitget cascade — unchanged.
+
+      PLEASE TEST BACKEND (region filter):
+      1. GET /api/dashboard?market=stock_us&region=japan → top-50 all
+         `.T` tickers (TOYOTA, SONYG, SOFTBANK…). Every asset has
+         `region: "japan"`.
+      2. Repeat for region=china (MOUTAI/WULIANGYE/ICBC…), region=hongkong
+         (TENCENT/ALIBABA_HK/MEITUAN…), region=india (RELIANCE/TCS/INFY…),
+         region=europe (LVMH/SAP/NESTLE…), region=canada (SHOP.TO/RY.TO…),
+         region=australia (BHP.AX/CBA.AX…), region=gulf (ARAMCO/EMAAR…),
+         region=latam (PETROBRAS/VALE_BR…), region=africa (NASPERS…),
+         region=russia (SBER/GAZP…).
+      3. GET /api/dashboard?market=stock_us (no region) or region=all
+         must return the previous US default (AAPL/MSFT/NVDA…).
+      4. GET /api/dashboard/batch?markets=stock_us&region=japan →
+         `markets.stock_us.assets` contains Japan tickers.
+      5. GET /api/dashboard/batch?markets=crypto&region=japan →
+         `markets.crypto.assets` unchanged (region ignored for non-stock).
+      6. All previous v8.1.3 search cases must still work (regression).
 
       CHANGES:
       1. /api/search now scans (a) all 7 static maps, (b) LIVE Binance USDT

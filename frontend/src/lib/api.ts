@@ -33,6 +33,9 @@ export interface AssetSignal {
   take_profit: number | null;
   track_record: TrackRecordMini;
   is_premium: boolean;
+  // v8.1.3 — Region key from Yahoo suffix (us/europe/japan/china/…).
+  // Only set for stock markets; other markets return null.
+  region?: string | null;
 }
 
 export type DashboardSort = "default" | "premium" | "confidence" | "wr";
@@ -223,7 +226,7 @@ export const api = {
   dashboardBatch: (
     markets: Market[],
     timeframe: Timeframe,
-    opts: { sort?: DashboardSort; full?: boolean } = {},
+    opts: { sort?: DashboardSort; full?: boolean; region?: string } = {},
   ) => {
     const params = new URLSearchParams({
       markets: markets.join(","),
@@ -231,6 +234,7 @@ export const api = {
     });
     if (opts.sort) params.append("sort", opts.sort);
     if (opts.full) params.append("full", "true");
+    if (opts.region && opts.region !== "all") params.append("region", opts.region);
     return get<{
       timeframe: Timeframe;
       server_time: string;
