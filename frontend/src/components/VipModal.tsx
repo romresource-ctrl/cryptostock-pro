@@ -41,14 +41,34 @@ export default function VipModal({ visible, onClose, onLogin }: Props) {
   );
 
   // Auto-close modal when entitlement becomes active.
-  const wasPremiumRef = useRef(isPremium);
+  // v8.1.1 — Simpler + more robust logic: whenever the modal is visible
+  // AND the user is confirmed premium, schedule a close. Uses a ref to
+  // avoid re-scheduling if isPremium flickers. This fires reliably even
+  // after backend verify completes 2-3s post-purchase.
+  const autoCloseRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (visible && isPremium && !wasPremiumRef.current) {
-      const to = setTimeout(() => onClose(), 900);
-      wasPremiumRef.current = true;
-      return () => clearTimeout(to);
+    if (!visible) {
+      // Modal was manually closed — cancel any pending auto-close.
+      if (autoCloseRef.current) {
+        clearTimeout(autoCloseRef.current);
+        autoCloseRef.current = null;
+      }
+      return;
     }
-    if (!visible) wasPremiumRef.current = isPremium;
+    if (isPremium && !autoCloseRef.current) {
+      autoCloseRef.current = setTimeout(() => {
+        onClose();
+        autoCloseRef.current = null;
+      }, 1200);
+    }
+    return () => {
+      // On dep-change (e.g., isPremium flips false→true→false during
+      // backend verify race), clear the pending close.
+      if (autoCloseRef.current) {
+        clearTimeout(autoCloseRef.current);
+        autoCloseRef.current = null;
+      }
+    };
   }, [visible, isPremium, onClose]);
 
   const openEmail = () =>

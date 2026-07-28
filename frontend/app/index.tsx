@@ -393,7 +393,13 @@ export default function Dashboard() {
             ) : (
               <TouchableOpacity
                 onPress={() => setVipOpen(true)}
+                // v8.1.1 — long-press bypasses the paywall and goes
+                // straight to the admin unlock modal. Discoverable via
+                // tooltip on iOS/accessibilityHint on Android.
+                onLongPress={() => setLoginOpen(true)}
+                delayLongPress={400}
                 testID="login-button"
+                accessibilityHint="Long press to enter admin unlock code"
                 style={[styles.loginBtn, { backgroundColor: colors.accentBlue, borderColor: colors.accentBlue }]}
               >
                 <Ionicons name="log-in-outline" size={14} color="#fff" />

@@ -435,7 +435,11 @@ export default function ChatSheet({
                 justifyContent: "flex-end",
               }}
               keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="on-drag"
+              // v8.1.1 — keep the keyboard OPEN when the user swipes to
+              // scroll the message history. Previously `on-drag` closed
+              // the keyboard as soon as the user tried to look back at
+              // older messages, which killed the chat flow.
+              keyboardDismissMode="none"
               showsVerticalScrollIndicator={true}
               // v8.0.4 FlatList perf props — cheap virtualisation gains.
               windowSize={5}
@@ -460,6 +464,7 @@ export default function ChatSheet({
                           styles.nick,
                           { color: isMine ? "#fff" : colors.accentBlue },
                         ]}
+                        selectable
                       >
                         {item.nickname}
                       </Text>
@@ -471,7 +476,10 @@ export default function ChatSheet({
                         />
                       ) : null}
                       {item.text ? (
-                        <Text style={[styles.text, { color: isMine ? "#fff" : colors.textPrimary }]}>
+                        <Text
+                          style={[styles.text, { color: isMine ? "#fff" : colors.textPrimary }]}
+                          selectable
+                        >
                           {item.text}
                         </Text>
                       ) : null}

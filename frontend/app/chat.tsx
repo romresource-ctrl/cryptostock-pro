@@ -348,7 +348,7 @@ export default function ChatScreen() {
           keyExtractor={(m) => m.id}
           contentContainerStyle={{ padding: 12, paddingBottom: 16 }}
           keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
+          keyboardDismissMode="none"
           renderItem={({ item }) => {
             const isMine = item.device_id === deviceIdRef.current;
             const bubbleColor = isMine ? colors.accentBlue : colors.surface;
@@ -374,6 +374,7 @@ export default function ChatScreen() {
                       styles.nick,
                       { color: isMine ? "#fff" : colors.accentBlue },
                     ]}
+                    selectable
                   >
                     {item.nickname}
                   </Text>
@@ -385,7 +386,7 @@ export default function ChatScreen() {
                     />
                   ) : null}
                   {item.text ? (
-                    <Text style={[styles.msgText, { color: textColor }]}>
+                    <Text style={[styles.msgText, { color: textColor }]} selectable>
                       {item.text}
                     </Text>
                   ) : null}

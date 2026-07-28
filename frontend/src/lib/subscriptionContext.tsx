@@ -309,13 +309,18 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       try {
         const deviceId = deviceIdRef.current || (await getDeviceId());
         const ent = await restorePurchases(deviceId, ANDROID_PACKAGE);
-        if (ent) setEntitlement(ent);
+        // v8.1.1 — Use applySync guard here too. Directly assigning the
+        // result caused Bug #5 (user briefly kicked out of premium when
+        // `restorePurchases` returned `entitled:false` due to a slow
+        // Play Store ack or transient network issue). applySync only
+        // downgrades to `not entitled` when the local cache also agrees.
+        applySync(ent);
       } catch {
         /* silent */
       }
     }, 5 * 60_000); // every 5 minutes
     return () => clearInterval(id);
-  }, [connected]);
+  }, [connected, applySync]);
 
   const value = useMemo<SubscriptionState>(
     () => ({

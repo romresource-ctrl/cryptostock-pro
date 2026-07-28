@@ -1093,6 +1093,20 @@ async def search_assets(
     matches.sort(key=lambda m: (m[2], m[1]))
     matches = matches[:limit]
 
+    # v8.1.1 — On-demand Binance lookup. If the query has no local match
+    # OR the top match isn't exact, ALSO try Binance's `${QUERY}USDT`
+    # symbol directly. This means users can find ANY crypto listed on
+    # Binance (MOODENG, POPCAT, BOME, MEW, etc.) without having to wait
+    # for us to update the local map. Fails silently if Binance says the
+    # symbol doesn't exist.
+    exact_local = any(m[2] == 0 and m[0] == "crypto" for m in matches)
+    if not exact_local and len(query) >= 2 and query.isalnum():
+        # Only meaningful for symbols that look like a ticker
+        # (2+ alphanumeric chars). Prepend so the fresh on-demand hit
+        # shows above the fuzzy matches.
+        matches = [("crypto", query, 0)] + matches
+        matches = matches[:limit]
+
     if not matches:
         return {"hits": []}
 

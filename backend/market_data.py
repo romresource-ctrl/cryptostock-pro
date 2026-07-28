@@ -30,9 +30,11 @@ CRYPTO_BINANCE_MAP: dict[str, str] = {
     "AAVE": "AAVEUSDT", "MKR": "MKRUSDT", "UNI": "UNIUSDT",
     "LDO": "LDOUSDT", "CRV": "CRVUSDT", "COMP": "COMPUSDT",
     "SNX": "SNXUSDT", "SUSHI": "SUSHIUSDT",
-    # Memecoins & narratives
+    # Memecoins & narratives — only symbols actually listed on Binance
+    # spot; for the rest we hit CoinGecko as an on-demand fallback.
     "WIF": "WIFUSDT", "BONK": "BONKUSDT", "FLOKI": "FLOKIUSDT",
     "TRUMP": "TRUMPUSDT", "MEME": "MEMEUSDT",
+    "BOME": "BOMEUSDT", "PENGU": "PENGUUSDT", "TURBO": "TURBOUSDT",
     # AI/Compute
     "RENDER": "RENDERUSDT", "FET": "FETUSDT", "TAO": "TAOUSDT",
     "WLD": "WLDUSDT", "AGIX": "AGIXUSDT",
@@ -334,6 +336,11 @@ TIMEFRAME_MAP: dict[str, dict[str, Any]] = {
 BINANCE_BASE = "https://data-api.binance.vision"
 YAHOO_BASE = "https://query1.finance.yahoo.com"
 OKX_BASE = "https://www.okx.com"
+# v8.1.1 — Fallback for coins that aren't on Binance/OKX spot (Solana
+# DEX-only memes like MOODENG, POPCAT, BRETT, MEW, etc.). CoinGecko's
+# free API covers 10k+ tokens; we resolve symbol → coin_id via /search
+# then pull OHLC via /coins/{id}/market_chart.
+COINGECKO_BASE = "https://api.coingecko.com/api/v3"
 
 # Symbols that should be fetched from OKX instead of Binance
 # (e.g. HYPE / Hyperliquid is not listed on Binance spot API).
@@ -408,9 +415,11 @@ async def _fetch_okx_ticker(client: httpx.AsyncClient, symbol: str) -> dict[str,
 
 
 async def _fetch_binance_klines(client: httpx.AsyncClient, symbol: str, interval: str, limit: int) -> list[dict[str, float]]:
-    pair = CRYPTO_BINANCE_MAP.get(symbol)
-    if not pair:
-        return []
+    # v8.1.1 — On-demand lookup: if the symbol isn't in our curated map,
+    # try the naive `${SYMBOL}USDT` pair name. Binance's public API is
+    # perfectly happy to serve any listed pair, so this lets users find
+    # brand-new listings (MOODENG, POPCAT, etc.) without a code update.
+    pair = CRYPTO_BINANCE_MAP.get(symbol) or f"{symbol.upper()}USDT"
     try:
         r = await client.get(
             f"{BINANCE_BASE}/api/v3/klines",
@@ -435,9 +444,7 @@ async def _fetch_binance_klines(client: httpx.AsyncClient, symbol: str, interval
 
 
 async def _fetch_binance_ticker(client: httpx.AsyncClient, symbol: str) -> dict[str, float] | None:
-    pair = CRYPTO_BINANCE_MAP.get(symbol)
-    if not pair:
-        return None
+    pair = CRYPTO_BINANCE_MAP.get(symbol) or f"{symbol.upper()}USDT"
     try:
         r = await client.get(
             f"{BINANCE_BASE}/api/v3/ticker/24hr",
@@ -526,9 +533,121 @@ async def get_crypto_snapshot(symbol: str, timeframe: str) -> dict[str, Any] | N
         _fetch_binance_ticker(client, symbol),
         _fetch_binance_klines(client, symbol, tf["binance"], tf["limit"]),
     )
-    if not ticker and not klines:
+    if ticker or klines:
+        return {"symbol": symbol, "market": "crypto", "ticker": ticker or {}, "candles": klines}
+    # v8.1.1 — Binance/OKX said "no such pair" — try CoinGecko for
+    # Solana DEX memes and long-tail alts that never touched a CEX.
+    return await _fetch_coingecko_snapshot(client, symbol, tf)
+
+
+# ── CoinGecko fallback ────────────────────────────────────────────────
+
+_CG_ID_CACHE: dict[str, str | None] = {}  # symbol → coingecko coin_id
+_CG_ID_LOCK = asyncio.Lock()
+
+
+async def _resolve_coingecko_id(client: httpx.AsyncClient, symbol: str) -> str | None:
+    """Symbol → CoinGecko coin_id resolution with per-process cache.
+
+    Uses `/search?query=` and prefers the top result whose `symbol` field
+    matches EXACTLY (case-insensitive). Returns None if nothing matches;
+    callers should treat that as "unknown asset".
+    """
+    key = symbol.upper()
+    if key in _CG_ID_CACHE:
+        return _CG_ID_CACHE[key]
+    async with _CG_ID_LOCK:
+        if key in _CG_ID_CACHE:
+            return _CG_ID_CACHE[key]
+        try:
+            r = await client.get(
+                f"{COINGECKO_BASE}/search",
+                params={"query": symbol},
+                timeout=8.0,
+            )
+            r.raise_for_status()
+            data = r.json()
+            coins = data.get("coins") or []
+            # Prefer exact symbol match (case-insensitive), else first hit.
+            exact = next((c for c in coins if (c.get("symbol") or "").upper() == key), None)
+            picked = exact or (coins[0] if coins else None)
+            coin_id = picked.get("id") if picked else None
+        except Exception:
+            coin_id = None
+        _CG_ID_CACHE[key] = coin_id
+        return coin_id
+
+
+def _cg_days_for_tf(tf: dict[str, Any]) -> tuple[int, str]:
+    """Map internal timeframe → (days, interval) for CoinGecko market_chart."""
+    # CoinGecko granularity ladder (free tier): days=1 → 5-min candles,
+    # days=7 → hourly, days=30+ → daily. We adapt to the requested
+    # window so RSI/EMA still have enough resolution.
+    binance = tf.get("binance", "1h")
+    if binance in ("15m", "30m"):
+        return (1, "")  # 5-min ~= good enough
+    if binance in ("1h", "2h", "4h"):
+        return (7, "hourly")
+    if binance in ("6h", "12h", "1d"):
+        return (30, "daily")
+    return (7, "hourly")
+
+
+async def _fetch_coingecko_snapshot(
+    client: httpx.AsyncClient, symbol: str, tf: dict[str, Any]
+) -> dict[str, Any] | None:
+    coin_id = await _resolve_coingecko_id(client, symbol)
+    if not coin_id:
         return None
-    return {"symbol": symbol, "market": "crypto", "ticker": ticker or {}, "candles": klines}
+    days, interval = _cg_days_for_tf(tf)
+    try:
+        params: dict[str, Any] = {"vs_currency": "usd", "days": days}
+        if interval:
+            params["interval"] = interval
+        r = await client.get(
+            f"{COINGECKO_BASE}/coins/{coin_id}/market_chart",
+            params=params,
+            timeout=12.0,
+        )
+        r.raise_for_status()
+        data = r.json()
+        prices = data.get("prices") or []       # [[t_ms, price], ...]
+        volumes = data.get("total_volumes") or []
+        if not prices:
+            return None
+        # Synthesise minimal OHLCV from the close series. CoinGecko free
+        # tier only exposes closes here; the "ohlc" endpoint gives real
+        # candles but with tighter rate limits. For obscure meme tokens
+        # this trade-off is acceptable — dashboard already only shows
+        # these via search, not the main columns.
+        candles: list[dict[str, float]] = []
+        vol_map = {int(v[0]): float(v[1] or 0.0) for v in volumes}
+        for i, (t, p) in enumerate(prices):
+            fp = float(p)
+            candles.append({
+                "t": int(t),
+                "open": fp, "high": fp, "low": fp, "close": fp,
+                "volume": vol_map.get(int(t), 0.0),
+            })
+        last = candles[-1]
+        prev = candles[max(0, len(candles) - 25)]["close"]  # ~24h ago (hourly)
+        price = last["close"]
+        change_pct = ((price - prev) / prev * 100.0) if prev else 0.0
+        highs = [c["close"] for c in candles[-25:]]
+        return {
+            "symbol": symbol,
+            "market": "crypto",
+            "ticker": {
+                "price": price,
+                "change_pct_24h": change_pct,
+                "volume_24h": sum(c["volume"] for c in candles[-25:]),
+                "high_24h": max(highs) if highs else price,
+                "low_24h": min(highs) if highs else price,
+            },
+            "candles": candles,
+        }
+    except Exception:
+        return None
 
 
 async def get_stock_snapshot(symbol: str, timeframe: str, market: str = "stock_id") -> dict[str, Any] | None:
