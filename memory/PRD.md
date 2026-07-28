@@ -61,3 +61,24 @@ Files to bump in lockstep every version change:
 - `/app/frontend/src/lib/version.ts`  (`APP_VERSION`)
 - `/app/frontend/app.json`            (`expo.version`)
 - Android `versionCode` in `app.json` (monotonic integer; increment by 1 each release)
+
+
+## Locked Files — DO NOT MODIFY Unless User Explicitly Requests (2026-06-28)
+User directive: "Do not modify the VipModal, ChatSheet, or Auth logic unless I explicitly ask."
+
+Files under this lock:
+- `/app/frontend/src/components/VipModal.tsx`
+- `/app/frontend/src/components/ChatSheet.tsx`
+- `/app/frontend/app/chat.tsx` (chat screen — auth/premium gating)
+- `/app/frontend/src/auth/AuthContext.tsx`
+- `/app/frontend/src/components/LoginModal.tsx`
+- `/app/frontend/src/lib/subscriptionContext.tsx`
+- `/app/frontend/src/lib/subscription.ts`
+- `/app/frontend/src/lib/usePremiumAccess.ts`
+- Backend auth/subscription surfaces:
+  - Any `/api/subscription/*` handler in `server.py`
+  - `subscription_service.py`
+  - `unlock_codes.py`
+
+Rule of thumb: if the user asks to change SOMETHING ELSE and it turns out to
+require touching these files, ASK first. Do not silently patch them.
