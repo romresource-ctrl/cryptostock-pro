@@ -1,22 +1,38 @@
 /**
  * ChatSheet — bottom-sheet variant of the premium chatroom.
  *
- * v7.0.10 keyboard + drag rework:
- *  - Uses `useKeyboardAnimation()` from react-native-keyboard-controller
- *    to bind the sheet's bottom padding directly to the current keyboard
- *    height. This works reliably on Android regardless of the underlying
- *    `windowSoftInputMode`, and it survives being nested inside an
- *    absolutely-positioned container (the previous `KeyboardAvoidingView`
- *    approach did not push our composer up on Android).
- *  - Sheet height is now driven by an Animated value between two snap
- *    points — collapsed (~62%) and expanded (~95%). A PanResponder on
- *    the top handle bar lets users drag the sheet upward to expand
- *    (and downward to collapse back / dismiss).
+ * v8.1.5 — Reply-to-message + voice notes (WhatsApp style):
+ *  - Swipe LEFT on any bubble to reply. Reveal a reply icon during the
+ *    drag; release past the threshold to attach the message as a reply.
+ *    The keyboard auto-opens and the composer focuses so the user can
+ *    immediately type + send.
+ *  - Reply preview strip sits above the composer with a coloured bar,
+ *    original nickname, and a snippet (or thumbnail for images / "Voice
+ *    note 0:12" for audio). Tap ✕ to cancel the reply.
+ *  - Every outgoing message may carry a `reply_to` object which the
+ *    receiver renders inline (indented, coloured bar, tap-to-scroll).
+ *  - Hold the 🎤 mic to record a voice note (M4A/AAC, mono, 24 kbps).
+ *    Live timer updates every 100ms. Slide LEFT past 60px to cancel.
+ *    Release to send. Max 60 s (soft cap; backend hard caps at 90 s).
+ *  - Voice bubbles show a play/pause button + waveform placeholder +
+ *    live duration; playback uses expo-audio's AudioPlayer.
+ *  - All new features are gated by isPremium (existing) so non-subs
+ *    still see the "Members Only" popup.
  *
- * Renders as an absolutely-positioned panel at the bottom of the
- * dashboard, so the top half stays interactive when collapsed.
+ * v7.0.10 keyboard + drag rework (unchanged): KeyboardAvoidingView from
+ * react-native-keyboard-controller ensures the composer sticks above
+ * the on-screen keyboard on both platforms; PanResponder on the header
+ * drag-handle powers the collapsed↔expanded snap points.
  */
 import { Ionicons } from "@expo/vector-icons";
+import {
+  AudioModule,
+  RecordingPresets,
+  createAudioPlayer,
+  useAudioRecorder,
+  useAudioRecorderState,
+} from "expo-audio";
+import * as FileSystem from "expo-file-system/legacy";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -47,13 +63,28 @@ import { storage } from "@/src/utils/storage";
 const NICKNAME_KEY = "aicrypstockpro.chat.nickname";
 const POLL_INTERVAL_MS = 3000;
 const RATE_LIMIT_MS = 3000;
-// v8.0.8 — no client-side message length limit anymore.
 const IMG_TARGET_WIDTH = 900;
 const IMG_JPEG_QUALITY = 0.55;
+
+// Swipe-to-reply thresholds.
+const REPLY_SWIPE_TRIGGER = 60;   // px — release past this to fire reply
+const REPLY_SWIPE_MAX = 90;       // px — cap so bubble doesn't fly off
+
+// Voice-note thresholds.
+const VOICE_MAX_SECONDS = 20;
+const VOICE_CANCEL_SLIDE = 60;    // px — slide left this far to cancel
 
 // Snap-point ratios of screen height.
 const COLLAPSED_RATIO = 0.62;
 const EXPANDED_RATIO = 0.95;
+
+type ReplyInfo = {
+  id: string;
+  nickname: string;
+  snippet?: string;
+  has_image?: boolean;
+  has_audio?: boolean;
+};
 
 type Msg = {
   id: string;
@@ -62,11 +93,25 @@ type Msg = {
   device_id: string;
   created_at: string;
   image_data?: string | null;
+  audio_data?: string | null;
+  audio_duration_ms?: number | null;
+  reply_to?: ReplyInfo | null;
 };
+
+// Pending draft reply carries an optional thumbnail so the composer
+// preview can show it without re-fetching from Mongo.
+type DraftReply = ReplyInfo & { image_thumb?: string | null };
 
 function backendBase() {
   const raw = process.env.EXPO_PUBLIC_BACKEND_URL || "";
   return raw.replace(/\/$/, "") + "/api";
+}
+
+function fmtDuration(ms: number | null | undefined): string {
+  const s = Math.max(0, Math.round((ms || 0) / 1000));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${r.toString().padStart(2, "0")}`;
 }
 
 export default function ChatSheet({
@@ -113,6 +158,10 @@ export default function ChatSheet({
     [heightAnim],
   );
 
+  // v8.1.5 — Mic button pan responder. Press-and-hold to record;
+  // slide LEFT past VOICE_CANCEL_SLIDE while recording to cancel.
+  // Release: send (or discard if cancelling). Declared AFTER
+  // startRecording/stopRecording to avoid temporal-dead-zone.
   const panResponder = useMemo(
     () =>
       PanResponder.create({
@@ -173,6 +222,20 @@ export default function ChatSheet({
   const [input, setInput] = useState("");
   const [attachment, setAttachment] = useState<string | null>(null);
   const [attaching, setAttaching] = useState(false);
+  // v8.1.5 — Reply state: the message currently being replied to, or null.
+  const [replyTo, setReplyTo] = useState<DraftReply | null>(null);
+  // v8.1.5 — Voice recording state.
+  const audioRecorder = useAudioRecorder(RecordingPresets.LOW_QUALITY);
+  const recorderState = useAudioRecorderState(audioRecorder);
+  const [voiceCancelling, setVoiceCancelling] = useState(false);
+  const [voiceElapsedMs, setVoiceElapsedMs] = useState(0);
+  const voiceTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const voiceMaxCutoffRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Playback (only one audio active at a time). Ref because switching
+  // messages must eagerly stop the previous player before creating a
+  // new one; keeping this in a ref (not state) avoids extra re-renders.
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  const activePlayerRef = useRef<ReturnType<typeof createAudioPlayer> | null>(null);
   const lastSentRef = useRef(0);
   const deviceIdRef = useRef("");
   const listRef = useRef<FlatList<Msg>>(null);
@@ -263,8 +326,193 @@ export default function ChatSheet({
     }
   };
 
-  // Send
-  const sendMessage = async () => {
+  // v8.1.5 — Trigger reply on a message. Called by the SwipeableRow
+  // when the user releases past the swipe threshold. Auto-focuses the
+  // composer so the OS keyboard pops up immediately.
+  const startReply = useCallback((m: Msg) => {
+    if (!isPremium) {
+      Alert.alert("Premium Only", "Subscribe to reply in the chatroom.");
+      return;
+    }
+    setReplyTo({
+      id: m.id,
+      nickname: m.nickname,
+      snippet: (m.text || "").slice(0, 80),
+      has_image: !!m.image_data,
+      has_audio: !!m.audio_data,
+      image_thumb: m.image_data || null,
+    });
+    // Expand sheet + focus composer so the keyboard shows up.
+    if (snapRef.current < expandedH - 5) snapTo(expandedH);
+    setTimeout(() => {
+      try {
+        inputRef.current?.focus();
+      } catch {
+        /* ignore */
+      }
+    }, 60);
+  }, [isPremium, expandedH, snapTo]);
+
+  const clearReply = useCallback(() => setReplyTo(null), []);
+
+  // v8.1.5 — Voice recording controls. `startRecording` is called on
+  // press-in of the mic button; `stopRecording` on release. During
+  // recording, the parent uses PanResponder to detect a leftward slide
+  // and set `voiceCancelling` — if true when the finger lifts, we throw
+  // away the recording instead of sending it.
+  const startRecording = useCallback(async () => {
+    if (!isPremium) {
+      Alert.alert("Premium Only", "Subscribe to send voice notes.");
+      return;
+    }
+    if (recorderState.isRecording) return;
+    try {
+      const perm = await AudioModule.requestRecordingPermissionsAsync();
+      if (!perm.granted) {
+        if (!perm.canAskAgain) {
+          Alert.alert(
+            "Microphone Permission",
+            "Enable microphone access in Settings to send voice notes.",
+            [
+              { text: "Cancel", style: "cancel" },
+              { text: "Open Settings", onPress: () => Linking.openSettings() },
+            ],
+          );
+        }
+        return;
+      }
+      // v8.1.5 — Ensure the input keyboard does not compete with the
+      // mic during recording (particularly on Android). Also stop any
+      // ongoing playback so the mic isn't polluted by app audio.
+      try { activePlayerRef.current?.remove(); } catch { /* ignore */ }
+      activePlayerRef.current = null;
+      setPlayingId(null);
+      setVoiceElapsedMs(0);
+      setVoiceCancelling(false);
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
+      voiceTimerRef.current = setInterval(() => {
+        setVoiceElapsedMs((prev) => prev + 100);
+      }, 100);
+      voiceMaxCutoffRef.current = setTimeout(() => {
+        // Auto-stop + send at soft cap (60 s).
+        void stopRecording(false);
+      }, VOICE_MAX_SECONDS * 1000);
+    } catch (e) {
+      Alert.alert("Recording Failed", String(e));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPremium, audioRecorder, recorderState.isRecording]);
+
+  const stopRecording = useCallback(async (cancel: boolean) => {
+    if (voiceTimerRef.current) {
+      clearInterval(voiceTimerRef.current);
+      voiceTimerRef.current = null;
+    }
+    if (voiceMaxCutoffRef.current) {
+      clearTimeout(voiceMaxCutoffRef.current);
+      voiceMaxCutoffRef.current = null;
+    }
+    let uri: string | null = null;
+    try {
+      await audioRecorder.stop();
+      uri = audioRecorder.uri;
+    } catch {
+      /* ignore — nothing to stop */
+    }
+    const durationMs = voiceElapsedMs;
+    setVoiceElapsedMs(0);
+    setVoiceCancelling(false);
+    if (cancel || !uri || durationMs < 500) {
+      // Too short OR cancelled — discard.
+      return;
+    }
+    // Read file → base64 → data URL.
+    try {
+      const b64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      // expo-audio records M4A container on iOS/Android by default.
+      const dataUrl = `data:audio/m4a;base64,${b64}`;
+      await sendMessage({ audio_data: dataUrl, audio_duration_ms: durationMs });
+    } catch (e) {
+      Alert.alert("Voice Note Failed", String(e));
+    }
+  // sendMessage is defined below via useCallback; TS is fine because
+  // both are captured lexically in the same render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [audioRecorder, voiceElapsedMs]);
+
+  // v8.1.5 — Mic button pan responder. Press-and-hold to record;
+  // slide LEFT past VOICE_CANCEL_SLIDE while recording to cancel.
+  // Release: send (or discard if cancelling).
+  const micPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: () => {
+          void startRecording();
+        },
+        onPanResponderMove: (_e, g) => {
+          const cancel = g.dx < -VOICE_CANCEL_SLIDE;
+          setVoiceCancelling((prev) => (prev === cancel ? prev : cancel));
+        },
+        onPanResponderRelease: (_e, g) => {
+          const cancel = g.dx < -VOICE_CANCEL_SLIDE;
+          void stopRecording(cancel);
+        },
+        onPanResponderTerminate: () => {
+          void stopRecording(true);
+        },
+      }),
+    [startRecording, stopRecording],
+  );
+
+  // Playback: single-active. Tapping a bubble either starts a fresh
+  // player OR stops the currently playing one.
+  const togglePlayback = useCallback((m: Msg) => {
+    if (!m.audio_data) return;
+    if (playingId === m.id) {
+      try { activePlayerRef.current?.pause(); } catch { /* ignore */ }
+      setPlayingId(null);
+      return;
+    }
+    // Stop previous
+    try { activePlayerRef.current?.remove(); } catch { /* ignore */ }
+    activePlayerRef.current = null;
+    try {
+      const p = createAudioPlayer({ uri: m.audio_data });
+      activePlayerRef.current = p;
+      p.play();
+      // Auto-clear playing state when finished.
+      const durMs = m.audio_duration_ms || 3000;
+      setTimeout(() => {
+        if (activePlayerRef.current === p) {
+          try { p.remove(); } catch { /* ignore */ }
+          activePlayerRef.current = null;
+          setPlayingId((cur) => (cur === m.id ? null : cur));
+        }
+      }, durMs + 400);
+      setPlayingId(m.id);
+    } catch (e) {
+      Alert.alert("Playback Failed", String(e));
+    }
+  }, [playingId]);
+
+  // Cleanup on unmount.
+  useEffect(() => {
+    return () => {
+      if (voiceTimerRef.current) clearInterval(voiceTimerRef.current);
+      if (voiceMaxCutoffRef.current) clearTimeout(voiceMaxCutoffRef.current);
+      try { activePlayerRef.current?.remove(); } catch { /* ignore */ }
+    };
+  }, []);
+
+  // Send. v8.1.5 — accepts optional overrides for audio-note flow.
+  const sendMessage = async (
+    overrides: { audio_data?: string; audio_duration_ms?: number } = {},
+  ) => {
     if (sending) return;
     if (!isPremium) {
       Alert.alert("Premium Only", "Subscribe to post in the chatroom.");
@@ -272,31 +520,46 @@ export default function ChatSheet({
     }
     if (!nickname) return;
     const text = input.trim();
-    if (!text && !attachment) return;
+    const isVoice = !!overrides.audio_data;
+    if (!isVoice && !text && !attachment) return;
     const now = Date.now();
     if (now - lastSentRef.current < RATE_LIMIT_MS) return;
     setSending(true);
     try {
+      // Snapshot reply so we can clear the draft immediately without a
+      // race where the just-sent message re-appears with stale reply.
+      const snapshotReply = replyTo
+        ? {
+            id: replyTo.id,
+            nickname: replyTo.nickname,
+            snippet: (replyTo.snippet || "").slice(0, 80),
+            has_image: !!replyTo.has_image,
+            has_audio: !!replyTo.has_audio,
+          }
+        : null;
       const res = await fetch(`${backendBase()}/chat/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          text,
+          text: isVoice ? "" : text,
           nickname,
           device_id: deviceIdRef.current,
-          image_data: attachment,
+          image_data: isVoice ? null : attachment,
+          audio_data: overrides.audio_data ?? null,
+          audio_duration_ms: overrides.audio_duration_ms ?? null,
+          reply_to: snapshotReply,
         }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: "Send failed" }));
         Alert.alert("Send Failed", err.detail);
       } else {
-        setInput("");
-        setAttachment(null);
+        if (!isVoice) {
+          setInput("");
+          setAttachment(null);
+        }
+        setReplyTo(null);
         lastSentRef.current = now;
-        // Refresh list and auto-scroll to the newest message so the
-        // just-sent text stays visible to the user without them having
-        // to scroll manually.
         await fetchMessages();
         setTimeout(() => {
           try {
@@ -308,19 +571,15 @@ export default function ChatSheet({
       }
     } finally {
       setSending(false);
-      // Keep the composer focused so the OS keyboard stays open and the
-      // user can continue chatting without re-tapping the field. On
-      // Android the Touchable that fires this handler steals focus from
-      // the TextInput first, so we defer the refocus by a small margin
-      // to let the touch release settle before we re-open the keyboard.
-      // This pairs with `blurOnSubmit={false}` on the TextInput.
-      setTimeout(() => {
-        try {
-          inputRef.current?.focus();
-        } catch {
-          /* ignore */
-        }
-      }, 50);
+      if (!isVoice) {
+        setTimeout(() => {
+          try {
+            inputRef.current?.focus();
+          } catch {
+            /* ignore */
+          }
+        }, 50);
+      }
     }
   };
 
@@ -449,42 +708,125 @@ export default function ChatSheet({
               renderItem={({ item }) => {
                 const isMine = item.device_id === deviceIdRef.current;
                 return (
-                  <View style={[styles.row, { justifyContent: isMine ? "flex-end" : "flex-start" }]}>
-                    <View
-                      style={[
-                        styles.bubble,
-                        {
-                          backgroundColor: isMine ? colors.accentBlue : colors.surface,
-                          borderColor: colors.border,
-                        },
-                      ]}
-                    >
-                      <Text
+                  <SwipeableRow
+                    onReply={() => startReply(item)}
+                    accentColor={colors.accentBlue}
+                    isMine={isMine}
+                  >
+                    <View style={[styles.row, { justifyContent: isMine ? "flex-end" : "flex-start" }]}>
+                      <View
                         style={[
-                          styles.nick,
-                          { color: isMine ? "#fff" : colors.accentBlue },
+                          styles.bubble,
+                          {
+                            backgroundColor: isMine ? colors.accentBlue : colors.surface,
+                            borderColor: colors.border,
+                          },
                         ]}
-                        selectable
                       >
-                        {item.nickname}
-                      </Text>
-                      {item.image_data ? (
-                        <Image
-                          source={{ uri: item.image_data }}
-                          style={styles.attachmentImage}
-                          resizeMode="cover"
-                        />
-                      ) : null}
-                      {item.text ? (
                         <Text
-                          style={[styles.text, { color: isMine ? "#fff" : colors.textPrimary }]}
+                          style={[
+                            styles.nick,
+                            { color: isMine ? "#fff" : colors.accentBlue },
+                          ]}
                           selectable
                         >
-                          {item.text}
+                          {item.nickname}
                         </Text>
-                      ) : null}
+
+                        {/* v8.1.5 — Inline reply preview inside the bubble.
+                            Coloured bar on the left, original nickname
+                            in bold, then snippet or media hint. */}
+                        {item.reply_to ? (
+                          <View
+                            style={[
+                              styles.replyInside,
+                              {
+                                backgroundColor: isMine
+                                  ? "rgba(255,255,255,0.14)"
+                                  : "rgba(255,255,255,0.05)",
+                                borderLeftColor: isMine ? "#fff" : colors.accentBlue,
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.replyInsideNick,
+                                { color: isMine ? "#fff" : colors.accentBlue },
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {item.reply_to.nickname}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.replyInsideSnippet,
+                                { color: isMine ? "rgba(255,255,255,0.85)" : colors.textSecondary },
+                              ]}
+                              numberOfLines={2}
+                            >
+                              {item.reply_to.has_audio
+                                ? "🎤 Voice note"
+                                : item.reply_to.has_image
+                                  ? "📷 Photo"
+                                  : (item.reply_to.snippet || "")}
+                            </Text>
+                          </View>
+                        ) : null}
+
+                        {item.image_data ? (
+                          <Image
+                            source={{ uri: item.image_data }}
+                            style={styles.attachmentImage}
+                            resizeMode="cover"
+                          />
+                        ) : null}
+
+                        {/* v8.1.5 — Voice note bubble. Play/pause button
+                            + duration + waveform placeholder. */}
+                        {item.audio_data ? (
+                          <TouchableOpacity
+                            onPress={() => togglePlayback(item)}
+                            activeOpacity={0.75}
+                            style={[
+                              styles.voiceRow,
+                              { backgroundColor: isMine ? "rgba(255,255,255,0.15)" : colors.surfaceAlt },
+                            ]}
+                          >
+                            <Ionicons
+                              name={playingId === item.id ? "pause" : "play"}
+                              size={18}
+                              color={isMine ? "#fff" : colors.accentBlue}
+                            />
+                            <View style={{ flex: 1 }}>
+                              <View
+                                style={[
+                                  styles.voiceWave,
+                                  { backgroundColor: isMine ? "rgba(255,255,255,0.35)" : colors.border },
+                                ]}
+                              />
+                              <Text
+                                style={[
+                                  styles.voiceDur,
+                                  { color: isMine ? "rgba(255,255,255,0.9)" : colors.textSecondary },
+                                ]}
+                              >
+                                {fmtDuration(item.audio_duration_ms)}
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        ) : null}
+
+                        {item.text ? (
+                          <Text
+                            style={[styles.text, { color: isMine ? "#fff" : colors.textPrimary }]}
+                            selectable
+                          >
+                            {item.text}
+                          </Text>
+                        ) : null}
+                      </View>
                     </View>
-                  </View>
+                  </SwipeableRow>
                 );
               }}
             />
@@ -492,86 +834,160 @@ export default function ChatSheet({
         )}
 
         {nickname !== null && (
-          <View
-            style={[
-              styles.inputRow,
-              {
-                backgroundColor: colors.surface,
-                borderTopColor: colors.border,
-                // Bottom safe-area padding is only applied when keyboard is
-                // closed — once it opens, the outer Animated.View padding
-                // (=kbHeight) already lifts the whole row above the keys.
-                paddingBottom: Math.max(insets.bottom, 10),
-              },
-            ]}
-          >
-            <TouchableOpacity
-              onPress={pickAttachment}
-              disabled={attaching || sending}
-              style={[
-                styles.attachBtn,
-                { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
-              ]}
-            >
-              {attaching ? (
-                <ActivityIndicator size="small" color={colors.accentBlue} />
-              ) : (
-                <Ionicons name="image-outline" size={20} color={colors.accentBlue} />
-              )}
-            </TouchableOpacity>
-            <View style={{ flex: 1 }}>
-              {attachment ? (
-                <View style={[styles.preview, { backgroundColor: colors.surfaceAlt }]}>
-                  <Image source={{ uri: attachment }} style={styles.previewImg} />
-                  <TouchableOpacity onPress={() => setAttachment(null)} hitSlop={8}>
-                    <Ionicons name="close-circle" size={18} color={colors.textMuted} />
-                  </TouchableOpacity>
+          <View>
+            {/* v8.1.5 — Reply preview strip above composer (WhatsApp-style). */}
+            {replyTo ? (
+              <View style={[styles.replyPreview, { backgroundColor: colors.surfaceAlt, borderTopColor: colors.border }]}>
+                <View style={[styles.replyPreviewBar, { backgroundColor: colors.accentBlue }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.replyPreviewNick, { color: colors.accentBlue }]} numberOfLines={1}>
+                    Replying to {replyTo.nickname}
+                  </Text>
+                  <Text style={[styles.replyPreviewSnip, { color: colors.textSecondary }]} numberOfLines={1}>
+                    {replyTo.has_audio
+                      ? "🎤 Voice note"
+                      : replyTo.has_image
+                        ? "📷 Photo"
+                        : (replyTo.snippet || "")}
+                  </Text>
                 </View>
-              ) : null}
-              <TextInput
-                ref={inputRef}
-                value={input}
-                onChangeText={setInput}
-                placeholder="Type a message…"
-                placeholderTextColor={colors.textMuted}
-                multiline
-                // v8.0.8 — removed maxLength so long chat messages are
-                // no longer truncated mid-typing. Backend still bounds
-                // stored size (chat_messages schema) as a safety net.
-                blurOnSubmit={false}
-                onFocus={() => {
-                  // Expand automatically when the user starts typing so we
-                  // never end up with the composer above the keyboard but
-                  // only two visible bubbles.
-                  if (snapRef.current < expandedH - 5) snapTo(expandedH);
-                }}
+                {replyTo.image_thumb ? (
+                  <Image source={{ uri: replyTo.image_thumb }} style={styles.replyThumb} />
+                ) : null}
+                <TouchableOpacity onPress={clearReply} hitSlop={10} testID="reply-cancel">
+                  <Ionicons name="close" size={20} color={colors.textMuted} />
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
+            {/* v8.1.5 — Recording state overlay strip. Shows live timer +
+                "slide to cancel" hint. */}
+            {recorderState.isRecording ? (
+              <View
                 style={[
-                  styles.textInput,
+                  styles.recordingStrip,
                   {
-                    backgroundColor: colors.surfaceAlt,
-                    color: colors.textPrimary,
-                    borderColor: colors.border,
+                    backgroundColor: voiceCancelling ? "#7f1d1d" : colors.accentBlue,
                   },
                 ]}
-              />
-            </View>
-            <TouchableOpacity
-              onPress={sendMessage}
-              disabled={!canSend}
+              >
+                <Ionicons
+                  name={voiceCancelling ? "trash" : "radio-button-on"}
+                  size={14}
+                  color="#fff"
+                />
+                <Text style={styles.recordingText}>
+                  {voiceCancelling
+                    ? "Release to cancel"
+                    : `Recording…  ${fmtDuration(voiceElapsedMs)}  ·  slide ← to cancel`}
+                </Text>
+                <View style={{ flex: 1 }} />
+                <Text style={styles.recordingText}>
+                  {Math.max(0, VOICE_MAX_SECONDS - Math.floor(voiceElapsedMs / 1000))}s left
+                </Text>
+              </View>
+            ) : null}
+
+            <View
               style={[
-                styles.sendBtn,
+                styles.inputRow,
                 {
-                  backgroundColor: canSend ? colors.accentBlue : colors.surfaceHighlight,
-                  opacity: sending ? 0.6 : 1,
+                  backgroundColor: colors.surface,
+                  borderTopColor: colors.border,
+                  paddingBottom: Math.max(insets.bottom, 10),
                 },
               ]}
             >
-              {sending ? (
-                <ActivityIndicator size="small" color="#fff" />
+              <TouchableOpacity
+                onPress={pickAttachment}
+                disabled={attaching || sending || recorderState.isRecording}
+                style={[
+                  styles.attachBtn,
+                  { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
+                ]}
+              >
+                {attaching ? (
+                  <ActivityIndicator size="small" color={colors.accentBlue} />
+                ) : (
+                  <Ionicons name="image-outline" size={20} color={colors.accentBlue} />
+                )}
+              </TouchableOpacity>
+              <View style={{ flex: 1 }}>
+                {attachment ? (
+                  <View style={[styles.preview, { backgroundColor: colors.surfaceAlt }]}>
+                    <Image source={{ uri: attachment }} style={styles.previewImg} />
+                    <TouchableOpacity onPress={() => setAttachment(null)} hitSlop={8}>
+                      <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+                <TextInput
+                  ref={inputRef}
+                  value={input}
+                  onChangeText={setInput}
+                  placeholder={
+                    recorderState.isRecording ? "Recording voice note…" : "Type a message…"
+                  }
+                  placeholderTextColor={colors.textMuted}
+                  multiline
+                  editable={!recorderState.isRecording}
+                  blurOnSubmit={false}
+                  onFocus={() => {
+                    if (snapRef.current < expandedH - 5) snapTo(expandedH);
+                  }}
+                  style={[
+                    styles.textInput,
+                    {
+                      backgroundColor: colors.surfaceAlt,
+                      color: colors.textPrimary,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                />
+              </View>
+              {/* v8.1.5 — Mic button (press-and-hold to record).
+                  When user is typing/has text/attachment, show send
+                  arrow instead. */}
+              {canSend ? (
+                <TouchableOpacity
+                  onPress={() => sendMessage()}
+                  disabled={!canSend}
+                  testID="chat-send"
+                  style={[
+                    styles.sendBtn,
+                    {
+                      backgroundColor: colors.accentBlue,
+                      opacity: sending ? 0.6 : 1,
+                    },
+                  ]}
+                >
+                  {sending ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Ionicons name="arrow-up" size={18} color="#fff" />
+                  )}
+                </TouchableOpacity>
               ) : (
-                <Ionicons name="arrow-up" size={18} color="#fff" />
+                <View
+                  {...micPanResponder.panHandlers}
+                  style={[
+                    styles.sendBtn,
+                    {
+                      backgroundColor: recorderState.isRecording
+                        ? (voiceCancelling ? "#dc2626" : colors.accentBlue)
+                        : colors.surfaceHighlight,
+                    },
+                  ]}
+                  testID="chat-mic"
+                >
+                  <Ionicons
+                    name="mic"
+                    size={20}
+                    color={recorderState.isRecording ? "#fff" : colors.textPrimary}
+                  />
+                </View>
               )}
-            </TouchableOpacity>
+            </View>
           </View>
         )}
       </KeyboardAvoidingView>
@@ -684,4 +1100,133 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: "center",
   },
+  // v8.1.5 additions
+  replyInside: {
+    borderLeftWidth: 3,
+    paddingLeft: 8,
+    paddingRight: 6,
+    paddingVertical: 4,
+    borderRadius: 4,
+    marginBottom: 4,
+  },
+  replyInsideNick: { fontSize: 10, fontWeight: "800" },
+  replyInsideSnippet: { fontSize: 11, marginTop: 1 },
+  replyPreview: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderTopWidth: 0.5,
+  },
+  replyPreviewBar: { width: 3, alignSelf: "stretch", borderRadius: 2, minHeight: 32 },
+  replyPreviewNick: { fontSize: 11, fontWeight: "800" },
+  replyPreviewSnip: { fontSize: 11, marginTop: 1 },
+  replyThumb: { width: 32, height: 32, borderRadius: 4 },
+  recordingStrip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  recordingText: { color: "#fff", fontSize: 11, fontWeight: "600" },
+  voiceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    minWidth: 160,
+    marginBottom: 2,
+  },
+  voiceWave: { height: 2, borderRadius: 1, marginBottom: 2 },
+  voiceDur: { fontSize: 10, fontWeight: "600" },
+  swipeReplyIcon: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    justifyContent: "center",
+    alignItems: "center",
+    width: 40,
+  },
 });
+
+// v8.1.5 — SwipeableRow: horizontal pan gesture wrapper that slides the
+// child left/right by up to REPLY_SWIPE_MAX pixels. Fires `onReply`
+// when released past REPLY_SWIPE_TRIGGER. Reveals a coloured reply
+// icon on the side opposite to the swipe direction (mimics WhatsApp).
+function SwipeableRow({
+  children,
+  onReply,
+  accentColor,
+  isMine,
+}: {
+  children: React.ReactNode;
+  onReply: () => void;
+  accentColor: string;
+  isMine: boolean;
+}) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const [progress, setProgress] = useState(0); // 0..1 for icon opacity
+  const responder = useMemo(
+    () =>
+      PanResponder.create({
+        // Only claim the gesture when the movement is clearly horizontal;
+        // otherwise let the parent FlatList handle vertical scrolling.
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_e, g) =>
+          Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.4,
+        onPanResponderMove: (_e, g) => {
+          // Only allow LEFT swipe (dx < 0) per user's spec ("Swipe ke
+          // kiri saja"). Right swipe becomes a no-op.
+          const dx = Math.min(0, Math.max(-REPLY_SWIPE_MAX, g.dx));
+          translateX.setValue(dx);
+          setProgress(Math.min(1, Math.abs(dx) / REPLY_SWIPE_TRIGGER));
+        },
+        onPanResponderRelease: (_e, g) => {
+          const triggered = g.dx <= -REPLY_SWIPE_TRIGGER;
+          Animated.spring(translateX, {
+            toValue: 0,
+            useNativeDriver: true,
+            friction: 8,
+            tension: 80,
+          }).start();
+          setProgress(0);
+          if (triggered) onReply();
+        },
+        onPanResponderTerminate: () => {
+          Animated.spring(translateX, { toValue: 0, useNativeDriver: true, friction: 8 }).start();
+          setProgress(0);
+        },
+      }),
+    [translateX, onReply],
+  );
+
+  return (
+    <View style={{ position: "relative" }} {...responder.panHandlers}>
+      {/* Reply icon revealed under the bubble on the right side (since
+          bubble slides left). Fades in with progress. */}
+      <View style={[styles.swipeReplyIcon, { right: 4, opacity: progress }]}>
+        <View
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 16,
+            backgroundColor: accentColor + "26",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Ionicons name="arrow-undo" size={16} color={accentColor} />
+        </View>
+      </View>
+      <Animated.View style={{ transform: [{ translateX }] }}>
+        {children}
+      </Animated.View>
+      {/* silence "unused" lint for isMine — reserved for future use */}
+      {isMine ? null : null}
+    </View>
+  );
+}

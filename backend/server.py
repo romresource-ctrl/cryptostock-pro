@@ -1723,6 +1723,24 @@ CHAT_HISTORY_TTL_HOURS = 16
 # Image data URL (base64) cap: ~700KB string ≈ ~500KB image binary after base64
 # overhead. Anything larger is rejected to protect Mongo document limits.
 CHAT_IMAGE_MAX_CHARS = 750_000
+# v8.1.5 — Audio data URL cap. 60s of AAC/M4A @ 32kbps ≈ ~250KB binary
+# ≈ ~340KB base64. Cap at 500KB to allow variance without abuse.
+CHAT_AUDIO_MAX_CHARS = 500_000
+CHAT_AUDIO_MAX_DURATION_MS = 30_000  # 30 s hard ceiling; client soft-caps at 20 s.
+
+
+class ChatReplyInfo(BaseModel):
+    """Snapshot of the message being replied to. We denormalise the
+    snippet + nickname + optional thumbnail into the reply so that
+    subsequent renders don't need a second Mongo lookup, and so that
+    reply context survives even if the original message is later purged
+    by the 16h TTL sweep."""
+    id: str
+    nickname: str
+    snippet: str = ""          # up to 80 chars of the original text
+    has_image: bool = False    # true if original had an attachment
+    has_audio: bool = False    # true if original was a voice note
+
 
 class ChatMessagePayload(BaseModel):
     text: str = ""
@@ -1730,6 +1748,11 @@ class ChatMessagePayload(BaseModel):
     device_id: str
     # Optional base64 data URL for image attachment (e.g. "data:image/jpeg;base64,...")
     image_data: str | None = None
+    # v8.1.5 — Voice note support.
+    audio_data: str | None = None          # data:audio/*;base64,...
+    audio_duration_ms: int | None = None   # client-reported duration
+    # v8.1.5 — Reply context (WhatsApp-style).
+    reply_to: ChatReplyInfo | None = None
 
 
 class ChatMessage(BaseModel):
@@ -1739,6 +1762,9 @@ class ChatMessage(BaseModel):
     device_id: str
     created_at: str
     image_data: str | None = None
+    audio_data: str | None = None
+    audio_duration_ms: int | None = None
+    reply_to: ChatReplyInfo | None = None
 
 
 async def _is_device_entitled(device_id: str) -> bool:
@@ -1770,11 +1796,13 @@ async def chat_send_message(payload: ChatMessagePayload) -> ChatMessage:
     nickname = (payload.nickname or "").strip()
     device_id = (payload.device_id or "").strip()
     image_data = (payload.image_data or "").strip() or None
+    audio_data = (payload.audio_data or "").strip() or None
+    audio_duration_ms = payload.audio_duration_ms
 
     if not nickname or not device_id:
         raise HTTPException(400, "nickname and device_id are required")
-    if not text and not image_data:
-        raise HTTPException(400, "Message text or image is required")
+    if not text and not image_data and not audio_data:
+        raise HTTPException(400, "Message text, image, or audio is required")
     if len(text) > CHAT_MESSAGE_MAX_LENGTH:
         raise HTTPException(400, f"Message too long (max {CHAT_MESSAGE_MAX_LENGTH})")
     if len(nickname) > 20:
@@ -1787,6 +1815,18 @@ async def chat_send_message(payload: ChatMessagePayload) -> ChatMessage:
                 400,
                 f"Image too large (max ~{CHAT_IMAGE_MAX_CHARS // 1024}KB after base64).",
             )
+    if audio_data is not None:
+        if not audio_data.startswith("data:audio/"):
+            raise HTTPException(400, "audio_data must be a data URL (data:audio/...)")
+        if len(audio_data) > CHAT_AUDIO_MAX_CHARS:
+            raise HTTPException(
+                400,
+                f"Audio too large (max ~{CHAT_AUDIO_MAX_CHARS // 1024}KB after base64).",
+            )
+        if audio_duration_ms is None or audio_duration_ms <= 0:
+            audio_duration_ms = 0
+        if audio_duration_ms > CHAT_AUDIO_MAX_DURATION_MS:
+            raise HTTPException(400, f"Voice note too long (max {CHAT_AUDIO_MAX_DURATION_MS // 1000}s).")
 
     # Entitlement check
     if not await _is_device_entitled(device_id):
@@ -1811,13 +1851,16 @@ async def chat_send_message(payload: ChatMessagePayload) -> ChatMessage:
             pass
 
     now = datetime.now(timezone.utc)
-    msg = {
+    msg: dict[str, Any] = {
         "id": str(uuid.uuid4()),
         "text": text,
         "nickname": nickname[:20],
         "device_id": device_id,
         "created_at": now.isoformat(),
         "image_data": image_data,
+        "audio_data": audio_data,
+        "audio_duration_ms": audio_duration_ms,
+        "reply_to": payload.reply_to.model_dump() if payload.reply_to else None,
     }
     await db.chat_messages.insert_one(dict(msg))
     return ChatMessage(**msg)

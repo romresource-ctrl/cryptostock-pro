@@ -10,7 +10,8 @@
       "permissions": [
         "com.android.vending.BILLING",
         "INTERNET",
-        "ACCESS_NETWORK_STATE"
+        "ACCESS_NETWORK_STATE",
+        "RECORD_AUDIO"
       ],
       "softwareKeyboardLayoutMode": "resize"
     },
@@ -24,7 +25,10 @@
     "icon": "./assets/images/icon.png",
     "ios": {
       "bundleIdentifier": "com.cryptostockapps.aicryptostockpro",
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Record voice notes in the chatroom."
+      }
     },
     "name": "AI Crypstock Pro",
     "newArchEnabled": true,
@@ -57,12 +61,18 @@
             "extraProguardRules": "# --- react-native-iap / Play Billing ---\n-keep class com.android.vending.billing.**\n-keep class com.android.billingclient.api.** { *; }\n-dontwarn com.android.billingclient.api.**\n-keep class com.dooboolab.rniap.** { *; }\n-dontwarn com.dooboolab.rniap.**\n# --- react-native-nitro-modules ---\n-keep class com.margelo.nitro.** { *; }\n-dontwarn com.margelo.nitro.**\n"
           }
         }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Record voice notes in the chatroom."
+        }
       ]
     ],
     "scheme": "aicryptostockpro",
     "slug": "ai-crypto-stock-pro",
     "userInterfaceStyle": "automatic",
-    "version": "8.1.4",
+    "version": "8.1.5",
     "web": {
       "bundler": "metro",
       "favicon": "./assets/images/favicon.png",

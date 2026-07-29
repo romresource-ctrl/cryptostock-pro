@@ -1,0 +1,35 @@
+{
+  "summary": "v8.1.5 chat reply-to + voice notes backend: 24/24 pytest passed in 9.2s (test_iter20_v815_chat_reply_audio.py, run against public URL). All review-request cases pass. VALIDATION: empty text+no image+no audio (also with reply_to only, since reply_to is metadata) => 400 'Message text, image, or audio is required'; audio_data without data URL prefix => 400 'audio_data must be a data URL'; audio_data with image MIME (data:image/...) => 400; audio_duration_ms=30001 (> 30 s hard cap) => 400 'Voice note too long'; audio_duration_ms=30000 accepted at validation layer (uses >, not >=); audio_data > 500_000 chars => 400 'Audio too large'; missing nickname => 400. ENTITLEMENT: valid audio (data:audio/m4a base64 + dur<=30s) without premium => 403; valid reply_to shape ({id,nickname,snippet,has_image,has_audio}) without premium => 403; reply_to.has_audio=true without premium => 403; combined reply_to+audio_data without premium => 403; text-only and text+image legacy payloads still return 403 (backward compat contract preserved). PREMIUM SUCCESS PATH: seeded a TEST_PREMIUM_* device in db.subscriptions (entitled=true, expiry=+30d) and posted a reply-with-voice message; response 200 with the full ChatMessage shape including audio_data (data URL), audio_duration_ms=4200, image_data=null, and nested reply_to snapshot ({id,nickname,snippet,has_image,has_audio}) all populated. GET /api/chat/messages returns the new message with all optional fields present (audio_data, audio_duration_ms, reply_to) and no leaked _id; older messages have those fields as null. Rate limit (3s) also observed on the second seeded POST. REGRESSION: /api/dashboard?market=crypto and market=stock_us both 200 with `assets` list; /api/search?q=BTC returns BTC hit; /api/search?q=AAPL returns full shape {hits,query,disambiguation}; /api/subscription/health 200 with no secret/PII leak (no private_key/client_email/PEM/service_account.json); GET /api/chat/messages 200 with {messages, server_time}. Test data cleaned up via module-scoped fixture teardown (deletes seeded subscriptions + chat_messages). No expo/react-native scope in this iteration (backend-only per request).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter20_v815_chat_reply_audio.py",
+    "/app/test_reports/pytest/iter20.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Validation order in chat_send_message is correct: input/shape/size checks (400) run BEFORE the entitlement check (403), which prevents leaking DB-side rate-limit or Mongo work for malformed requests. Verified by all 400-family tests passing without a premium seed.",
+    "reply_to is denormalised into the child message document (payload.reply_to.model_dump()) at write time, so the reply preview survives even after the referenced parent is TTL-purged at 16h — good design choice, confirmed round-trips through POST->GET.",
+    "audio_duration_ms boundary: server uses strict `>` against CHAT_AUDIO_MAX_DURATION_MS (30_000), so exactly 30000 is accepted. Client soft-caps at 20 s, so the 10 s server headroom is sane. Consider documenting the strict-> in the model comment.",
+    "audio_data size cap (500_000 chars) is enforced with a clear error; matches iter16 image cap pattern (750_000). Good consistency.",
+    "audio_duration_ms of None or <=0 with a valid audio_data is silently normalised to 0 rather than rejected. Non-blocking, but note: 0 duration implies UI must fall back to media metadata for playback progress. Consider a minimum-duration check (e.g. >= 200ms) in a future iteration if the frontend can't derive it from the blob.",
+    "server.py is now ~2146 lines (up from 1780 in iter19) — the split-into-modules carry-over from iter18/19 is more pressing now. Non-blocking for this feature but worth scheduling."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter20_v815_chat_reply_audio.py (new — 24 tests, includes premium-seeded success path via direct Mongo insert with cleanup)"
+  ],
+  "success_rate": {"backend": "100% (24/24)", "frontend": "N/A — backend-only test scope per review request"},
+  "seed_data_creation": "One TEST_PREMIUM_<uuid> device row inserted into db.subscriptions with entitled=true and expiry_time=+30d, plus 2 chat_messages posted by it. Both cleaned up in the pytest module-teardown fixture (delete_many by device_id).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "For v8.1.x chat regression re-runs use /app/backend/tests/test_iter20_v815_chat_reply_audio.py (24 tests, ~10s). It requires EXPO_PUBLIC_BACKEND_URL, MONGO_URL, DB_NAME env vars (falls back to EXPO_BACKEND_URL). Seeds a premium device directly in Mongo via pymongo to hit the success path — skips gracefully if Mongo isn't reachable. Covers: 400-family validation (empty/reply-only/bad-scheme/wrong-MIME/dur>30k/size>500k/missing-nickname), 403-family entitlement (text/image/audio/reply/combo — 6 combos), backward compatibility (text-only + text+image legacy shapes), premium success path (POST returns full ChatMessage shape with audio_data + audio_duration_ms + reply_to; GET returns those fields on every message including nulls, no _id leak), and regression (/api/dashboard crypto+stock_us, /api/search BTC+AAPL shape, /api/subscription/health no-PII-leak, GET /api/chat/messages). Note: server uses strict > for the 30s duration cap, so 30000 is valid; adjust boundary tests accordingly. Note: reply_to alone (no text/image/audio) is treated as no content and returns 400 — this may or may not be intended (main agent to confirm with product spec if a reply MUST have body content).",
+  "rca_of_issue": "N/A — no defects. Feature contract fully matches the review request."
+}
