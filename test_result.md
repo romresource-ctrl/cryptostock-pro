@@ -202,6 +202,59 @@ test_plan:
 agent_communication:
   - agent: "main"
     message: |
+      v8.1.5 — Chatroom reply + voice notes (user-requested feature).
+
+      NEW SINCE v8.1.4:
+      1. WhatsApp-style REPLY on chat bubbles:
+         - Swipe LEFT past 60px on any bubble → auto-focus composer +
+           show reply preview strip above input (coloured bar, nickname,
+           snippet, or media hint 📷/🎤, ✕ to cancel).
+         - Outgoing message carries `reply_to` snapshot; recipients see
+           inline reply block inside the bubble with tap target for
+           future scroll-to-original.
+      2. VOICE NOTES:
+         - Press-and-hold mic button (replaces send arrow when composer
+           is empty) → recording starts + red live strip with timer +
+           "slide ← to cancel" hint.
+         - Slide LEFT past 60px while recording → mic button turns red,
+           on release the recording is discarded.
+         - Release without cancel → uploads to backend as base64 M4A
+           data URL (client soft-cap 20s; backend hard-cap 30s / 500KB).
+         - Received voice bubbles show ▶️/⏸ button + waveform bar +
+           duration; single-active playback (starting a new one auto-
+           stops the previous).
+      3. Backend: ChatMessage + ChatMessagePayload extended with
+         `audio_data`, `audio_duration_ms`, `reply_to` (nested
+         ChatReplyInfo model). Validation: mime prefix, char cap,
+         duration cap. All fields optional so old clients keep working.
+      4. Permissions: RECORD_AUDIO added to android.permissions;
+         NSMicrophoneUsageDescription added to iOS infoPlist. expo-audio
+         plugin configured with microphone permission string.
+      5. Files edited (chat lock lifted per explicit user request):
+         - server.py (chat models + POST validation)
+         - ChatSheet.tsx (reply gesture + voice recorder/player + UI)
+         - api.ts (no changes; direct fetch used in ChatSheet)
+         - app.json (permissions + plugin config)
+         - package.json (expo-audio@1.1.1 installed)
+
+      NOT CHANGED (still locked):
+      - VipModal, chat.tsx (full-screen chat), AuthContext, subscription*.
+
+      TESTED (24/24 PASSED via testing_agent iter20):
+      - Reply schema round-trip (POST + GET both preserve reply_to).
+      - Audio data URL validation, duration cap, size cap.
+      - Premium gating (403 without entitlement) still enforced.
+      - Premium success path via seeded test entitlement.
+      - Regression: /api/dashboard, /api/search, /api/subscription/health.
+
+      NOT TESTED (native-only):
+      - Actual voice recording — requires microphone hardware.
+      - Native soft keyboard behavior after swipe-to-reply.
+      - Playback of received voice notes on Android.
+      → must be validated on real Android build.
+
+  - agent: "main"
+    message: |
       v8.1.3 — Regional filter chips + world stocks expansion (final iter).
 
       NEW SINCE PREVIOUS TEST:
