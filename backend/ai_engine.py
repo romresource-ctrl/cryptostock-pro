@@ -32,33 +32,45 @@ MODELS = [
 ]
 
 
-# v8.1.6 — Simplified prompts (v2.1.8-style). Shorter output, focused
-# on technicals + 1-line news factor, no macro/political jargon.
+# v8.1.7 — Hybrid prompt: informatif seperti v2.1.8 + rich macro seperti
+# v8.1.5, tapi tetap konsisten karena angka entry/SL/TP dari formula
+# deterministik. AI hanya menyumbang: action vote, confidence, insight
+# analisa (technical + macro + news + risk), dan entry_bias.
 _LANG_SYSTEM = {
     "id": (
-        "Anda adalah analis trading multi-aset yang ringkas dan tegas. "
-        "Fokus pada data teknikal yang diberikan. Bila ada berita penting "
-        "yang Anda tahu, sebutkan 1 poin saja. Hindari jargon makro. "
-        "Balas dalam format JSON yang valid SAJA (tanpa markdown / prosa). "
-        "Bahasa: Indonesia."
+        "Anda adalah analis trading multi-aset senior (crypto, saham global, "
+        "forex, komoditas, emas/perak). Berikan analisa yang ringkas namun "
+        "kaya insight, menggabungkan: (1) data teknikal yang diberikan, "
+        "(2) konteks makro/berita/kebijakan yang relevan yang Anda ketahui, "
+        "(3) sentimen pasar terkini. Fokus pada faktor yang benar-benar "
+        "menggerakkan harga aset ini — bukan copy-paste generic. Balas hanya "
+        "dalam format JSON valid (tanpa markdown/prosa tambahan). Bahasa: "
+        "Indonesia. Panjang summary 3-5 kalimat."
     ),
     "en": (
-        "You are a concise, decisive multi-asset trading analyst. "
-        "Focus on the technical data provided. If a key news item is "
-        "relevant, mention just one. Avoid macro jargon. "
-        "Respond with VALID JSON ONLY (no markdown / prose). "
-        "Language: English."
+        "You are a senior multi-asset trading analyst (crypto, global equities, "
+        "forex, commodities, gold/silver). Deliver a concise but insight-rich "
+        "analysis combining: (1) the technical data given, (2) relevant macro/"
+        "news/policy context you are aware of, (3) current market sentiment. "
+        "Focus on factors that are actually moving THIS asset — no generic "
+        "boilerplate. Respond with VALID JSON ONLY (no markdown / extra prose). "
+        "Language: English. Summary length: 3-5 sentences."
     ),
     "ru": (
-        "Вы краткий, решительный аналитик по мульти-активам. Опирайтесь на "
-        "предоставленные технические данные. Если важна одна новость — "
-        "укажите только её. Избегайте макро-жаргона. "
-        "Отвечайте ТОЛЬКО валидным JSON (без markdown / прозы). Язык: русский."
+        "Вы старший мульти-активный трейдинг-аналитик (криптовалюты, мировые "
+        "акции, форекс, товары, золото/серебро). Дайте краткий, но насыщенный "
+        "инсайтом анализ, объединяющий: (1) предоставленные технические данные, "
+        "(2) актуальный макро/новостной/политический контекст, который вы знаете, "
+        "(3) текущий рыночный сентимент. Сосредоточьтесь на факторах, реально "
+        "движущих ИМЕННО этот актив — без общих клише. Отвечайте ТОЛЬКО валидным "
+        "JSON (без markdown/прозы). Язык: русский. Резюме: 3-5 предложений."
     ),
     "cn": (
-        "你是一位简洁、果断的多资产交易分析师。请基于所给的技术数据分析，"
-        "如相关可提及一条重要新闻。避免宏观术语。仅返回有效 JSON"
-        "（不含 markdown / 说明文字）。语言：中文。"
+        "你是一位资深多资产交易分析师（加密货币、全球股票、外汇、商品、"
+        "黄金/白银）。请给出简明但富含洞察的分析，结合：(1) 所提供的技术"
+        "数据，(2) 你所了解的相关宏观/新闻/政策背景，(3) 当前市场情绪。"
+        "聚焦于真正推动该资产的因素——避免泛泛而谈。仅返回有效 JSON"
+        "（不含 markdown / 说明文字）。语言：中文。摘要长度：3-5 句。"
     ),
 }
 
@@ -70,13 +82,15 @@ JSON_SCHEMA = """{
   "action": "BUY" | "SELL" | "HOLD",
   "label": "LONG" | "SHORT" | "BUY" | "SELL" | "HOLD",
   "confidence": <int 0-100>,
-  "summary": "<2-3 kalimat ringkas — teknikal + 1 poin berita jika ada>",
+  "summary": "<3-5 kalimat: gabungkan sinyal teknikal + konteks makro/berita + sentimen — kenapa aset ini bergerak sekarang>",
   "entry": <float>,
   "stop_loss": <float>,
   "take_profit": <float>,
   "entry_bias": "deep" | "moderate" | "aggressive",
-  "timeframe_view": "<pandangan singkat 1 kalimat>",
-  "risk_factors": ["<risiko 1>", "<risiko 2>"]
+  "timeframe_view": "<1-2 kalimat: pandangan untuk timeframe ini — trend, momentum, level penting>",
+  "macro_context": "<1-2 kalimat: kondisi makro/kebijakan/sektor terkini yang mempengaruhi aset ini>",
+  "news_factors": ["<berita/katalis 1 yang relevan>", "<katalis 2>", "<katalis 3>"],
+  "risk_factors": ["<risiko/pemberat 1>", "<risiko 2>", "<risiko 3>"]
 }"""
 
 
@@ -287,6 +301,7 @@ def _aggregate(results: list[dict[str, Any]], fallback_ta: dict[str, Any], lang:
     risks_all: list[str] = []
     summaries: list[str] = []
     timeframe_views: list[str] = []
+    macro_contexts: list[str] = []
 
     for d in valid:
         a = str(d.get("action", "HOLD")).upper()
@@ -312,6 +327,8 @@ def _aggregate(results: list[dict[str, Any]], fallback_ta: dict[str, Any], lang:
             summaries.append(str(d["summary"]))
         if d.get("timeframe_view"):
             timeframe_views.append(str(d["timeframe_view"]))
+        if d.get("macro_context"):
+            macro_contexts.append(str(d["macro_context"]))
 
     action = max(action_votes, key=lambda k: action_votes[k])
     consensus_bias = max(bias_votes, key=lambda k: bias_votes[k])
@@ -380,6 +397,7 @@ def _aggregate(results: list[dict[str, Any]], fallback_ta: dict[str, Any], lang:
         "take_profit": tp_out,
         "entry_bias": consensus_bias,
         "timeframe_view": timeframe_views[0] if timeframe_views else "",
+        "macro_context": macro_contexts[0] if macro_contexts else "",
         "news_factors": news_dedup[:6],
         "risk_factors": risks_dedup[:5],
         "votes": action_votes,

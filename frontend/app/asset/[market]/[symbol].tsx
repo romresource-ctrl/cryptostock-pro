@@ -682,6 +682,12 @@ export default function AssetDetail() {
                     📊 {translatedTfView ?? analysis.consensus.timeframe_view}
                   </Text>
                 ) : null}
+                {/* v8.1.7 — Macro/policy context bullet from AI ensemble */}
+                {analysis.consensus.macro_context ? (
+                  <Text style={[styles.consensusTfView, { color: colors.textSecondary, marginTop: 4 }]}>
+                    🌐 {analysis.consensus.macro_context}
+                  </Text>
+                ) : null}
               </View>
 
               {/* Per-model */}

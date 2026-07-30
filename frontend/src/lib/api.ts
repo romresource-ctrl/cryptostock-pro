@@ -148,9 +148,13 @@ export interface AnalyzeResponse {
     stop_loss: number | null;
     take_profit: number | null;
     timeframe_view: string;
+    // v8.1.7 — Additional AI insight
+    macro_context?: string;
+    entry_bias?: "deep" | "moderate" | "aggressive";
     news_factors: string[];
     risk_factors: string[];
     votes?: Record<string, number>;
+    bias_votes?: Record<string, number>;
   };
   models: ModelResult[];
   news_used: NewsItem[];
