@@ -60,6 +60,121 @@ def _macd(closes: list[float]) -> tuple[float, float, float] | None:
     return macd, sig, hist
 
 
+# v8.1.6 — Swing-based deep entry / take profit / stop loss.
+# Detects local peaks and valleys over a fractal window; positions
+# entries below the average of recent valleys (LONG) or above the
+# average of recent peaks (SHORT) so users avoid catching a falling
+# knife. TP is anchored on the mean of the last 3 opposite-side swings.
+def _find_swings(
+    highs: list[float],
+    lows: list[float],
+    window: int = 10,
+) -> tuple[list[float], list[float]]:
+    """Return (peaks, valleys) as lists of prices in chronological order.
+
+    A peak at index i requires `high[i]` to be the maximum within
+    [i-window, i+window]; symmetric for valleys. The `window` param
+    controls swing significance — 10 detects mid-swings (matches user's
+    v8.1.6 choice); 5 gives micro-swings; 20 gives major swings.
+    """
+    n = len(highs)
+    if n < window * 2 + 1:
+        return [], []
+    peaks: list[float] = []
+    valleys: list[float] = []
+    for i in range(window, n - window):
+        h = highs[i]
+        lo = lows[i]
+        left_high = max(highs[i - window:i])
+        right_high = max(highs[i + 1:i + 1 + window])
+        if h > left_high and h > right_high:
+            peaks.append(h)
+        left_low = min(lows[i - window:i])
+        right_low = min(lows[i + 1:i + 1 + window])
+        if lo < left_low and lo < right_low:
+            valleys.append(lo)
+    return peaks, valleys
+
+
+def _compute_deep_levels(
+    action: str,
+    price: float,
+    atr: float,
+    peaks: list[float],
+    valleys: list[float],
+) -> dict[str, float]:
+    """Return entry/SL/TP using the v8.1.6 deep-entry formula.
+
+    Per user spec (2026-06-29):
+      - Default entry (LONG)  = lowest of last 5 valleys − ATR × 0.5
+        so we wait for capitulation below recent structure.
+      - Default entry (SHORT) = highest of last 5 peaks   + ATR × 0.5
+      - TP LONG               = mean(last 3 peaks)
+      - TP SHORT              = mean(last 3 valleys)
+      - SL LONG               = lowest_valley − ATR × 1.5 (0.5 buffer
+        already applied to entry, plus 1.0 more for room to breathe)
+      - SL SHORT              = highest_peak  + ATR × 1.5
+      Note user asked for "SL 0.5 ATR tighter"; that is applied
+      relative to the ENTRY, giving SL ≈ entry − ATR × 0.5 for LONG.
+    """
+    recent_peaks = peaks[-5:] if len(peaks) >= 5 else peaks
+    recent_valleys = valleys[-5:] if len(valleys) >= 5 else valleys
+    last3_peaks = recent_peaks[-3:] if len(recent_peaks) >= 3 else recent_peaks
+    last3_valleys = recent_valleys[-3:] if len(recent_valleys) >= 3 else recent_valleys
+
+    def _safe_avg(xs: list[float], fallback: float) -> float:
+        return (sum(xs) / len(xs)) if xs else fallback
+
+    avg_peak = _safe_avg(last3_peaks, price * 1.05)
+    avg_valley = _safe_avg(last3_valleys, price * 0.95)
+    lowest_valley = min(recent_valleys) if recent_valleys else price * 0.93
+    highest_peak = max(recent_peaks) if recent_peaks else price * 1.07
+
+    if action == "BUY":
+        # Deep default: below the lowest recent valley by 0.5 ATR.
+        entry_deep = lowest_valley - atr * 0.5
+        entry_moderate = avg_valley
+        entry_aggressive = min(price, (price + avg_valley) / 2.0)
+        # TP anchored on average of last 3 peaks (same for all bias).
+        take_profit = max(avg_peak, entry_deep + atr * 1.0)
+        # SL: 0.5 ATR below THE CHOSEN entry level → same risk-per-trade
+        # regardless of which cycle the user takes.
+        sl_deep = entry_deep - atr * 0.5
+        sl_moderate = entry_moderate - atr * 0.5
+        sl_aggressive = entry_aggressive - atr * 0.5
+        # `stop_loss` (top-level) tracks the deep default so the primary
+        # card matches the primary entry.
+        stop_loss = sl_deep
+    elif action == "SELL":
+        entry_deep = highest_peak + atr * 0.5
+        entry_moderate = avg_peak
+        entry_aggressive = max(price, (price + avg_peak) / 2.0)
+        take_profit = min(avg_valley, entry_deep - atr * 1.0)
+        sl_deep = entry_deep + atr * 0.5
+        sl_moderate = entry_moderate + atr * 0.5
+        sl_aggressive = entry_aggressive + atr * 0.5
+        stop_loss = sl_deep
+    else:  # HOLD
+        entry_deep = price
+        entry_moderate = price
+        entry_aggressive = price
+        take_profit = price + atr * 1.0
+        stop_loss = price - atr * 1.0
+        sl_deep = sl_moderate = sl_aggressive = stop_loss
+
+    return {
+        "entry": entry_deep,
+        "entry_moderate": entry_moderate,
+        "entry_aggressive": entry_aggressive,
+        "stop_loss": stop_loss,
+        "stop_loss_moderate": sl_moderate,
+        "stop_loss_aggressive": sl_aggressive,
+        "take_profit": take_profit,
+        "avg_peak": avg_peak,
+        "avg_valley": avg_valley,
+    }
+
+
 def compute_signal(candles: list[dict[str, Any]], market: str) -> dict[str, Any]:
     """Return signal dict: action, confidence, indicators, entry/sl/tp suggestions.
 
@@ -160,18 +275,22 @@ def compute_signal(candles: list[dict[str, Any]], market: str) -> dict[str, Any]
     else:
         atr = price * 0.02
 
-    if action == "BUY":
-        entry = price
-        stop_loss = price - atr * 1.5
-        take_profit = price + atr * 2.5
-    elif action == "SELL":
-        entry = price
-        stop_loss = price + atr * 1.5
-        take_profit = price - atr * 2.5
-    else:
-        entry = price
-        stop_loss = price - atr * 1.0
-        take_profit = price + atr * 1.0
+    # v8.1.6 — Deep-entry formula (swing-based). Detect peaks/valleys
+    # from the full candle history (window=10 mid-swings) and place
+    # entry BELOW recent structure so users don't buy tops or short
+    # bottoms. Falls back to ATR-based default if not enough swings.
+    peaks, valleys = _find_swings(highs, lows, window=10)
+    levels = _compute_deep_levels(action, price, atr, peaks, valleys)
+    entry = levels["entry"]
+    stop_loss = levels["stop_loss"]
+    take_profit = levels["take_profit"]
+
+    # v8.1.6 — Also pre-compute levels for both BUY and SELL sides so
+    # the AI ensemble can pick either direction with the same swing
+    # structure — even if the AI action disagrees with the technical
+    # rule vote.
+    buy_levels = _compute_deep_levels("BUY", price, atr, peaks, valleys)
+    sell_levels = _compute_deep_levels("SELL", price, atr, peaks, valleys)
 
     return {
         "action": action,
@@ -184,9 +303,24 @@ def compute_signal(candles: list[dict[str, Any]], market: str) -> dict[str, Any]
             "macd_hist": round(macd[2], 6) if macd else None,
             "price": round(price, 8),
             "atr": round(atr, 6),
+            # v8.1.6 — swing metrics exposed so the frontend can render
+            # a full "Entry Levels" card (deep / moderate / aggressive).
+            "avg_peak": round(levels["avg_peak"], 8),
+            "avg_valley": round(levels["avg_valley"], 8),
+            "peaks_found": len(peaks),
+            "valleys_found": len(valleys),
         },
         "reasons": reasons,
         "entry": round(entry, 8),
+        "entry_moderate": round(levels["entry_moderate"], 8),
+        "entry_aggressive": round(levels["entry_aggressive"], 8),
         "stop_loss": round(stop_loss, 8),
         "take_profit": round(take_profit, 8),
+        # Full per-action level map, consumed by ai_engine._aggregate to
+        # place AI-consensus entry/SL/TP with the same deterministic
+        # formula the technical card uses.
+        "_all_levels": {
+            "BUY":  {k: round(v, 8) for k, v in buy_levels.items()},
+            "SELL": {k: round(v, 8) for k, v in sell_levels.items()},
+        },
     }

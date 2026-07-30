@@ -1,0 +1,46 @@
+{
+  "summary": "v8.1.6 deep-entry / swing-based entry-SL-TP formula backend regression: 16/17 pytest passed (94.1%) against the public URL. All formula math validated on live ETH/BTC data: BUY entry_deep sits BELOW current price (lowest_valley − ATR*0.5), SELL entry_deep sits ABOVE (highest_peak + ATR*0.5) — user's falling-knife complaint resolved. TP_LONG matches indicators.avg_peak, TP_SHORT matches indicators.avg_valley (both within 1.5*ATR tolerance to accommodate the 1*ATR floor cap in _compute_deep_levels). SL is 0.5*ATR from the chosen entry on both sides (verified ratio 0.3-1.2*ATR). Technical block on /api/asset/{market}/{symbol}/analyze correctly exposes entry_moderate, entry_aggressive, _all_levels (with full BUY/SELL sub-maps including entry/entry_moderate/entry_aggressive/stop_loss/stop_loss_moderate/stop_loss_aggressive/take_profit), and indicators.avg_peak / avg_valley / peaks_found / valleys_found. AI consensus block returns entry_bias ∈ {deep, moderate, aggressive} plus bias_votes {deep:x, moderate:y, aggressive:z}. consensus.summary length is now short (~226 chars on BTC diag, well under the 900-char guard) — v2.1.8-style simplified prompt is landing. Non-crypto path (stock_us AAPL) also produces the new technical fields and a valid entry_bias. Regression on /api/search?q=BTC (hits with entry/SL/TP populated), /api/dashboard/batch?markets=crypto,stock_us (both markets return non-empty assets under body.markets.{crypto,stock_us}), /api/chat/messages validation (422 on missing nickname/device_id — FastAPI Pydantic; 400/422/403 all acceptable rejections), and /api/subscription/health (200, no PII leak) all pass. DIAG snapshot: BTC 1h price=64051.19 atr=422.70 peaks_found=2 valleys_found=2 avg_peak=65244.71 avg_valley=62900.93 action=HOLD (technical) → HOLD (consensus, bias=moderate, votes={deep:0,moderate:3,aggressive:0}). ONE FAILURE — the DashboardResponse.assets rows (AssetSignal Pydantic model at server.py:355-382) do NOT surface entry_moderate / entry_aggressive fields; only the legacy entry/stop_loss/take_profit are present. The review request explicitly requires both new fields on each dashboard asset (top-50 crypto payload). The technical computation IS producing them (verified in analyze response and _all_levels), so this is purely a model-schema wiring gap in server.py — main agent needs to add the two Optional[float] fields to AssetSignal and copy them in _build_dashboard_response (see line ~571 where entry=sig['entry'] is set).",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/dashboard?market=crypto&timeframe=1h",
+        "issue": "AssetSignal Pydantic model (server.py:355-382) is missing entry_moderate and entry_aggressive fields. The v8.1.6 review request explicitly requires each asset row on the dashboard to expose all three tiers (entry/entry_moderate/entry_aggressive) plus stop_loss/take_profit. Computation is available in indicators.compute_signal (fields are on sig['entry_moderate'] & sig['entry_aggressive']) — only the response mapping is missing. Applies to both /dashboard and /dashboard/batch since batch reuses AssetSignal.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter21_v816_deep_entry_formula.py",
+    "/app/test_reports/pytest/iter21.xml"
+  ],
+  "action_items": [
+    "server.py — Add `entry_moderate: float | None = None` and `entry_aggressive: float | None = None` (plus optionally stop_loss_moderate/stop_loss_aggressive) to the AssetSignal Pydantic model at server.py:355-382. Then in _build_dashboard_response (~line 571 where AssetSignal fields are populated from `sig`), copy sig['entry_moderate'] and sig['entry_aggressive'] into the response. This restores contract parity with the /analyze technical block.",
+    "Optional: also expose `_all_levels` (or a trimmed {BUY,SELL} view) on AssetSignal so the frontend can render a full 3-tier card without a second /analyze round-trip. Currently the frontend must call /analyze per-asset to get all six levels.",
+    "Nit: consensus.summary length target is met on the diagnostic run (~226 chars). Consider adding a server-side cap (~500 chars, truncated with ellipsis) as a hard guardrail in case a future model regresses to verbose output."
+  ],
+  "critical_code_review_comments": [
+    "indicators._find_swings uses a strict left-and-right fractal comparison over `window=10` — this is O(n*window), fine for the typical 200-candle history. Edge case: when n < window*2+1 it returns empty lists, and _compute_deep_levels gracefully falls back to price*0.95 / price*1.07. Verified on live data (peaks_found=2, valleys_found=2 on 1h BTC — not thin) so fallback wasn't exercised but code path is correct.",
+    "indicators._compute_deep_levels: the docstring says 'SL 0.5 ATR from chosen entry' but the primary sl_deep = entry_deep - atr*0.5 (BUY) / +atr*0.5 (SELL). That matches the 0.5-ATR tightness spec. However, the comment on line 114-117 confusingly mentions 'ATR × 1.5' — the code implements 0.5 correctly, only the doc is stale. Non-blocking.",
+    "indicators._compute_deep_levels 'take_profit = max(avg_peak, entry_deep + atr*1.0)' (BUY): the 1*ATR floor means TP is guaranteed to be at least entry+ATR even if avg_peak is very close to the deep entry. Sanity-checked; math is sound and prevents degenerate 1:0 R:R. Same story for SELL with min().",
+    "ai_engine._aggregate correctly falls back to 'deep' bias when a model returns an unknown entry_bias value or omits it — good defensive default (safest tier).",
+    "ai_engine deterministic level pick: consensus_bias maps entry_bias to entry/stop_loss keys in the pre-computed side dict, so the AI never invents its own entry price — it can only pick from the three deterministic tiers. This is the correct architecture per the review request ('AI ensemble may sometimes return HOLD ... entry stays at price (fallback path). This is expected'). Verified: consensus.action=HOLD on BTC → entry_out defaulted to fallback_ta.entry (64051.2 = price), matching spec.",
+    "server.py is now 2147 lines — split-into-modules recommendation from iter20 carries over. Non-blocking for this iteration but should be scheduled.",
+    "AssetSignal model wiring gap (see backend_issues.critical). The technical layer computes the fields correctly; only the response-model schema needs updating."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter21_v816_deep_entry_formula.py (new — 17 tests: dashboard shape + batch nesting, technical/consensus shape, formula math for BUY entry<price / SELL entry>price / TP≈avg_peak-or-avg_valley / SL≈0.5*ATR, AAPL non-crypto regression, search/chat/subscription regression, diag warmup)"
+  ],
+  "success_rate": {"backend": "94.1% (16/17)", "frontend": "N/A — backend-only test scope per request"},
+  "seed_data_creation": "None. All tests use live public endpoints; no DB inserts.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Test file: /app/backend/tests/test_iter21_v816_deep_entry_formula.py (17 tests, ~65s). Uses EXPO_PUBLIC_BACKEND_URL. AI calls in ~4 fixtures (BTC + ETH + AAPL analyze) are ~15-30s each; total suite is dominated by these. Note: /api/dashboard/batch nests markets under body['markets'][market], not body[market] directly. /api/chat/messages now returns 422 (FastAPI Pydantic) when required fields (nickname, device_id) are missing — earlier iterations reported 400; tests accept both. Formula tolerances used: BUY entry allowed to sit up to 0.05*ATR above price (fallback path safety), TP tolerance is 1.5*ATR from avg_peak/avg_valley (to accommodate the ATR floor cap in _compute_deep_levels), SL/ATR ratio window 0.3-1.2. If the main agent adds entry_moderate/entry_aggressive to AssetSignal, the test test_dashboard_crypto_exposes_new_moderate_aggressive_fields will start passing and reach 17/17.",
+  "rca_of_issue": "DASHBOARD MISSING NEW FIELDS — Root cause: In server.py the AssetSignal Pydantic response model was not updated when compute_signal in indicators.py started returning entry_moderate/entry_aggressive. Pydantic silently drops unknown fields at serialisation, so the two new numbers are computed but never make it into the /dashboard JSON payload. Reproduction: `curl 'https://cryptostock-pro.preview.emergentagent.com/api/dashboard?market=crypto&timeframe=1h' | jq '.assets[0] | keys'` — output does not contain 'entry_moderate' or 'entry_aggressive'. Mitigation (main agent): (1) Add to AssetSignal: `entry_moderate: float | None = None`, `entry_aggressive: float | None = None`, and optionally `stop_loss_moderate` / `stop_loss_aggressive` for symmetry. (2) In the AssetSignal construction inside _build_dashboard_response (server.py ~line 571 where entry=sig['entry'] is set), also copy `entry_moderate=sig.get('entry_moderate')` and `entry_aggressive=sig.get('entry_aggressive')`. (3) Re-run pytest — the failing test should flip to green with no other changes needed."
+}

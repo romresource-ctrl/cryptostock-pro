@@ -32,38 +32,33 @@ MODELS = [
 ]
 
 
-# Language-specific system prompts. Frontend passes `?lang=en|id|ru|cn`
-# through to the analyze endpoint; anything unknown falls back to English.
+# v8.1.6 — Simplified prompts (v2.1.8-style). Shorter output, focused
+# on technicals + 1-line news factor, no macro/political jargon.
 _LANG_SYSTEM = {
     "id": (
-        "Anda adalah analis trading senior multi-aset (crypto, saham global, "
-        "forex, komoditas, emas/perak). Berikan analisa singkat, tajam, "
-        "berbasis data teknikal yang diberikan, DAN konteks makro/berita/"
-        "politik/ekonomi terkini yang Anda ketahui. Selalu balas dalam format "
-        "JSON yang valid SAJA, tanpa markdown, tanpa teks lain. "
-        "Bahasa jawaban: Bahasa Indonesia."
+        "Anda adalah analis trading multi-aset yang ringkas dan tegas. "
+        "Fokus pada data teknikal yang diberikan. Bila ada berita penting "
+        "yang Anda tahu, sebutkan 1 poin saja. Hindari jargon makro. "
+        "Balas dalam format JSON yang valid SAJA (tanpa markdown / prosa). "
+        "Bahasa: Indonesia."
     ),
     "en": (
-        "You are a senior multi-asset trading analyst (crypto, global equities, "
-        "forex, commodities, gold/silver). Provide a short, sharp analysis "
-        "grounded in the technical data supplied AND the latest macro / news / "
-        "political / economic context you are aware of. Always respond with "
-        "VALID JSON ONLY — no markdown, no extra prose. "
-        "Response language: English."
+        "You are a concise, decisive multi-asset trading analyst. "
+        "Focus on the technical data provided. If a key news item is "
+        "relevant, mention just one. Avoid macro jargon. "
+        "Respond with VALID JSON ONLY (no markdown / prose). "
+        "Language: English."
     ),
     "ru": (
-        "Вы старший мульти-активный трейдинг-аналитик (криптовалюты, мировые "
-        "акции, форекс, товары, золото/серебро). Дайте краткий, чёткий анализ, "
-        "основанный на предоставленных технических данных и на актуальном "
-        "макро/новостном/политическом/экономическом контексте, который вы "
-        "знаете. Всегда отвечайте ТОЛЬКО валидным JSON — без markdown, без "
-        "дополнительного текста. Язык ответа: русский."
+        "Вы краткий, решительный аналитик по мульти-активам. Опирайтесь на "
+        "предоставленные технические данные. Если важна одна новость — "
+        "укажите только её. Избегайте макро-жаргона. "
+        "Отвечайте ТОЛЬКО валидным JSON (без markdown / прозы). Язык: русский."
     ),
     "cn": (
-        "你是一位资深多资产交易分析师（加密货币、全球股票、外汇、商品、"
-        "黄金/白银）。请基于所提供的技术数据以及你所了解的最新宏观/新闻/"
-        "政治/经济背景，给出简明、犀利的分析。仅以有效的 JSON 格式回复，"
-        "不要 markdown，不要额外文字。回复语言：中文。"
+        "你是一位简洁、果断的多资产交易分析师。请基于所给的技术数据分析，"
+        "如相关可提及一条重要新闻。避免宏观术语。仅返回有效 JSON"
+        "（不含 markdown / 说明文字）。语言：中文。"
     ),
 }
 
@@ -75,12 +70,12 @@ JSON_SCHEMA = """{
   "action": "BUY" | "SELL" | "HOLD",
   "label": "LONG" | "SHORT" | "BUY" | "SELL" | "HOLD",
   "confidence": <int 0-100>,
-  "summary": "<2-3 kalimat ringkas alasan utama>",
+  "summary": "<2-3 kalimat ringkas — teknikal + 1 poin berita jika ada>",
   "entry": <float>,
   "stop_loss": <float>,
   "take_profit": <float>,
-  "timeframe_view": "<pandangan singkat untuk timeframe ini>",
-  "news_factors": ["<faktor berita/makro 1>", "<faktor 2>", "<faktor 3>"],
+  "entry_bias": "deep" | "moderate" | "aggressive",
+  "timeframe_view": "<pandangan singkat 1 kalimat>",
   "risk_factors": ["<risiko 1>", "<risiko 2>"]
 }"""
 
@@ -285,10 +280,9 @@ def _aggregate(results: list[dict[str, Any]], fallback_ta: dict[str, Any], lang:
 
     # Vote for action
     action_votes: dict[str, int] = {"BUY": 0, "SELL": 0, "HOLD": 0}
+    # v8.1.6 — Vote for entry bias level (deep = safest, aggressive = closest to price).
+    bias_votes: dict[str, int] = {"deep": 0, "moderate": 0, "aggressive": 0}
     confidences: list[int] = []
-    entries: list[float] = []
-    sls: list[float] = []
-    tps: list[float] = []
     news_all: list[str] = []
     risks_all: list[str] = []
     summaries: list[str] = []
@@ -303,10 +297,11 @@ def _aggregate(results: list[dict[str, Any]], fallback_ta: dict[str, Any], lang:
             confidences.append(int(d.get("confidence") or 0))
         except Exception:
             pass
-        for key, bucket in (("entry", entries), ("stop_loss", sls), ("take_profit", tps)):
-            v = d.get(key)
-            if isinstance(v, (int, float)):
-                bucket.append(float(v))
+        # Bias vote — anything unknown defaults to "deep" (safest).
+        bias = str(d.get("entry_bias") or "deep").lower()
+        if bias not in bias_votes:
+            bias = "deep"
+        bias_votes[bias] += 1
         nf = d.get("news_factors") or []
         if isinstance(nf, list):
             news_all.extend([str(x) for x in nf][:5])
@@ -319,6 +314,7 @@ def _aggregate(results: list[dict[str, Any]], fallback_ta: dict[str, Any], lang:
             timeframe_views.append(str(d["timeframe_view"]))
 
     action = max(action_votes, key=lambda k: action_votes[k])
+    consensus_bias = max(bias_votes, key=lambda k: bias_votes[k])
     # Confidence boosted by consensus
     base_conf = round(sum(confidences) / len(confidences)) if confidences else 60
     consensus_ratio = action_votes[action] / max(1, len(valid))
@@ -333,8 +329,30 @@ def _aggregate(results: list[dict[str, Any]], fallback_ta: dict[str, Any], lang:
     else:
         label = "HOLD"
 
-    def _avg(xs: list[float]) -> float | None:
-        return round(sum(xs) / len(xs), 8) if xs else None
+    # v8.1.6 — Deterministic entry/SL/TP from pre-computed level map.
+    # If AI picked BUY, use fallback_ta._all_levels['BUY']; SELL likewise.
+    # HOLD uses the technical fallback (no strong bias either way).
+    all_levels = fallback_ta.get("_all_levels") or {}
+    if action in ("BUY", "SELL") and all_levels.get(action):
+        side = all_levels[action]
+        # Map bias → key in side dict.
+        entry_key = {
+            "deep": "entry",
+            "moderate": "entry_moderate",
+            "aggressive": "entry_aggressive",
+        }[consensus_bias]
+        sl_key = {
+            "deep": "stop_loss",
+            "moderate": "stop_loss_moderate",
+            "aggressive": "stop_loss_aggressive",
+        }[consensus_bias]
+        entry_out = side.get(entry_key, side.get("entry"))
+        sl_out = side.get(sl_key, side.get("stop_loss"))
+        tp_out = side.get("take_profit")
+    else:
+        entry_out = fallback_ta.get("entry")
+        sl_out = fallback_ta.get("stop_loss")
+        tp_out = fallback_ta.get("take_profit")
 
     # Dedupe news/risks
     seen: set[str] = set()
@@ -357,13 +375,15 @@ def _aggregate(results: list[dict[str, Any]], fallback_ta: dict[str, Any], lang:
         "label": label,
         "confidence": int(final_conf),
         "summary": summaries[0] if summaries else strings["consensus"],
-        "entry": _avg(entries) or fallback_ta.get("entry"),
-        "stop_loss": _avg(sls) or fallback_ta.get("stop_loss"),
-        "take_profit": _avg(tps) or fallback_ta.get("take_profit"),
+        "entry": entry_out,
+        "stop_loss": sl_out,
+        "take_profit": tp_out,
+        "entry_bias": consensus_bias,
         "timeframe_view": timeframe_views[0] if timeframe_views else "",
         "news_factors": news_dedup[:6],
         "risk_factors": risks_dedup[:5],
         "votes": action_votes,
+        "bias_votes": bias_votes,
     }
 
 
