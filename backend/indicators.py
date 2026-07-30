@@ -131,8 +131,13 @@ def _compute_deep_levels(
     highest_peak = max(recent_peaks) if recent_peaks else price * 1.07
 
     if action == "BUY":
-        # Deep default: below the lowest recent valley by 0.5 ATR.
-        entry_deep = lowest_valley - atr * 0.5
+        # v8.1.6b — Balanced deep entry: midpoint between average and
+        # extreme valley, then 0.5 ATR discount. Not so deep it never
+        # fills, not so shallow it catches falling knives. Matches
+        # user's rule-of-thumb (58.xx for a 53.82 price with peaks at
+        # 55.82 avg / 60.48 max was too high at 60.81; midpoint 58.15
+        # gives the desired 58.xx for the mirrored SHORT case).
+        entry_deep = ((avg_valley + lowest_valley) / 2.0) - atr * 0.5
         entry_moderate = avg_valley
         entry_aggressive = min(price, (price + avg_valley) / 2.0)
         # TP anchored on average of last 3 peaks (same for all bias).
@@ -146,7 +151,7 @@ def _compute_deep_levels(
         # card matches the primary entry.
         stop_loss = sl_deep
     elif action == "SELL":
-        entry_deep = highest_peak + atr * 0.5
+        entry_deep = ((avg_peak + highest_peak) / 2.0) + atr * 0.5
         entry_moderate = avg_peak
         entry_aggressive = max(price, (price + avg_peak) / 2.0)
         take_profit = min(avg_valley, entry_deep - atr * 1.0)

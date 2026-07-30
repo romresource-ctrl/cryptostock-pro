@@ -1,0 +1,35 @@
+{
+  "summary": "v8.1.6 RETEST after AssetSignal fix — 17/17 pytest passed (100%) on public URL in 67s. The previously-failing test 'test_dashboard_crypto_exposes_new_moderate_aggressive_fields' now PASSES: /api/dashboard?market=crypto&timeframe=1h each asset row now surfaces entry, entry_moderate, entry_aggressive, stop_loss, take_profit (verified via curl → sample keys: ['entry','entry_aggressive','entry_moderate','price','stop_loss','take_profit']). /api/dashboard/batch?markets=crypto,stock_us also passes with both markets returning populated assets. Per-asset /api/asset/crypto/BTC/analyze still returns technical.entry_moderate + technical.entry_aggressive + technical._all_levels (with BUY & SELL sub-dicts) and consensus.entry_bias ∈ {deep,moderate,aggressive} + consensus.bias_votes. Formula-sanity retest on 50 live crypto assets: 3 BUYs all have entry_deep < price, 6 SELLs all have entry_deep > price → 0 falling-knife violations. Adjusted midpoint formula verified live on BTC 1h (action=SELL): price=64013.2, avg_peak=65244.7, entry_moderate=65244.7=avg_peak, entry_deep=65706.96 (sits BETWEEN avg_peak and highest_peak per (avg_peak+highest_peak)/2 + ATR*0.5), entry_aggressive=64628.95 (midpoint of price and avg_peak) — matches the new tightened formula and resolves the user's HYPE 60.81 vs 53.82 complaint from v8.1.5. TP for BUY sits within 1.5*ATR of avg_peak, TP for SELL within 1.5*ATR of avg_valley. SL is 0.5*ATR from chosen entry on both sides (ratio 0.3-1.2). Non-crypto AAPL analyze still populates entry_moderate/entry_aggressive/_all_levels and a valid entry_bias. Regressions all green: /api/search?q=BTC hits carry entry/SL/TP, /api/chat/messages emits 400/422 on missing fields, /api/subscription/health returns 200 with no PII leak. DIAG (BTC 1h from warmup): price=64013.2 atr≈422 peaks_found>=2 valleys_found>=2, consensus.summary length well under 900-char guard. No new issues found. No files modified.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter21_v816_deep_entry_formula.py",
+    "/app/test_reports/pytest/iter22.xml"
+  ],
+  "action_items": [
+    "No action required — the AssetSignal Pydantic model fix + midpoint-based entry_deep formula both landed correctly. Suite is 17/17.",
+    "Optional future enhancement (carried from iter21): consider exposing `_all_levels` on AssetSignal so the frontend can render the full 3-tier card without a second /analyze round-trip.",
+    "Optional (also from iter21): server.py has grown to ~2147 lines — schedule a split into modules (dashboard/, asset/, admin/, subscription/) when time allows."
+  ],
+  "critical_code_review_comments": [
+    "server.py AssetSignal (line 359-387): entry_moderate + entry_aggressive Optional[float] fields added correctly; _build_signal at line 577-578 populates them via sig.get('entry_moderate') / sig.get('entry_aggressive') — defensive .get() so an older compute_signal implementation cannot 500 the endpoint. Good.",
+    "indicators.py _compute_deep_levels lines 140 & 154: entry_deep formula tightened per user feedback — BUY = (avg_valley + lowest_valley)/2 − ATR*0.5, SELL = (avg_peak + highest_peak)/2 + ATR*0.5. Verified live on BTC SELL: deep sits between avg_peak (65244.7) and highest_peak — no more 'too-aggressive' HYPE-style entries.",
+    "Docstring on indicators.py:114-117 still mentions 'ATR × 1.5' for SL while code implements 0.5 — stale comment, non-blocking. Same nit as iter21.",
+    "Dashboard cache stale-while-revalidate at server.py:102-148 is well-designed: TTL 300s, stale-max 900s, single in-flight refresh flag per key — protects Yahoo/Binance from thundering herd. No changes needed."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "N/A — backend-only test scope per request"},
+  "seed_data_creation": "None. All tests use live public endpoints; no DB inserts.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Test file: /app/backend/tests/test_iter21_v816_deep_entry_formula.py (17 tests, ~67s). Run with EXPO_PUBLIC_BACKEND_URL env exported (frontend/.env has it). All previously-flagged issues fixed. Formula: BUY entry_deep=(avg_valley+lowest_valley)/2 − ATR*0.5; SELL entry_deep=(avg_peak+highest_peak)/2 + ATR*0.5; entry_moderate=avg_valley/avg_peak; entry_aggressive=midpoint(price, avg_valley/avg_peak). Dashboard AssetSignal now surfaces all three tiers plus stop_loss/take_profit. Nothing else changed since iter21.",
+  "rca_of_issue": "N/A — fix from iter21 verified. Root cause was Pydantic AssetSignal schema missing the two new fields; fix added them and _build_signal now populates them from indicators.compute_signal. Verified via both pytest and direct curl (dashboard sample keys include entry_moderate + entry_aggressive)."
+}

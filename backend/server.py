@@ -371,6 +371,11 @@ class AssetSignal(BaseModel):
     indicators: dict = Field(default_factory=dict)
     reasons: list[str] = Field(default_factory=list)
     entry: float | None = None
+    # v8.1.6 — Alternate entry cycles for the "Entry Levels" card.
+    # `entry` (deep) is the safest default; moderate/aggressive give
+    # users nearer-price options if they don't want to wait.
+    entry_moderate: float | None = None
+    entry_aggressive: float | None = None
     stop_loss: float | None = None
     take_profit: float | None = None
     track_record: TrackRecordMini = Field(default_factory=TrackRecordMini)
@@ -569,6 +574,8 @@ def _build_signal(snapshot: dict, tr: dict | None = None, *, min_conf: int = 85,
         indicators=sig["indicators"],
         reasons=sig["reasons"],
         entry=sig["entry"],
+        entry_moderate=sig.get("entry_moderate"),
+        entry_aggressive=sig.get("entry_aggressive"),
         stop_loss=sig["stop_loss"],
         take_profit=sig["take_profit"],
         track_record=tr_mini,
