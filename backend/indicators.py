@@ -131,34 +131,29 @@ def _compute_deep_levels(
     highest_peak = max(recent_peaks) if recent_peaks else price * 1.07
 
     if action == "BUY":
-        # v8.1.6b — Balanced deep entry: midpoint between average and
-        # extreme valley, then 0.5 ATR discount. Not so deep it never
-        # fills, not so shallow it catches falling knives. Matches
-        # user's rule-of-thumb (58.xx for a 53.82 price with peaks at
-        # 55.82 avg / 60.48 max was too high at 60.81; midpoint 58.15
-        # gives the desired 58.xx for the mirrored SHORT case).
+        # v8.1.8 — Three tiers + entry ZONE (v8.1.9). User trades a
+        # range not a point, so we return low/high bounds around each
+        # tier at ±0.4 ATR (typical band width ≈ user's expected
+        # 1915-1925 range for ETH).
         entry_deep = ((avg_valley + lowest_valley) / 2.0) - atr * 0.5
-        entry_moderate = avg_valley
-        entry_aggressive = min(price, (price + avg_valley) / 2.0)
-        # TP anchored on average of last 3 peaks (same for all bias).
+        entry_moderate = ((price + avg_valley) / 2.0) + atr * 0.3
+        entry_aggressive = price - atr * 0.3
         take_profit = max(avg_peak, entry_deep + atr * 1.0)
-        # SL: 0.5 ATR below THE CHOSEN entry level → same risk-per-trade
-        # regardless of which cycle the user takes.
         sl_deep = entry_deep - atr * 0.5
         sl_moderate = entry_moderate - atr * 0.5
         sl_aggressive = entry_aggressive - atr * 0.5
-        # `stop_loss` (top-level) tracks the deep default so the primary
-        # card matches the primary entry.
         stop_loss = sl_deep
+        band = atr * 0.4
     elif action == "SELL":
         entry_deep = ((avg_peak + highest_peak) / 2.0) + atr * 0.5
-        entry_moderate = avg_peak
-        entry_aggressive = max(price, (price + avg_peak) / 2.0)
+        entry_moderate = ((price + avg_peak) / 2.0) - atr * 0.3
+        entry_aggressive = price + atr * 0.3
         take_profit = min(avg_valley, entry_deep - atr * 1.0)
         sl_deep = entry_deep + atr * 0.5
         sl_moderate = entry_moderate + atr * 0.5
         sl_aggressive = entry_aggressive + atr * 0.5
         stop_loss = sl_deep
+        band = atr * 0.4
     else:  # HOLD
         entry_deep = price
         entry_moderate = price
@@ -166,11 +161,23 @@ def _compute_deep_levels(
         take_profit = price + atr * 1.0
         stop_loss = price - atr * 1.0
         sl_deep = sl_moderate = sl_aggressive = stop_loss
+        band = atr * 0.4
 
     return {
         "entry": entry_deep,
         "entry_moderate": entry_moderate,
         "entry_aggressive": entry_aggressive,
+        # v8.1.9 — Entry zone (range) around the DEEP default so the
+        # frontend can display "$1915-$1925" instead of a single point.
+        # Range is ±0.4 ATR wide.
+        "entry_low": entry_deep - band,
+        "entry_high": entry_deep + band,
+        # Also expose zones for the other two tiers so the frontend
+        # "Entry Levels" card can render all three ranges.
+        "entry_moderate_low": entry_moderate - band,
+        "entry_moderate_high": entry_moderate + band,
+        "entry_aggressive_low": entry_aggressive - band,
+        "entry_aggressive_high": entry_aggressive + band,
         "stop_loss": stop_loss,
         "stop_loss_moderate": sl_moderate,
         "stop_loss_aggressive": sl_aggressive,
@@ -317,6 +324,8 @@ def compute_signal(candles: list[dict[str, Any]], market: str) -> dict[str, Any]
         },
         "reasons": reasons,
         "entry": round(entry, 8),
+        "entry_low": round(levels["entry_low"], 8),
+        "entry_high": round(levels["entry_high"], 8),
         "entry_moderate": round(levels["entry_moderate"], 8),
         "entry_aggressive": round(levels["entry_aggressive"], 8),
         "stop_loss": round(stop_loss, 8),

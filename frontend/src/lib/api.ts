@@ -29,6 +29,12 @@ export interface AssetSignal {
   indicators: Record<string, number | null>;
   reasons: string[];
   entry: number | null;
+  // v8.1.9 — Entry zone (range) for display as "$1915 - $1925".
+  entry_low?: number | null;
+  entry_high?: number | null;
+  // v8.1.6 — Alternate entry cycles (moderate / aggressive tiers).
+  entry_moderate?: number | null;
+  entry_aggressive?: number | null;
   stop_loss: number | null;
   take_profit: number | null;
   track_record: TrackRecordMini;
@@ -145,6 +151,8 @@ export interface AnalyzeResponse {
     confidence: number;
     summary: string;
     entry: number | null;
+    entry_low?: number | null;
+    entry_high?: number | null;
     stop_loss: number | null;
     take_profit: number | null;
     timeframe_view: string;

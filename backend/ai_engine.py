@@ -363,13 +363,28 @@ def _aggregate(results: list[dict[str, Any]], fallback_ta: dict[str, Any], lang:
             "moderate": "stop_loss_moderate",
             "aggressive": "stop_loss_aggressive",
         }[consensus_bias]
+        # v8.1.9 — Zone (low/high) around the chosen bias tier.
+        zone_low_key = {
+            "deep": "entry_low",
+            "moderate": "entry_moderate_low",
+            "aggressive": "entry_aggressive_low",
+        }[consensus_bias]
+        zone_high_key = {
+            "deep": "entry_high",
+            "moderate": "entry_moderate_high",
+            "aggressive": "entry_aggressive_high",
+        }[consensus_bias]
         entry_out = side.get(entry_key, side.get("entry"))
         sl_out = side.get(sl_key, side.get("stop_loss"))
         tp_out = side.get("take_profit")
+        entry_low_out = side.get(zone_low_key)
+        entry_high_out = side.get(zone_high_key)
     else:
         entry_out = fallback_ta.get("entry")
         sl_out = fallback_ta.get("stop_loss")
         tp_out = fallback_ta.get("take_profit")
+        entry_low_out = fallback_ta.get("entry_low")
+        entry_high_out = fallback_ta.get("entry_high")
 
     # Dedupe news/risks
     seen: set[str] = set()
@@ -393,6 +408,8 @@ def _aggregate(results: list[dict[str, Any]], fallback_ta: dict[str, Any], lang:
         "confidence": int(final_conf),
         "summary": summaries[0] if summaries else strings["consensus"],
         "entry": entry_out,
+        "entry_low": entry_low_out,
+        "entry_high": entry_high_out,
         "stop_loss": sl_out,
         "take_profit": tp_out,
         "entry_bias": consensus_bias,

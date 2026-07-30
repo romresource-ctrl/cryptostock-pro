@@ -371,6 +371,11 @@ class AssetSignal(BaseModel):
     indicators: dict = Field(default_factory=dict)
     reasons: list[str] = Field(default_factory=list)
     entry: float | None = None
+    # v8.1.9 — Entry ZONE (range) so the UI can display "$1915 - $1925"
+    # instead of a single point. Both bounds derived from the deep tier
+    # ± 0.4 ATR band.
+    entry_low: float | None = None
+    entry_high: float | None = None
     # v8.1.6 — Alternate entry cycles for the "Entry Levels" card.
     # `entry` (deep) is the safest default; moderate/aggressive give
     # users nearer-price options if they don't want to wait.
@@ -574,6 +579,8 @@ def _build_signal(snapshot: dict, tr: dict | None = None, *, min_conf: int = 85,
         indicators=sig["indicators"],
         reasons=sig["reasons"],
         entry=sig["entry"],
+        entry_low=sig.get("entry_low"),
+        entry_high=sig.get("entry_high"),
         entry_moderate=sig.get("entry_moderate"),
         entry_aggressive=sig.get("entry_aggressive"),
         stop_loss=sig["stop_loss"],

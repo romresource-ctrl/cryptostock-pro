@@ -473,7 +473,16 @@ export default function AssetDetail() {
               <IndicatorCell label="MACD H" value={(sig.indicators.macd_hist ?? 0).toFixed(4)} colors={colors} />
             </View>
             <View style={styles.entryRow}>
-              <EntryCell label={t("detail_entry")} value={formatPrice(sig.entry, market)} color={colors.accentBlue} colors={colors} />
+              <EntryCell
+                label={t("detail_entry")}
+                value={
+                  sig.entry_low != null && sig.entry_high != null && sig.entry_low !== sig.entry_high
+                    ? `${formatPrice(sig.entry_low, market)} - ${formatPrice(sig.entry_high, market)}`
+                    : formatPrice(sig.entry, market)
+                }
+                color={colors.accentBlue}
+                colors={colors}
+              />
               <EntryCell label={t("detail_stop")} value={formatPrice(sig.stop_loss, market)} color={colors.accentDown} colors={colors} />
               <EntryCell label={t("detail_tp")} value={formatPrice(sig.take_profit, market)} color={colors.accentUp} colors={colors} />
             </View>
@@ -699,9 +708,20 @@ export default function AssetDetail() {
                 </View>
               </ScrollView>
 
-              {/* Entry/SL/TP from AI */}
+              {/* Entry/SL/TP from AI — v8.1.9 range display */}
               <View style={[styles.entryRow, { marginTop: 16 }]}>
-                <EntryCell label={t("detail_ai_entry")} value={formatPrice(analysis.consensus.entry, market)} color={colors.accentBlue} colors={colors} />
+                <EntryCell
+                  label={t("detail_ai_entry")}
+                  value={
+                    analysis.consensus.entry_low != null &&
+                    analysis.consensus.entry_high != null &&
+                    analysis.consensus.entry_low !== analysis.consensus.entry_high
+                      ? `${formatPrice(analysis.consensus.entry_low, market)} - ${formatPrice(analysis.consensus.entry_high, market)}`
+                      : formatPrice(analysis.consensus.entry, market)
+                  }
+                  color={colors.accentBlue}
+                  colors={colors}
+                />
                 <EntryCell label={t("detail_ai_sl")} value={formatPrice(analysis.consensus.stop_loss, market)} color={colors.accentDown} colors={colors} />
                 <EntryCell label={t("detail_ai_tp")} value={formatPrice(analysis.consensus.take_profit, market)} color={colors.accentUp} colors={colors} />
               </View>
