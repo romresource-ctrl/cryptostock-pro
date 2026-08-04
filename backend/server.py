@@ -944,6 +944,31 @@ async def asset_chart(
     if not snap:
         raise HTTPException(404, "Symbol not found or upstream data unavailable")
     sig = compute_signal(snap.get("candles", []), eff_market)
+    # v8.2.2 — Enrich raw signal with risk/reward metrics so the detail
+    # page header renders the Risk badge. `compute_signal` returns a
+    # plain dict and doesn't go through `_build_signal`, so we compute
+    # R:R inline here (mirrors the logic in _build_signal).
+    _entry_v = sig.get("entry")
+    _sl_v = sig.get("stop_loss")
+    _tp_v = sig.get("take_profit")
+    if _entry_v and _sl_v and _tp_v and _entry_v > 0:
+        _reward = abs(_tp_v - _entry_v)
+        _risk = abs(_entry_v - _sl_v)
+        if _risk > 0:
+            _rr = round(_reward / _risk, 2)
+            sig["risk_reward"] = _rr
+            sig["reward_pct"] = round((_reward / _entry_v) * 100, 2)
+            sig["risk_pct"] = round((_risk / _entry_v) * 100, 2)
+            _conf = sig.get("confidence") or 0
+            _act = sig.get("action", "HOLD")
+            if _act == "HOLD":
+                sig["risk_level"] = "Medium"
+            elif _conf >= 85 and _rr >= 2.0:
+                sig["risk_level"] = "Low"
+            elif _conf >= 70 and _rr >= 1.0:
+                sig["risk_level"] = "Medium"
+            else:
+                sig["risk_level"] = "High"
     return ChartResponse(
         symbol=symbol, market=eff_market, timeframe=timeframe,
         ticker=snap.get("ticker", {}) or {},

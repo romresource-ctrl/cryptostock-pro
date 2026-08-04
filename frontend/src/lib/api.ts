@@ -105,8 +105,17 @@ export interface ChartResponse {
     indicators: Record<string, number | null>;
     reasons: string[];
     entry: number | null;
+    entry_low?: number | null;
+    entry_high?: number | null;
+    entry_moderate?: number | null;
+    entry_aggressive?: number | null;
     stop_loss: number | null;
     take_profit: number | null;
+    // v8.2.2 — Risk/Reward badge fields
+    risk_reward?: number | null;
+    risk_level?: "Low" | "Medium" | "High" | null;
+    reward_pct?: number | null;
+    risk_pct?: number | null;
   };
 }
 
