@@ -6,12 +6,14 @@
         "foregroundImage": "./assets/images/adaptive-icon.png"
       },
       "edgeToEdgeEnabled": true,
+      "googleServicesFile": "./google-services.json",
       "package": "com.cryptostockapps.aicryptostockpro",
       "permissions": [
         "com.android.vending.BILLING",
         "INTERNET",
         "ACCESS_NETWORK_STATE",
-        "RECORD_AUDIO"
+        "RECORD_AUDIO",
+        "POST_NOTIFICATIONS"
       ],
       "softwareKeyboardLayoutMode": "resize"
     },
@@ -67,12 +69,19 @@
         {
           "microphonePermission": "Record voice notes in the chatroom."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#F0B90B"
+        }
       ]
     ],
     "scheme": "aicryptostockpro",
     "slug": "ai-crypto-stock-pro",
     "userInterfaceStyle": "automatic",
-    "version": "8.2.3",
+    "version": "8.3.0",
     "web": {
       "bundler": "metro",
       "favicon": "./assets/images/favicon.png",

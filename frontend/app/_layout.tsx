@@ -1,11 +1,15 @@
-import { Stack } from "expo-router";
-import { StatusBar } from "expo-status-bar";
+import * as Linking from "expo-linking";
+import * as Notifications from "expo-notifications";
+import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
+import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
+import { Platform } from "react-native";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AuthProvider } from "@/src/auth/AuthContext";
+import { PushRegistrar } from "@/src/components/PushRegistrar";
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { I18nProvider } from "@/src/i18n/I18nContext";
 import { SubscriptionProvider } from "@/src/lib/subscriptionContext";
@@ -16,6 +20,35 @@ import { ThemeProvider, useTheme } from "@/src/theme/ThemeContext";
 // Font.loadAsync against a broken vendor path if any <Icon> mounts before
 // the family is registered — which throws on Android Expo Go.
 SplashScreen.preventAutoHideAsync();
+
+// v8.3.0 — Push notification module-scope config (Emergent-managed push).
+// Foreground handler + Android channel MUST live outside any component so
+// they exist before any push notification arrives (per push playbook).
+// Guarded for web because expo-notifications native calls crash on web.
+if (Platform.OS !== "web") {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+}
+
+if (Platform.OS === "android") {
+  Notifications.setNotificationChannelAsync("default", {
+    name: "Market Pulse",
+    description: "Daily market signals & news",
+    importance: Notifications.AndroidImportance.MAX,
+    sound: "default",
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: "#F0B90B",
+  }).catch(() => {
+    /* channel creation is best-effort — swallow errors */
+  });
+}
 
 function RootStack() {
   const { mode, colors } = useTheme();
@@ -31,6 +64,54 @@ function RootStack() {
       />
     </>
   );
+}
+
+function PushTapListener() {
+  // v8.3.0 — Route the user into the correct asset detail when they tap
+  // a notification. Handles both warm-start (app open) and cold-start
+  // (app killed) taps. Web guard skips native-only APIs.
+  const router = useRouter();
+
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+
+    const openTarget = (data: Record<string, unknown> | null | undefined) => {
+      if (!data) return;
+      const url = (data.deeplink || data.action_url) as string | undefined;
+      if (!url) return;
+      try {
+        if (url.startsWith("http")) {
+          Linking.openURL(url);
+        } else {
+          router.push(url as never);
+        }
+      } catch {
+        /* navigation failed — silent */
+      }
+    };
+
+    const warmSub = Notifications.addNotificationResponseReceivedListener(
+      (response) => {
+        const data = response.notification.request.content.data ?? {};
+        openTarget(data);
+      },
+    );
+
+    Notifications.getLastNotificationResponseAsync()
+      .then((response) => {
+        if (!response) return;
+        openTarget(response.notification.request.content.data ?? {});
+      })
+      .catch(() => {
+        /* ignore */
+      });
+
+    return () => {
+      warmSub.remove();
+    };
+  }, [router]);
+
+  return null;
 }
 
 export default function RootLayout() {
@@ -53,6 +134,8 @@ export default function RootLayout() {
           <I18nProvider>
             <AuthProvider>
               <SubscriptionProvider>
+                <PushRegistrar />
+                <PushTapListener />
                 <RootStack />
               </SubscriptionProvider>
             </AuthProvider>

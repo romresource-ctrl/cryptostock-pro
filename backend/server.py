@@ -67,6 +67,15 @@ from unlock_codes import (  # noqa: E402
     verify_code,
 )
 
+# v8.3.0 — Emergent-managed push notifications (Firebase relay).
+# Registration endpoint + daily scheduler are wired further below.
+from push_notifications import (  # noqa: E402
+    RegisterPushBody,
+    register_push_token,
+    save_subscriber,
+)
+from push_scheduler import build_scheduler  # noqa: E402
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s | %(message)s")
 logger = logging.getLogger("aitrade")
 
@@ -1978,6 +1987,24 @@ async def chat_get_messages(
     return {"messages": rows, "server_time": _now_iso()}
 
 
+# ------------------------- Push notifications -------------------------
+# v8.3.0 — Frontend calls POST /api/register-push after the user grants
+# notification permission. We forward the {user_id, platform, token} to the
+# Emergent push relay AND store the {user_id, language} pair locally so the
+# scheduler can group recipients by language cohort.
+
+
+@api.post("/register-push", status_code=201)
+async def register_push(body: RegisterPushBody) -> dict[str, str]:
+    # Relay to Emergent (upserts device_token there). Failure surfaces as
+    # 502/500 automatically.
+    await register_push_token(body.user_id, body.platform, body.device_token)
+    # Persist language cohort locally (no device_token stored — that lives
+    # in the relay per playbook).
+    await save_subscriber(db, body.user_id, body.language or "en", body.platform)
+    return {"status": "registered"}
+
+
 app.include_router(api)
 app.add_middleware(
     CORSMiddleware,
@@ -2217,10 +2244,75 @@ async def _startup_bootstrap() -> None:
     # without waiting on hard-coded map updates. Non-blocking. Refreshes
     # itself every 6 hours in _load_universe_refresh_loop.
     asyncio.create_task(_load_universe_refresh_loop())
+    # v8.3.0 — Start daily push notification scheduler (7 slots, WIB).
+    _start_push_scheduler()
+
+
+# --------------- Push scheduler wiring (v8.3.0) ---------------
+# Kept as module-level state so `_shutdown` can stop it cleanly.
+
+_push_scheduler_state: dict[str, object] = {"scheduler": None}
+
+
+async def _scheduler_dashboard_fetch(market: str) -> list[dict[str, object]]:
+    """Return dashboard rows for a market — used by the push scheduler
+    to pick the top BUY/LONG signal of the day.
+    """
+    try:
+        # Reuse the same builder that /api/dashboard/batch uses. `full=True`
+        # so we don't filter to only Premium — the scheduler still wants
+        # coverage when Premium is empty.
+        resp = await _build_dashboard_response(
+            market=market,
+            timeframe="1h",
+            sort="confidence",
+            full=True,
+            min_confidence=0,
+            min_wr=0.0,
+            region=None,
+        )
+        return [a.model_dump() for a in resp.assets]
+    except Exception as e:
+        logger.warning("scheduler dashboard fetch failed for %s: %s", market, e)
+        return []
+
+
+async def _scheduler_news_fetch(market: str) -> list[dict[str, object]]:
+    try:
+        items = await get_news(market, limit=3)
+        return [i.model_dump() if hasattr(i, "model_dump") else dict(i) for i in items]
+    except Exception as e:
+        logger.warning("scheduler news fetch failed for %s: %s", market, e)
+        return []
+
+
+def _start_push_scheduler() -> None:
+    if _push_scheduler_state.get("scheduler"):
+        return
+    try:
+        sched = build_scheduler(
+            db=db,
+            get_dashboard=_scheduler_dashboard_fetch,
+            get_news=_scheduler_news_fetch,
+        )
+        sched.start()
+        _push_scheduler_state["scheduler"] = sched
+        logger.info("push scheduler started with %d jobs", len(sched.get_jobs()))
+    except Exception as e:
+        # Never crash the app because the scheduler couldn't start.
+        logger.exception("failed to start push scheduler: %s", e)
 
 
 @app.on_event("shutdown")
 async def _shutdown() -> None:
+    # Stop push scheduler first so its jobs don't try to talk to a closed
+    # Mongo/HTTP client during teardown.
+    sched = _push_scheduler_state.get("scheduler")
+    if sched is not None:
+        try:
+            sched.shutdown(wait=False)  # type: ignore[union-attr]
+        except Exception:
+            pass
     from market_data import close_http_client
     await close_http_client()
     client.close()

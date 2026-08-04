@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "685601647515",
+    "project_id": "cryptostock-b2165",
+    "storage_bucket": "cryptostock-b2165.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:685601647515:android:51d4837e41514d14304f3e",
+        "android_client_info": {
+          "package_name": "com.cryptostockapps.aicryptostockpro"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDuXNUA1wTA_C0aFa4TKkC8c87tVVijtPw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
