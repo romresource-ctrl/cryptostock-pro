@@ -76,7 +76,8 @@
           "icon": "./assets/images/icon.png",
           "color": "#F0B90B"
         }
-      ]
+      ],
+      "expo-asset"
     ],
     "scheme": "aicryptostockpro",
     "slug": "ai-crypto-stock-pro",
