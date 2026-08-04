@@ -77,12 +77,13 @@
           "color": "#F0B90B"
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      "./plugins/withRemoveMediaPlaybackPermission"
     ],
     "scheme": "aicryptostockpro",
     "slug": "ai-crypto-stock-pro",
     "userInterfaceStyle": "automatic",
-    "version": "8.3.0",
+    "version": "8.3.2",
     "web": {
       "bundler": "metro",
       "favicon": "./assets/images/favicon.png",
