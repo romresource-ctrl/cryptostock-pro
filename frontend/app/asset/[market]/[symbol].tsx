@@ -306,7 +306,7 @@ export default function AssetDetail() {
                 <Text style={{ color: changeColor, fontSize: 14, fontWeight: "600" }}>{formatPct(ticker.change_pct_24h)}</Text>
               </Text>
             </View>
-            <View style={{ alignItems: "flex-end", gap: 6 }}>
+            <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
               {/* v8.2.2 — Risk/Reward badge di kiri Target Profit.
                   Low = hijau, Medium = kuning, High = merah. */}
               {sig?.risk_level ? (() => {
@@ -323,7 +323,6 @@ export default function AssetDetail() {
                       borderColor: rColor,
                       alignItems: "center",
                       minWidth: 76,
-                      marginRight: 8,
                     }}
                     testID="header-risk-reward"
                   >
