@@ -1,11 +1,16 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React from "react";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useI18n } from "@/src/i18n/I18nContext";
 import { useTheme } from "@/src/theme/ThemeContext";
+
+// v8.3.1 — Production backend URL hosting the Play Store legal pages.
+// Play Console requires Privacy Policy + Data Deletion URLs to be
+// "accessible from within the app", so we deep-link them from Disclaimer.
+const LEGAL_BASE_URL = "https://cryptostock-pro.emergent.host";
 
 export default function DisclaimerPage() {
   const router = useRouter();
@@ -50,6 +55,44 @@ export default function DisclaimerPage() {
           </Text>
         </View>
 
+        {/* v8.3.1 — Legal links (required for Google Play submission).
+             These deep-link to the production backend HTML pages so
+             Play Console reviewers can verify "accessible from within
+             your app" for both Privacy Policy and Data/Account
+             Deletion. Tapping opens the page in the system browser. */}
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border, marginTop: 12 }]}>
+          <Text style={[styles.contactLabel, { color: colors.textMuted, marginBottom: 8 }]}>
+            {t("legal_links_label")}
+          </Text>
+          <TouchableOpacity
+            style={styles.legalRow}
+            onPress={() => Linking.openURL(`${LEGAL_BASE_URL}/api/privacy`)}
+            testID="legal-privacy-link"
+          >
+            <Ionicons name="shield-checkmark" size={16} color={colors.accentBlue} />
+            <Text style={[styles.legalText, { color: colors.accentBlue }]}>{t("legal_privacy")}</Text>
+            <Ionicons name="open-outline" size={14} color={colors.accentBlue} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.legalRow}
+            onPress={() => Linking.openURL(`${LEGAL_BASE_URL}/api/terms`)}
+            testID="legal-terms-link"
+          >
+            <Ionicons name="document-text" size={16} color={colors.accentBlue} />
+            <Text style={[styles.legalText, { color: colors.accentBlue }]}>{t("legal_terms")}</Text>
+            <Ionicons name="open-outline" size={14} color={colors.accentBlue} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.legalRow}
+            onPress={() => Linking.openURL(`${LEGAL_BASE_URL}/api/data-deletion`)}
+            testID="legal-data-deletion-link"
+          >
+            <Ionicons name="trash-bin" size={16} color={colors.accentDown} />
+            <Text style={[styles.legalText, { color: colors.accentDown }]}>{t("legal_data_deletion")}</Text>
+            <Ionicons name="open-outline" size={14} color={colors.accentDown} />
+          </TouchableOpacity>
+        </View>
+
         <View style={{ height: 40 }} />
       </ScrollView>
     </SafeAreaView>
@@ -88,4 +131,13 @@ const styles = StyleSheet.create({
   contactRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 },
   contactLabel: { fontSize: 11, fontWeight: "600", letterSpacing: 0.4 },
   contactValue: { fontSize: 13, fontWeight: "800" },
+  legalRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#33333322",
+  },
+  legalText: { flex: 1, fontSize: 13, fontWeight: "700" },
 });

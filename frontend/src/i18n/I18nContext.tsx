@@ -126,6 +126,12 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   detail_news_live: { id: "📡 Berita Live yang Digunakan", en: "📡 Live News Used", ru: "📡 Live новости", cn: "📡 使用的实时新闻" },
   detail_generated_at: { id: "Dianalisa", en: "Analyzed", ru: "Проанализировано", cn: "分析时间" },
 
+  // v8.3.1 — Legal links in Disclaimer page (Google Play compliance)
+  legal_links_label: { id: "Legal & Kebijakan", en: "Legal & Policies", ru: "Юридич. документы", cn: "法律与政策" },
+  legal_privacy: { id: "Kebijakan Privasi", en: "Privacy Policy", ru: "Политика конфиденциальности", cn: "隐私政策" },
+  legal_terms: { id: "Syarat & Ketentuan", en: "Terms of Service", ru: "Условия использования", cn: "服务条款" },
+  legal_data_deletion: { id: "Hapus Akun & Data", en: "Delete Account & Data", ru: "Удалить аккаунт и данные", cn: "删除账户与数据" },
+
   // v8.2.3 — AI Prediction box: Beli/Jual (stocks) vs BUY/SELL (crypto) & Risk/Reward info
   ai_pred_action_buy_stock: { id: "BELI", en: "BUY", ru: "ПОКУПКА", cn: "买入" },
   ai_pred_action_sell_stock: { id: "JUAL", en: "SELL", ru: "ПРОДАЖА", cn: "卖出" },
