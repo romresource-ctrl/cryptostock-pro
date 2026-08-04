@@ -2032,10 +2032,14 @@ async def admin_tool_html() -> HTMLResponse:
         return HTMLResponse("<h1>Admin tool not deployed</h1>", status_code=404)
 
 
-@app.get("/api/privacy", include_in_schema=False)
+@app.api_route("/api/privacy", methods=["GET", "HEAD"], include_in_schema=False)
 async def privacy_policy_html() -> HTMLResponse:
     """PUBLIC Privacy Policy page — required by Google Play Console for store
     submission. Google reviewers must be able to open this URL without login.
+
+    v8.3.1 — Also accepts HEAD requests. Google Play Console (and other
+    URL validators) issue HEAD to check reachability; a 405 there was
+    surfacing as "page not found" in the pre-review checklist.
     """
     try:
         path = os.path.join(os.path.dirname(__file__), "static", "privacy.html")
@@ -2045,7 +2049,7 @@ async def privacy_policy_html() -> HTMLResponse:
         return HTMLResponse("<h1>Privacy policy not deployed</h1>", status_code=404)
 
 
-@app.get("/api/terms", include_in_schema=False)
+@app.api_route("/api/terms", methods=["GET", "HEAD"], include_in_schema=False)
 async def terms_html() -> HTMLResponse:
     """PUBLIC Terms of Service page — required for Play Console subscription apps."""
     try:
@@ -2056,10 +2060,12 @@ async def terms_html() -> HTMLResponse:
         return HTMLResponse("<h1>Terms of service not deployed</h1>", status_code=404)
 
 
-@app.get("/api/data-deletion", include_in_schema=False)
+@app.api_route("/api/data-deletion", methods=["GET", "HEAD"], include_in_schema=False)
 async def data_deletion_html() -> HTMLResponse:
     """PUBLIC Account/Data Deletion Request page — required by Google Play Console
     Data Safety section (users must have a URL to request account deletion).
+
+    v8.3.1 — Also accepts HEAD requests (see privacy_policy_html).
     """
     try:
         path = os.path.join(os.path.dirname(__file__), "static", "data-deletion.html")
