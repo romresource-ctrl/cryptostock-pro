@@ -80,9 +80,14 @@ memory/test_credentials.md
 
 # Mobile development
 android-sdk/
-.env
-.env.*
-*.env
+# NOTE: Emergent deployment flow requires committed .env files
+# (values are managed via the Secrets panel — sensitive keys are
+# injected at build time). Local-only overrides can use .env*.local.
+.env*.local
 credentials.json
 *.key
 .credentials
+# Backend service-account private key MUST NEVER be committed.
+# Use Emergent Secrets panel to inject GOOGLE_PLAY_SERVICE_ACCOUNT_JSON
+# as inline JSON instead.
+backend/service-account.json
