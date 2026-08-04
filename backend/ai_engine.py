@@ -437,8 +437,22 @@ async def ensemble_analyze(symbol: str, market: str, timeframe: str, ta: dict[st
         for cfg in MODELS
     ]
     results = await asyncio.gather(*tasks, return_exceptions=False)
+    # v8.2.1 — Normalize per-model label based on market. Saham/ETF/etc
+    # tidak pakai istilah LONG/SHORT — hanya crypto. AI kadang return
+    # LONG/SHORT untuk saham juga, kita fix di sini.
+    is_crypto = (market == "crypto")
+    for r in results:
+        data = r.get("data") if r.get("ok") else None
+        if not data:
+            continue
+        lbl = str(data.get("label") or "").upper()
+        if not is_crypto:
+            if lbl == "LONG":
+                data["label"] = "BUY"
+            elif lbl == "SHORT":
+                data["label"] = "SELL"
     fallback = dict(ta)
-    fallback["_is_crypto"] = (market == "crypto")
+    fallback["_is_crypto"] = is_crypto
     consensus = _aggregate(results, fallback, lang=lang)
     return {
         "consensus": consensus,

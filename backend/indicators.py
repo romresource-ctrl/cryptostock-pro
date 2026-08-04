@@ -102,20 +102,17 @@ def _compute_deep_levels(
     atr: float,
     peaks: list[float],
     valleys: list[float],
+    market: str = "crypto",
 ) -> dict[str, float]:
-    """Return entry/SL/TP using the v8.1.6 deep-entry formula.
+    """Return entry/SL/TP using tier-based deep-entry formula.
 
-    Per user spec (2026-06-29):
-      - Default entry (LONG)  = lowest of last 5 valleys − ATR × 0.5
-        so we wait for capitulation below recent structure.
-      - Default entry (SHORT) = highest of last 5 peaks   + ATR × 0.5
-      - TP LONG               = mean(last 3 peaks)
-      - TP SHORT              = mean(last 3 valleys)
-      - SL LONG               = lowest_valley − ATR × 1.5 (0.5 buffer
-        already applied to entry, plus 1.0 more for room to breathe)
-      - SL SHORT              = highest_peak  + ATR × 1.5
-      Note user asked for "SL 0.5 ATR tighter"; that is applied
-      relative to the ENTRY, giving SL ≈ entry − ATR × 0.5 for LONG.
+    v8.2.1 — Split formula per market class:
+      - Crypto: swing-based deep entry (unchanged)
+      - Non-crypto (stock/ETF/gold/commodity/forex): percentage-based
+        because these markets are much less volatile than crypto and
+        entries should be close to current price.
+        For BUY: entry range 0.1%-0.5% below price; TP +3%; SL -2%
+        For SELL: entry range 0.1%-0.5% above price; TP -3%; SL +2%
     """
     recent_peaks = peaks[-5:] if len(peaks) >= 5 else peaks
     recent_valleys = valleys[-5:] if len(valleys) >= 5 else valleys
@@ -129,6 +126,50 @@ def _compute_deep_levels(
     avg_valley = _safe_avg(last3_valleys, price * 0.95)
     lowest_valley = min(recent_valleys) if recent_valleys else price * 0.93
     highest_peak = max(recent_peaks) if recent_peaks else price * 1.07
+
+    # v8.2.1 — Non-crypto markets use percentage formula (stocks are
+    # much less volatile than crypto, so swing-based entries would be
+    # unrealistically far from current price).
+    is_stocklike = market in ("stock_id", "stock_us", "world_stocks", "etf",
+                              "gold_silver", "commodity", "forex")
+    if is_stocklike and action in ("BUY", "SELL"):
+        # R:R = 1:1.5 per user spec — 2% risk, 3% reward.
+        if action == "BUY":
+            entry_deep = price * 0.995        # 0.5% below (safest wait)
+            entry_moderate = price * 0.997    # 0.3% below (balanced)
+            entry_aggressive = price * 0.999  # 0.1% below (aggressive)
+            take_profit = price * 1.030       # +3%
+            stop_loss = entry_deep * 0.980    # -2% from entry
+            sl_deep = entry_deep * 0.980
+            sl_moderate = entry_moderate * 0.980
+            sl_aggressive = entry_aggressive * 0.980
+        else:  # SELL
+            entry_deep = price * 1.005        # 0.5% above
+            entry_moderate = price * 1.003
+            entry_aggressive = price * 1.001
+            take_profit = price * 0.970       # -3%
+            stop_loss = entry_deep * 1.020    # +2% from entry
+            sl_deep = entry_deep * 1.020
+            sl_moderate = entry_moderate * 1.020
+            sl_aggressive = entry_aggressive * 1.020
+        band = price * 0.002                  # ±0.2% zone for stock ranges
+        return {
+            "entry": entry_deep,
+            "entry_moderate": entry_moderate,
+            "entry_aggressive": entry_aggressive,
+            "entry_low": entry_deep - band,
+            "entry_high": entry_deep + band,
+            "entry_moderate_low": entry_moderate - band,
+            "entry_moderate_high": entry_moderate + band,
+            "entry_aggressive_low": entry_aggressive - band,
+            "entry_aggressive_high": entry_aggressive + band,
+            "stop_loss": stop_loss,
+            "stop_loss_moderate": sl_moderate,
+            "stop_loss_aggressive": sl_aggressive,
+            "take_profit": take_profit,
+            "avg_peak": avg_peak,
+            "avg_valley": avg_valley,
+        }
 
     if action == "BUY":
         # v8.1.8 — Three tiers + entry ZONE (v8.1.9). User trades a
@@ -292,7 +333,7 @@ def compute_signal(candles: list[dict[str, Any]], market: str) -> dict[str, Any]
     # entry BELOW recent structure so users don't buy tops or short
     # bottoms. Falls back to ATR-based default if not enough swings.
     peaks, valleys = _find_swings(highs, lows, window=10)
-    levels = _compute_deep_levels(action, price, atr, peaks, valleys)
+    levels = _compute_deep_levels(action, price, atr, peaks, valleys, market=market)
     entry = levels["entry"]
     stop_loss = levels["stop_loss"]
     take_profit = levels["take_profit"]
@@ -301,8 +342,8 @@ def compute_signal(candles: list[dict[str, Any]], market: str) -> dict[str, Any]
     # the AI ensemble can pick either direction with the same swing
     # structure — even if the AI action disagrees with the technical
     # rule vote.
-    buy_levels = _compute_deep_levels("BUY", price, atr, peaks, valleys)
-    sell_levels = _compute_deep_levels("SELL", price, atr, peaks, valleys)
+    buy_levels = _compute_deep_levels("BUY", price, atr, peaks, valleys, market=market)
+    sell_levels = _compute_deep_levels("SELL", price, atr, peaks, valleys, market=market)
 
     return {
         "action": action,

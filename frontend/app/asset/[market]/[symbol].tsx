@@ -252,13 +252,18 @@ export default function AssetDetail() {
   const change = ticker.change_pct_24h ?? 0;
   const changeColor = change >= 0 ? colors.accentUp : colors.accentDown;
 
-  // Target Profit % (issue #6) — POSITIVE profit target regardless of direction.
-  // For BUY/LONG: (take_profit - entry) / entry
-  // For SELL/SHORT: (entry - take_profit) / entry
-  // Always displayed as a positive % because it represents PROFIT if the trade succeeds.
+  // Target Profit % — POSITIVE profit target regardless of direction.
+  // v8.2.1 — For HOLD, show range (SL→TP potential) so the header
+  // badge is never empty. Previously HOLD showed nothing which the
+  // user complained about across all markets.
   const tpPct: number | null = (() => {
     if (!sig || !sig.take_profit || !sig.entry) return null;
-    if (sig.action === "HOLD") return null;
+    if (sig.action === "HOLD") {
+      // For HOLD: show range percentage from entry to take_profit
+      // (represents volatility band, always positive).
+      const raw = Math.abs((sig.take_profit - sig.entry) / sig.entry) * 100;
+      return Number.isFinite(raw) && raw > 0.05 ? raw : null;
+    }
     const isShort = sig.action === "SHORT" || sig.action === "SELL";
     const raw = isShort
       ? ((sig.entry - sig.take_profit) / sig.entry) * 100
