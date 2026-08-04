@@ -126,6 +126,70 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   detail_news_live: { id: "📡 Berita Live yang Digunakan", en: "📡 Live News Used", ru: "📡 Live новости", cn: "📡 使用的实时新闻" },
   detail_generated_at: { id: "Dianalisa", en: "Analyzed", ru: "Проанализировано", cn: "分析时间" },
 
+  // v8.2.3 — AI Prediction box: Beli/Jual (stocks) vs BUY/SELL (crypto) & Risk/Reward info
+  ai_pred_action_buy_stock: { id: "BELI", en: "BUY", ru: "ПОКУПКА", cn: "买入" },
+  ai_pred_action_sell_stock: { id: "JUAL", en: "SELL", ru: "ПРОДАЖА", cn: "卖出" },
+  ai_pred_action_buy_crypto: { id: "LONG", en: "LONG", ru: "LONG", cn: "做多" },
+  ai_pred_action_sell_crypto: { id: "SHORT", en: "SHORT", ru: "SHORT", cn: "做空" },
+  ai_pred_prepare_buy_stock: {
+    id: "Bersiap BELI. Pantau entry di ~{entry}, TP {tp}, SL {sl}.",
+    en: "Prepare to BUY. Watch entry ~{entry}, TP {tp}, SL {sl}.",
+    ru: "Готовьтесь к ПОКУПКЕ. Вход ~{entry}, TP {tp}, SL {sl}.",
+    cn: "准备买入。入场 ~{entry}, TP {tp}, SL {sl}。",
+  },
+  ai_pred_prepare_sell_stock: {
+    id: "Bersiap JUAL. Pantau entry di ~{entry}, TP {tp}, SL {sl}.",
+    en: "Prepare to SELL. Watch entry ~{entry}, TP {tp}, SL {sl}.",
+    ru: "Готовьтесь к ПРОДАЖЕ. Вход ~{entry}, TP {tp}, SL {sl}.",
+    cn: "准备卖出。入场 ~{entry}, TP {tp}, SL {sl}。",
+  },
+  ai_pred_prepare_buy_crypto: {
+    id: "Bersiap LONG. Pantau entry di ~{entry}, TP {tp}, SL {sl}.",
+    en: "Prepare LONG. Watch entry ~{entry}, TP {tp}, SL {sl}.",
+    ru: "Готовьтесь к LONG. Вход ~{entry}, TP {tp}, SL {sl}.",
+    cn: "准备做多。入场 ~{entry}, TP {tp}, SL {sl}。",
+  },
+  ai_pred_prepare_sell_crypto: {
+    id: "Bersiap SHORT. Pantau entry di ~{entry}, TP {tp}, SL {sl}.",
+    en: "Prepare SHORT. Watch entry ~{entry}, TP {tp}, SL {sl}.",
+    ru: "Готовьтесь к SHORT. Вход ~{entry}, TP {tp}, SL {sl}.",
+    cn: "准备做空。入场 ~{entry}, TP {tp}, SL {sl}。",
+  },
+  ai_pred_wait: {
+    id: "Tunggu — momentum belum jelas. Pantau breakout dari high/low terakhir untuk sinyal berikutnya.",
+    en: "Wait — no clear momentum yet. Watch break of recent high/low for next signal.",
+    ru: "Ждите — импульс неясен. Следите за пробоем high/low.",
+    cn: "等待——动能不明朗。留意近期高/低点突破。",
+  },
+  ai_pred_rr_line: {
+    id: "R/R 1:{ratio} · Risiko: {level} ({riskPct}%) · Potensi Profit: {rewardPct}%",
+    en: "R/R 1:{ratio} · Risk: {level} ({riskPct}%) · Reward: {rewardPct}%",
+    ru: "R/R 1:{ratio} · Риск: {level} ({riskPct}%) · Профит: {rewardPct}%",
+    cn: "R/R 1:{ratio} · 风险: {level} ({riskPct}%) · 收益: {rewardPct}%",
+  },
+  ai_pred_rr_label: { id: "Risk/Reward", en: "Risk/Reward", ru: "Риск/Профит", cn: "风险/收益" },
+  ai_pred_risk_low: { id: "Rendah", en: "Low", ru: "Низкий", cn: "低" },
+  ai_pred_risk_medium: { id: "Sedang", en: "Medium", ru: "Средний", cn: "中" },
+  ai_pred_risk_high: { id: "Tinggi", en: "High", ru: "Высокий", cn: "高" },
+  ai_pred_rr_hint_low: {
+    id: "Setup ideal — reward jauh lebih besar dari risiko",
+    en: "Ideal setup — reward far outweighs risk",
+    ru: "Идеальная сделка — прибыль намного больше риска",
+    cn: "理想设置 — 收益远大于风险",
+  },
+  ai_pred_rr_hint_medium: {
+    id: "Setup seimbang — kelola posisi dengan disiplin",
+    en: "Balanced setup — manage size with discipline",
+    ru: "Сбалансированная сделка — соблюдайте дисциплину",
+    cn: "均衡设置 — 严格控仓",
+  },
+  ai_pred_rr_hint_high: {
+    id: "Risiko tinggi — pertimbangkan posisi lebih kecil",
+    en: "High risk — consider a smaller position",
+    ru: "Высокий риск — уменьшите размер позиции",
+    cn: "高风险 — 建议减小仓位",
+  },
+
   // Market badges
   badge_crypto: { id: "CRYPTO", en: "CRYPTO", ru: "КРИПТО", cn: "加密" },
   badge_etf: { id: "ETF", en: "ETF", ru: "ETF", cn: "ETF" },

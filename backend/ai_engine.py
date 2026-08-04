@@ -402,19 +402,51 @@ def _aggregate(results: list[dict[str, Any]], fallback_ta: dict[str, Any], lang:
             seen2.add(k)
             risks_dedup.append(n.strip())
 
+    # v8.2.3 — Strip "long"/"short" jargon from all narrative fields when the
+    # market is not crypto. Users flagged that stocks/ETFs/forex should never
+    # surface those crypto-derivative terms in the summary paragraph.
+    def _sanitize(text: str) -> str:
+        if not text or is_crypto:
+            return text
+        out = text
+        for pat, repl in (
+            (r"\blong[- ]?position(s)?\b", "buy position\\1"),
+            (r"\bshort[- ]?position(s)?\b", "sell position\\1"),
+            (r"\bgo(ing)? long\b", "buy\\1"),
+            (r"\bgo(ing)? short\b", "sell\\1"),
+            (r"\bshort[- ]?selling\b", "selling"),
+            (r"\bLONG\b", "BUY"),
+            (r"\bSHORT\b", "SELL"),
+            (r"\bLong\b", "Buy"),
+            (r"\bShort\b", "Sell"),
+            (r"\blong\b(?!\s+(term|-term|run))", "buy"),   # keep "long term"/"long run"
+            (r"\bshort\b(?!\s+(term|-term|run))", "sell"), # keep "short term"/"short run"
+        ):
+            out = re.sub(pat, repl, out)
+        return out
+
+    summary_out = summaries[0] if summaries else strings["consensus"]
+    tf_view_out = timeframe_views[0] if timeframe_views else ""
+    macro_out = macro_contexts[0] if macro_contexts else ""
+    summary_out = _sanitize(summary_out)
+    tf_view_out = _sanitize(tf_view_out)
+    macro_out = _sanitize(macro_out)
+    news_dedup = [_sanitize(n) for n in news_dedup]
+    risks_dedup = [_sanitize(r) for r in risks_dedup]
+
     return {
         "action": action,
         "label": label,
         "confidence": int(final_conf),
-        "summary": summaries[0] if summaries else strings["consensus"],
+        "summary": summary_out,
         "entry": entry_out,
         "entry_low": entry_low_out,
         "entry_high": entry_high_out,
         "stop_loss": sl_out,
         "take_profit": tp_out,
         "entry_bias": consensus_bias,
-        "timeframe_view": timeframe_views[0] if timeframe_views else "",
-        "macro_context": macro_contexts[0] if macro_contexts else "",
+        "timeframe_view": tf_view_out,
+        "macro_context": macro_out,
         "news_factors": news_dedup[:6],
         "risk_factors": risks_dedup[:5],
         "votes": action_votes,

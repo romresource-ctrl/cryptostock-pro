@@ -38,6 +38,41 @@ function signalColors(colors: ReturnType<typeof useTheme>["colors"], action: str
   return { fg: colors.accentHold, bg: colors.accentHold + "26" };
 }
 
+// v8.2.3 — Deterministic R/R + risk categorization for the AI Consensus box.
+// Mirrors backend logic in /app/backend/server.py so the ensemble ("Set 2")
+// prediction card displays the same Low/Medium/High classification the
+// dashboard badges use.
+function computeConsensusRR(
+  action: string,
+  entry: number | null | undefined,
+  sl: number | null | undefined,
+  tp: number | null | undefined,
+  confidence: number | null | undefined,
+): { ratio: number; level: "Low" | "Medium" | "High"; riskPct: number; rewardPct: number } | null {
+  if (!entry || !sl || !tp) return null;
+  const reward = Math.abs(tp - entry);
+  const risk = Math.abs(entry - sl);
+  if (!(risk > 0 && entry > 0)) return null;
+  const ratio = reward / risk;
+  const riskPct = (risk / entry) * 100;
+  const rewardPct = (reward / entry) * 100;
+  const conf = confidence ?? 0;
+  let level: "Low" | "Medium" | "High" = "Medium";
+  if (action === "HOLD") {
+    level = "Medium";
+  } else {
+    if (conf >= 85 && ratio >= 2.0) level = "Low";
+    else if (conf >= 70 && ratio >= 1.0) level = "Medium";
+    else level = "High";
+  }
+  return {
+    ratio: Math.round(ratio * 100) / 100,
+    level,
+    riskPct: Math.round(riskPct * 100) / 100,
+    rewardPct: Math.round(rewardPct * 100) / 100,
+  };
+}
+
 function ModelChip({ model }: { model: ModelResult }) {
   const { colors } = useTheme();
   const action = model.data?.action ?? "—";
@@ -650,17 +685,53 @@ export default function AssetDetail() {
             >
               {(() => {
                 const s = chart.signal!;
+                const isCrypto = market === "crypto";
                 const isUp = s.action === "BUY" || s.action === "LONG";
                 const isDown = s.action === "SELL" || s.action === "SHORT";
                 const dirLabel = isUp ? "UP ↑" : isDown ? "DOWN ↓" : "SIDEWAYS →";
                 const dirColor = isUp ? colors.accentUp : isDown ? colors.accentDown : colors.accentHold;
                 const conf = s.confidence ?? 0;
                 const horizonLabel = `Next ${timeframe}`;
+
+                // v8.2.3 — Suggestion text: use Beli/Jual for stocks (non-crypto),
+                // BUY/LONG-SELL/SHORT for crypto. Removes any Long/Short jargon
+                // for equity markets which the user flagged as inappropriate.
                 const suggestion = isUp
-                  ? `Prepare BUY. Watch entry ~${formatPrice(s.entry, market)}, TP ${formatPrice(s.take_profit, market)}, SL ${formatPrice(s.stop_loss, market)}.`
+                  ? t(isCrypto ? "ai_pred_prepare_buy_crypto" : "ai_pred_prepare_buy_stock")
+                      .replace("{entry}", formatPrice(s.entry, market))
+                      .replace("{tp}", formatPrice(s.take_profit, market))
+                      .replace("{sl}", formatPrice(s.stop_loss, market))
                   : isDown
-                    ? `Prepare SHORT. Watch entry ~${formatPrice(s.entry, market)}, TP ${formatPrice(s.take_profit, market)}, SL ${formatPrice(s.stop_loss, market)}.`
-                    : "Wait — no clear momentum yet. Watch break of recent high/low for next signal.";
+                    ? t(isCrypto ? "ai_pred_prepare_sell_crypto" : "ai_pred_prepare_sell_stock")
+                        .replace("{entry}", formatPrice(s.entry, market))
+                        .replace("{tp}", formatPrice(s.take_profit, market))
+                        .replace("{sl}", formatPrice(s.stop_loss, market))
+                    : t("ai_pred_wait");
+
+                // v8.2.3 — R/R info line: backend already provides risk_reward,
+                // risk_level, risk_pct, reward_pct in chart.signal. Show as
+                // "R/R 1:1.8 · Risiko: Rendah (2.1%) · Potensi: 3.8%".
+                const rrRatio = s.risk_reward ?? null;
+                const rrLevel = s.risk_level ?? null;
+                const rrRiskPct = s.risk_pct ?? null;
+                const rrRewardPct = s.reward_pct ?? null;
+                const rrLevelLabel = rrLevel === "Low"
+                  ? t("ai_pred_risk_low")
+                  : rrLevel === "High"
+                    ? t("ai_pred_risk_high")
+                    : t("ai_pred_risk_medium");
+                const rrLevelColor = rrLevel === "Low"
+                  ? colors.accentUp
+                  : rrLevel === "High"
+                    ? colors.accentDown
+                    : "#F0B90B";
+                const rrHint = rrLevel === "Low"
+                  ? t("ai_pred_rr_hint_low")
+                  : rrLevel === "High"
+                    ? t("ai_pred_rr_hint_high")
+                    : t("ai_pred_rr_hint_medium");
+                const showRR = rrRatio != null && rrLevel != null && rrRiskPct != null && rrRewardPct != null;
+
                 return (
                   <>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 6 }}>
@@ -681,6 +752,55 @@ export default function AssetDetail() {
                       </View>
                     </View>
                     <Text style={{ fontSize: 12, color: colors.textPrimary, lineHeight: 18 }}>{suggestion}</Text>
+
+                    {/* v8.2.3 — Risk/Reward inline row placed right after SL info.
+                        Shows the ratio (e.g. 1:1.8) + level (Low/Med/High) +
+                        elaboration bubble. */}
+                    {showRR ? (
+                      <View
+                        testID="ai-prediction-rr"
+                        style={{
+                          marginTop: 10,
+                          padding: 10,
+                          borderRadius: 8,
+                          backgroundColor: rrLevelColor + "1A",
+                          borderLeftWidth: 3,
+                          borderLeftColor: rrLevelColor,
+                        }}
+                      >
+                        <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+                          <Text style={{ fontSize: 10, fontWeight: "800", color: rrLevelColor, letterSpacing: 0.6 }}>
+                            {t("ai_pred_rr_label").toUpperCase()}
+                          </Text>
+                          <Text style={{ fontSize: 13, fontWeight: "900", color: colors.textPrimary, fontVariant: ["tabular-nums"] }}>
+                            1 : {rrRatio!.toFixed(2)}
+                          </Text>
+                          <View
+                            style={{
+                              paddingHorizontal: 6,
+                              paddingVertical: 1,
+                              borderRadius: 4,
+                              backgroundColor: rrLevelColor + "33",
+                            }}
+                          >
+                            <Text style={{ fontSize: 10, fontWeight: "800", color: rrLevelColor }}>
+                              {rrLevelLabel}
+                            </Text>
+                          </View>
+                        </View>
+                        <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 4, lineHeight: 15 }}>
+                          {t("ai_pred_rr_line")
+                            .replace("{ratio}", rrRatio!.toFixed(2))
+                            .replace("{level}", rrLevelLabel)
+                            .replace("{riskPct}", rrRiskPct!.toFixed(2))
+                            .replace("{rewardPct}", rrRewardPct!.toFixed(2))}
+                        </Text>
+                        <Text style={{ fontSize: 10, color: colors.textMuted, marginTop: 3, fontStyle: "italic" }}>
+                          {rrHint}
+                        </Text>
+                      </View>
+                    ) : null}
+
                     {s.reasons && s.reasons.length > 0 ? (
                       <View style={{ marginTop: 8 }}>
                         {s.reasons.slice(0, 3).map((r, i) => (
@@ -722,7 +842,20 @@ export default function AssetDetail() {
               >
                 <Text style={[styles.consensusLabel, { color: colors.textMuted }]}>{t("detail_consensus")}</Text>
                 <Text style={[styles.consensusAction, { color: signalColors(colors, analysis.consensus.action).fg }]}>
-                  {analysis.consensus.label} • {analysis.consensus.confidence}%
+                  {(() => {
+                    // v8.2.3 — Localize action label. For non-crypto markets we
+                    // never surface LONG/SHORT, and in Indonesian we use
+                    // BELI/JUAL to match the vocabulary the user requested.
+                    const isCrypto = market === "crypto";
+                    const raw = String(analysis.consensus.label || analysis.consensus.action || "").toUpperCase();
+                    if (raw === "BUY" || raw === "LONG") {
+                      return t(isCrypto ? "ai_pred_action_buy_crypto" : "ai_pred_action_buy_stock");
+                    }
+                    if (raw === "SELL" || raw === "SHORT") {
+                      return t(isCrypto ? "ai_pred_action_sell_crypto" : "ai_pred_action_sell_stock");
+                    }
+                    return raw || "HOLD";
+                  })()} • {analysis.consensus.confidence}%
                 </Text>
                 <Text style={[styles.consensusSummary, { color: colors.textPrimary }]}>
                   {translatedSummary ?? analysis.consensus.summary}
@@ -766,6 +899,77 @@ export default function AssetDetail() {
                 <EntryCell label={t("detail_ai_sl")} value={formatPrice(analysis.consensus.stop_loss, market)} color={colors.accentDown} colors={colors} />
                 <EntryCell label={t("detail_ai_tp")} value={formatPrice(analysis.consensus.take_profit, market)} color={colors.accentUp} colors={colors} />
               </View>
+
+              {/* v8.2.3 — Risk/Reward explanation for the AI Consensus box.
+                  User requested a clear "R/R 1:1.8" line with elaboration
+                  (Low/Medium/High + description) right after the SL/TP row. */}
+              {(() => {
+                const rr = computeConsensusRR(
+                  analysis.consensus.action,
+                  analysis.consensus.entry,
+                  analysis.consensus.stop_loss,
+                  analysis.consensus.take_profit,
+                  analysis.consensus.confidence,
+                );
+                if (!rr) return null;
+                const levelLabel = rr.level === "Low"
+                  ? t("ai_pred_risk_low")
+                  : rr.level === "High"
+                    ? t("ai_pred_risk_high")
+                    : t("ai_pred_risk_medium");
+                const levelColor = rr.level === "Low"
+                  ? colors.accentUp
+                  : rr.level === "High"
+                    ? colors.accentDown
+                    : "#F0B90B";
+                const hint = rr.level === "Low"
+                  ? t("ai_pred_rr_hint_low")
+                  : rr.level === "High"
+                    ? t("ai_pred_rr_hint_high")
+                    : t("ai_pred_rr_hint_medium");
+                return (
+                  <View
+                    testID="consensus-rr"
+                    style={{
+                      marginTop: 12,
+                      padding: 12,
+                      borderRadius: 10,
+                      backgroundColor: levelColor + "1A",
+                      borderLeftWidth: 3,
+                      borderLeftColor: levelColor,
+                    }}
+                  >
+                    <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                      <Text style={{ fontSize: 10, fontWeight: "800", color: levelColor, letterSpacing: 0.6 }}>
+                        {t("ai_pred_rr_label").toUpperCase()}
+                      </Text>
+                      <Text style={{ fontSize: 15, fontWeight: "900", color: colors.textPrimary, fontVariant: ["tabular-nums"] }}>
+                        1 : {rr.ratio.toFixed(2)}
+                      </Text>
+                      <View
+                        style={{
+                          paddingHorizontal: 8,
+                          paddingVertical: 2,
+                          borderRadius: 5,
+                          backgroundColor: levelColor + "33",
+                        }}
+                      >
+                        <Text style={{ fontSize: 11, fontWeight: "800", color: levelColor }}>{levelLabel}</Text>
+                      </View>
+                    </View>
+                    <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 6, lineHeight: 16 }}>
+                      {t("ai_pred_rr_line")
+                        .replace("{ratio}", rr.ratio.toFixed(2))
+                        .replace("{level}", levelLabel)
+                        .replace("{riskPct}", rr.riskPct.toFixed(2))
+                        .replace("{rewardPct}", rr.rewardPct.toFixed(2))}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 4, fontStyle: "italic" }}>
+                      {hint}
+                    </Text>
+                  </View>
+                );
+              })()}
 
               {/* Multi-level Target Profit (Fase 3) — ATR-based TP1/TP2/TP3 + SL */}
               <TargetProfit
