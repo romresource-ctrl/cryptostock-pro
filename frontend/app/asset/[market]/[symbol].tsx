@@ -696,14 +696,23 @@ export default function AssetDetail() {
                 // v8.2.3 — Suggestion text: use Beli/Jual for stocks (non-crypto),
                 // BUY/LONG-SELL/SHORT for crypto. Removes any Long/Short jargon
                 // for equity markets which the user flagged as inappropriate.
+                // v8.2.4 — Entry now rendered as a RANGE (entry_low – entry_high)
+                // to match the AI Consensus card behaviour. Falls back to single
+                // price when the backend didn't return a distinct range.
+                const entryStr =
+                  s.entry_low != null &&
+                  s.entry_high != null &&
+                  s.entry_low !== s.entry_high
+                    ? `${formatPrice(s.entry_low, market)} – ${formatPrice(s.entry_high, market)}`
+                    : formatPrice(s.entry, market);
                 const suggestion = isUp
                   ? t(isCrypto ? "ai_pred_prepare_buy_crypto" : "ai_pred_prepare_buy_stock")
-                      .replace("{entry}", formatPrice(s.entry, market))
+                      .replace("{entry}", entryStr)
                       .replace("{tp}", formatPrice(s.take_profit, market))
                       .replace("{sl}", formatPrice(s.stop_loss, market))
                   : isDown
                     ? t(isCrypto ? "ai_pred_prepare_sell_crypto" : "ai_pred_prepare_sell_stock")
-                        .replace("{entry}", formatPrice(s.entry, market))
+                        .replace("{entry}", entryStr)
                         .replace("{tp}", formatPrice(s.take_profit, market))
                         .replace("{sl}", formatPrice(s.stop_loss, market))
                     : t("ai_pred_wait");
