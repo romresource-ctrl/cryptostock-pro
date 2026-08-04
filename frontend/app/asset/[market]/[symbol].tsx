@@ -307,6 +307,38 @@ export default function AssetDetail() {
               </Text>
             </View>
             <View style={{ alignItems: "flex-end", gap: 6 }}>
+              {/* v8.2.2 — Risk/Reward badge di kiri Target Profit.
+                  Low = hijau, Medium = kuning, High = merah. */}
+              {sig?.risk_level ? (() => {
+                const rl = sig.risk_level;
+                const rColor = rl === "Low" ? colors.accentUp : rl === "High" ? colors.accentDown : "#F0B90B";
+                return (
+                  <View
+                    style={{
+                      paddingHorizontal: 10,
+                      paddingVertical: 6,
+                      borderRadius: 8,
+                      backgroundColor: rColor + "22",
+                      borderWidth: 1.5,
+                      borderColor: rColor,
+                      alignItems: "center",
+                      minWidth: 76,
+                      marginRight: 8,
+                    }}
+                    testID="header-risk-reward"
+                  >
+                    <Text style={{ fontSize: 9, color: rColor, letterSpacing: 0.6, fontWeight: "700", lineHeight: 11 }}>
+                      {rl === "Low" ? "Low Risk" : rl === "High" ? "High Risk" : "Med Risk"}
+                    </Text>
+                    <Text style={{ fontSize: 9, color: rColor, letterSpacing: 0.6, fontWeight: "700", lineHeight: 11 }}>
+                      R:R {sig.risk_reward ? `1:${sig.risk_reward.toFixed(1)}` : "-"}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: rColor, fontWeight: "900", fontVariant: ["tabular-nums"], marginTop: 2 }}>
+                      {sig.risk_pct != null ? `-${sig.risk_pct.toFixed(1)}%` : "-"}
+                    </Text>
+                  </View>
+                );
+              })() : null}
               {tpPct !== null ? (
                 <View
                   style={{

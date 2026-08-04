@@ -385,11 +385,14 @@ class AssetSignal(BaseModel):
     take_profit: float | None = None
     track_record: TrackRecordMini = Field(default_factory=TrackRecordMini)
     is_premium: bool = False
-    # v8.1.3 — Region key for World Stocks filter (japan/china/hongkong/
-    # taiwan/malaysia/singapore/korea/russia/india/europe/canada/
-    # australia/gulf/latam/africa/us/indonesia/index). None for
-    # non-stock markets.
+    # v8.1.3 — Region key for World Stocks filter
     region: str | None = None
+    # v8.2.2 — Risk/Reward metrics for badge display next to Target Profit.
+    # risk_reward: numeric ratio (reward / risk). risk_level: Low/Medium/High.
+    risk_reward: float | None = None
+    risk_level: str | None = None
+    reward_pct: float | None = None
+    risk_pct: float | None = None
 
 
 class DashboardResponse(BaseModel):
@@ -564,6 +567,40 @@ def _build_signal(snapshot: dict, tr: dict | None = None, *, min_conf: int = 85,
     # filter chips on the dashboard.
     from market_data import region_for_symbol
     region = region_for_symbol(market, snapshot["symbol"])
+
+    # v8.2.2 — Compute Risk/Reward + risk level for badge display.
+    risk_reward: float | None = None
+    risk_level: str | None = None
+    reward_pct: float | None = None
+    risk_pct: float | None = None
+    entry_v = sig.get("entry")
+    sl_v = sig.get("stop_loss")
+    tp_v = sig.get("take_profit")
+    if entry_v and sl_v and tp_v and sig["action"] in ("BUY", "SELL"):
+        reward = abs(tp_v - entry_v)
+        risk = abs(entry_v - sl_v)
+        if risk > 0 and entry_v > 0:
+            risk_reward = round(reward / risk, 2)
+            reward_pct = round((reward / entry_v) * 100, 2)
+            risk_pct = round((risk / entry_v) * 100, 2)
+            # Categorize based on confidence + R:R ratio.
+            conf = sig.get("confidence") or 0
+            if conf >= 85 and risk_reward >= 2.0:
+                risk_level = "Low"
+            elif conf >= 70 and risk_reward >= 1.0:
+                risk_level = "Medium"
+            else:
+                risk_level = "High"
+    elif sig["action"] == "HOLD" and entry_v and sl_v and tp_v:
+        # HOLD: show volatility range as a neutral badge (Medium by default)
+        reward = abs(tp_v - entry_v)
+        risk = abs(entry_v - sl_v)
+        if risk > 0 and entry_v > 0:
+            risk_reward = round(reward / risk, 2)
+            reward_pct = round((reward / entry_v) * 100, 2)
+            risk_pct = round((risk / entry_v) * 100, 2)
+            risk_level = "Medium"
+
     return AssetSignal(
         symbol=snapshot["symbol"],
         market=market,
@@ -588,6 +625,10 @@ def _build_signal(snapshot: dict, tr: dict | None = None, *, min_conf: int = 85,
         track_record=tr_mini,
         is_premium=is_premium,
         region=region,
+        risk_reward=risk_reward,
+        risk_level=risk_level,
+        reward_pct=reward_pct,
+        risk_pct=risk_pct,
     )
 
 

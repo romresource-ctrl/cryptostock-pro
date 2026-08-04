@@ -40,8 +40,12 @@ export interface AssetSignal {
   track_record: TrackRecordMini;
   is_premium: boolean;
   // v8.1.3 — Region key from Yahoo suffix (us/europe/japan/china/…).
-  // Only set for stock markets; other markets return null.
   region?: string | null;
+  // v8.2.2 — Risk/Reward metrics for badge display.
+  risk_reward?: number | null;
+  risk_level?: "Low" | "Medium" | "High" | null;
+  reward_pct?: number | null;
+  risk_pct?: number | null;
 }
 
 export type DashboardSort = "default" | "premium" | "confidence" | "wr";
