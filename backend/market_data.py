@@ -421,7 +421,8 @@ STOCK_US_YAHOO_MAP: dict[str, str] = {
     "SBER": "SBER.ME", "GAZP": "GAZP.ME", "LKOH": "LKOH.ME",
     "GMKN": "GMKN.ME", "ROSN": "ROSN.ME", "NVTK": "NVTK.ME",
     "TATN": "TATN.ME", "MTSS": "MTSS.ME", "MGNT": "MGNT.ME",
-    "YNDX": "YNDX.ME",
+    "YDEX": "YDEX.ME",  # v8.3.4 — Yandex renamed from YNDX after 2024 restructuring
+    "YNDX": "YDEX.ME",  # legacy alias so old bookmarks/links still resolve
 
     # ============================================================
     # v8.1.3 — 🇰🇷 KOREA (.KS/.KQ) top ~15 bonus
@@ -1309,6 +1310,120 @@ async def _fetch_coingecko_snapshot(
         return None
 
 
+# --------------------------- MOEX (Russia) --------------------------------
+# v8.3.4 — Moscow Exchange public API fallback for `.ME` (Russian) stocks.
+# Yahoo Finance stopped serving historical candles for Russian tickers after
+# sanctions restrictions, so the detail-page chart and technical indicators
+# came up blank. MOEX ISS is free and unauthenticated, still returns full
+# OHLC candles, and matches Yahoo's ticker set 1:1 for our SBER/GAZP/LKOH/
+# GMKN/ROSN/etc. universe. See `_MOEX_INTERVAL_MAP` for the interval bridge.
+
+MOEX_BASE = "https://iss.moex.com/iss"
+
+# App timeframe → MOEX interval (in minutes). MOEX supports:
+#   1, 10, 60 (minutes), 24 (day), 7 (week), 31 (month), 4 (quarter).
+# We collapse very-short timeframes to what MOEX exposes without exploding
+# rate limits — the resulting candles are still accurate for indicators.
+_MOEX_INTERVAL_MAP: dict[str, int] = {
+    "1m": 1, "3m": 10, "5m": 10, "15m": 10, "30m": 10,
+    "1h": 60, "3h": 60, "6h": 60, "12h": 60,
+    "18h": 24, "24h": 24, "7d": 7, "14d": 7, "30d": 31,
+}
+
+# How many days back to request per timeframe so we still land ~100 candles.
+_MOEX_LOOKBACK_DAYS: dict[str, int] = {
+    "1m": 1, "3m": 3, "5m": 3, "15m": 5, "30m": 10,
+    "1h": 30, "3h": 60, "6h": 90, "12h": 120,
+    "18h": 180, "24h": 180, "7d": 730, "14d": 730, "30d": 1825,
+}
+
+
+def _moex_symbol(symbol: str) -> str:
+    """Strip the trailing `.ME` used inside Yahoo mappings so we hand MOEX
+    a bare board ticker (SBER.ME → SBER).
+    """
+    up = symbol.upper()
+    return up[:-3] if up.endswith(".ME") else up
+
+
+async def _fetch_moex_candles(
+    client: httpx.AsyncClient, symbol: str, timeframe: str,
+) -> dict[str, Any] | None:
+    """Fetch OHLC candles from MOEX ISS. Returns the same shape as our
+    Yahoo helpers so `get_stock_snapshot` can substitute it drop-in.
+    """
+    interval = _MOEX_INTERVAL_MAP.get(timeframe, 60)
+    lookback = _MOEX_LOOKBACK_DAYS.get(timeframe, 30)
+    from datetime import datetime, timedelta, timezone
+    frm = (datetime.now(timezone.utc) - timedelta(days=lookback)).strftime("%Y-%m-%d")
+
+    moex_sym = _moex_symbol(symbol)
+    url = f"{MOEX_BASE}/engines/stock/markets/shares/securities/{moex_sym}/candles.json"
+    params = {"interval": str(interval), "from": frm}
+
+    try:
+        r = await client.get(url, params=params, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200:
+            return None
+        data = r.json()
+    except Exception:
+        return None
+
+    c = data.get("candles", {}) or {}
+    cols = c.get("columns") or []
+    rows = c.get("data") or []
+    if not rows or not cols:
+        return None
+
+    idx = {name: i for i, name in enumerate(cols)}
+    for k in ("open", "close", "high", "low", "volume", "begin"):
+        if k not in idx:
+            return None
+
+    from datetime import datetime  # noqa: reimport to avoid closure edge
+    candles: list[dict[str, Any]] = []
+    for row in rows:
+        try:
+            begin = row[idx["begin"]]
+            # MOEX timestamps are naive UTC ("YYYY-MM-DD HH:MM:SS").
+            dt = datetime.strptime(begin, "%Y-%m-%d %H:%M:%S")
+            ts_ms = int(dt.replace(tzinfo=timezone.utc).timestamp() * 1000)
+            candles.append({
+                "t": ts_ms,
+                "open": float(row[idx["open"]]),
+                "high": float(row[idx["high"]]),
+                "low":  float(row[idx["low"]]),
+                "close": float(row[idx["close"]]),
+                "volume": float(row[idx["volume"]] or 0),
+            })
+        except Exception:
+            continue
+
+    if not candles:
+        return None
+
+    # Trim to 100 latest so downstream indicators match Yahoo's shape.
+    candles = candles[-100:]
+    latest = candles[-1]
+    first = candles[0]
+    price = latest["close"]
+    open_first = first["open"] or price
+    change_pct = ((price - open_first) / open_first) * 100 if open_first else 0.0
+    highs_24 = [c["high"] for c in candles[-25:]]
+    lows_24 = [c["low"] for c in candles[-25:]]
+    return {
+        "symbol": symbol,
+        "ticker": {
+            "price": price,
+            "change_pct_24h": change_pct,
+            "volume_24h": sum(c["volume"] for c in candles[-25:]),
+            "high_24h": max(highs_24) if highs_24 else price,
+            "low_24h": min(lows_24) if lows_24 else price,
+        },
+        "candles": candles,
+    }
+
+
 async def get_stock_snapshot(symbol: str, timeframe: str, market: str = "stock_id") -> dict[str, Any] | None:
     tf = TIMEFRAME_MAP.get(timeframe, TIMEFRAME_MAP["1h"])
     if market == "stock_id":
@@ -1329,6 +1444,22 @@ async def get_stock_snapshot(symbol: str, timeframe: str, market: str = "stock_i
     if not yahoo_sym:
         return None
     client = await _http()
+    # v8.3.4 — For `.ME` (Russian) tickers, Yahoo returns quote metadata but
+    # zero candles due to post-sanction restrictions. Route to MOEX ISS
+    # instead so the detail-page chart and technical indicators keep
+    # working. Yahoo still handles every other market.
+    if yahoo_sym.upper().endswith(".ME"):
+        moex_payload = await _fetch_moex_candles(client, yahoo_sym, timeframe)
+        if moex_payload and moex_payload.get("candles"):
+            return {
+                "symbol": symbol,
+                "market": market,
+                "ticker": moex_payload["ticker"],
+                "candles": moex_payload["candles"],
+            }
+        # If MOEX is unreachable, fall through to Yahoo so we at least
+        # return whatever quote data Yahoo still exposes.
+
     data = await _fetch_yahoo_chart_by_symbol(client, yahoo_sym, tf["yahoo_range"], tf["yahoo_interval"])
     if not data:
         return None
