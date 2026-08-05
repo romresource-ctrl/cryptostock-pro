@@ -179,7 +179,25 @@ def _compute_deep_levels(
         entry_deep = ((avg_valley + lowest_valley) / 2.0) - atr * 0.5
         entry_moderate = ((price + avg_valley) / 2.0) + atr * 0.3
         entry_aggressive = price - atr * 0.3
-        take_profit = max(avg_peak, entry_deep + atr * 1.0)
+        # v8.3.6 — Enforce a MEANINGFUL take-profit distance. On short
+        # crypto timeframes (3m/5m) both `avg_peak` and `atr` can be
+        # tiny, so the old `max(avg_peak, entry + atr*1.0)` returned a
+        # TP only ~$3 above entry — pointless for a LONG trade. We now
+        # require the TP to sit at least the greater of:
+        #   • 1.0% above the deep entry           (min reward vs entry)
+        #   • 0.5% above the current market price (min reward vs spot)
+        #   • the average of recent peaks         (structural target)
+        #   • entry_deep + 3× ATR                 (volatility target)
+        # so both R:R and absolute profit stay realistic even in dead
+        # markets.
+        min_tp_pct_entry = entry_deep * 1.010
+        min_tp_pct_price = price * 1.005
+        take_profit = max(
+            avg_peak,
+            entry_deep + atr * 3.0,
+            min_tp_pct_entry,
+            min_tp_pct_price,
+        )
         sl_deep = entry_deep - atr * 0.5
         sl_moderate = entry_moderate - atr * 0.5
         sl_aggressive = entry_aggressive - atr * 0.5
@@ -189,7 +207,17 @@ def _compute_deep_levels(
         entry_deep = ((avg_peak + highest_peak) / 2.0) + atr * 0.5
         entry_moderate = ((price + avg_peak) / 2.0) - atr * 0.3
         entry_aggressive = price + atr * 0.3
-        take_profit = min(avg_valley, entry_deep - atr * 1.0)
+        # v8.3.6 — Mirror of the BUY fix: enforce a meaningful TP below
+        # entry / current price so SHORT trades are worth taking even
+        # on quiet 3m/5m timeframes.
+        min_tp_pct_entry = entry_deep * 0.990
+        min_tp_pct_price = price * 0.995
+        take_profit = min(
+            avg_valley,
+            entry_deep - atr * 3.0,
+            min_tp_pct_entry,
+            min_tp_pct_price,
+        )
         sl_deep = entry_deep + atr * 0.5
         sl_moderate = entry_moderate + atr * 0.5
         sl_aggressive = entry_aggressive + atr * 0.5
@@ -199,8 +227,11 @@ def _compute_deep_levels(
         entry_deep = price
         entry_moderate = price
         entry_aggressive = price
-        take_profit = price + atr * 1.0
-        stop_loss = price - atr * 1.0
+        # v8.3.6 — HOLD is informational (no active trade recommended)
+        # but the numbers still surface in the UI. Widen the projection
+        # so users see realistic "if the market breaks upward" targets.
+        take_profit = max(price + atr * 2.5, price * 1.008)
+        stop_loss = min(price - atr * 2.5, price * 0.992)
         sl_deep = sl_moderate = sl_aggressive = stop_loss
         band = atr * 0.4
 
