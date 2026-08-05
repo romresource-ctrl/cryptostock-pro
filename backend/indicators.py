@@ -179,17 +179,7 @@ def _compute_deep_levels(
         entry_deep = ((avg_valley + lowest_valley) / 2.0) - atr * 0.5
         entry_moderate = ((price + avg_valley) / 2.0) + atr * 0.3
         entry_aggressive = price - atr * 0.3
-        # v8.3.6 — Enforce a MEANINGFUL take-profit distance. On short
-        # crypto timeframes (3m/5m) both `avg_peak` and `atr` can be
-        # tiny, so the old `max(avg_peak, entry + atr*1.0)` returned a
-        # TP only ~$3 above entry — pointless for a LONG trade. We now
-        # require the TP to sit at least the greater of:
-        #   • 1.0% above the deep entry           (min reward vs entry)
-        #   • 0.5% above the current market price (min reward vs spot)
-        #   • the average of recent peaks         (structural target)
-        #   • entry_deep + 3× ATR                 (volatility target)
-        # so both R:R and absolute profit stay realistic even in dead
-        # markets.
+        # v8.3.6 — TP min-distance (see previous doc block).
         min_tp_pct_entry = entry_deep * 1.010
         min_tp_pct_price = price * 1.005
         take_profit = max(
@@ -198,18 +188,23 @@ def _compute_deep_levels(
             min_tp_pct_entry,
             min_tp_pct_price,
         )
-        sl_deep = entry_deep - atr * 0.5
-        sl_moderate = entry_moderate - atr * 0.5
-        sl_aggressive = entry_aggressive - atr * 0.5
+        # v8.3.7 — SL min-distance. The old `entry_deep - atr * 0.5`
+        # produced SL only $2 below entry on ETH 3m — meaningless. We
+        # now require SL to be at least the greater of:
+        #   • 1.5× ATR from entry     (volatility floor)
+        #   • 0.8% of entry price     (percentage floor)
+        # so R:R stays >= ~1:1 even on tiny-ATR timeframes.
+        min_sl_distance = max(atr * 1.5, entry_deep * 0.008)
+        sl_deep = min(entry_deep - atr * 0.5, entry_deep - min_sl_distance)
+        sl_moderate = min(entry_moderate - atr * 0.5, entry_moderate - min_sl_distance)
+        sl_aggressive = min(entry_aggressive - atr * 0.5, entry_aggressive - min_sl_distance)
         stop_loss = sl_deep
         band = atr * 0.4
     elif action == "SELL":
         entry_deep = ((avg_peak + highest_peak) / 2.0) + atr * 0.5
         entry_moderate = ((price + avg_peak) / 2.0) - atr * 0.3
         entry_aggressive = price + atr * 0.3
-        # v8.3.6 — Mirror of the BUY fix: enforce a meaningful TP below
-        # entry / current price so SHORT trades are worth taking even
-        # on quiet 3m/5m timeframes.
+        # v8.3.6 — TP min-distance (mirror of BUY).
         min_tp_pct_entry = entry_deep * 0.990
         min_tp_pct_price = price * 0.995
         take_profit = min(
@@ -218,9 +213,11 @@ def _compute_deep_levels(
             min_tp_pct_entry,
             min_tp_pct_price,
         )
-        sl_deep = entry_deep + atr * 0.5
-        sl_moderate = entry_moderate + atr * 0.5
-        sl_aggressive = entry_aggressive + atr * 0.5
+        # v8.3.7 — SL min-distance (mirror). SL sits ABOVE entry for SHORT.
+        min_sl_distance = max(atr * 1.5, entry_deep * 0.008)
+        sl_deep = max(entry_deep + atr * 0.5, entry_deep + min_sl_distance)
+        sl_moderate = max(entry_moderate + atr * 0.5, entry_moderate + min_sl_distance)
+        sl_aggressive = max(entry_aggressive + atr * 0.5, entry_aggressive + min_sl_distance)
         stop_loss = sl_deep
         band = atr * 0.4
     else:  # HOLD

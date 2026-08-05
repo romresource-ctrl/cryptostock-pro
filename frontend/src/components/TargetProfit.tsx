@@ -13,6 +13,15 @@ type Props = {
   candles: Candle[];
   confidence?: number;
   label?: string;
+  // v8.3.7 — Optional passthrough of the deterministic backend values.
+  // When supplied, the card anchors SL at `stopLoss` and TP3 at
+  // `takeProfit`, then derives TP1/TP2 by interpolation. This keeps
+  // the "Target Profit & Stop Loss" chart consistent with the main
+  // "TAKE PROFIT" and "STOP LOSS" values shown above the card.
+  // If omitted (legacy callers), falls back to the old ATR × multiplier
+  // formula.
+  stopLoss?: number | null;
+  takeProfit?: number | null;
   translations?: {
     title?: string;
     entry?: string;
@@ -59,6 +68,8 @@ export default function TargetProfit({
   candles,
   confidence = 0,
   label,
+  stopLoss,
+  takeProfit,
   translations,
 }: Props) {
   const { colors } = useTheme();
@@ -77,22 +88,50 @@ export default function TargetProfit({
   };
 
   const levels = useMemo(() => {
-    const atr = computeATR(candles, 14) || entryPrice * 0.01;
     const isBuy = action === "BUY";
     const isSell = action === "SELL";
     if (!isBuy && !isSell) return null;
     const dir = isBuy ? 1 : -1;
-    // Scale ATR distance by confidence (higher conf → wider TP3)
-    const confBoost = 1 + Math.min(Math.max(confidence, 0), 100) / 200; // 1.0 – 1.5
-    const sl = entryPrice - dir * atr;
-    const tp1 = entryPrice + dir * atr * 1.5;
-    const tp2 = entryPrice + dir * atr * 2.5;
-    const tp3 = entryPrice + dir * atr * 4.0 * confBoost;
+
+    // v8.3.7 — Prefer the backend's deterministic SL / TP so the card
+    // matches the main "STOP LOSS" and "TAKE PROFIT" numbers shown
+    // above. TP1 and TP2 are then INTERPOLATED between entry and TP3
+    // (40% / 70% of the way to TP3) so users see a coherent
+    // "partial-take-profit" ladder that always leads up to the actual
+    // final target.
+    const backendSl =
+      stopLoss != null && Number.isFinite(stopLoss) ? stopLoss : null;
+    const backendTp =
+      takeProfit != null && Number.isFinite(takeProfit) ? takeProfit : null;
+
+    const atr = computeATR(candles, 14) || entryPrice * 0.01;
+
+    // Sanity-check the backend TP direction. For BUY, TP must be above
+    // entry; for SELL, below. If backend value violates this (edge case
+    // during data hiccups), fall back to ATR-based synthesis.
+    const validBackendTp =
+      backendTp != null &&
+      ((isBuy && backendTp > entryPrice) || (isSell && backendTp < entryPrice));
+
+    const tp3 = validBackendTp
+      ? (backendTp as number)
+      : entryPrice + dir * atr * 4.0;
+
+    // Interpolate TP1 / TP2 as fractions of the full move to TP3, so
+    // TP1 < TP2 < TP3 always holds and all three sit on the correct
+    // side of entry.
+    const tpMove = tp3 - entryPrice;
+    const tp1 = entryPrice + tpMove * 0.4;
+    const tp2 = entryPrice + tpMove * 0.7;
+
+    // SL: prefer backend, else 1× ATR the opposite way.
+    const sl = backendSl != null ? backendSl : entryPrice - dir * atr;
+
     const riskPerUnit = Math.abs(entryPrice - sl) || 1;
     const rewardPerUnit = Math.abs(tp2 - entryPrice);
     const rr = rewardPerUnit / riskPerUnit;
     return { atr, sl, tp1, tp2, tp3, rr, isBuy };
-  }, [action, entryPrice, candles, confidence]);
+  }, [action, entryPrice, candles, stopLoss, takeProfit]);
 
   if (!levels) {
     return (

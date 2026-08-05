@@ -585,6 +585,8 @@ export default function AssetDetail() {
                   candles={chart?.candles ?? []}
                   confidence={sig.confidence}
                   label={sig.label}
+                  stopLoss={sig.stop_loss}
+                  takeProfit={sig.take_profit}
                 />
               </View>
             ) : null}
@@ -980,7 +982,9 @@ export default function AssetDetail() {
                 );
               })()}
 
-              {/* Multi-level Target Profit (Fase 3) — ATR-based TP1/TP2/TP3 + SL */}
+              {/* Multi-level Target Profit (Fase 3) — anchored to backend
+                  consensus SL/TP so TP1/TP2/TP3 always match the "AI TP"
+                  and "AI SL" values shown above (v8.3.7). */}
               <TargetProfit
                 action={analysis.consensus.action}
                 entryPrice={
@@ -991,6 +995,8 @@ export default function AssetDetail() {
                 candles={chart?.candles ?? []}
                 confidence={analysis.consensus.confidence}
                 label={analysis.consensus.label}
+                stopLoss={analysis.consensus.stop_loss}
+                takeProfit={analysis.consensus.take_profit}
               />
 
               {/* News & Risk */}
