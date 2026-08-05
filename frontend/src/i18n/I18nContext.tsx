@@ -132,6 +132,48 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   legal_terms: { id: "Syarat & Ketentuan", en: "Terms of Service", ru: "Условия использования", cn: "服务条款" },
   legal_data_deletion: { id: "Hapus Akun & Data", en: "Delete Account & Data", ru: "Удалить аккаунт и данные", cn: "删除账户与数据" },
 
+  // v8.3.5 — Market Brief page (re-read pushed briefings)
+  news_tab_market_brief: { id: "Brief Pasar", en: "Market Brief", ru: "Брифинг", cn: "市场简报" },
+  market_brief_title: { id: "Brief Pasar", en: "Market Brief", ru: "Брифинг рынка", cn: "市场简报" },
+  market_brief_subtitle: {
+    id: "Ringkasan push 24 jam terakhir",
+    en: "Last 24h push briefings",
+    ru: "Пуш-брифинги за 24 часа",
+    cn: "过去24小时推送简报",
+  },
+  market_brief_banner: {
+    id: "Push notif kemarin sudah otomatis hilang. Yang ini akan diperbarui tiap sesi (pre-market, close, dst).",
+    en: "Yesterday's briefings expire automatically. This list refreshes each session (pre-market, close, etc.).",
+    ru: "Вчерашние брифинги автоматически исчезают. Список обновляется каждую сессию.",
+    cn: "昨日简报自动过期。此列表在每场交易更新。",
+  },
+  market_brief_empty_title: {
+    id: "Belum ada brief hari ini",
+    en: "No briefings yet today",
+    ru: "Пока нет брифингов",
+    cn: "今日暂无简报",
+  },
+  market_brief_empty_body: {
+    id: "Brief pertama akan muncul di jadwal berikutnya sesuai bahasa Anda (contoh: 08:45 WIB untuk pre-market IDX).",
+    en: "The next scheduled brief for your language will appear here.",
+    ru: "Следующий запланированный брифинг появится здесь.",
+    cn: "下一次预定简报将出现在此处。",
+  },
+  market_brief_error: { id: "Gagal memuat", en: "Failed to load", ru: "Ошибка загрузки", cn: "加载失败" },
+  market_brief_premium_title: {
+    id: "Brief Pasar — Fitur Premium",
+    en: "Market Brief — Premium Feature",
+    ru: "Брифинг рынка — премиум",
+    cn: "市场简报 — 高级功能",
+  },
+  market_brief_premium_body: {
+    id: "Aktifkan Premium untuk membaca ringkasan push notification (pre-market, close, dsb) yang terlewat di lock screen.",
+    en: "Upgrade to Premium to re-read the push briefings you may have missed on your lock screen.",
+    ru: "Оформите Premium, чтобы читать пропущенные пуш-брифинги.",
+    cn: "升级至高级版即可查看错过的推送简报。",
+  },
+  market_brief_premium_cta: { id: "Ke Dashboard", en: "Go to Dashboard", ru: "На Дашборд", cn: "前往仪表盘" },
+
   // v8.2.3 — AI Prediction box: Beli/Jual (stocks) vs BUY/SELL (crypto) & Risk/Reward info
   ai_pred_action_buy_stock: { id: "BELI", en: "BUY", ru: "ПОКУПКА", cn: "买入" },
   ai_pred_action_sell_stock: { id: "JUAL", en: "SELL", ru: "ПРОДАЖА", cn: "卖出" },

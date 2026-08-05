@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -15,8 +15,9 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { api, type Market, type NewsItem } from "@/src/lib/api";
-import { useI18n } from "@/src/i18n/I18nContext";
+import { api, API_BASE, type Market, type NewsItem } from "@/src/lib/api";
+import { useI18n, type Lang } from "@/src/i18n/I18nContext";
+import { useSubscription } from "@/src/lib/subscriptionContext";
 import { useTheme } from "@/src/theme/ThemeContext";
 
 type MarketFilter = "all" | Market;
@@ -79,8 +80,21 @@ function NewsRow({ item, t }: { item: NewsItem; t: (k: string) => string }) {
 export default function NewsScreen() {
   const { colors } = useTheme();
   const router = useRouter();
+  const params = useLocalSearchParams<{ tab?: string }>();
   const { lang, t } = useI18n();
-  const [tab, setTab] = useState<"news" | "disclaimer">("news");
+  const { isPremium } = useSubscription();
+  // v8.3.5 — 3-tab layout: market_brief | news | disclaimer. Market Brief
+  // tab is gated to Premium subscribers; non-premium sees an upgrade CTA.
+  const [tab, setTab] = useState<"market_brief" | "news" | "disclaimer">(() => {
+    const p = params?.tab;
+    if (p === "market_brief" || p === "disclaimer" || p === "news") return p;
+    return "news";
+  });
+  // Sync tab if the deep link changes after mount (push notif taps on warm start).
+  useEffect(() => {
+    const p = params?.tab;
+    if (p === "market_brief" || p === "disclaimer" || p === "news") setTab(p);
+  }, [params?.tab]);
   const [marketFilter, setMarketFilter] = useState<MarketFilter>("all");
   const [symbolFilter, setSymbolFilter] = useState<{ symbol: string; market: Market } | null>(null);
   const [items, setItems] = useState<NewsItem[]>([]);
@@ -157,18 +171,52 @@ export default function NewsScreen() {
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={[styles.appTitle, { color: colors.textPrimary }]}>
-            {tab === "news" ? t("news_live_title") : t("disclaimer_title")}
+            {tab === "news"
+              ? t("news_live_title")
+              : tab === "disclaimer"
+                ? t("disclaimer_title")
+                : t("market_brief_title")}
           </Text>
           <Text style={[styles.appSub, { color: colors.textMuted }]}>
             {tab === "news"
               ? `${t("news_rss_source")} • ${fetchedAt ? `${t("news_update")} ${fetchedAt}` : t("news_loading")}${symbolFilter ? ` • ${symbolFilter.symbol}` : ""}`
-              : t("news_disclaimer_subtitle")}
+              : tab === "disclaimer"
+                ? t("news_disclaimer_subtitle")
+                : t("market_brief_subtitle")}
           </Text>
         </View>
       </View>
 
-      {/* Tab switcher: News | Disclaimer */}
+      {/* Tab switcher: Market Brief | News | Disclaimer */}
       <View style={styles.tabRow}>
+        {/* v8.3.5 — Market Brief tab (leftmost). Premium-only. Tapping this
+             tab while non-premium still switches the view but shows an
+             upgrade CTA card instead of the brief list. */}
+        <TouchableOpacity
+          onPress={() => setTab("market_brief")}
+          testID="tab-market-brief"
+          style={[
+            styles.tabBtn,
+            {
+              backgroundColor: tab === "market_brief" ? colors.accentUp : colors.surface,
+              borderColor: tab === "market_brief" ? colors.accentUp : colors.border,
+            },
+          ]}
+        >
+          <Ionicons
+            name="mail-open-outline"
+            size={14}
+            color={tab === "market_brief" ? "#fff" : colors.textSecondary}
+          />
+          <Text
+            style={[
+              styles.tabText,
+              { color: tab === "market_brief" ? "#fff" : colors.textSecondary },
+            ]}
+          >
+            {t("news_tab_market_brief")}
+          </Text>
+        </TouchableOpacity>
         <TouchableOpacity
           onPress={() => setTab("news")}
           testID="tab-news"
@@ -238,6 +286,8 @@ export default function NewsScreen() {
             </Text>
           </View>
         </ScrollView>
+      ) : tab === "market_brief" ? (
+        <MarketBriefPane lang={lang} isPremium={isPremium} onGoDashboard={() => router.replace("/")} />
       ) : (
         <>{null}</>
       )}
@@ -335,6 +385,212 @@ export default function NewsScreen() {
   );
 }
 
+// v8.3.5 — Market Brief pane: shows the last-24h push notifications for
+// premium subscribers so users who accidentally dismissed the lock-screen
+// notification can still read the briefing inside the app.
+type BriefItem = {
+  slot?: string;
+  title?: string;
+  body?: string;
+  market?: string | null;
+  signal_symbol?: string | null;
+  signal_action?: string | null;
+  signal_confidence?: number | null;
+  news_title?: string | null;
+  sent_at?: string;
+};
+
+function formatBriefTime(iso: string | undefined): string {
+  if (!iso) return "";
+  try {
+    const d = new Date(iso);
+    // Show HH:MM in WIB (Asia/Jakarta) — matches the scheduler's local time.
+    const opts: Intl.DateTimeFormatOptions = {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "Asia/Jakarta",
+    };
+    return `${d.toLocaleTimeString("en-GB", opts)} WIB`;
+  } catch {
+    return "";
+  }
+}
+
+function MarketBriefPane({
+  lang,
+  isPremium,
+  onGoDashboard,
+}: {
+  lang: Lang;
+  isPremium: boolean;
+  onGoDashboard: () => void;
+}) {
+  const { colors } = useTheme();
+  const { t } = useI18n();
+  const [items, setItems] = useState<BriefItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(
+    async (opts?: { refresh?: boolean }) => {
+      if (!isPremium) {
+        setLoading(false);
+        return;
+      }
+      if (opts?.refresh) setRefreshing(true);
+      else setLoading(true);
+      setError(null);
+      try {
+        const r = await fetch(`${API_BASE}/push/history?language=${lang}&limit=20`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        setItems(Array.isArray(data?.items) ? data.items : []);
+      } catch (e) {
+        setError((e as Error).message);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [lang, isPremium],
+  );
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // Non-premium — show upgrade CTA rather than briefs (feature is Premium).
+  if (!isPremium) {
+    return (
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 32 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={[styles.premiumCard, { backgroundColor: colors.surface, borderColor: colors.accentUp }]}>
+          <Ionicons name="lock-closed" size={40} color={colors.accentUp} />
+          <Text style={[styles.premiumTitle, { color: colors.textPrimary }]}>
+            {t("market_brief_premium_title")}
+          </Text>
+          <Text style={[styles.premiumBody, { color: colors.textSecondary }]}>
+            {t("market_brief_premium_body")}
+          </Text>
+          <TouchableOpacity
+            onPress={onGoDashboard}
+            testID="market-brief-upgrade-btn"
+            style={[styles.premiumCta, { backgroundColor: colors.accentUp }]}
+          >
+            <Text style={{ color: "#000", fontWeight: "800" }}>
+              {t("market_brief_premium_cta")}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    );
+  }
+
+  if (loading) {
+    return (
+      <View style={styles.loader}>
+        <ActivityIndicator color={colors.accentUp} />
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={{ paddingHorizontal: 12, paddingTop: 8, paddingBottom: 32 }}
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={() => load({ refresh: true })}
+          tintColor={colors.accentUp}
+        />
+      }
+    >
+      <View
+        style={[
+          styles.briefBanner,
+          { borderColor: colors.accentUp, backgroundColor: colors.accentUp + "18" },
+        ]}
+      >
+        <Ionicons name="megaphone-outline" size={18} color={colors.accentUp} />
+        <Text style={[styles.briefBannerText, { color: colors.textPrimary }]}>
+          {t("market_brief_banner")}
+        </Text>
+      </View>
+
+      {error ? (
+        <View style={[styles.briefCard, { backgroundColor: colors.surface, borderColor: colors.accentDown }]}>
+          <Text style={{ color: colors.accentDown, fontSize: 12 }}>
+            {t("market_brief_error")}: {error}
+          </Text>
+        </View>
+      ) : items.length === 0 ? (
+        <View style={[styles.briefCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Ionicons name="time-outline" size={20} color={colors.textMuted} />
+          <Text style={[styles.briefEmptyTitle, { color: colors.textPrimary }]}>
+            {t("market_brief_empty_title")}
+          </Text>
+          <Text style={[styles.briefEmptyBody, { color: colors.textMuted }]}>
+            {t("market_brief_empty_body")}
+          </Text>
+        </View>
+      ) : (
+        items.map((it, i) => {
+          const isBuy = (it.signal_action || "").toUpperCase() === "BUY";
+          const isSell = (it.signal_action || "").toUpperCase() === "SELL";
+          const actionColor = isBuy ? colors.accentUp : isSell ? colors.accentDown : colors.accentHold;
+          return (
+            <View
+              key={`${it.slot}-${it.sent_at}-${i}`}
+              style={[
+                styles.briefCard,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                  borderLeftWidth: 3,
+                  borderLeftColor: actionColor,
+                },
+              ]}
+            >
+              <View style={styles.briefHead}>
+                <Text style={[styles.briefTitle, { color: colors.textPrimary }]} numberOfLines={2}>
+                  {it.title}
+                </Text>
+                <Text style={[styles.briefTime, { color: colors.textMuted }]}>
+                  {formatBriefTime(it.sent_at)}
+                </Text>
+              </View>
+              <Text style={[styles.briefBody, { color: colors.textSecondary }]}>{it.body}</Text>
+              {it.signal_symbol ? (
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                  <View
+                    style={{
+                      paddingHorizontal: 8,
+                      paddingVertical: 3,
+                      borderRadius: 6,
+                      backgroundColor: actionColor + "22",
+                    }}
+                  >
+                    <Text style={{ fontSize: 11, fontWeight: "800", color: actionColor }}>
+                      {it.signal_symbol} · {it.signal_action}{" "}
+                      {it.signal_confidence != null ? `${it.signal_confidence}%` : ""}
+                    </Text>
+                  </View>
+                </View>
+              ) : null}
+            </View>
+          );
+        })
+      )}
+    </ScrollView>
+  );
+}
+
 const styles = StyleSheet.create({
   root: { flex: 1 },
   tabRow: {
@@ -406,4 +662,49 @@ const styles = StyleSheet.create({
   time: { fontSize: 10, marginLeft: 8 },
   title: { fontSize: 13, fontWeight: "600", lineHeight: 18 },
   summary: { fontSize: 11, marginTop: 4, lineHeight: 15 },
+
+  // v8.3.5 — Market Brief styles
+  briefBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderWidth: 1.5,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+  },
+  briefBannerText: { fontSize: 12, fontWeight: "700", flex: 1, lineHeight: 17 },
+  briefCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+  },
+  briefHead: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 6,
+    gap: 8,
+  },
+  briefTitle: { fontSize: 14, fontWeight: "800", flex: 1, lineHeight: 19 },
+  briefTime: { fontSize: 10, fontWeight: "700", letterSpacing: 0.5 },
+  briefBody: { fontSize: 12.5, lineHeight: 17 },
+  briefEmptyTitle: { fontSize: 13, fontWeight: "800", marginTop: 6 },
+  briefEmptyBody: { fontSize: 11, marginTop: 4, lineHeight: 15 },
+  premiumCard: {
+    borderWidth: 1.5,
+    borderRadius: 14,
+    padding: 20,
+    alignItems: "center",
+    gap: 10,
+  },
+  premiumTitle: { fontSize: 16, fontWeight: "900", textAlign: "center" },
+  premiumBody: { fontSize: 12.5, textAlign: "center", lineHeight: 18 },
+  premiumCta: {
+    marginTop: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
 });

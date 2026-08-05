@@ -30,7 +30,7 @@ from typing import Any, Awaitable, Callable
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from push_notifications import chunk_recipients, send_push, subscribers_by_language
+from push_notifications import chunk_recipients, save_history, send_push, subscribers_by_language
 
 logger = logging.getLogger("push_scheduler")
 
@@ -250,12 +250,31 @@ async def _run_slot(
     body = _format_body(slot["body"], signal, news_title, slot["language"])
     title = slot["title"]
 
-    # Deep link into asset detail if we have a signal, otherwise dashboard.
-    action_url: str
-    if signal and signal.get("symbol"):
-        action_url = f"/asset/{signal.get('market', slot['market'])}/{signal['symbol']}"
-    else:
-        action_url = "/"
+    # v8.3.5 — Deep-link into the News page with the Market Brief tab
+    # pre-selected. The News page reads `?tab=market_brief` on mount so
+    # premium users who missed the lock-screen swipe can still read the
+    # brief inside the app.
+    action_url = "/news?tab=market_brief"
+
+    # v8.3.5 — Persist the outgoing brief to `push_history` (TTL 24h). Even
+    # if the actual push send fails, we still surface the brief in the
+    # in-app Market Brief page — otherwise the user has zero recourse.
+    try:
+        await save_history(
+            db,
+            language=slot["language"],
+            slot=slot["slot"],
+            title=title,
+            body=body,
+            action_url=action_url,
+            market=slot.get("market"),
+            signal_symbol=(signal or {}).get("symbol"),
+            signal_action=(signal or {}).get("action"),
+            signal_confidence=int((signal or {}).get("confidence") or 0) if signal else None,
+            news_title=news_title or None,
+        )
+    except Exception as e:
+        logger.warning("push_history save failed for slot %s: %s", slot["slot"], e)
 
     idempotency_root = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     idempotency = f"{slot['slot']}-{idempotency_root}"

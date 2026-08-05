@@ -71,6 +71,8 @@ from unlock_codes import (  # noqa: E402
 # Registration endpoint + daily scheduler are wired further below.
 from push_notifications import (  # noqa: E402
     RegisterPushBody,
+    ensure_history_indexes,
+    get_history,
     register_push_token,
     save_subscriber,
 )
@@ -2005,6 +2007,27 @@ async def register_push(body: RegisterPushBody) -> dict[str, str]:
     return {"status": "registered"}
 
 
+# v8.3.5 — Return the last-24h Market Brief history for the caller's
+# language cohort. Consumed by the /market-brief page on the frontend.
+# Docs auto-expire via the TTL index on `sent_at` (24h), so today's brief
+# naturally replaces yesterday's without any manual pruning.
+@api.get("/push/history")
+async def push_history_endpoint(
+    language: str = Query("en", description="One of: id / en / ru / cn"),
+    limit: int = Query(20, ge=1, le=50),
+) -> dict[str, Any]:
+    lang = (language or "en").lower()
+    if lang not in ("id", "en", "ru", "cn"):
+        lang = "en"
+    items = await get_history(db, lang, limit=limit)
+    # Coerce datetime -> ISO string for JSON serialization.
+    for it in items:
+        ts = it.get("sent_at")
+        if hasattr(ts, "isoformat"):
+            it["sent_at"] = ts.isoformat()
+    return {"language": lang, "count": len(items), "items": items}
+
+
 app.include_router(api)
 app.add_middleware(
     CORSMiddleware,
@@ -2252,6 +2275,8 @@ async def _startup_bootstrap() -> None:
     asyncio.create_task(_load_universe_refresh_loop())
     # v8.3.0 — Start daily push notification scheduler (7 slots, WIB).
     _start_push_scheduler()
+    # v8.3.5 — Ensure push_history TTL index exists (24h auto-expiry).
+    asyncio.create_task(ensure_history_indexes(db))
 
 
 # --------------- Push scheduler wiring (v8.3.0) ---------------

@@ -140,6 +140,71 @@ async def all_languages(db: Any) -> list[str]:
     return [str(x).lower() for x in langs if x]
 
 
+# ------------------------- Push history (24h) -------------------------
+# v8.3.5 — Every push fired by the scheduler is also persisted here so
+# premium users can re-read it later in the Market Brief page. The
+# `sent_at` field is TTL-indexed at 24h, so records auto-expire and the
+# next day's brief naturally replaces the previous day's.
+
+
+async def ensure_history_indexes(db: Any) -> None:
+    """Create the 24h TTL index. Safe to call repeatedly (idempotent)."""
+    try:
+        await db["push_history"].create_index("sent_at", expireAfterSeconds=24 * 3600)
+        await db["push_history"].create_index([("language", 1), ("sent_at", -1)])
+    except Exception:
+        # Never let index creation crash startup — we'll retry on the next
+        # scheduler tick.
+        pass
+
+
+async def save_history(
+    db: Any,
+    *,
+    language: str,
+    slot: str,
+    title: str,
+    body: str,
+    action_url: str,
+    market: str | None = None,
+    signal_symbol: str | None = None,
+    signal_action: str | None = None,
+    signal_confidence: int | None = None,
+    news_title: str | None = None,
+) -> None:
+    now = datetime.now(timezone.utc)
+    doc = {
+        "language": (language or "en").lower(),
+        "slot": slot,
+        "title": title,
+        "body": body,
+        "action_url": action_url,
+        "market": market,
+        "signal_symbol": signal_symbol,
+        "signal_action": signal_action,
+        "signal_confidence": signal_confidence,
+        "news_title": news_title,
+        "sent_at": now,
+    }
+    try:
+        await db["push_history"].insert_one(doc)
+    except Exception as e:
+        logger.warning("push_history insert failed: %s", e)
+
+
+async def get_history(db: Any, language: str, limit: int = 20) -> list[dict[str, Any]]:
+    """Return the language cohort's push history within the last 24h,
+    most recent first. Docs older than 24h are auto-removed by the TTL index.
+    """
+    cursor = (
+        db["push_history"]
+        .find({"language": (language or "en").lower()}, {"_id": 0})
+        .sort("sent_at", -1)
+        .limit(limit)
+    )
+    return [doc async for doc in cursor]
+
+
 def chunk_recipients(recipients: Iterable[str], size: int = 100) -> list[list[str]]:
     """SuprSend enforces max 100 recipients per trigger — split before send."""
 
