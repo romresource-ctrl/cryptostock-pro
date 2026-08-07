@@ -494,6 +494,16 @@ export default function Dashboard() {
           >
             <Ionicons name="newspaper-outline" size={18} color={colors.textPrimary} />
           </TouchableOpacity>
+          {/* v8.4.9 — Alerts button moved to header (user removed the
+              dashboard-body pill).  Users still create alerts from the
+              🔔 icon on each asset's detail page. */}
+          <TouchableOpacity
+            onPress={() => router.push("/alerts" as never)}
+            testID="header-alerts-button"
+            style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          >
+            <Ionicons name="notifications-outline" size={18} color="#F0B90B" />
+          </TouchableOpacity>
           <TouchableOpacity
             onPress={toggle}
             testID="theme-toggle-button"
@@ -789,31 +799,14 @@ export default function Dashboard() {
           CategoryReorderSheet where users drag columns and toggle
           visibility. Hidden when the user is actively searching to avoid
           overlap with the search-results header. */}
-      {!searchQuery.trim() ? (
+      {/* v8.4.9 — Dashboard-body pill row removed per user request.
+          Reorder → long-press ☰ handle in column header.
+          Alerts → 🔔 icon di top-header. */}
+      {!searchQuery.trim() && categoryPrefs.hidden.size > 0 ? (
         <View style={styles.reorderRow}>
-          {/* v8.5.4 — "Atur Kolom" pill removed per user request.  The
-              reorder entry-point is now a small ☰ icon on the right side
-              of every column header (see ListColumn + WatchlistColumn).
-              We keep this row only to surface the Alerts shortcut and
-              the "N disembunyikan" badge when relevant. */}
-          <TouchableOpacity
-            onPress={() => router.push("/alerts" as never)}
-            testID="dashboard-alerts-button"
-            style={[
-              styles.reorderBtn,
-              { backgroundColor: colors.surface, borderColor: colors.border },
-            ]}
-          >
-            <Ionicons name="notifications-outline" size={14} color="#F0B90B" />
-            <Text style={[styles.reorderBtnText, { color: colors.textPrimary }]}>
-              🔔 {t("alerts_header_button") || "Alarm"}
-            </Text>
-          </TouchableOpacity>
-          {categoryPrefs.hidden.size > 0 ? (
-            <Text style={[styles.reorderHiddenBadge, { color: colors.textMuted }]}>
-              {categoryPrefs.hidden.size} {t("reorder_hidden_suffix") || "disembunyikan"}
-            </Text>
-          ) : null}
+          <Text style={[styles.reorderHiddenBadge, { color: colors.textMuted }]}>
+            {categoryPrefs.hidden.size} {t("reorder_hidden_suffix") || "disembunyikan"}
+          </Text>
         </View>
       ) : null}
 
