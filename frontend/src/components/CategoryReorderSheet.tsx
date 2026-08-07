@@ -1,19 +1,25 @@
 /**
- * CategoryReorderSheet — bottom-sheet modal that lets the user reorder
- * the dashboard category columns and toggle their visibility.
+ * CategoryReorderSheet — bottom-sheet modal with **native drag-to-reorder**.
  *
- * v8.4.9 — Rewritten WITHOUT `react-native-draggable-flatlist` because
- * that library is incompatible with Reanimated 4 in Expo SDK 53+ (it
- * caused Android release builds to fail).  We now use a plain FlatList
- * with per-row **Up / Down** buttons for reordering — same functional
- * outcome, works on every RN version, and is friendlier for accessibility.
+ * v8.5.1 — Custom PanResponder-based drag (no external library, so it
+ * works with any Reanimated version — including Reanimated 4 in Expo
+ * SDK 53+ where `react-native-draggable-flatlist@4.x` breaks the build).
+ *
+ * How it works
+ *   • Each row has a fixed height (`ROW_H`).  Long-press the ☰ handle
+ *     to grab a row → the row lifts (elevation + border) and follows
+ *     the finger.
+ *   • As the finger's y moves, we compute a target index by dividing
+ *     by `ROW_H` and clamp it into [0, N-1].  When the target changes
+ *     we swap the row into the new slot in real time.
+ *   • On release, the drag state resets and the final order is saved.
  */
-import AsyncStorage from "@react-native-async-storage/async-storage"; // eslint-disable-line @typescript-eslint/no-unused-vars
 import { Ionicons } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  FlatList,
+  Animated,
   Modal,
+  PanResponder,
   Platform,
   Pressable,
   StyleSheet,
@@ -52,6 +58,9 @@ const CATEGORY_ICONS: Record<CategoryKey, string> = {
 
 const STORAGE_ORDER = "dashboard:categoryOrder";
 const STORAGE_HIDDEN = "dashboard:categoryHidden";
+
+// Each row is padding 8 top + content 40 + padding 8 bottom + margin 8 = 64px.
+const ROW_H = 64;
 
 export type CategoryPrefs = {
   order: CategoryKey[];
@@ -137,10 +146,24 @@ export default function CategoryReorderSheet({
   const [draftOrder, setDraftOrder] = useState<CategoryKey[]>(initialOrder);
   const [draftHidden, setDraftHidden] = useState<Set<CategoryKey>>(initialHidden);
 
+  // Live drag state — the row currently being dragged + its animated Y
+  // offset so we can visually follow the finger while adjacent rows
+  // slide out of the way.
+  const [draggingKey, setDraggingKey] = useState<CategoryKey | null>(null);
+  const dragY = useRef(new Animated.Value(0)).current;
+
+  // Ref to always read the latest draftOrder inside the PanResponder
+  // callbacks (avoids stale-closure bugs when we swap during a drag).
+  const draftOrderRef = useRef<CategoryKey[]>(initialOrder);
+  useEffect(() => {
+    draftOrderRef.current = draftOrder;
+  }, [draftOrder]);
+
   useEffect(() => {
     if (visible) {
       setDraftOrder(initialOrder);
       setDraftHidden(new Set(initialHidden));
+      draftOrderRef.current = initialOrder;
     }
   }, [visible, initialOrder, initialHidden]);
 
@@ -151,24 +174,6 @@ export default function CategoryReorderSheet({
     for (const k of draftHidden) if (!initialHidden.has(k)) return true;
     return false;
   }, [draftOrder, draftHidden, initialOrder, initialHidden]);
-
-  const moveUp = useCallback((index: number) => {
-    if (index <= 0) return;
-    setDraftOrder((prev) => {
-      const next = [...prev];
-      [next[index - 1], next[index]] = [next[index], next[index - 1]];
-      return next;
-    });
-  }, []);
-
-  const moveDown = useCallback((index: number) => {
-    setDraftOrder((prev) => {
-      if (index >= prev.length - 1) return prev;
-      const next = [...prev];
-      [next[index + 1], next[index]] = [next[index], next[index + 1]];
-      return next;
-    });
-  }, []);
 
   const toggleHidden = useCallback((key: CategoryKey) => {
     setDraftHidden((prev) => {
@@ -191,60 +196,66 @@ export default function CategoryReorderSheet({
     onClose();
   }, [draftOrder, draftHidden, onSave, onClose]);
 
-  const renderItem = ({ item, index }: { item: CategoryKey; index: number }) => {
-    const label = t(`category_${item}`);
-    const hidden = draftHidden.has(item);
-    const isFirst = index === 0;
-    const isLast = index === draftOrder.length - 1;
-    return (
-      <View
-        style={[
-          styles.row,
-          { backgroundColor: colors.surface, borderColor: colors.border, opacity: hidden ? 0.55 : 1 },
-        ]}
-      >
-        <View style={styles.arrowCol}>
-          <TouchableOpacity
-            onPress={() => moveUp(index)}
-            disabled={isFirst}
-            hitSlop={6}
-            testID={`reorder-up-${item}`}
-            style={[styles.arrowBtn, { opacity: isFirst ? 0.3 : 1 }]}
-          >
-            <Ionicons name="chevron-up" size={16} color={colors.textPrimary} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => moveDown(index)}
-            disabled={isLast}
-            hitSlop={6}
-            testID={`reorder-down-${item}`}
-            style={[styles.arrowBtn, { opacity: isLast ? 0.3 : 1 }]}
-          >
-            <Ionicons name="chevron-down" size={16} color={colors.textPrimary} />
-          </TouchableOpacity>
-        </View>
-        <Ionicons
-          name={CATEGORY_ICONS[item] as never}
-          size={18}
-          color={hidden ? colors.textMuted : colors.accentBlue}
-          style={{ marginRight: 10, marginLeft: 4 }}
-        />
-        <Text
-          style={[styles.rowLabel, { color: hidden ? colors.textMuted : colors.textPrimary }]}
-          numberOfLines={1}
-        >
-          {label}
-        </Text>
-        <Switch
-          testID={`reorder-toggle-${item}`}
-          value={!hidden}
-          onValueChange={() => toggleHidden(item)}
-          trackColor={{ false: colors.border, true: colors.accentUp + "80" }}
-          thumbColor={hidden ? colors.textMuted : colors.accentUp}
-        />
-      </View>
-    );
-  };
+  // Build a PanResponder per category so the ☰ handle is the sole drag
+  // trigger.  We grab a snapshot of the initial index at grant time, then
+  // continuously compute the target slot as the finger moves.
+  const makePan = useCallback(
+    (key: CategoryKey) =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: (_evt, gs) => Math.abs(gs.dy) > 2,
+        onPanResponderGrant: () => {
+          setDraggingKey(key);
+          dragY.setValue(0);
+        },
+        onPanResponderMove: (_evt, gs) => {
+          dragY.setValue(gs.dy);
+          const current = draftOrderRef.current;
+          const fromIdx = current.indexOf(key);
+          if (fromIdx < 0) return;
+          // Number of slots we've moved.  Positive dy = down, so we
+          // ADD to the index.  Clamp to [0, N-1].
+          const delta = Math.round(gs.dy / ROW_H);
+          if (delta === 0) return;
+          const toIdx = Math.max(
+            0,
+            Math.min(current.length - 1, fromIdx + delta),
+          );
+          if (toIdx === fromIdx) return;
+          const next = current.slice();
+          next.splice(fromIdx, 1);
+          next.splice(toIdx, 0, key);
+          draftOrderRef.current = next;
+          setDraftOrder(next);
+          // Reset the animated offset to the *new* relative position so
+          // the row stays under the finger (the swap already moved it
+          // by ROW_H visually).
+          dragY.setValue(gs.dy - (toIdx - fromIdx) * ROW_H);
+        },
+        onPanResponderRelease: () => {
+          Animated.spring(dragY, {
+            toValue: 0,
+            useNativeDriver: true,
+            speed: 30,
+            bounciness: 4,
+          }).start(() => {
+            setDraggingKey(null);
+          });
+        },
+        onPanResponderTerminate: () => {
+          dragY.setValue(0);
+          setDraggingKey(null);
+        },
+      }),
+    [dragY],
+  );
+
+  // Memoise responders per key so each row keeps the same instance.
+  const panResponders = useMemo(() => {
+    const map = new Map<CategoryKey, ReturnType<typeof PanResponder.create>>();
+    for (const k of DEFAULT_ORDER) map.set(k, makePan(k));
+    return map;
+  }, [makePan]);
 
   return (
     <Modal
@@ -281,7 +292,10 @@ export default function CategoryReorderSheet({
                 <Text
                   style={[
                     styles.headerBtn,
-                    { color: anyChange ? colors.accentUp : colors.textMuted, fontWeight: "800" },
+                    {
+                      color: anyChange ? colors.accentUp : colors.textMuted,
+                      fontWeight: "800",
+                    },
                   ]}
                 >
                   {t("common_save") || "Save"}
@@ -290,17 +304,64 @@ export default function CategoryReorderSheet({
             </View>
 
             <Text style={[styles.hint, { color: colors.textMuted }]}>
-              {t("reorder_hint_arrows") ||
-                "Gunakan tombol ↑ ↓ untuk memindahkan kategori. Toggle switch untuk menampilkan/menyembunyikan kolom di dashboard."}
+              {t("reorder_hint") ||
+                "Tekan & tahan ⋮ lalu geser ke atas/bawah untuk memindahkan kategori. Toggle switch untuk menampilkan/menyembunyikan kolom."}
             </Text>
 
-            <View style={{ flex: 1 }}>
-              <FlatList
-                data={draftOrder}
-                keyExtractor={(item) => item}
-                renderItem={renderItem}
-                contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 12 }}
-              />
+            <View style={{ flex: 1, paddingHorizontal: 12, paddingBottom: 12 }}>
+              {draftOrder.map((item) => {
+                const label = t(`category_${item}`);
+                const hidden = draftHidden.has(item);
+                const isActive = draggingKey === item;
+                const pan = panResponders.get(item)!;
+                return (
+                  <Animated.View
+                    key={item}
+                    style={[
+                      styles.row,
+                      {
+                        backgroundColor: isActive ? colors.surfaceAlt : colors.surface,
+                        borderColor: isActive ? colors.accentBlue : colors.border,
+                        borderWidth: isActive ? 2 : 1,
+                        opacity: hidden ? 0.55 : 1,
+                        // Only translate the dragged row; others stay put
+                        // and slide into their new slot via re-render.
+                        transform: isActive ? [{ translateY: dragY }] : [],
+                        // Lift the dragged row visually so it appears
+                        // over its neighbours during drag.
+                        zIndex: isActive ? 10 : 1,
+                        elevation: isActive ? 6 : 0,
+                      },
+                    ]}
+                  >
+                    <View {...pan.panHandlers} style={styles.dragHandle} testID={`reorder-drag-${item}`}>
+                      <Ionicons name="reorder-three" size={22} color={colors.textMuted} />
+                    </View>
+                    <Ionicons
+                      name={CATEGORY_ICONS[item] as never}
+                      size={18}
+                      color={hidden ? colors.textMuted : colors.accentBlue}
+                      style={{ marginRight: 10 }}
+                    />
+                    <Text
+                      style={[
+                        styles.rowLabel,
+                        { color: hidden ? colors.textMuted : colors.textPrimary },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {label}
+                    </Text>
+                    <Switch
+                      testID={`reorder-toggle-${item}`}
+                      value={!hidden}
+                      onValueChange={() => toggleHidden(item)}
+                      trackColor={{ false: colors.border, true: colors.accentUp + "80" }}
+                      thumbColor={hidden ? colors.textMuted : colors.accentUp}
+                    />
+                  </Animated.View>
+                );
+              })}
             </View>
 
             <TouchableOpacity
@@ -321,11 +382,7 @@ export default function CategoryReorderSheet({
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    justifyContent: "flex-end",
-  },
+  backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "flex-end" },
   sheet: {
     height: "80%",
     borderTopLeftRadius: 20,
@@ -339,10 +396,7 @@ const styles = StyleSheet.create({
       android: { elevation: 12 },
     }),
   },
-  grabber: {
-    width: 42, height: 4, borderRadius: 2,
-    alignSelf: "center", marginBottom: 8, marginTop: 6,
-  },
+  grabber: { width: 42, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 8, marginTop: 6 },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -352,31 +406,20 @@ const styles = StyleSheet.create({
   },
   headerBtn: { fontSize: 15 },
   headerTitle: { fontSize: 16, fontWeight: "800", flex: 1, textAlign: "center" },
-  hint: {
-    fontSize: 12, lineHeight: 17,
-    paddingHorizontal: 16, marginBottom: 10,
-  },
+  hint: { fontSize: 12, lineHeight: 17, paddingHorizontal: 16, marginBottom: 10 },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    borderWidth: 1,
     borderRadius: 12,
     paddingVertical: 8,
-    paddingRight: 10,
-    paddingLeft: 4,
+    paddingHorizontal: 10,
     marginBottom: 8,
+    height: 56, // fits inside ROW_H (56 + 8 margin = 64)
   },
-  arrowCol: {
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 4,
-  },
-  arrowBtn: {
-    width: 26,
-    height: 22,
-    alignItems: "center",
-    justifyContent: "center",
+  dragHandle: {
+    paddingHorizontal: 6,
+    paddingVertical: 6,
+    marginRight: 6,
   },
   rowLabel: { flex: 1, fontSize: 15, fontWeight: "600" },
   resetBtn: {
