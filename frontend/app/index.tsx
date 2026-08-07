@@ -784,20 +784,11 @@ export default function Dashboard() {
           overlap with the search-results header. */}
       {!searchQuery.trim() ? (
         <View style={styles.reorderRow}>
-          <TouchableOpacity
-            onPress={() => setReorderOpen(true)}
-            testID="dashboard-reorder-button"
-            style={[
-              styles.reorderBtn,
-              { backgroundColor: colors.surface, borderColor: colors.border },
-            ]}
-          >
-            <Ionicons name="reorder-three-outline" size={14} color={colors.accentBlue} />
-            <Text style={[styles.reorderBtnText, { color: colors.textPrimary }]}>
-              {t("reorder_button") || "Atur Kolom"}
-            </Text>
-          </TouchableOpacity>
-          {/* v8.5.3 — Quick link to the Price Alerts screen. */}
+          {/* v8.5.4 — "Atur Kolom" pill removed per user request.  The
+              reorder entry-point is now a small ☰ icon on the right side
+              of every column header (see ListColumn + WatchlistColumn).
+              We keep this row only to surface the Alerts shortcut and
+              the "N disembunyikan" badge when relevant. */}
           <TouchableOpacity
             onPress={() => router.push("/alerts" as never)}
             testID="dashboard-alerts-button"
@@ -812,9 +803,11 @@ export default function Dashboard() {
             </Text>
           </TouchableOpacity>
           {categoryPrefs.hidden.size > 0 ? (
-            <Text style={[styles.reorderHiddenBadge, { color: colors.textMuted }]}>
-              {categoryPrefs.hidden.size} {t("reorder_hidden_suffix") || "disembunyikan"}
-            </Text>
+            <TouchableOpacity onPress={() => setReorderOpen(true)}>
+              <Text style={[styles.reorderHiddenBadge, { color: colors.textMuted }]}>
+                {categoryPrefs.hidden.size} {t("reorder_hidden_suffix") || "disembunyikan"}
+              </Text>
+            </TouchableOpacity>
           ) : null}
         </View>
       ) : null}
@@ -881,6 +874,7 @@ export default function Dashboard() {
                     t("watchlist_loading") ||
                     "Menunggu data harga…"
                   }
+                  onReorder={() => setReorderOpen(true)}
                 />
               </View>
             );
@@ -904,6 +898,7 @@ export default function Dashboard() {
                   loading={loadingMap[k]}
                   onPress={handleAssetPress}
                   locked={!hasAccess}
+                  onReorder={() => setReorderOpen(true)}
                 />
               </View>
             );
@@ -1133,13 +1128,27 @@ function SearchHitCard({
 }
 
 function ListColumn({
-  title, market, data, loading, onPress, locked,
-}: { title: string; market: Market; data: AssetSignal[]; loading: boolean; onPress: (a: AssetSignal, market?: Market) => void; locked: boolean }) {
+  title, market, data, loading, onPress, locked, onReorder,
+}: { title: string; market: Market; data: AssetSignal[]; loading: boolean; onPress: (a: AssetSignal, market?: Market) => void; locked: boolean; onReorder?: () => void }) {
   const { colors } = useTheme();
   return (
     <View style={[styles.column, { backgroundColor: colors.surfaceAlt }]}>
       <View style={[styles.columnHeader, { borderColor: colors.border }]}>
-        <Text style={[styles.columnTitle, { color: colors.textPrimary }]}>{title}</Text>
+        <Text style={[styles.columnTitle, { color: colors.textPrimary }]} numberOfLines={1}>
+          {title}
+        </Text>
+        {onReorder ? (
+          <TouchableOpacity
+            onPress={onReorder}
+            onLongPress={onReorder}
+            delayLongPress={200}
+            hitSlop={8}
+            testID={`column-reorder-${market}`}
+            style={styles.columnReorderBtn}
+          >
+            <Ionicons name="reorder-three" size={16} color={colors.textMuted} />
+          </TouchableOpacity>
+        ) : null}
       </View>
       {loading && data.length === 0 ? (
         <View style={{ paddingVertical: 40, alignItems: "center" }}>
@@ -1163,19 +1172,34 @@ function ListColumn({
 // back to the correct asset detail screen.
 type WatchlistAsset = AssetSignal & { _market: Market };
 function WatchlistColumn({
-  title, data, onPress, locked, emptyHint,
+  title, data, onPress, locked, emptyHint, onReorder,
 }: {
   title: string;
   data: WatchlistAsset[];
   onPress: (a: AssetSignal, market: Market) => void;
   locked: boolean;
   emptyHint: string;
+  onReorder?: () => void;
 }) {
   const { colors } = useTheme();
   return (
     <View style={[styles.column, { backgroundColor: colors.surfaceAlt }]}>
       <View style={[styles.columnHeader, { borderColor: colors.border }]}>
-        <Text style={[styles.columnTitle, { color: "#F0B90B" }]}>{title}</Text>
+        <Text style={[styles.columnTitle, { color: "#F0B90B" }]} numberOfLines={1}>
+          {title}
+        </Text>
+        {onReorder ? (
+          <TouchableOpacity
+            onPress={onReorder}
+            onLongPress={onReorder}
+            delayLongPress={200}
+            hitSlop={8}
+            testID="column-reorder-watchlist"
+            style={styles.columnReorderBtn}
+          >
+            <Ionicons name="reorder-three" size={16} color={colors.textMuted} />
+          </TouchableOpacity>
+        ) : null}
       </View>
       {data.length === 0 ? (
         <View style={{ paddingVertical: 30, paddingHorizontal: 12 }}>
@@ -1339,8 +1363,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6, paddingBottom: 8, borderBottomWidth: 1,
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
   },
-  columnTitle: { fontSize: 13, fontWeight: "700", letterSpacing: 1 },
+  columnTitle: { fontSize: 13, fontWeight: "700", letterSpacing: 1, flex: 1 },
   columnCount: { fontSize: 11, fontWeight: "500" },
+  // v8.5.4 — Tiny ☰ handle inside every column header.  Tap opens the
+  // reorder sheet; long-press opens it too (matches the "hamburger =
+  // rearrange" mental model users know from Binance/TradingView).
+  columnReorderBtn: {
+    width: 24,
+    height: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 6,
+    marginLeft: 4,
+  },
   fullPanel: { flex: 1, borderRadius: 12, paddingHorizontal: 8, paddingTop: 8, marginHorizontal: 8 },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 8, paddingTop: 8, paddingBottom: 24 },
   card: { borderWidth: 1, borderRadius: 10, padding: 10, marginTop: 8, position: "relative", minHeight: 132, justifyContent: "space-between" },
