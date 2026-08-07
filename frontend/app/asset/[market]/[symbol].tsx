@@ -23,6 +23,7 @@ import {
   useUsdtLocalRate,
 } from "@/src/components/UsdtLocalRateStrip";
 import { useI18n } from "@/src/i18n/I18nContext";
+import { getQuoteLabel } from "@/src/lib/localeQuote";
 import {
   TIMEFRAMES,
   type AnalyzeResponse,
@@ -621,7 +622,7 @@ export default function AssetDetail() {
                   takeProfit={sig.take_profit}
                   symbol={String(symbol)}
                   action={sig.action}
-                  quoteLabel={market === "crypto" ? "USDT" : market === "stock_id" ? "IDR" : "USD"}
+                  quoteLabel={getQuoteLabel(market, lang)}
                 />
               </View>
             ) : null}
@@ -1044,7 +1045,7 @@ export default function AssetDetail() {
                 takeProfit={analysis.consensus.take_profit ?? null}
                 symbol={String(symbol)}
                 action={analysis.consensus.action}
-                quoteLabel={market === "crypto" ? "USDT" : market === "stock_id" ? "IDR" : "USD"}
+                quoteLabel={getQuoteLabel(market, lang)}
               />
 
               {/* News & Risk */}
