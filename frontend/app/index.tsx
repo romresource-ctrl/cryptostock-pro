@@ -714,16 +714,24 @@ export default function Dashboard() {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          // v8.3.9 (final v2) — Snap advances by TWO columns per swipe so
-          // user always lands on a clean pair (col1+col2 → col3+col4 → …).
-          // Snapping by ONE column made half-cards appear mid-viewport.
-          //   colW  = (SCREEN_W − 8) / 2
-          //   snap  = 2 × (colW + 8)   →   full pair advance
+          // v8.3.9 (final v3) — Use EXPLICIT `snapToOffsets` instead of
+          // `snapToInterval`. snapToInterval snaps to N×interval which on
+          // web preview lets the user rest between snap points if their
+          // release velocity is too low. `snapToOffsets` with the exact
+          // pair-start positions + `disableIntervalMomentum` forces every
+          // release to land on a defined pair boundary. This is the only
+          // configuration that gives a Binance-style lock-to-pair behaviour.
           contentContainerStyle={{ paddingHorizontal: 0 }}
           decelerationRate="fast"
-          snapToInterval={
+          disableIntervalMomentum
+          snapToOffsets={
             SCREEN_W < 640
-              ? (Math.floor((SCREEN_W - 8) / 2) + 8) * 2
+              ? (() => {
+                  const colW = Math.floor((SCREEN_W - 8) / 2);
+                  const pairW = (colW + 8) * 2; // 2 cols + 2 gaps
+                  const pageCount = Math.ceil(orderedCategories.length / 2);
+                  return Array.from({ length: pageCount }, (_, i) => i * pairW);
+                })()
               : undefined
           }
           snapToAlignment="start"
