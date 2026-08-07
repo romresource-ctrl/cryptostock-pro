@@ -138,14 +138,19 @@ export default function PositionSizeCalculator({
         : lev;
 
     const tp = Number(takeProfit) || 0;
-    const isBuy =
-      (action || "").toUpperCase() === "BUY" ||
-      (action || "").toUpperCase() === "LONG";
-    const isSell =
-      (action || "").toUpperCase() === "SELL" ||
-      (action || "").toUpperCase() === "SHORT";
+    // v8.5.6 — Direction inference. If the signal explicitly says BUY/LONG
+    // or SELL/SHORT, honor it. Otherwise (HOLD / NEUTRAL / unset), infer
+    // direction from the relative position of TP vs Entry so users still
+    // see a projected profit whenever TP is defined and valid.
+    const actUp = (action || "").toUpperCase();
+    const explicitBuy = actUp === "BUY" || actUp === "LONG";
+    const explicitSell = actUp === "SELL" || actUp === "SHORT";
+    const impliedBuy = !explicitBuy && !explicitSell && tp > e;
+    const impliedSell = !explicitBuy && !explicitSell && tp > 0 && tp < e;
+    const isBuy = explicitBuy || impliedBuy;
+    const isSell = explicitSell || impliedSell;
     const tpValid =
-      tp > 0 && ((isBuy && tp > e) || (isSell && tp < e));
+      tp > 0 && tp !== e && ((isBuy && tp > e) || (isSell && tp < e));
     const projectedProfit = tpValid ? Math.abs(tp - e) * positionSize : null;
     const rrRatio =
       tpValid && maxLoss > 0 ? projectedProfit! / maxLoss : null;
