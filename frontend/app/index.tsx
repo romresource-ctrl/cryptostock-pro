@@ -576,16 +576,11 @@ export default function Dashboard() {
           >
             <Ionicons name="newspaper-outline" size={18} color={colors.textPrimary} />
           </TouchableOpacity>
-          {/* v8.4.9 — Alerts button moved to header (user removed the
-              dashboard-body pill).  Users still create alerts from the
-              🔔 icon on each asset's detail page. */}
-          <TouchableOpacity
-            onPress={() => router.push("/alerts" as never)}
-            testID="header-alerts-button"
-            style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          >
-            <Ionicons name="notifications-outline" size={18} color="#F0B90B" />
-          </TouchableOpacity>
+          {/* v8.6.1 — Alerts (bell) button removed from header per user
+              request. Users can still manage alerts by tapping the 🔔
+              icon on each asset's detail page (top-left of that screen).
+              Reduces header clutter on narrow devices where 5+ buttons
+              were competing for space. */}
           <TouchableOpacity
             onPress={toggle}
             testID="theme-toggle-button"
