@@ -1,10 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   FlatList,
+  PanResponder,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -18,7 +20,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAuth } from "@/src/auth/AuthContext";
-import CategoryReorderSheet, {
+import {
   type CategoryKey,
   useCategoryPrefs,
 } from "@/src/components/CategoryReorderSheet";
@@ -339,7 +341,86 @@ export default function Dashboard() {
   useAlertEngine(data as Record<string, AssetSignal[]>);
 
   const [categoryPrefs, saveCategoryPrefs] = useCategoryPrefs();
-  const [reorderOpen, setReorderOpen] = useState(false);
+  const [reorderOpen, setReorderOpen] = useState(false); // eslint-disable-line @typescript-eslint/no-unused-vars
+
+  // v8.5.2 — INLINE horizontal drag & drop directly from the ☰ handle
+  // in every column header. No modal.  We track finger X and swap
+  // adjacent columns as the finger passes their centers.
+  const [dragCat, setDragCat] = useState<Category | null>(null);
+  const dragDx = useRef(new Animated.Value(0)).current;
+  const colCentersRef = useRef<Map<Category, { x: number; w: number }>>(new Map());
+  const draggingOrderRef = useRef<Category[]>([]);
+  const dragStartXRef = useRef<number>(0);
+
+  const persistOrder = useCallback(
+    (order: Category[]) => {
+      void saveCategoryPrefs(order as CategoryKey[], categoryPrefs.hidden);
+    },
+    [saveCategoryPrefs, categoryPrefs.hidden],
+  );
+
+  const makeColumnPan = useCallback(
+    (cat: Category) =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onStartShouldSetPanResponderCapture: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderTerminationRequest: () => false,
+        onPanResponderGrant: (evt) => {
+          setDragCat(cat);
+          dragDx.setValue(0);
+          dragStartXRef.current = evt.nativeEvent.pageX;
+          draggingOrderRef.current = orderedCategoriesRef.current.slice();
+        },
+        onPanResponderMove: (evt, gs) => {
+          dragDx.setValue(gs.dx);
+          // Recompute finger X relative to page and compare to each
+          // column's center to determine swap target.
+          const fingerX = dragStartXRef.current + gs.dx;
+          const order = draggingOrderRef.current;
+          const myIdx = order.indexOf(cat);
+          if (myIdx < 0) return;
+          let targetIdx = myIdx;
+          for (let i = 0; i < order.length; i++) {
+            if (i === myIdx) continue;
+            const other = order[i];
+            const layout = colCentersRef.current.get(other);
+            if (!layout) continue;
+            const otherCenter = layout.x + layout.w / 2;
+            if (i < myIdx && fingerX < otherCenter) {
+              targetIdx = i;
+              break;
+            }
+            if (i > myIdx && fingerX > otherCenter) {
+              targetIdx = i;
+            }
+          }
+          if (targetIdx !== myIdx) {
+            const next = order.slice();
+            next.splice(myIdx, 1);
+            next.splice(targetIdx, 0, cat);
+            draggingOrderRef.current = next;
+            persistOrder(next);
+            // Re-anchor drag start so column stays under finger after swap.
+            dragStartXRef.current = fingerX;
+            dragDx.setValue(0);
+          }
+        },
+        onPanResponderRelease: () => {
+          Animated.spring(dragDx, {
+            toValue: 0,
+            useNativeDriver: true,
+            speed: 30,
+            bounciness: 4,
+          }).start(() => setDragCat(null));
+        },
+        onPanResponderTerminate: () => {
+          dragDx.setValue(0);
+          setDragCat(null);
+        },
+      }),
+    [dragDx, persistOrder],
+  );
   const DEFAULT_ORDER_ARR: Category[] = useMemo(
     () => ["crypto", "etf", "stock_id", "stock_us", "gold_silver", "commodity", "forex"],
     [],
@@ -359,6 +440,13 @@ export default function Dashboard() {
     const rest = visible.filter((k) => !selected.includes(k));
     return [...selected, ...rest];
   }, [view, categoryPrefs, ALL_CATEGORIES, DEFAULT_ORDER_ARR]);
+
+  // Keep a live ref to `orderedCategories` so PanResponder callbacks
+  // (created once) always see the newest order.
+  const orderedCategoriesRef = useRef<Category[]>(orderedCategories);
+  useEffect(() => {
+    orderedCategoriesRef.current = orderedCategories;
+  }, [orderedCategories]);
 
   // v8.0.4 — Lazy-load. On the first paint we only fetch the TWO markets
   // the user currently has on-screen (`view`). The other 6 markets stay
@@ -831,12 +919,13 @@ export default function Dashboard() {
             move a category up or down. */}
         <ScrollView
           horizontal
+          scrollEnabled={dragCat === null}
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ paddingHorizontal: 0 }}
           decelerationRate="fast"
           disableIntervalMomentum
           snapToOffsets={
-            SCREEN_W < 640
+            SCREEN_W < 640 && dragCat === null
               ? (() => {
                   const colW = Math.floor((SCREEN_W - 8) / 2);
                   const pairW = (colW + 8) * 2;
@@ -868,12 +957,23 @@ export default function Dashboard() {
             const catLabel = t(`category_${k}`).toUpperCase();
             const colW = SCREEN_W < 640 ? Math.floor((SCREEN_W - 8) / 2) : 190;
             const isLast = idx === orderedCategories.length - 1;
+            const pan = makeColumnPan(k);
+            const isDragging = dragCat === k;
             return (
-              <View
+              <Animated.View
                 key={k}
+                onLayout={(e) => {
+                  colCentersRef.current.set(k, {
+                    x: e.nativeEvent.layout.x,
+                    w: e.nativeEvent.layout.width,
+                  });
+                }}
                 style={{
                   width: colW,
                   marginRight: isLast ? 0 : 8,
+                  transform: isDragging ? [{ translateX: dragDx }] : [],
+                  zIndex: isDragging ? 10 : 1,
+                  elevation: isDragging ? 6 : 0,
                 }}
               >
                 <ListColumn
@@ -883,9 +983,10 @@ export default function Dashboard() {
                   loading={loadingMap[k]}
                   onPress={handleAssetPress}
                   locked={!hasAccess}
-                  onReorder={() => setReorderOpen(true)}
+                  panHandlers={pan.panHandlers}
+                  isDragging={isDragging}
                 />
-              </View>
+              </Animated.View>
             );
           })}
         </ScrollView>
@@ -907,22 +1008,6 @@ export default function Dashboard() {
           the dashboard interactable so premium users can chat while
           still scrolling through asset columns / candles above. */}
       <ChatSheet visible={chatOpen} onClose={() => setChatOpen(false)} />
-
-      {/* v8.4.9 — Category reorder sheet (uses ↑/↓ buttons — no drag lib
-          needed after removing react-native-draggable-flatlist which was
-          incompatible with Reanimated 4). Opens when user long-presses
-          the ☰ handle on any column header. */}
-      {categoryPrefs.ready ? (
-        <CategoryReorderSheet
-          visible={reorderOpen}
-          onClose={() => setReorderOpen(false)}
-          initialOrder={categoryPrefs.order}
-          initialHidden={categoryPrefs.hidden}
-          onSave={(order, hidden) => {
-            void saveCategoryPrefs(order, hidden);
-          }}
-        />
-      ) : null}
     </SafeAreaView>
   );
 }
@@ -1113,26 +1198,30 @@ function SearchHitCard({
 }
 
 function ListColumn({
-  title, market, data, loading, onPress, locked, onReorder,
-}: { title: string; market: Market; data: AssetSignal[]; loading: boolean; onPress: (a: AssetSignal, market?: Market) => void; locked: boolean; onReorder?: () => void }) {
+  title, market, data, loading, onPress, locked, panHandlers, isDragging,
+}: { title: string; market: Market; data: AssetSignal[]; loading: boolean; onPress: (a: AssetSignal, market?: Market) => void; locked: boolean; panHandlers?: object; isDragging?: boolean }) {
   const { colors } = useTheme();
   return (
-    <View style={[styles.column, { backgroundColor: colors.surfaceAlt }]}>
+    <View style={[
+      styles.column,
+      {
+        backgroundColor: colors.surfaceAlt,
+        borderWidth: isDragging ? 2 : 0,
+        borderColor: colors.accentBlue,
+      },
+    ]}>
       <View style={[styles.columnHeader, { borderColor: colors.border }]}>
         <Text style={[styles.columnTitle, { color: colors.textPrimary }]} numberOfLines={1}>
           {title}
         </Text>
-        {onReorder ? (
-          <TouchableOpacity
-            onPress={onReorder}
-            onLongPress={onReorder}
-            delayLongPress={200}
-            hitSlop={10}
+        {panHandlers ? (
+          <View
+            {...(panHandlers as object)}
             testID={`column-reorder-${market}`}
             style={styles.columnReorderBtn}
           >
             <Ionicons name="reorder-three" size={16} color={colors.textMuted} />
-          </TouchableOpacity>
+          </View>
         ) : null}
       </View>
       {loading && data.length === 0 ? (
@@ -1146,6 +1235,7 @@ function ListColumn({
           renderItem={({ item }) => <AssetCard asset={item} market={market} locked={locked} onPress={() => onPress(item, market)} />}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 24 }}
+          scrollEnabled={!isDragging}
         />
       )}
     </View>
