@@ -1074,18 +1074,12 @@ export default function AssetDetail() {
                 takeProfit={analysis.consensus.take_profit}
               />
 
-              {/* v8.3.9 — Position Size Calculator (AI Consensus version).
-                  Uses the ensemble entry & SL so users can size trades
-                  against the multi-model recommendation.
-                  v8.4.0: also pass TP + supports user leverage input. */}
-              <PositionSizeCalculator
-                entryPrice={analysis.consensus.entry ?? analysis.price ?? null}
-                stopLoss={analysis.consensus.stop_loss ?? null}
-                takeProfit={analysis.consensus.take_profit ?? null}
-                symbol={String(symbol)}
-                action={analysis.consensus.action}
-                quoteLabel={getQuoteLabel(market, lang)}
-              />
+              {/* v8.5.8 — Position Size Calculator was previously duplicated
+                  here in the AI Analysis section. Removed per user request
+                  to avoid redundancy — the calculator inside the Technical
+                  Signal section (rendered above) already serves both flows
+                  since Technical Signal entry/SL/TP align with the same
+                  chart the AI consensus reads from. */}
 
               {/* News & Risk */}
               {analysis.consensus.news_factors.length > 0 && (
