@@ -26,16 +26,13 @@ const BLOCKED_PERMISSIONS = [
   "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
 ];
 
-// Service nodes to strip. Matched by any of these criteria on the <service>
-// element inside <application>: android:name equal to `nameMatch`, OR
-// android:foregroundServiceType equal to `typeMatch`.
-const BLOCKED_SERVICES = [
-  {
-    // expo-audio's foreground service class (v54+ package layout).
-    nameMatch: "expo.modules.audio.service.AudioControlsService",
-    typeMatch: "mediaPlayback",
-  },
-];
+// Service nodes to strip. TEMPORARILY EMPTY (v8.5.9) — the service
+// removal logic was untested against the real Android build and may be
+// contributing to recent build failures. Keeping the array in place so
+// we can re-enable specific entries once the base build is confirmed
+// green. Permission-only removal (below) is the SAFE baseline and has
+// shipped successfully before.
+const BLOCKED_SERVICES = [];
 
 // Ensures the manifest tag has `xmlns:tools`. Manifest-merger requires this
 // namespace for the tools:node attribute to take effect.

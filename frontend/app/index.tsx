@@ -7,6 +7,7 @@ import {
   Animated,
   FlatList,
   PanResponder,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -920,19 +921,39 @@ export default function Dashboard() {
         {(() => {
           const COL_WIDTH = SCREEN_W < 640 ? Math.floor((SCREEN_W - 8) / 2) : 190;
           const STRIDE = COL_WIDTH + 8;
+          // v8.5.9 — RN Web ignores `snapToInterval`. Add CSS scroll-snap
+          // for the web/Emergent-preview so columns snap edge-to-edge just
+          // like they do on native Android/iOS.
+          const webSnapContainer =
+            Platform.OS === "web"
+              ? ({
+                  scrollSnapType: "x mandatory",
+                  overscrollBehaviorX: "contain",
+                } as any)
+              : null;
+          const webSnapChild =
+            Platform.OS === "web"
+              ? ({
+                  scrollSnapAlign: "start",
+                  scrollSnapStop: "always",
+                } as any)
+              : null;
           return (
         <ScrollView
           horizontal
           scrollEnabled={dragCat === null}
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 0 }}
+          contentContainerStyle={[{ paddingHorizontal: 0 }, webSnapContainer]}
           decelerationRate="fast"
           disableIntervalMomentum
           snapToInterval={STRIDE}
           snapToAlignment="start"
         >
           {watchlist.size > 0 ? (
-            <View key="__watchlist__" style={{ width: COL_WIDTH, marginRight: 8 }}>
+            <View
+              key="__watchlist__"
+              style={[{ width: COL_WIDTH, marginRight: 8 }, webSnapChild]}
+            >
               <WatchlistColumn
                 title={`⭐ ${t("watchlist_title") || "Watchlist"}`}
                 data={watchlistAssets}
@@ -958,13 +979,16 @@ export default function Dashboard() {
                     w: e.nativeEvent.layout.width,
                   });
                 }}
-                style={{
-                  width: COL_WIDTH,
-                  marginRight: 8,
-                  transform: isDragging ? [{ translateX: dragDx }] : [],
-                  zIndex: isDragging ? 10 : 1,
-                  elevation: isDragging ? 6 : 0,
-                }}
+                style={[
+                  {
+                    width: COL_WIDTH,
+                    marginRight: 8,
+                    transform: isDragging ? [{ translateX: dragDx }] : [],
+                    zIndex: isDragging ? 10 : 1,
+                    elevation: isDragging ? 6 : 0,
+                  },
+                  webSnapChild,
+                ]}
               >
                 <ListColumn
                   title={catLabel}
