@@ -299,7 +299,6 @@ export default function CandlestickChart({
               textAnchor="middle"
               stroke={colors.background}
               strokeWidth={0.6}
-              paintOrder="stroke"
             >
               {formatPriceLabel(n.price)}
             </SvgText>

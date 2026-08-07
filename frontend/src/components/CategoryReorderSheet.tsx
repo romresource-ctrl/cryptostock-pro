@@ -1,20 +1,18 @@
 /**
- * CategoryReorderSheet — bottom-sheet modal that lets the user drag the
- * dashboard category columns (Crypto, ETF, IDX, World Stocks, …) into
- * their preferred order and/or hide the ones they don't care about.
+ * CategoryReorderSheet — bottom-sheet modal that lets the user reorder
+ * the dashboard category columns and toggle their visibility.
  *
- * Design notes:
- *   • Uses `react-native-draggable-flatlist` (long-press drag handle).
- *   • Order + hidden set are persisted in AsyncStorage under
- *     `dashboard:categoryOrder` and `dashboard:categoryHidden`.
- *   • The homepage reads back on mount via `useCategoryPrefs()`.
- *   • Sheet is intentionally full-screen height so the drag animation
- *     never collides with the bottom navigation.
+ * v8.4.9 — Rewritten WITHOUT `react-native-draggable-flatlist` because
+ * that library is incompatible with Reanimated 4 in Expo SDK 53+ (it
+ * caused Android release builds to fail).  We now use a plain FlatList
+ * with per-row **Up / Down** buttons for reordering — same functional
+ * outcome, works on every RN version, and is friendlier for accessibility.
  */
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@react-native-async-storage/async-storage"; // eslint-disable-line @typescript-eslint/no-unused-vars
 import { Ionicons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  FlatList,
   Modal,
   Platform,
   Pressable,
@@ -24,17 +22,11 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import DraggableFlatList, {
-  type RenderItemParams,
-  ScaleDecorator,
-} from "react-native-draggable-flatlist";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useI18n } from "@/src/i18n/I18nContext";
 import { useTheme } from "@/src/theme/ThemeContext";
 
-// The categories are typed by `Market` in the API layer but we keep this
-// component self-contained so it can be re-used across contexts.
 export type CategoryKey =
   | "crypto"
   | "etf"
@@ -61,11 +53,6 @@ const CATEGORY_ICONS: Record<CategoryKey, string> = {
 const STORAGE_ORDER = "dashboard:categoryOrder";
 const STORAGE_HIDDEN = "dashboard:categoryHidden";
 
-// ---------------------------------------------------------------------------
-// Public hook — read the current preference set and expose a setter that
-// persists atomically.  Homepage uses this to derive its `orderedCategories`
-// so the UI reflects the user's choices from the very first render.
-// ---------------------------------------------------------------------------
 export type CategoryPrefs = {
   order: CategoryKey[];
   hidden: Set<CategoryKey>;
@@ -85,9 +72,10 @@ export function useCategoryPrefs(): [
   useEffect(() => {
     (async () => {
       try {
+        const AS = (await import("@react-native-async-storage/async-storage")).default;
         const [orderRaw, hiddenRaw] = await Promise.all([
-          AsyncStorage.getItem(STORAGE_ORDER),
-          AsyncStorage.getItem(STORAGE_HIDDEN),
+          AS.getItem(STORAGE_ORDER),
+          AS.getItem(STORAGE_HIDDEN),
         ]);
         let order: CategoryKey[] = DEFAULT_ORDER;
         if (orderRaw) {
@@ -95,8 +83,6 @@ export function useCategoryPrefs(): [
           const valid = parsed.filter((k): k is CategoryKey =>
             (DEFAULT_ORDER as string[]).includes(k),
           );
-          // Append any newly-added categories that the user hasn't seen yet
-          // (forward compatibility — future patches might add e.g. "bonds").
           const missing = DEFAULT_ORDER.filter((k) => !valid.includes(k));
           order = [...valid, ...missing];
         }
@@ -117,10 +103,15 @@ export function useCategoryPrefs(): [
   const save = useCallback(
     async (order: CategoryKey[], hidden: Set<CategoryKey>) => {
       setState({ order, hidden, ready: true });
-      await Promise.all([
-        AsyncStorage.setItem(STORAGE_ORDER, JSON.stringify(order)),
-        AsyncStorage.setItem(STORAGE_HIDDEN, JSON.stringify([...hidden])),
-      ]).catch(() => {});
+      try {
+        const AS = (await import("@react-native-async-storage/async-storage")).default;
+        await Promise.all([
+          AS.setItem(STORAGE_ORDER, JSON.stringify(order)),
+          AS.setItem(STORAGE_HIDDEN, JSON.stringify([...hidden])),
+        ]);
+      } catch {
+        /* silent */
+      }
     },
     [],
   );
@@ -128,9 +119,6 @@ export function useCategoryPrefs(): [
   return [state, save];
 }
 
-// ---------------------------------------------------------------------------
-// The sheet itself.
-// ---------------------------------------------------------------------------
 export default function CategoryReorderSheet({
   visible,
   onClose,
@@ -149,7 +137,6 @@ export default function CategoryReorderSheet({
   const [draftOrder, setDraftOrder] = useState<CategoryKey[]>(initialOrder);
   const [draftHidden, setDraftHidden] = useState<Set<CategoryKey>>(initialHidden);
 
-  // Reset drafts whenever the sheet re-opens so cancel is truly non-destructive.
   useEffect(() => {
     if (visible) {
       setDraftOrder(initialOrder);
@@ -164,6 +151,24 @@ export default function CategoryReorderSheet({
     for (const k of draftHidden) if (!initialHidden.has(k)) return true;
     return false;
   }, [draftOrder, draftHidden, initialOrder, initialHidden]);
+
+  const moveUp = useCallback((index: number) => {
+    if (index <= 0) return;
+    setDraftOrder((prev) => {
+      const next = [...prev];
+      [next[index - 1], next[index]] = [next[index], next[index - 1]];
+      return next;
+    });
+  }, []);
+
+  const moveDown = useCallback((index: number) => {
+    setDraftOrder((prev) => {
+      if (index >= prev.length - 1) return prev;
+      const next = [...prev];
+      [next[index + 1], next[index]] = [next[index], next[index + 1]];
+      return next;
+    });
+  }, []);
 
   const toggleHidden = useCallback((key: CategoryKey) => {
     setDraftHidden((prev) => {
@@ -180,64 +185,66 @@ export default function CategoryReorderSheet({
   }, []);
 
   const handleSave = useCallback(() => {
-    // Ensure at least ONE category stays visible to avoid an empty dashboard.
     const visibleCount = draftOrder.filter((k) => !draftHidden.has(k)).length;
     if (visibleCount === 0) return;
     onSave(draftOrder, draftHidden);
     onClose();
   }, [draftOrder, draftHidden, onSave, onClose]);
 
-  const renderItem = useCallback(
-    ({ item, drag, isActive }: RenderItemParams<CategoryKey>) => {
-      const label = t(`category_${item}`);
-      const hidden = draftHidden.has(item);
-      return (
-        <ScaleDecorator>
-          <View
-            style={[
-              styles.row,
-              {
-                backgroundColor: isActive ? colors.surfaceAlt : colors.surface,
-                borderColor: colors.border,
-                opacity: hidden ? 0.55 : 1,
-              },
-            ]}
+  const renderItem = ({ item, index }: { item: CategoryKey; index: number }) => {
+    const label = t(`category_${item}`);
+    const hidden = draftHidden.has(item);
+    const isFirst = index === 0;
+    const isLast = index === draftOrder.length - 1;
+    return (
+      <View
+        style={[
+          styles.row,
+          { backgroundColor: colors.surface, borderColor: colors.border, opacity: hidden ? 0.55 : 1 },
+        ]}
+      >
+        <View style={styles.arrowCol}>
+          <TouchableOpacity
+            onPress={() => moveUp(index)}
+            disabled={isFirst}
+            hitSlop={6}
+            testID={`reorder-up-${item}`}
+            style={[styles.arrowBtn, { opacity: isFirst ? 0.3 : 1 }]}
           >
-            <TouchableOpacity
-              onLongPress={drag}
-              delayLongPress={120}
-              disabled={isActive}
-              activeOpacity={0.7}
-              style={styles.dragHandle}
-              testID={`reorder-drag-${item}`}
-            >
-              <Ionicons name="reorder-three" size={22} color={colors.textMuted} />
-            </TouchableOpacity>
-            <Ionicons
-              name={CATEGORY_ICONS[item] as never}
-              size={18}
-              color={hidden ? colors.textMuted : colors.accentBlue}
-              style={{ marginRight: 10 }}
-            />
-            <Text
-              style={[styles.rowLabel, { color: hidden ? colors.textMuted : colors.textPrimary }]}
-              numberOfLines={1}
-            >
-              {label}
-            </Text>
-            <Switch
-              testID={`reorder-toggle-${item}`}
-              value={!hidden}
-              onValueChange={() => toggleHidden(item)}
-              trackColor={{ false: colors.border, true: colors.accentUp + "80" }}
-              thumbColor={hidden ? colors.textMuted : colors.accentUp}
-            />
-          </View>
-        </ScaleDecorator>
-      );
-    },
-    [colors, draftHidden, t, toggleHidden],
-  );
+            <Ionicons name="chevron-up" size={16} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => moveDown(index)}
+            disabled={isLast}
+            hitSlop={6}
+            testID={`reorder-down-${item}`}
+            style={[styles.arrowBtn, { opacity: isLast ? 0.3 : 1 }]}
+          >
+            <Ionicons name="chevron-down" size={16} color={colors.textPrimary} />
+          </TouchableOpacity>
+        </View>
+        <Ionicons
+          name={CATEGORY_ICONS[item] as never}
+          size={18}
+          color={hidden ? colors.textMuted : colors.accentBlue}
+          style={{ marginRight: 10, marginLeft: 4 }}
+        />
+        <Text
+          style={[styles.rowLabel, { color: hidden ? colors.textMuted : colors.textPrimary }]}
+          numberOfLines={1}
+        >
+          {label}
+        </Text>
+        <Switch
+          testID={`reorder-toggle-${item}`}
+          value={!hidden}
+          onValueChange={() => toggleHidden(item)}
+          trackColor={{ false: colors.border, true: colors.accentUp + "80" }}
+          thumbColor={hidden ? colors.textMuted : colors.accentUp}
+        />
+      </View>
+    );
+  };
 
   return (
     <Modal
@@ -255,10 +262,8 @@ export default function CategoryReorderSheet({
               { backgroundColor: colors.surface, borderColor: colors.border },
             ]}
           >
-            {/* Grabber */}
             <View style={[styles.grabber, { backgroundColor: colors.border }]} />
 
-            {/* Header */}
             <View style={styles.header}>
               <TouchableOpacity onPress={onClose} testID="reorder-cancel">
                 <Text style={[styles.headerBtn, { color: colors.textMuted }]}>
@@ -285,22 +290,19 @@ export default function CategoryReorderSheet({
             </View>
 
             <Text style={[styles.hint, { color: colors.textMuted }]}>
-              {t("reorder_hint") ||
-                "Tekan & tahan ⋮ untuk menyeret. Toggle untuk menampilkan/menyembunyikan kolom di dashboard."}
+              {t("reorder_hint_arrows") ||
+                "Gunakan tombol ↑ ↓ untuk memindahkan kategori. Toggle switch untuk menampilkan/menyembunyikan kolom di dashboard."}
             </Text>
 
-            {/* Draggable list */}
             <View style={{ flex: 1 }}>
-              <DraggableFlatList
+              <FlatList
                 data={draftOrder}
-                onDragEnd={({ data }) => setDraftOrder(data as CategoryKey[])}
                 keyExtractor={(item) => item}
                 renderItem={renderItem}
                 contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 12 }}
               />
             </View>
 
-            {/* Reset row */}
             <TouchableOpacity
               onPress={resetToDefault}
               style={[styles.resetBtn, { borderTopColor: colors.border }]}
@@ -338,12 +340,8 @@ const styles = StyleSheet.create({
     }),
   },
   grabber: {
-    width: 42,
-    height: 4,
-    borderRadius: 2,
-    alignSelf: "center",
-    marginBottom: 8,
-    marginTop: 6,
+    width: 42, height: 4, borderRadius: 2,
+    alignSelf: "center", marginBottom: 8, marginTop: 6,
   },
   header: {
     flexDirection: "row",
@@ -355,24 +353,30 @@ const styles = StyleSheet.create({
   headerBtn: { fontSize: 15 },
   headerTitle: { fontSize: 16, fontWeight: "800", flex: 1, textAlign: "center" },
   hint: {
-    fontSize: 12,
-    lineHeight: 17,
-    paddingHorizontal: 16,
-    marginBottom: 10,
+    fontSize: 12, lineHeight: 17,
+    paddingHorizontal: 16, marginBottom: 10,
   },
   row: {
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
     borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
+    paddingVertical: 8,
+    paddingRight: 10,
+    paddingLeft: 4,
     marginBottom: 8,
   },
-  dragHandle: {
-    paddingHorizontal: 4,
-    paddingVertical: 4,
+  arrowCol: {
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: 4,
+  },
+  arrowBtn: {
+    width: 26,
+    height: 22,
+    alignItems: "center",
+    justifyContent: "center",
   },
   rowLabel: { flex: 1, fontSize: 15, fontWeight: "600" },
   resetBtn: {

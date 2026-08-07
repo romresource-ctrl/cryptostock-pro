@@ -88,6 +88,12 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     ru: "Удерживайте ⋮ для перетаскивания. Переключатель — показать/скрыть колонку.",
     cn: "长按 ⋮ 以拖动。切换开关以显示/隐藏该列。",
   },
+  reorder_hint_arrows: {
+    id: "Gunakan tombol ↑ ↓ untuk memindahkan kategori. Toggle switch untuk menampilkan/menyembunyikan kolom.",
+    en: "Use the ↑ ↓ buttons to move a category. Toggle to show/hide a column on the dashboard.",
+    ru: "Используйте кнопки ↑ ↓ для перемещения. Переключатель — показать/скрыть.",
+    cn: "使用 ↑ ↓ 按钮上下移动类别。切换开关以显示/隐藏该列。",
+  },
   reorder_reset: {
     id: "Kembalikan ke urutan bawaan",
     en: "Reset to default order",
