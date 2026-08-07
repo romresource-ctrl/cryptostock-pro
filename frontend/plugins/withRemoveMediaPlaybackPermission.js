@@ -31,8 +31,8 @@ const BLOCKED_PERMISSIONS = [
 // android:foregroundServiceType equal to `typeMatch`.
 const BLOCKED_SERVICES = [
   {
-    // expo-audio's foreground service class.
-    nameMatch: "expo.modules.audio.AudioModule$AudioForegroundService",
+    // expo-audio's foreground service class (v54+ package layout).
+    nameMatch: "expo.modules.audio.service.AudioControlsService",
     typeMatch: "mediaPlayback",
   },
 ];
