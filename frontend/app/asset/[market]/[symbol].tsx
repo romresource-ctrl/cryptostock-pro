@@ -22,6 +22,7 @@ import {
   formatStablecoinLocal,
   useUsdtLocalRate,
 } from "@/src/components/UsdtLocalRateStrip";
+import { useBinanceRealtime } from "@/src/hooks/useBinanceRealtime";
 import { useI18n } from "@/src/i18n/I18nContext";
 import { getQuoteLabel } from "@/src/lib/localeQuote";
 import {
@@ -308,7 +309,17 @@ export default function AssetDetail() {
   const ticker = chart?.ticker ?? {};
   const sig = chart?.signal;
   const sigColors = signalColors(colors, sig?.action || "HOLD");
-  const change = ticker.change_pct_24h ?? 0;
+  // v8.5.0 — Realtime Binance ticker for crypto assets.  When connected,
+  // overrides `ticker.price` / `change_pct_24h` so the header updates every
+  // 100-200 ms.  Non-crypto markets keep the REST snapshot.
+  const rt = useBinanceRealtime(String(symbol), market);
+  const displayPrice = rt.connected && Number.isFinite(rt.price)
+    ? rt.price
+    : (ticker.price ?? null);
+  const displayChangePct = rt.connected && Number.isFinite(rt.changePct)
+    ? rt.changePct
+    : (ticker.change_pct_24h ?? null);
+  const change = displayChangePct ?? 0;
   const changeColor = change >= 0 ? colors.accentUp : colors.accentDown;
 
   // Target Profit % — POSITIVE profit target regardless of direction.
@@ -361,8 +372,13 @@ export default function AssetDetail() {
                 )}</Text>
               </Text>
               <Text style={[styles.priceBig, { color: colors.textPrimary }]}>
-                {fmtPrice(ticker.price ?? null)}{" "}
-                <Text style={{ color: changeColor, fontSize: 14, fontWeight: "600" }}>{formatPct(ticker.change_pct_24h)}</Text>
+                {fmtPrice(displayPrice)}{" "}
+                <Text style={{ color: changeColor, fontSize: 14, fontWeight: "600" }}>{formatPct(displayChangePct)}</Text>
+                {rt.connected ? (
+                  <Text style={{ fontSize: 10, fontWeight: "800", color: colors.accentUp }}>
+                    {"  "}● LIVE
+                  </Text>
+                ) : null}
               </Text>
             </View>
             <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>

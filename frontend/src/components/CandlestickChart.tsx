@@ -1,5 +1,5 @@
-import React from "react";
-import { View } from "react-native";
+import React, { useState } from "react";
+import { PanResponder, StyleSheet, Text, View } from "react-native";
 import Svg, { Line, Rect, Text as SvgText } from "react-native-svg";
 
 import { useTheme } from "@/src/theme/ThemeContext";
@@ -39,6 +39,20 @@ export default function CandlestickChart({
   currency: _currency,
 }: Props) {
   const { colors } = useTheme();
+  // Hooks must run before any early return.
+  const [cursorX, setCursorX] = useState<number | null>(null);
+  const panResponder = React.useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: (evt) => setCursorX(evt.nativeEvent.locationX),
+        onPanResponderMove: (evt) => setCursorX(evt.nativeEvent.locationX),
+        onPanResponderRelease: () => setCursorX(null),
+        onPanResponderTerminate: () => setCursorX(null),
+      }),
+    [],
+  );
 
   if (!candles || candles.length < 2) {
     return (
@@ -116,7 +130,40 @@ export default function CandlestickChart({
   const volumes = displayed.map((c) => c.volume ?? 0);
   const volMax = Math.max(...volumes, 1);
 
+  // ---------------------------------------------------------------------
+  // v8.5.0 — Interactive crosshair (touch & drag to inspect a candle).
+  // Hooks (`cursorX`, `panResponder`) are declared at the top of this
+  // component; here we just compute the hovered candle from the current
+  // cursor position.
+  // ---------------------------------------------------------------------
+  let hover: { candle: Candle; x: number; y: number; index: number } | null = null;
+  if (cursorX != null) {
+    const clamped = Math.max(0, Math.min(cursorX, chartW - 1));
+    const idx = Math.min(displayed.length - 1, Math.max(0, Math.floor(clamped / step)));
+    const c = displayed[idx];
+    hover = {
+      candle: c,
+      index: idx,
+      x: idx * step + candleGap / 2 + candleWidth / 2,
+      y: priceToY(c.close),
+    };
+  }
+  const fmtTime = (t: number): string => {
+    if (!Number.isFinite(t)) return "";
+    try {
+      const d = new Date(t < 1e12 ? t * 1000 : t);
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mm = String(d.getMinutes()).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      const mo = String(d.getMonth() + 1).padStart(2, "0");
+      return `${dd}/${mo} ${hh}:${mm}`;
+    } catch {
+      return "";
+    }
+  };
+
   return (
+    <View style={{ width, height }} {...panResponder.panHandlers} testID="candlestick-chart">
     <Svg width={width} height={height}>
       {gridEls}
       {displayed.map((c, i) => {
@@ -259,9 +306,124 @@ export default function CandlestickChart({
           );
         });
       })()}
+
+      {/* v8.5.0 — Crosshair overlay (rendered last so it sits above candles). */}
+      {hover ? (
+        <>
+          <Line
+            x1={hover.x}
+            x2={hover.x}
+            y1={0}
+            y2={chartH + (showVolume ? volumeH : 0)}
+            stroke={colors.textMuted}
+            strokeWidth={1}
+            strokeDasharray="3 3"
+            opacity={0.85}
+          />
+          <Line
+            x1={0}
+            x2={chartW}
+            y1={hover.y}
+            y2={hover.y}
+            stroke={colors.textMuted}
+            strokeWidth={1}
+            strokeDasharray="3 3"
+            opacity={0.85}
+          />
+          <Rect
+            x={chartW}
+            y={hover.y - 8}
+            width={rightPad - 2}
+            height={16}
+            fill={colors.surfaceAlt || "#1E2329"}
+            stroke={colors.border}
+            strokeWidth={0.5}
+            rx={2}
+          />
+          <SvgText
+            x={chartW + 4}
+            y={hover.y + 4}
+            fontSize={9.5}
+            fontWeight="700"
+            fill={colors.textPrimary}
+          >
+            {formatPriceLabel(hover.candle.close)}
+          </SvgText>
+        </>
+      ) : null}
     </Svg>
+    {/* Floating OHLC tooltip — pinned to top of chart, offset to avoid finger. */}
+    {hover ? (
+      <View
+        style={[
+          styles.tooltip,
+          {
+            backgroundColor: (colors.surfaceAlt || "#1E2329") + "F2",
+            borderColor: colors.border,
+            left: Math.min(Math.max(4, hover.x - 82), width - 168),
+            pointerEvents: "none" as const,
+          },
+        ]}
+      >
+        <Text style={[styles.tooltipTime, { color: colors.textMuted }]}>
+          {fmtTime(hover.candle.t)}
+        </Text>
+        <View style={styles.tooltipRow}>
+          <Text style={[styles.tooltipLabel, { color: colors.textMuted }]}>O</Text>
+          <Text style={[styles.tooltipVal, { color: colors.textPrimary }]}>
+            {formatPriceLabel(hover.candle.open)}
+          </Text>
+          <Text style={[styles.tooltipLabel, { color: colors.textMuted }]}>H</Text>
+          <Text style={[styles.tooltipVal, { color: colors.accentUp }]}>
+            {formatPriceLabel(hover.candle.high)}
+          </Text>
+        </View>
+        <View style={styles.tooltipRow}>
+          <Text style={[styles.tooltipLabel, { color: colors.textMuted }]}>L</Text>
+          <Text style={[styles.tooltipVal, { color: colors.accentDown }]}>
+            {formatPriceLabel(hover.candle.low)}
+          </Text>
+          <Text style={[styles.tooltipLabel, { color: colors.textMuted }]}>C</Text>
+          <Text
+            style={[
+              styles.tooltipVal,
+              {
+                color:
+                  hover.candle.close >= hover.candle.open
+                    ? colors.accentUp
+                    : colors.accentDown,
+              },
+            ]}
+          >
+            {formatPriceLabel(hover.candle.close)}
+          </Text>
+        </View>
+      </View>
+    ) : null}
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  tooltip: {
+    position: "absolute",
+    top: 4,
+    minWidth: 152,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  tooltipRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 2,
+  },
+  tooltipTime: { fontSize: 10, fontWeight: "600" },
+  tooltipLabel: { fontSize: 9.5, fontWeight: "700", width: 10 },
+  tooltipVal: { fontSize: 10.5, fontWeight: "800", flex: 1 },
+});
 
 function formatPriceLabel(p: number): string {
   const abs = Math.abs(p);
