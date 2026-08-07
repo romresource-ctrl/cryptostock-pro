@@ -31,6 +31,7 @@ import UsdtLocalRateStrip, {
   useUsdtLocalRate,
 } from "@/src/components/UsdtLocalRateStrip";
 import VipModal from "@/src/components/VipModal";
+import { useAlertEngine } from "@/src/hooks/useAlertEngine";
 import { useI18n } from "@/src/i18n/I18nContext";
 import {
   type AssetSignal,
@@ -43,6 +44,7 @@ import {
 import { useSubscription } from "@/src/lib/subscriptionContext";
 import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
 import { APP_VERSION } from "@/src/lib/version";
+import { useWatchlist } from "@/src/lib/watchlist";
 import { useTheme } from "@/src/theme/ThemeContext";
 
 const REFRESH_INTERVAL_MS = 60_000;
@@ -146,6 +148,11 @@ const AssetCard = React.memo(function AssetCard({
   const wrCol = wrColor(colors, wr);
   const premium = asset.is_premium;
   const premiumGold = "#F0B90B";
+  // v8.5.3 — Watchlist star button.  Tap ⭐ to add/remove this asset from
+  // the user's favorites (persisted in AsyncStorage).  A small yellow
+  // filled star means "in watchlist", grey outline means "not saved".
+  const watch = useWatchlist();
+  const starred = watch.has(market, asset.symbol);
 
   // v8.4.0 — For USD-pegged stablecoins, render the price in the user's
   // LOCAL currency (Rp / ¥ / € / …) instead of "$1.00". Users trading in
@@ -192,8 +199,22 @@ const AssetCard = React.memo(function AssetCard({
         <Text style={[styles.ticker, { color: colors.textPrimary }]} numberOfLines={1}>
           {asset.symbol}
         </Text>
-        <View style={[styles.signalPill, { backgroundColor: sig.bg }]}>
-          <Text style={[styles.signalText, { color: sig.fg }]}>{asset.label}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+          <TouchableOpacity
+            onPress={() => watch.toggle(market, asset.symbol)}
+            hitSlop={8}
+            testID={`watchlist-star-${market}-${asset.symbol}`}
+            style={styles.starBtn}
+          >
+            <Ionicons
+              name={starred ? "star" : "star-outline"}
+              size={14}
+              color={starred ? "#F0B90B" : colors.textMuted}
+            />
+          </TouchableOpacity>
+          <View style={[styles.signalPill, { backgroundColor: sig.bg }]}>
+            <Text style={[styles.signalText, { color: sig.fg }]}>{asset.label}</Text>
+          </View>
         </View>
       </View>
       <View style={styles.cardMid}>
@@ -295,6 +316,28 @@ export default function Dashboard() {
   // horizontal scroll. If the user has NOT customized the order yet, we
   // still lift the chip-selected view[] pair to the front (legacy quick-
   // filter). Once they touch the reorder sheet their explicit order wins.
+  // v8.5.3 — Watchlist state for the sticky "⭐ Watchlist" column that
+  // appears at the very start of the horizontal scroll.  We combine the
+  // user's starred entries with the currently-loaded data so live prices
+  // + signals stay accurate without an extra fetch per starred asset.
+  const watchlist = useWatchlist();
+  const watchlistAssets = useMemo<(AssetSignal & { _market: Category })[]>(() => {
+    if (!watchlist.ready || watchlist.size === 0) return [];
+    const out: (AssetSignal & { _market: Category })[] = [];
+    for (const entry of watchlist.entries) {
+      const m = entry.market as Category;
+      const pool = (data as Record<string, AssetSignal[]>)[m];
+      if (!pool) continue;
+      const hit = pool.find((a) => a.symbol.toUpperCase() === entry.symbol.toUpperCase());
+      if (hit) out.push({ ...hit, _market: m });
+    }
+    return out;
+  }, [watchlist.entries, watchlist.ready, watchlist.size, data]);
+
+  // v8.5.3 — Alert engine: evaluates saved price alerts against every
+  // dashboard data refresh and fires a local notification when triggered.
+  useAlertEngine(data as Record<string, AssetSignal[]>);
+
   const [categoryPrefs, saveCategoryPrefs] = useCategoryPrefs();
   const [reorderOpen, setReorderOpen] = useState(false);
   const DEFAULT_ORDER_ARR: Category[] = useMemo(
@@ -754,6 +797,20 @@ export default function Dashboard() {
               {t("reorder_button") || "Atur Kolom"}
             </Text>
           </TouchableOpacity>
+          {/* v8.5.3 — Quick link to the Price Alerts screen. */}
+          <TouchableOpacity
+            onPress={() => router.push("/alerts" as never)}
+            testID="dashboard-alerts-button"
+            style={[
+              styles.reorderBtn,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
+            <Ionicons name="notifications-outline" size={14} color="#F0B90B" />
+            <Text style={[styles.reorderBtnText, { color: colors.textPrimary }]}>
+              🔔 {t("alerts_header_button") || "Alarm"}
+            </Text>
+          </TouchableOpacity>
           {categoryPrefs.hidden.size > 0 ? (
             <Text style={[styles.reorderHiddenBadge, { color: colors.textMuted }]}>
               {categoryPrefs.hidden.size} {t("reorder_hidden_suffix") || "disembunyikan"}
@@ -808,6 +865,26 @@ export default function Dashboard() {
           }
           snapToAlignment="start"
         >
+          {/* v8.5.3 — Sticky "⭐ Watchlist" column always renders first when
+              the user has any starred assets.  Rendered outside the map so
+              its own key doesn't collide with `orderedCategories`. */}
+          {watchlist.size > 0 ? (() => {
+            const colW = SCREEN_W < 640 ? Math.floor((SCREEN_W - 8) / 2) : 190;
+            return (
+              <View key="__watchlist__" style={{ width: colW, marginRight: 8 }}>
+                <WatchlistColumn
+                  title={`⭐ ${t("watchlist_title") || "Watchlist"}`}
+                  data={watchlistAssets}
+                  onPress={(a, m) => handleAssetPress(a, m)}
+                  locked={!hasAccess}
+                  emptyHint={
+                    t("watchlist_loading") ||
+                    "Menunggu data harga…"
+                  }
+                />
+              </View>
+            );
+          })() : null}
           {orderedCategories.map((k, idx) => {
             const catLabel = t(`category_${k}`).toUpperCase();
             const colW = SCREEN_W < 640 ? Math.floor((SCREEN_W - 8) / 2) : 190;
@@ -1081,6 +1158,51 @@ function ListColumn({
   );
 }
 
+// v8.5.3 — Watchlist column: mixed-market list of the user's starred assets.
+// Each row carries its own `_market` so the star toggle + onPress can route
+// back to the correct asset detail screen.
+type WatchlistAsset = AssetSignal & { _market: Market };
+function WatchlistColumn({
+  title, data, onPress, locked, emptyHint,
+}: {
+  title: string;
+  data: WatchlistAsset[];
+  onPress: (a: AssetSignal, market: Market) => void;
+  locked: boolean;
+  emptyHint: string;
+}) {
+  const { colors } = useTheme();
+  return (
+    <View style={[styles.column, { backgroundColor: colors.surfaceAlt }]}>
+      <View style={[styles.columnHeader, { borderColor: colors.border }]}>
+        <Text style={[styles.columnTitle, { color: "#F0B90B" }]}>{title}</Text>
+      </View>
+      {data.length === 0 ? (
+        <View style={{ paddingVertical: 30, paddingHorizontal: 12 }}>
+          <Text style={{ color: colors.textMuted, fontSize: 11.5, textAlign: "center", lineHeight: 16 }}>
+            {emptyHint}
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={data}
+          keyExtractor={(a) => `${a._market}:${a.symbol}`}
+          renderItem={({ item }) => (
+            <AssetCard
+              asset={item}
+              market={item._market}
+              locked={locked}
+              onPress={() => onPress(item, item._market)}
+            />
+          )}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 24 }}
+        />
+      )}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   root: { flex: 1 },
   header: {
@@ -1225,6 +1347,13 @@ const styles = StyleSheet.create({
   cardTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
   ticker: { fontSize: 14, fontWeight: "700", letterSpacing: 0.4, flexShrink: 1 },
   signalPill: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  starBtn: {
+    width: 22,
+    height: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 6,
+  },
   signalText: { fontSize: 10, fontWeight: "700", letterSpacing: 0.5 },
   cardMid: { flexDirection: "row", justifyContent: "space-between", alignItems: "baseline" },
   price: { fontSize: 13, fontWeight: "600", fontVariant: ["tabular-nums"], flexShrink: 1 },

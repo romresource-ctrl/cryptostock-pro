@@ -17,12 +17,14 @@ import CandlestickChart from "@/src/components/CandlestickChart";
 import PriceChart from "@/src/components/PriceChart";
 import PositionSizeCalculator from "@/src/components/PositionSizeCalculator";
 import TargetProfit from "@/src/components/TargetProfit";
+import AlertModal from "@/src/components/AlertModal";
 import {
   STABLECOIN_SYMBOLS,
   formatStablecoinLocal,
   useUsdtLocalRate,
 } from "@/src/components/UsdtLocalRateStrip";
 import { useBinanceRealtime } from "@/src/hooks/useBinanceRealtime";
+import { useBinanceKline, patchCandlesWithLive } from "@/src/hooks/useBinanceKline";
 import { useI18n } from "@/src/i18n/I18nContext";
 import { getQuoteLabel } from "@/src/lib/localeQuote";
 import {
@@ -143,6 +145,8 @@ export default function AssetDetail() {
   const [translatedTfView, setTranslatedTfView] = useState<string | null>(null);
   const [chartType, setChartType] = useState<"candlestick" | "line">("candlestick");
   const [showPrediction, setShowPrediction] = useState(false);
+  // v8.5.3 — Alert modal open state (🔔 button in header).
+  const [alertOpen, setAlertOpen] = useState(false);
 
   // Access gating (issue #2, #3) — kick user back to home if entitlement expires
   const { hasAccess, loaded: accessLoaded } = usePremiumAccess();
@@ -313,6 +317,12 @@ export default function AssetDetail() {
   // overrides `ticker.price` / `change_pct_24h` so the header updates every
   // 100-200 ms.  Non-crypto markets keep the REST snapshot.
   const rt = useBinanceRealtime(String(symbol), market);
+  // v8.5.3 — Kline WS: patches the last candle so the chart updates live.
+  const liveKline = useBinanceKline(String(symbol), market, timeframe);
+  const liveCandles = React.useMemo(
+    () => patchCandlesWithLive(chart?.candles ?? [], liveKline),
+    [chart?.candles, liveKline],
+  );
   const displayPrice = rt.connected && Number.isFinite(rt.price)
     ? rt.price
     : (ticker.price ?? null);
@@ -355,6 +365,19 @@ export default function AssetDetail() {
           style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
         >
           <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
+        </TouchableOpacity>
+        {/* v8.5.3 — 🔔 Alert button opens a bottom-sheet where the user
+            sets a target price + direction.  When triggered, the alert
+            fires a local notification. */}
+        <TouchableOpacity
+          onPress={() => setAlertOpen(true)}
+          testID="open-alert-modal"
+          style={[
+            styles.iconBtn,
+            { backgroundColor: colors.surface, borderColor: colors.border, marginLeft: 8 },
+          ]}
+        >
+          <Ionicons name="notifications-outline" size={18} color="#F0B90B" />
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 12 }}>
           <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" }}>
@@ -546,12 +569,12 @@ export default function AssetDetail() {
             </View>
           ) : chartType === "candlestick" ? (
             <CandlestickChart
-              candles={chart?.candles || []}
+              candles={liveCandles as never}
               width={screenW - 24}
               height={220}
             />
           ) : (
-            <PriceChart candles={chart?.candles || []} width={screenW - 24} height={180} />
+            <PriceChart candles={liveCandles as never} width={screenW - 24} height={180} />
           )}
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
@@ -1136,6 +1159,17 @@ export default function AssetDetail() {
           </View>
         ) : null}
       </ScrollView>
+
+      {/* v8.5.3 — Bottom-sheet alert creator. */}
+      <AlertModal
+        visible={alertOpen}
+        onClose={() => setAlertOpen(false)}
+        market={market}
+        symbol={displaySymbol}
+        currentPrice={
+          Number.isFinite(displayPrice as number) ? (displayPrice as number) : null
+        }
+      />
     </SafeAreaView>
   );
 }

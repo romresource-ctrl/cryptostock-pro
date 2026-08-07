@@ -31,6 +31,54 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   category_commodity: { id: "Commodities", en: "Commodities", ru: "Сырьё", cn: "大宗商品" },
   category_forex: { id: "Forex", en: "Forex", ru: "Форекс", cn: "外汇" },
 
+  // v8.5.3 — Watchlist
+  watchlist_title: { id: "Favorit", en: "Watchlist", ru: "Избранное", cn: "自选" },
+  watchlist_empty: {
+    id: "Belum ada aset favorit. Tap ⭐ pada kartu untuk menambahkan ke sini.",
+    en: "No favorites yet. Tap ⭐ on any card to add.",
+    ru: "Нет избранного. Нажмите ⭐ на карточке, чтобы добавить.",
+    cn: "尚无自选。点按卡片上的 ⭐ 添加。",
+  },
+  watchlist_loading: {
+    id: "Aset favorit belum tampil — tunggu data harga selesai dimuat.",
+    en: "Loading favorites — waiting for price data.",
+    ru: "Загрузка избранного…",
+    cn: "正在加载自选…",
+  },
+
+  // v8.5.3 — Price Alerts
+  alert_title: { id: "Buat Alarm Harga", en: "Create Price Alert", ru: "Создать алерт", cn: "创建价格提醒" },
+  alert_direction: { id: "Notifikasi ketika harga", en: "Notify when price is", ru: "Уведомить когда цена", cn: "当价格" },
+  alert_above: { id: "Naik di atas", en: "Above", ru: "Выше", cn: "高于" },
+  alert_below: { id: "Turun di bawah", en: "Below", ru: "Ниже", cn: "低于" },
+  alert_target: { id: "Harga target", en: "Target price", ru: "Целевая цена", cn: "目标价格" },
+  alert_current_price: { id: "Harga sekarang", en: "Current price", ru: "Текущая цена", cn: "当前价格" },
+  alert_note: { id: "Catatan (opsional)", en: "Note (optional)", ru: "Заметка", cn: "备注" },
+  alert_note_placeholder: {
+    id: "misal: Take profit dari long BTC",
+    en: "e.g. Take profit BTC long",
+    ru: "напр: Тейк-профит BTC лонг",
+    cn: "例如：BTC 多单止盈",
+  },
+  alert_hint: {
+    id: "Alarm akan terkirim sebagai notifikasi begitu harga sesuai kondisi. Tiap alarm bekerja sekali (one-shot).",
+    en: "You'll get a notification as soon as the price crosses the target. Each alert fires once.",
+    ru: "Уведомление придёт при пересечении цели. Один раз.",
+    cn: "价格触及目标时你会收到一次通知。",
+  },
+  alert_triggered: { id: "Terpicu", en: "Triggered", ru: "Сработал", cn: "已触发" },
+  alert_desc_above: { id: "Naik di atas", en: "Rise above", ru: "Выше", cn: "高于" },
+  alert_desc_below: { id: "Turun di bawah", en: "Fall below", ru: "Ниже", cn: "低于" },
+  alerts_screen_title: { id: "Alarm Harga", en: "Price Alerts", ru: "Ценовые алерты", cn: "价格提醒" },
+  alerts_empty_title: { id: "Belum ada alarm harga", en: "No price alerts yet", ru: "Пока нет алертов", cn: "尚无价格提醒" },
+  alerts_empty_body: {
+    id: "Buka detail aset lalu ketuk 🔔 di sebelah tombol back untuk membuat alarm harga.",
+    en: "Open an asset detail page and tap 🔔 next to the back button to create an alert.",
+    ru: "Откройте детали актива и нажмите 🔔 рядом с кнопкой назад.",
+    cn: "打开资产详情页面，点击返回按钮旁的 🔔 创建提醒。",
+  },
+  alerts_header_button: { id: "Alarm", en: "Alerts", ru: "Алерты", cn: "提醒" },
+
   // v8.5.0 — Category reorder sheet
   reorder_button: { id: "Atur Kolom", en: "Reorder", ru: "Порядок", cn: "排列" },
   reorder_title: { id: "Atur Urutan Kategori", en: "Reorder Categories", ru: "Порядок Категорий", cn: "类别排序" },
