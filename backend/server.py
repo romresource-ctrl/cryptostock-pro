@@ -1352,11 +1352,13 @@ async def news_global(
     eff_market = "stock_id" if market == "stock" else market
     if eff_market == "world_stocks":
         eff_market = "stock_us"
-    # v7.0.5: URL-safe dash decoder — forex/gold-silver symbols contain
-    # "/" (EUR/USD, XAU/USD) which breaks path routing. Frontend pushes
-    # them as "EUR-USD"; convert back here before pool lookup.
-    if eff_market in ("forex", "gold_silver") and "-" in symbol:
-        symbol = symbol.replace("-", "/")
+    # v7.0.5 / v8.5.3 — URL-safe dash decoder — forex/gold-silver symbols
+    # contain "/" (EUR/USD, XAU/USD) which breaks path routing. This block
+    # only applies inside symbol-scoped routes; in this global news_global
+    # handler `symbol` doesn't exist, so we guard defensively.
+    _sym_local = locals().get("symbol")
+    if eff_market in ("forex", "gold_silver") and _sym_local and "-" in _sym_local:
+        _sym_local = _sym_local.replace("-", "/")  # only mutates the local, not used further in global route
     items = await get_news(eff_market, limit=limit)
     if lang == "en" and items:
         titles = [i.get("title") or "" for i in items]
