@@ -15,10 +15,14 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import DraggableFlatList, {
+  type RenderItemParams as DFLRenderItemParams,
+  ScaleDecorator,
+} from "react-native-draggable-flatlist";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAuth } from "@/src/auth/AuthContext";
-import CategoryReorderSheet, {
+import {
   type CategoryKey,
   useCategoryPrefs,
 } from "@/src/components/CategoryReorderSheet";
@@ -339,7 +343,10 @@ export default function Dashboard() {
   useAlertEngine(data as Record<string, AssetSignal[]>);
 
   const [categoryPrefs, saveCategoryPrefs] = useCategoryPrefs();
-  const [reorderOpen, setReorderOpen] = useState(false);
+  // v8.5.4 — `reorderOpen` retained for potential future settings shortcut
+  // (the modal is unmounted in the JSX but keeping the state avoids a
+  // cascade of unused-var lints while we finalize the settings UX).
+  const [reorderOpen, setReorderOpen] = useState(false); // eslint-disable-line @typescript-eslint/no-unused-vars
   const DEFAULT_ORDER_ARR: Category[] = useMemo(
     () => ["crypto", "etf", "stock_id", "stock_us", "gold_silver", "commodity", "forex"],
     [],
@@ -803,11 +810,9 @@ export default function Dashboard() {
             </Text>
           </TouchableOpacity>
           {categoryPrefs.hidden.size > 0 ? (
-            <TouchableOpacity onPress={() => setReorderOpen(true)}>
-              <Text style={[styles.reorderHiddenBadge, { color: colors.textMuted }]}>
-                {categoryPrefs.hidden.size} {t("reorder_hidden_suffix") || "disembunyikan"}
-              </Text>
-            </TouchableOpacity>
+            <Text style={[styles.reorderHiddenBadge, { color: colors.textMuted }]}>
+              {categoryPrefs.hidden.size} {t("reorder_hidden_suffix") || "disembunyikan"}
+            </Text>
           ) : null}
         </View>
       ) : null}
@@ -833,38 +838,35 @@ export default function Dashboard() {
         contentContainerStyle={{ paddingBottom: 20 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accentBlue} />}
       >
-        <ScrollView
+        {/* v8.5.4 — Horizontal DraggableFlatList replaces the previous
+            ScrollView so users can long-press the ☰ handle in any column
+            header and drag the column into a new position INLINE (no
+            more modal).  We keep the sticky Watchlist column outside the
+            drag list via `ListHeaderComponent` so favorites don't move. */}
+        <DraggableFlatList<Category>
           horizontal
+          data={orderedCategories}
+          keyExtractor={(k) => k}
+          onDragEnd={({ data: newOrder }) => {
+            // Persist the user's new order.  If they had hidden categories
+            // those stay hidden but move to their saved positions.
+            void saveCategoryPrefs(
+              newOrder as CategoryKey[],
+              categoryPrefs.hidden,
+            );
+          }}
+          activationDistance={4}
           showsHorizontalScrollIndicator={false}
-          // v8.3.9 (final v3) — Use EXPLICIT `snapToOffsets` instead of
-          // `snapToInterval`. snapToInterval snaps to N×interval which on
-          // web preview lets the user rest between snap points if their
-          // release velocity is too low. `snapToOffsets` with the exact
-          // pair-start positions + `disableIntervalMomentum` forces every
-          // release to land on a defined pair boundary. This is the only
-          // configuration that gives a Binance-style lock-to-pair behaviour.
           contentContainerStyle={{ paddingHorizontal: 0 }}
-          decelerationRate="fast"
-          disableIntervalMomentum
-          snapToOffsets={
-            SCREEN_W < 640
-              ? (() => {
-                  const colW = Math.floor((SCREEN_W - 8) / 2);
-                  const pairW = (colW + 8) * 2; // 2 cols + 2 gaps
-                  const pageCount = Math.ceil(orderedCategories.length / 2);
-                  return Array.from({ length: pageCount }, (_, i) => i * pairW);
-                })()
-              : undefined
-          }
-          snapToAlignment="start"
-        >
-          {/* v8.5.3 — Sticky "⭐ Watchlist" column always renders first when
-              the user has any starred assets.  Rendered outside the map so
-              its own key doesn't collide with `orderedCategories`. */}
-          {watchlist.size > 0 ? (() => {
-            const colW = SCREEN_W < 640 ? Math.floor((SCREEN_W - 8) / 2) : 190;
-            return (
-              <View key="__watchlist__" style={{ width: colW, marginRight: 8 }}>
+          ListHeaderComponent={
+            watchlist.size > 0 ? (
+              <View
+                key="__watchlist__"
+                style={{
+                  width: SCREEN_W < 640 ? Math.floor((SCREEN_W - 8) / 2) : 190,
+                  marginRight: 8,
+                }}
+              >
                 <WatchlistColumn
                   title={`⭐ ${t("watchlist_title") || "Watchlist"}`}
                   data={watchlistAssets}
@@ -874,36 +876,36 @@ export default function Dashboard() {
                     t("watchlist_loading") ||
                     "Menunggu data harga…"
                   }
-                  onReorder={() => setReorderOpen(true)}
                 />
               </View>
-            );
-          })() : null}
-          {orderedCategories.map((k, idx) => {
+            ) : null
+          }
+          renderItem={({ item: k, drag, isActive }: DFLRenderItemParams<Category>) => {
             const catLabel = t(`category_${k}`).toUpperCase();
             const colW = SCREEN_W < 640 ? Math.floor((SCREEN_W - 8) / 2) : 190;
-            const isLast = idx === orderedCategories.length - 1;
             return (
-              <View
-                key={k}
-                style={{
-                  width: colW,
-                  marginRight: isLast ? 0 : 8,
-                }}
-              >
-                <ListColumn
-                  title={catLabel}
-                  market={k}
-                  data={filterAssets(data[k], searchQuery, signalFilter, regionFilter, k)}
-                  loading={loadingMap[k]}
-                  onPress={handleAssetPress}
-                  locked={!hasAccess}
-                  onReorder={() => setReorderOpen(true)}
-                />
-              </View>
+              <ScaleDecorator>
+                <View
+                  style={{
+                    width: colW,
+                    marginRight: 8,
+                  }}
+                >
+                  <ListColumn
+                    title={catLabel}
+                    market={k}
+                    data={filterAssets(data[k], searchQuery, signalFilter, regionFilter, k)}
+                    loading={loadingMap[k]}
+                    onPress={handleAssetPress}
+                    locked={!hasAccess}
+                    onDragStart={drag}
+                    isDragActive={isActive}
+                  />
+                </View>
+              </ScaleDecorator>
             );
-          })}
-        </ScrollView>
+          }}
+        />
       </ScrollView>
       )}
 
@@ -923,21 +925,11 @@ export default function Dashboard() {
           still scrolling through asset columns / candles above. */}
       <ChatSheet visible={chatOpen} onClose={() => setChatOpen(false)} />
 
-      {/* v8.5.0 — Category reorder / hide sheet.  Only mount once prefs
-          are hydrated to avoid a first-render flicker where the sheet
-          shows the default order and immediately re-snaps to the user's
-          saved order. */}
-      {categoryPrefs.ready ? (
-        <CategoryReorderSheet
-          visible={reorderOpen}
-          onClose={() => setReorderOpen(false)}
-          initialOrder={categoryPrefs.order}
-          initialHidden={categoryPrefs.hidden}
-          onSave={(order, hidden) => {
-            void saveCategoryPrefs(order, hidden);
-          }}
-        />
-      ) : null}
+      {/* v8.5.4 — CategoryReorderSheet removed.  Reorder is now done
+          INLINE by long-pressing the ☰ handle in any column header and
+          dragging horizontally.  Show/hide of categories was accessible
+          only through this sheet; if we bring it back it will be a
+          settings-screen affordance. */}
     </SafeAreaView>
   );
 }
@@ -1128,21 +1120,28 @@ function SearchHitCard({
 }
 
 function ListColumn({
-  title, market, data, loading, onPress, locked, onReorder,
-}: { title: string; market: Market; data: AssetSignal[]; loading: boolean; onPress: (a: AssetSignal, market?: Market) => void; locked: boolean; onReorder?: () => void }) {
+  title, market, data, loading, onPress, locked, onDragStart, isDragActive,
+}: { title: string; market: Market; data: AssetSignal[]; loading: boolean; onPress: (a: AssetSignal, market?: Market) => void; locked: boolean; onDragStart?: () => void; isDragActive?: boolean }) {
   const { colors } = useTheme();
   return (
-    <View style={[styles.column, { backgroundColor: colors.surfaceAlt }]}>
+    <View style={[
+      styles.column,
+      {
+        backgroundColor: colors.surfaceAlt,
+        opacity: isDragActive ? 0.75 : 1,
+        borderWidth: isDragActive ? 2 : 0,
+        borderColor: colors.accentBlue,
+      },
+    ]}>
       <View style={[styles.columnHeader, { borderColor: colors.border }]}>
         <Text style={[styles.columnTitle, { color: colors.textPrimary }]} numberOfLines={1}>
           {title}
         </Text>
-        {onReorder ? (
+        {onDragStart ? (
           <TouchableOpacity
-            onPress={onReorder}
-            onLongPress={onReorder}
+            onLongPress={onDragStart}
             delayLongPress={200}
-            hitSlop={8}
+            hitSlop={10}
             testID={`column-reorder-${market}`}
             style={styles.columnReorderBtn}
           >
@@ -1161,6 +1160,9 @@ function ListColumn({
           renderItem={({ item }) => <AssetCard asset={item} market={market} locked={locked} onPress={() => onPress(item, market)} />}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 24 }}
+          // Give the outer DraggableFlatList priority for horizontal drags
+          // while still letting the inner vertical scroll work.
+          scrollEnabled={!isDragActive}
         />
       )}
     </View>
@@ -1172,14 +1174,13 @@ function ListColumn({
 // back to the correct asset detail screen.
 type WatchlistAsset = AssetSignal & { _market: Market };
 function WatchlistColumn({
-  title, data, onPress, locked, emptyHint, onReorder,
+  title, data, onPress, locked, emptyHint,
 }: {
   title: string;
   data: WatchlistAsset[];
   onPress: (a: AssetSignal, market: Market) => void;
   locked: boolean;
   emptyHint: string;
-  onReorder?: () => void;
 }) {
   const { colors } = useTheme();
   return (
@@ -1188,18 +1189,6 @@ function WatchlistColumn({
         <Text style={[styles.columnTitle, { color: "#F0B90B" }]} numberOfLines={1}>
           {title}
         </Text>
-        {onReorder ? (
-          <TouchableOpacity
-            onPress={onReorder}
-            onLongPress={onReorder}
-            delayLongPress={200}
-            hitSlop={8}
-            testID="column-reorder-watchlist"
-            style={styles.columnReorderBtn}
-          >
-            <Ionicons name="reorder-three" size={16} color={colors.textMuted} />
-          </TouchableOpacity>
-        ) : null}
       </View>
       {data.length === 0 ? (
         <View style={{ paddingVertical: 30, paddingHorizontal: 12 }}>
