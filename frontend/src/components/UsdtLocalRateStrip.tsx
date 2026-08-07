@@ -93,24 +93,85 @@ const APP_LANG_TO_REGION: Record<Exclude<Lang, "en">, string> = {
 };
 
 // ---------------------------------------------------------------------------
+// Timezone → ISO country map. Fallback path when the OS reports en-US as
+// the primary locale even though the phone is clearly in another country
+// (very common on Android phones sold in Indonesia — they ship with
+// English UI but Asia/Jakarta timezone).
+// ---------------------------------------------------------------------------
+const TZ_TO_REGION: Record<string, string> = {
+  "Asia/Jakarta": "ID", "Asia/Makassar": "ID", "Asia/Jayapura": "ID", "Asia/Pontianak": "ID",
+  "Asia/Tokyo": "JP",
+  "Asia/Seoul": "KR",
+  "Asia/Shanghai": "CN", "Asia/Chongqing": "CN", "Asia/Urumqi": "CN",
+  "Asia/Taipei": "TW",
+  "Asia/Hong_Kong": "HK",
+  "Asia/Singapore": "SG",
+  "Asia/Kuala_Lumpur": "MY",
+  "Asia/Bangkok": "TH",
+  "Asia/Ho_Chi_Minh": "VN",
+  "Asia/Manila": "PH",
+  "Asia/Kolkata": "IN", "Asia/Calcutta": "IN",
+  "Asia/Dubai": "AE",
+  "Asia/Riyadh": "SA",
+  "Europe/London": "GB",
+  "Europe/Paris": "FR", "Europe/Berlin": "DE", "Europe/Madrid": "ES",
+  "Europe/Rome": "IT", "Europe/Amsterdam": "NL",
+  "Europe/Moscow": "RU", "Europe/Kiev": "UA", "Europe/Istanbul": "TR",
+  "Europe/Stockholm": "SE", "Europe/Oslo": "NO", "Europe/Copenhagen": "DK",
+  "Europe/Warsaw": "PL", "Europe/Zurich": "CH",
+  "Australia/Sydney": "AU", "Australia/Melbourne": "AU", "Australia/Brisbane": "AU",
+  "America/Toronto": "CA", "America/Vancouver": "CA",
+  "America/Sao_Paulo": "BR",
+  "America/Mexico_City": "MX",
+  "Africa/Johannesburg": "ZA",
+  "Pacific/Auckland": "NZ",
+};
+
+// ---------------------------------------------------------------------------
 // Locale detection via expo-localization.  On native this reads the OS
-// setting directly; on web it uses `navigator.language`.  We prefer the
-// `regionCode` (country) but fall back to parsing the BCP-47 tag.
+// setting directly; on web it uses `navigator.language`.  We check MULTIPLE
+// sources so an "English (US)" Android phone in Jakarta still resolves to
+// IDR — that's the exact case that keeps confusing our Indonesian users.
 // ---------------------------------------------------------------------------
 function detectRegion(): string {
   try {
     const locales = Localization.getLocales();
     if (locales && locales.length > 0) {
+      // 1) Primary locale regionCode — the "correct" answer when set.
       const first = locales[0];
-      if (first.regionCode) return String(first.regionCode).toUpperCase();
-      if (first.languageTag) {
-        const parts = first.languageTag.split("-");
-        if (parts.length > 1) return parts[1].toUpperCase();
+      if (first.regionCode && String(first.regionCode).toUpperCase() !== "US") {
+        return String(first.regionCode).toUpperCase();
+      }
+      // 2) Any additional locale with a non-US region (phones sometimes
+      //    have English (US) as primary but Bahasa (ID) as secondary).
+      for (const loc of locales) {
+        const r = loc.regionCode ? String(loc.regionCode).toUpperCase() : null;
+        if (r && r !== "US") return r;
+      }
+      // 3) Currency code the OS reports directly (bypasses region entirely).
+      if (first.currencyCode && first.currencyCode !== "USD") {
+        // Return the region tied to this currency (best-effort).
+        for (const [reg, cur] of Object.entries(REGION_TO_CURRENCY)) {
+          if (cur.code === first.currencyCode.toUpperCase()) return reg;
+        }
       }
     }
   } catch {
-    /* expo-localization may not be ready during first render */
+    /* fallthrough */
   }
+  // 4) Timezone fallback — the "Asia/Jakarta → ID" trick that catches
+  //    the common Android-in-Indonesia case.
+  try {
+    const tz =
+      (Localization as { timezone?: string }).timezone ||
+      (typeof Intl !== "undefined"
+        ? Intl.DateTimeFormat().resolvedOptions().timeZone
+        : "");
+    if (tz && TZ_TO_REGION[tz]) return TZ_TO_REGION[tz];
+  } catch {
+    /* ignore */
+  }
+  // 5) Give up → assume US so widget hides gracefully.
   return "US";
 }
 
