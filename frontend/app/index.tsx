@@ -27,7 +27,7 @@ import {
 import LoginModal from "@/src/components/LoginModal";
 import ChatSheet from "@/src/components/ChatSheet";
 import Sparkline from "@/src/components/Sparkline";
-import UsdtLocalRateStrip, {
+import {
   STABLECOIN_SYMBOLS,
   formatStablecoinLocal,
   useUsdtLocalRate,
@@ -682,11 +682,11 @@ export default function Dashboard() {
         </View>
       </View>
 
-      {/* v8.4.0 — Live FX widget: shows "1 USDT ≈ <local currency>" based
-          on device locale. Hides silently for USD locales / unsupported
-          currencies / offline. See UsdtLocalRateStrip.tsx. */}
-      <UsdtLocalRateStrip />
-
+      {/* v8.5.7 — USDT→IDR FX strip removed per user request. Users can
+          find USDT directly by typing "USDT" in the search box; keeping
+          a permanent strip at the top adds noise for non-stablecoin
+          traders. The `useUsdtLocalRate()` hook still exists for the
+          asset detail page's quote-currency conversion. */}
       {/* v8.1.3 — Region filter chips (replaces old asset-category chips).
           Filter World Stocks column by country/region. "All" shows all
           columns as normal. Tap a region → World Stocks column shows
