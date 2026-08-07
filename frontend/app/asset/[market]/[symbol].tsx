@@ -17,7 +17,6 @@ import CandlestickChart from "@/src/components/CandlestickChart";
 import PriceChart from "@/src/components/PriceChart";
 import PositionSizeCalculator from "@/src/components/PositionSizeCalculator";
 import TargetProfit from "@/src/components/TargetProfit";
-import AlertModal from "@/src/components/AlertModal";
 import {
   STABLECOIN_SYMBOLS,
   formatStablecoinLocal,
@@ -145,8 +144,9 @@ export default function AssetDetail() {
   const [translatedTfView, setTranslatedTfView] = useState<string | null>(null);
   const [chartType, setChartType] = useState<"candlestick" | "line">("candlestick");
   const [showPrediction, setShowPrediction] = useState(false);
-  // v8.5.3 — Alert modal open state (🔔 button in header).
-  const [alertOpen, setAlertOpen] = useState(false);
+  // v8.6.2 — Alert modal state removed. Alerts feature retired to keep
+  // the detail screen simple. Users can still watch assets via the
+  // ★ Watchlist star and see live price ticks in real time.
 
   // Access gating (issue #2, #3) — kick user back to home if entitlement expires
   const { hasAccess, loaded: accessLoaded } = usePremiumAccess();
@@ -366,19 +366,9 @@ export default function AssetDetail() {
         >
           <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
         </TouchableOpacity>
-        {/* v8.5.3 — 🔔 Alert button opens a bottom-sheet where the user
-            sets a target price + direction.  When triggered, the alert
-            fires a local notification. */}
-        <TouchableOpacity
-          onPress={() => setAlertOpen(true)}
-          testID="open-alert-modal"
-          style={[
-            styles.iconBtn,
-            { backgroundColor: colors.surface, borderColor: colors.border, marginLeft: 8 },
-          ]}
-        >
-          <Ionicons name="notifications-outline" size={18} color="#F0B90B" />
-        </TouchableOpacity>
+        {/* v8.6.2 — Alerts (🔔) button removed from the detail header
+            per user request. Kept the layout so subsequent elements
+            (symbol/price) sit exactly where they used to. */}
         <View style={{ flex: 1, marginLeft: 12 }}>
           <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" }}>
             <View style={{ flex: 1, marginRight: 8 }}>
@@ -1154,16 +1144,7 @@ export default function AssetDetail() {
         ) : null}
       </ScrollView>
 
-      {/* v8.5.3 — Bottom-sheet alert creator. */}
-      <AlertModal
-        visible={alertOpen}
-        onClose={() => setAlertOpen(false)}
-        market={market}
-        symbol={displaySymbol}
-        currentPrice={
-          Number.isFinite(displayPrice as number) ? (displayPrice as number) : null
-        }
-      />
+      {/* v8.6.2 — AlertModal removed. */}
     </SafeAreaView>
   );
 }
