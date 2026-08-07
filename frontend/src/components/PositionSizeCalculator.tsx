@@ -104,38 +104,54 @@ export default function PositionSizeCalculator({
   };
 
   const calc = useMemo(() => {
-    const b = parseFloat(balance.replace(/,/g, "")) || 0;
+    // v8.5.4 — Binance-style Initial Margin sizing (replaces old risk-based)
+    // • Initial Margin (input `balance`) = margin locked for the position
+    // • Notional = margin × leverage (this is the full position exposure)
+    // • Position size (units) = notional / entry price
+    // • Max Loss = position size × |entry − SL|  (may exceed margin →
+    //   liquidation on real exchange, we surface a warning to the user)
+    // • Projected Profit = position size × |TP − entry|
+    // • Risk % row is kept as informational only ("% of margin lost @ SL").
+    const margin = parseFloat(balance.replace(/,/g, "")) || 0;
     const r = parseFloat(riskPct) || 0;
     const e = Number(entryPrice) || 0;
     const s = Number(stopLoss) || 0;
     const lev = Math.max(1, parseFloat(leverage) || 1);
-    if (b <= 0 || r <= 0 || e <= 0 || s <= 0 || e === s) return null;
-    const riskAmount = b * (r / 100);
+    if (margin <= 0 || e <= 0 || s <= 0 || e === s) return null;
+
+    const notional = margin * lev;                    // Position Value
+    const positionSize = notional / e;                 // in base-asset units
+    const marginRequired = margin;                     // by definition = margin
+    const marginPctOfBalance = 100;                    // 100% of the margin is used
     const distance = Math.abs(e - s);
     const distancePct = (distance / e) * 100;
-    // Position size (units) is anchored to the RISK amount, not leverage —
-    // this is the whole point of risk-based sizing. Leverage only affects
-    // how much margin is required and how the notional relates to balance.
-    const positionSize = riskAmount / distance;
-    const notional = positionSize * e; // total exposure ("Position Value")
-    const marginRequired = notional / lev;
-    const marginPctOfBalance = (marginRequired / b) * 100;
-    // TP projection (only if a valid TP was supplied by the parent).
+    const maxLoss = positionSize * distance;           // dollar loss if SL hits
+    const maxLossPctOfMargin = (maxLoss / margin) * 100;
+    const liquidationRisk = maxLoss >= margin;         // over-leveraged warning
+
+    // Info-only "target risk" row — how big margin should be if the user
+    // truly wanted to lose only `r%` of margin at SL (helps de-leverage).
+    const targetRiskAmount = margin * (r / 100);
+    const suggestedLev =
+      distance > 0 && r > 0
+        ? Math.max(1, Math.floor(targetRiskAmount / (positionSize * distance) * lev))
+        : lev;
+
     const tp = Number(takeProfit) || 0;
-    const isBuy = (action || "").toUpperCase() === "BUY" ||
+    const isBuy =
+      (action || "").toUpperCase() === "BUY" ||
       (action || "").toUpperCase() === "LONG";
-    const isSell = (action || "").toUpperCase() === "SELL" ||
+    const isSell =
+      (action || "").toUpperCase() === "SELL" ||
       (action || "").toUpperCase() === "SHORT";
-    // Only project profit when TP is on the RIGHT side of entry for the
-    // signal direction — otherwise ignore (backend may have returned an
-    // invalid TP mid-refresh).
     const tpValid =
-      tp > 0 &&
-      ((isBuy && tp > e) || (isSell && tp < e));
+      tp > 0 && ((isBuy && tp > e) || (isSell && tp < e));
     const projectedProfit = tpValid ? Math.abs(tp - e) * positionSize : null;
-    const rrRatio = tpValid && riskAmount > 0 ? projectedProfit! / riskAmount : null;
+    const rrRatio =
+      tpValid && maxLoss > 0 ? projectedProfit! / maxLoss : null;
+
     return {
-      riskAmount,
+      riskAmount: maxLoss,        // used by existing UI row
       distance,
       distancePct,
       positionSize,
@@ -145,6 +161,9 @@ export default function PositionSizeCalculator({
       leverageX: lev,
       projectedProfit,
       rrRatio,
+      maxLossPctOfMargin,
+      liquidationRisk,
+      suggestedLev,
     };
   }, [balance, riskPct, leverage, entryPrice, stopLoss, takeProfit, action]);
 
@@ -361,11 +380,21 @@ export default function PositionSizeCalculator({
                 <Text style={[styles.resultValue, { color: colors.accentDown }]}>
                   −{formatMoney(calc.riskAmount)} {quoteLabel}
                   <Text style={{ fontSize: 10, color: colors.textMuted }}>
-                    {"  "}({calc.distancePct.toFixed(2)}%)
+                    {"  "}({calc.maxLossPctOfMargin.toFixed(1)}% {t("pos_calc_of_balance")})
                   </Text>
                 </Text>
               </View>
-              {/* v8.4.0 — Projected profit at TP (if TP passed by parent) */}
+              {/* v8.5.4 — Liquidation warning: if max loss at SL >= margin,
+                  the position gets liquidated before SL. Warn the user. */}
+              {calc.liquidationRisk ? (
+                <View style={[styles.liqWarn, { borderColor: colors.accentDown, backgroundColor: colors.accentDown + "18" }]}>
+                  <Ionicons name="warning" size={14} color={colors.accentDown} />
+                  <Text style={[styles.liqWarnTxt, { color: colors.accentDown }]}>
+                    {t("pos_calc_liquidation") ||
+                      `Peringatan: Max Loss (${calc.maxLossPctOfMargin.toFixed(0)}%) melebihi margin! Posisi akan likuidasi sebelum SL. Kurangi leverage ke ~${calc.suggestedLev}× untuk aman.`}
+                  </Text>
+                </View>
+              ) : null}
               {calc.projectedProfit != null ? (
                 <View style={styles.resultRow}>
                   <Text style={[styles.resultLabel, { color: colors.textMuted }]}>
@@ -466,5 +495,20 @@ const styles = StyleSheet.create({
   resultLabel: { fontSize: 11, fontWeight: "700" },
   resultValue: { fontSize: 13, fontWeight: "900", fontVariant: ["tabular-nums"] },
   resultHint: { fontSize: 10, marginTop: 4, fontStyle: "italic", lineHeight: 14 },
+  liqWarn: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    padding: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginVertical: 6,
+  },
+  liqWarnTxt: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: "700",
+    lineHeight: 15,
+  },
   emptyHint: { fontSize: 11, marginTop: 10, fontStyle: "italic" },
 });

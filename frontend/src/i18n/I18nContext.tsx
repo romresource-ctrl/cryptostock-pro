@@ -221,7 +221,7 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   },
   pos_calc_entry: { id: "Entry Price", en: "Entry Price", ru: "Цена входа", cn: "入场价" },
   pos_calc_sl: { id: "Stop Loss", en: "Stop Loss", ru: "Стоп-лосс", cn: "止损" },
-  pos_calc_balance: { id: "Saldo Akun", en: "Account Balance", ru: "Баланс счёта", cn: "账户余额" },
+  pos_calc_balance: { id: "Initial Margin", en: "Initial Margin", ru: "Начальная маржа", cn: "初始保证金" },
   pos_calc_risk_pct: { id: "Risk %", en: "Risk %", ru: "Риск %", cn: "风险%" },
   pos_calc_position_size: { id: "Ukuran Posisi", en: "Position Size", ru: "Размер позиции", cn: "仓位大小" },
   pos_calc_position_value: { id: "Nilai Posisi", en: "Position Value", ru: "Стоимость позиции", cn: "仓位价值" },
