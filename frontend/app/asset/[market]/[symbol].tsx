@@ -17,6 +17,11 @@ import CandlestickChart from "@/src/components/CandlestickChart";
 import PriceChart from "@/src/components/PriceChart";
 import PositionSizeCalculator from "@/src/components/PositionSizeCalculator";
 import TargetProfit from "@/src/components/TargetProfit";
+import {
+  STABLECOIN_SYMBOLS,
+  formatStablecoinLocal,
+  useUsdtLocalRate,
+} from "@/src/components/UsdtLocalRateStrip";
 import { useI18n } from "@/src/i18n/I18nContext";
 import {
   TIMEFRAMES,
@@ -139,6 +144,10 @@ export default function AssetDetail() {
 
   // Access gating (issue #2, #3) — kick user back to home if entitlement expires
   const { hasAccess, loaded: accessLoaded } = usePremiumAccess();
+  // v8.4.2 — Same USDT→local-currency FX rate used by the dashboard card,
+  // so a stablecoin's header price on the detail page renders as "Rp 17,948"
+  // instead of "$1.001" when the user picked a non-USD locale.
+  const localFx = useUsdtLocalRate();
   useEffect(() => {
     // Wait until BOTH auth and subscription state are fully loaded (including
     // backend sync) before deciding to redirect. Prevents a false-negative
@@ -338,7 +347,9 @@ export default function AssetDetail() {
                 )}</Text>
               </Text>
               <Text style={[styles.priceBig, { color: colors.textPrimary }]}>
-                {formatPrice(ticker.price ?? null, market)}{" "}
+                {(market === "crypto" && STABLECOIN_SYMBOLS.has(symbol.toUpperCase()) &&
+                  formatStablecoinLocal(ticker.price ?? 0, localFx)) ||
+                  formatPrice(ticker.price ?? null, market)}{" "}
                 <Text style={{ color: changeColor, fontSize: 14, fontWeight: "600" }}>{formatPct(ticker.change_pct_24h)}</Text>
               </Text>
             </View>

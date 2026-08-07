@@ -78,7 +78,8 @@
         }
       ],
       "expo-asset",
-      "./plugins/withRemoveMediaPlaybackPermission"
+      "./plugins/withRemoveMediaPlaybackPermission",
+      "expo-localization"
     ],
     "scheme": "aicryptostockpro",
     "slug": "ai-crypto-stock-pro",
