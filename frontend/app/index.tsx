@@ -561,8 +561,6 @@ export default function Dashboard() {
           <Text
             style={[styles.appTitle, { color: colors.textPrimary }]}
             numberOfLines={2}
-            adjustsFontSizeToFit
-            minimumFontScale={0.7}
           >{t("app_title")}</Text>
           <Text style={[styles.appSub, { color: colors.textMuted }]} numberOfLines={1}>
             {`${t("ver_label")} ${APP_VERSION}`}
@@ -1306,7 +1304,7 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", paddingHorizontal: 16,
     paddingTop: 8, paddingBottom: 10,
   },
-  appTitle: { fontSize: 15, fontWeight: "800", letterSpacing: 0.2, lineHeight: 18 },
+  appTitle: { fontSize: 15, fontWeight: "800", letterSpacing: 0.2, lineHeight: 18, textAlign: "left" },
   headerTitleWrap: { flex: 1, paddingRight: 8 },
   appSub: { fontSize: 11, marginTop: 2 },
   headerActions: { flexDirection: "row", gap: 8, alignItems: "center", flexShrink: 0 },

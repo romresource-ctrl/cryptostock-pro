@@ -10,7 +10,7 @@ export const LANG_LABEL: Record<Lang, string> = { id: "ID", en: "EN", ru: "RU", 
 // Static UI translations. Dynamic content (news, AI analysis, asset detail
 // long-form text) is translated at request time via /api/translate.
 const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }> = {
-  app_title: { id: "AI Crypto Stock Pro", en: "AI Crypto Stock Pro", ru: "AI Crypto Stock Pro", cn: "AI Crypto Stock Pro" },
+  app_title: { id: "AI Crypto\nStock Pro", en: "AI Crypto\nStock Pro", ru: "AI Crypto\nStock Pro", cn: "AI Crypto\nStock Pro" },
   app_sub_loading: { id: "memuat…", en: "loading…", ru: "загрузка…", cn: "加载中…" },
   ver_label: { id: "Ver", en: "Ver", ru: "Вер", cn: "版本" },
   premium: { id: "PREMIUM", en: "PREMIUM", ru: "ПРЕМИУМ", cn: "高级" },
