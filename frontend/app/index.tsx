@@ -717,15 +717,28 @@ export default function Dashboard() {
           contentContainerStyle={{ paddingHorizontal: 8, gap: 8 }}
           decelerationRate="fast"
           pagingEnabled={SCREEN_W < 640}
-          snapToInterval={SCREEN_W < 640 ? Math.floor((SCREEN_W - 16) / 2) + 8 : undefined}
+          // v8.3.8 — snap MUST equal (columnWidth + gap) exactly, otherwise
+          // the 3rd column peeks in from the right on every page. Old code
+          // used ((SCREEN_W - 16) / 2) + 8 which didn't match the actual
+          // colW below and caused the "Forex sliver" bug the user reported.
+          snapToInterval={
+            SCREEN_W < 640
+              ? Math.floor((SCREEN_W - 24) / 2) + 8
+              : undefined
+          }
+          snapToAlignment="start"
         >
           {orderedCategories.map((k) => {
             const catLabel = t(`category_${k}`).toUpperCase();
-            // Column width: phone → exactly 2 per screen; tablet → fixed ~180
+            // Column width: phone → exactly 2 per screen; tablet → fixed ~190.
+            // Formula: (SCREEN_W - 2×paddingHorizontal(8) - 1×gap(8)) / 2 = (SCREEN_W - 24) / 2
             const colW = SCREEN_W < 640 ? Math.floor((SCREEN_W - 24) / 2) : 190;
-            const highlighted = view.includes(k);
             return (
-              <View key={k} style={{ width: colW, opacity: highlighted ? 1 : 0.72 }}>
+              // v8.3.8 — All columns render at full opacity so the contrast
+              // is uniform across categories. The previous 0.72 dimming for
+              // "non-current" columns was making ETF/IDX/Gold/Commodity/Forex
+              // look washed-out relative to Crypto & World Stocks.
+              <View key={k} style={{ width: colW }}>
                 <ListColumn
                   title={catLabel}
                   market={k}
