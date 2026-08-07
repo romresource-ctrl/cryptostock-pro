@@ -72,6 +72,9 @@ export default function PositionSizeCalculator({
   const [balance, setBalance] = useState<string>(DEFAULT_BALANCE);
   const [riskPct, setRiskPct] = useState<string>(DEFAULT_RISK_PCT);
   const [leverage, setLeverage] = useState<string>(DEFAULT_LEVERAGE);
+  // v8.5.2 — Track focus state so the stepper border highlights when
+  // the user taps the input (visual affordance that it's editable).
+  const [leverageFocused, setLeverageFocused] = useState(false);
 
   // Load persisted values on mount so returning users don't re-enter.
   useEffect(() => {
@@ -245,27 +248,67 @@ export default function PositionSizeCalculator({
                 ]}
               />
             </View>
-            {/* v8.4.0 — Leverage input. Default 1× (spot). Users trading
-                futures/margin can enter their actual leverage (up to 100×
-                is typical on crypto perps). The calculator recalculates
-                Margin Required and R/R accordingly. */}
-            <View style={{ flex: 1, marginLeft: 4 }}>
+            {/* v8.5.2 — Leverage input dengan stepper +/−.  Tombol tap
+                supaya user tidak wajib buka keyboard (paling sering user
+                cuma mau naik/turun 1 step). Input tetap editable manual
+                untuk value non-standard (2.5×, 12×, dst). Selalu terlihat
+                pada layar meskipun leverage=1 (spot). */}
+            <View style={{ flex: 1.2, marginLeft: 4 }}>
               <Text style={[styles.inputLabel, { color: colors.textMuted }]}>
                 {t("pos_calc_leverage_input")}
               </Text>
-              <TextInput
-                testID="pos-calc-leverage-input"
-                value={leverage}
-                onChangeText={setLeverage}
-                onEndEditing={() => persist(STORAGE_LEVERAGE, leverage)}
-                keyboardType="decimal-pad"
-                placeholder="1"
-                placeholderTextColor={colors.textMuted}
+              <View
                 style={[
-                  styles.input,
-                  { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.background },
+                  styles.stepperWrap,
+                  {
+                    borderColor: leverageFocused ? colors.accentBlue : colors.border,
+                    backgroundColor: colors.background,
+                  },
                 ]}
-              />
+              >
+                <TouchableOpacity
+                  onPress={() => {
+                    const cur = Math.max(1, parseFloat(leverage) || 1);
+                    const next = Math.max(1, Math.floor(cur - 1));
+                    const val = String(next);
+                    setLeverage(val);
+                    void persist(STORAGE_LEVERAGE, val);
+                  }}
+                  hitSlop={6}
+                  testID="pos-calc-leverage-minus"
+                  style={styles.stepperBtn}
+                >
+                  <Ionicons name="remove" size={14} color={colors.textPrimary} />
+                </TouchableOpacity>
+                <TextInput
+                  testID="pos-calc-leverage-input"
+                  value={leverage}
+                  onChangeText={setLeverage}
+                  onFocus={() => setLeverageFocused(true)}
+                  onBlur={() => {
+                    setLeverageFocused(false);
+                    void persist(STORAGE_LEVERAGE, leverage);
+                  }}
+                  keyboardType="decimal-pad"
+                  placeholder="1"
+                  placeholderTextColor={colors.textMuted}
+                  style={[styles.stepperInput, { color: colors.textPrimary }]}
+                />
+                <TouchableOpacity
+                  onPress={() => {
+                    const cur = Math.max(1, parseFloat(leverage) || 1);
+                    const next = Math.min(125, Math.floor(cur + 1));
+                    const val = String(next);
+                    setLeverage(val);
+                    void persist(STORAGE_LEVERAGE, val);
+                  }}
+                  hitSlop={6}
+                  testID="pos-calc-leverage-plus"
+                  style={styles.stepperBtn}
+                >
+                  <Ionicons name="add" size={14} color={colors.textPrimary} />
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 
@@ -293,20 +336,24 @@ export default function PositionSizeCalculator({
                   {formatMoney(calc.notional)} {quoteLabel}
                 </Text>
               </View>
-              {/* v8.4.0 — Margin required (only shown when leverage > 1) */}
-              {calc.leverageX > 1 ? (
-                <View style={styles.resultRow}>
-                  <Text style={[styles.resultLabel, { color: colors.textMuted }]}>
-                    {t("pos_calc_margin_required")}
+              {/* v8.5.2 — Margin Dibutuhkan SELALU tampil, bahkan saat
+                  leverage=1. Ini penting: user harus tahu berapa margin
+                  yang dibutuhkan supaya efek dari input Leverage jelas.
+                  Pada 1× margin = notional (100% dari nilai posisi). */}
+              <View style={styles.resultRow}>
+                <Text style={[styles.resultLabel, { color: colors.textMuted }]}>
+                  {t("pos_calc_margin_required")}
+                  <Text style={{ fontSize: 10, color: colors.textMuted }}>
+                    {"  "}({calc.leverageX.toFixed(calc.leverageX % 1 === 0 ? 0 : 1)}×)
                   </Text>
-                  <Text style={[styles.resultValue, { color: colors.textPrimary }]}>
-                    {formatMoney(calc.marginRequired)} {quoteLabel}
-                    <Text style={{ fontSize: 10, color: colors.textMuted }}>
-                      {"  "}({calc.marginPctOfBalance.toFixed(1)}% {t("pos_calc_of_balance")})
-                    </Text>
+                </Text>
+                <Text style={[styles.resultValue, { color: colors.textPrimary }]}>
+                  {formatMoney(calc.marginRequired)} {quoteLabel}
+                  <Text style={{ fontSize: 10, color: colors.textMuted }}>
+                    {"  "}({calc.marginPctOfBalance.toFixed(1)}% {t("pos_calc_of_balance")})
                   </Text>
-                </View>
-              ) : null}
+                </Text>
+              </View>
               <View style={styles.resultRow}>
                 <Text style={[styles.resultLabel, { color: colors.textMuted }]}>
                   {t("pos_calc_max_loss")}
@@ -378,6 +425,31 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
     fontVariant: ["tabular-nums"],
+  },
+  // v8.5.2 — Stepper composite for Leverage input (−|input|+).
+  stepperWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderRadius: 8,
+    height: 38,
+    overflow: "hidden",
+  },
+  stepperBtn: {
+    width: 28,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepperInput: {
+    flex: 1,
+    textAlign: "center",
+    fontSize: 14,
+    fontWeight: "800",
+    fontVariant: ["tabular-nums"],
+    paddingHorizontal: 2,
+    paddingVertical: 0,
+    height: 36,
   },
   resultBox: {
     borderWidth: 1,
