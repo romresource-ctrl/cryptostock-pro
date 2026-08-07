@@ -1,19 +1,20 @@
 /**
  * withRemoveMediaPlaybackPermission — Expo config plugin.
  *
- * Purpose (v8.3.2):
+ * Purpose (v8.5.5):
  *   expo-audio auto-declares android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK
- *   in its own AndroidManifest.xml (see node_modules/expo-audio/android/
- *   src/main/AndroidManifest.xml). That permission is intended for music/
- *   video players and Google Play blocks its use in apps that do not
- *   perform user-noticeable media playback (trading/signal apps, in our
- *   case). This plugin strips the permission from the merged
- *   AndroidManifest.xml before Gradle assembles the APK/AAB.
+ *   AND registers a matching <service …foregroundServiceType="mediaPlayback">
+ *   entry in its own AndroidManifest.xml (see node_modules/expo-audio/android/
+ *   src/main/AndroidManifest.xml). That capability is intended for music/video
+ *   players and Google Play blocks its use in apps that do not perform
+ *   user-noticeable media playback (trading/signal apps, in our case). This
+ *   plugin strips BOTH the permission AND the matching service node from the
+ *   merged AndroidManifest.xml before Gradle assembles the APK/AAB.
  *
  * How it works:
  *   - Uses `tools:node="remove"` marker (manifest-merger directive) so the
- *     permission is deleted from the final manifest even if a downstream
- *     library re-declares it.
+ *     permission and service are deleted from the final manifest even if a
+ *     downstream library re-declares them.
  *   - Ensures the `xmlns:tools` namespace is registered on the <manifest>
  *     root element (required for `tools:*` attributes to be honored).
  *   - Applied on top of expo-audio's config plugin, so record-audio and
@@ -23,6 +24,17 @@ const { withAndroidManifest } = require("@expo/config-plugins");
 
 const BLOCKED_PERMISSIONS = [
   "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+];
+
+// Service nodes to strip. Matched by any of these criteria on the <service>
+// element inside <application>: android:name equal to `nameMatch`, OR
+// android:foregroundServiceType equal to `typeMatch`.
+const BLOCKED_SERVICES = [
+  {
+    // expo-audio's foreground service class.
+    nameMatch: "expo.modules.audio.AudioModule$AudioForegroundService",
+    typeMatch: "mediaPlayback",
+  },
 ];
 
 // Ensures the manifest tag has `xmlns:tools`. Manifest-merger requires this
@@ -55,12 +67,49 @@ function upsertRemovalDeclaration(manifest, permissionName) {
   }
 }
 
+// Adds/updates a <service> node with tools:node="remove" under <application>.
+// If a matching entry exists (by name or by foregroundServiceType), we mutate
+// it in place; otherwise we append a minimal removal stub.
+function upsertServiceRemoval(manifest, { nameMatch, typeMatch }) {
+  const applications = manifest.application ?? [];
+  if (applications.length === 0) return;
+  const app = applications[0];
+  app.service = app.service ?? [];
+  const services = app.service;
+
+  const existing = services.find((s) => {
+    if (!s || !s.$) return false;
+    const nm = s.$["android:name"];
+    const fst = s.$["android:foregroundServiceType"];
+    return (nameMatch && nm === nameMatch) || (typeMatch && fst === typeMatch);
+  });
+
+  if (existing) {
+    existing.$["tools:node"] = "remove";
+    // Ensure android:name is present when using tools:node="remove" so the
+    // manifest-merger can target the correct service.
+    if (nameMatch && !existing.$["android:name"]) {
+      existing.$["android:name"] = nameMatch;
+    }
+  } else if (nameMatch) {
+    services.push({
+      $: {
+        "android:name": nameMatch,
+        "tools:node": "remove",
+      },
+    });
+  }
+}
+
 const withRemoveMediaPlaybackPermission = (config) => {
   return withAndroidManifest(config, (cfg) => {
     const manifest = cfg.modResults.manifest;
     ensureToolsNamespace(manifest);
     for (const perm of BLOCKED_PERMISSIONS) {
       upsertRemovalDeclaration(manifest, perm);
+    }
+    for (const svc of BLOCKED_SERVICES) {
+      upsertServiceRemoval(manifest, svc);
     }
     return cfg;
   });

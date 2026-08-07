@@ -912,11 +912,15 @@ export default function Dashboard() {
         contentContainerStyle={{ paddingBottom: 20 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accentBlue} />}
       >
-        {/* v8.4.9 — Horizontal ScrollView restored (react-native-draggable-
-            flatlist@4.x is not compatible with Reanimated 4 in Expo SDK 53+).
-            Users still reorder columns via long-press on the ☰ handle which
-            opens the CategoryReorderSheet where they use ↑/↓ buttons to
-            move a category up or down. */}
+        {/* v8.5.5 — Horizontal ScrollView with per-column snap.
+            Previous pair-based snapToOffsets caused mid-asset stopping.
+            Now uses snapToInterval = STRIDE (single column width + gap),
+            so every swipe lands cleanly on the next column edge.
+            Column reorder is still handled via ↑/↓ in the ☰ header sheet. */}
+        {(() => {
+          const COL_WIDTH = SCREEN_W < 640 ? Math.floor((SCREEN_W - 8) / 2) : 190;
+          const STRIDE = COL_WIDTH + 8;
+          return (
         <ScrollView
           horizontal
           scrollEnabled={dragCat === null}
@@ -924,39 +928,25 @@ export default function Dashboard() {
           contentContainerStyle={{ paddingHorizontal: 0 }}
           decelerationRate="fast"
           disableIntervalMomentum
-          snapToOffsets={
-            SCREEN_W < 640 && dragCat === null
-              ? (() => {
-                  const colW = Math.floor((SCREEN_W - 8) / 2);
-                  const pairW = (colW + 8) * 2;
-                  const pageCount = Math.ceil(orderedCategories.length / 2);
-                  return Array.from({ length: pageCount }, (_, i) => i * pairW);
-                })()
-              : undefined
-          }
+          snapToInterval={STRIDE}
           snapToAlignment="start"
         >
-          {watchlist.size > 0 ? (() => {
-            const colW = SCREEN_W < 640 ? Math.floor((SCREEN_W - 8) / 2) : 190;
-            return (
-              <View key="__watchlist__" style={{ width: colW, marginRight: 8 }}>
-                <WatchlistColumn
-                  title={`⭐ ${t("watchlist_title") || "Watchlist"}`}
-                  data={watchlistAssets}
-                  onPress={(a, m) => handleAssetPress(a, m)}
-                  locked={!hasAccess}
-                  emptyHint={
-                    t("watchlist_loading") ||
-                    "Menunggu data harga…"
-                  }
-                />
-              </View>
-            );
-          })() : null}
-          {orderedCategories.map((k, idx) => {
+          {watchlist.size > 0 ? (
+            <View key="__watchlist__" style={{ width: COL_WIDTH, marginRight: 8 }}>
+              <WatchlistColumn
+                title={`⭐ ${t("watchlist_title") || "Watchlist"}`}
+                data={watchlistAssets}
+                onPress={(a, m) => handleAssetPress(a, m)}
+                locked={!hasAccess}
+                emptyHint={
+                  t("watchlist_loading") ||
+                  "Menunggu data harga…"
+                }
+              />
+            </View>
+          ) : null}
+          {orderedCategories.map((k) => {
             const catLabel = t(`category_${k}`).toUpperCase();
-            const colW = SCREEN_W < 640 ? Math.floor((SCREEN_W - 8) / 2) : 190;
-            const isLast = idx === orderedCategories.length - 1;
             const pan = makeColumnPan(k);
             const isDragging = dragCat === k;
             return (
@@ -969,8 +959,8 @@ export default function Dashboard() {
                   });
                 }}
                 style={{
-                  width: colW,
-                  marginRight: isLast ? 0 : 8,
+                  width: COL_WIDTH,
+                  marginRight: 8,
                   transform: isDragging ? [{ translateX: dragDx }] : [],
                   zIndex: isDragging ? 10 : 1,
                   elevation: isDragging ? 6 : 0,
@@ -990,6 +980,8 @@ export default function Dashboard() {
             );
           })}
         </ScrollView>
+          );
+        })()}
       </ScrollView>
       )}
 
