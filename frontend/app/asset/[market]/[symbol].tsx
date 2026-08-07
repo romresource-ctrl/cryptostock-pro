@@ -148,6 +148,19 @@ export default function AssetDetail() {
   // so a stablecoin's header price on the detail page renders as "Rp 17,948"
   // instead of "$1.001" when the user picked a non-USD locale.
   const localFx = useUsdtLocalRate();
+  const isStablecoin =
+    market === "crypto" && STABLECOIN_SYMBOLS.has(symbol.toUpperCase());
+  // Wrap formatPrice so ALL price fields on the detail page (HIGH/LOW,
+  // EMA, entry, TP, SL, recent signals) render in the user's local currency
+  // when the asset is a USD-pegged stablecoin.  For every other asset it
+  // just delegates to the plain USD/IDR formatter.
+  const fmtPrice = (value: number | null | undefined): string => {
+    if (isStablecoin && value != null && localFx) {
+      const local = formatStablecoinLocal(value, localFx);
+      if (local) return local;
+    }
+    return formatPrice(value ?? null, market);
+  };
   useEffect(() => {
     // Wait until BOTH auth and subscription state are fully loaded (including
     // backend sync) before deciding to redirect. Prevents a false-negative
@@ -347,9 +360,7 @@ export default function AssetDetail() {
                 )}</Text>
               </Text>
               <Text style={[styles.priceBig, { color: colors.textPrimary }]}>
-                {(market === "crypto" && STABLECOIN_SYMBOLS.has(symbol.toUpperCase()) &&
-                  formatStablecoinLocal(ticker.price ?? 0, localFx)) ||
-                  formatPrice(ticker.price ?? null, market)}{" "}
+                {fmtPrice(ticker.price ?? null)}{" "}
                 <Text style={{ color: changeColor, fontSize: 14, fontWeight: "600" }}>{formatPct(ticker.change_pct_24h)}</Text>
               </Text>
             </View>
@@ -528,11 +539,11 @@ export default function AssetDetail() {
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
               <Text style={[styles.statLabel, { color: colors.textMuted }]}>HIGH 24H</Text>
-              <Text style={[styles.statVal, { color: colors.textPrimary }]}>{formatPrice(ticker.high_24h ?? null, market)}</Text>
+              <Text style={[styles.statVal, { color: colors.textPrimary }]}>{fmtPrice(ticker.high_24h ?? null)}</Text>
             </View>
             <View style={styles.statItem}>
               <Text style={[styles.statLabel, { color: colors.textMuted }]}>LOW 24H</Text>
-              <Text style={[styles.statVal, { color: colors.textPrimary }]}>{formatPrice(ticker.low_24h ?? null, market)}</Text>
+              <Text style={[styles.statVal, { color: colors.textPrimary }]}>{fmtPrice(ticker.low_24h ?? null)}</Text>
             </View>
             <View style={styles.statItem}>
               <Text style={[styles.statLabel, { color: colors.textMuted }]}>VOLUME</Text>
@@ -556,8 +567,8 @@ export default function AssetDetail() {
             </View>
             <View style={styles.indGrid}>
               <IndicatorCell label="RSI(14)" value={sig.indicators.rsi?.toFixed(1) ?? "—"} colors={colors} />
-              <IndicatorCell label="EMA20" value={formatPrice(sig.indicators.ema20 as number, market)} colors={colors} />
-              <IndicatorCell label="EMA50" value={formatPrice(sig.indicators.ema50 as number, market)} colors={colors} />
+              <IndicatorCell label="EMA20" value={fmtPrice(sig.indicators.ema20 as number)} colors={colors} />
+              <IndicatorCell label="EMA50" value={fmtPrice(sig.indicators.ema50 as number)} colors={colors} />
               <IndicatorCell label="MACD H" value={(sig.indicators.macd_hist ?? 0).toFixed(4)} colors={colors} />
             </View>
             <View style={styles.entryRow}>
@@ -565,14 +576,14 @@ export default function AssetDetail() {
                 label={t("detail_entry")}
                 value={
                   sig.entry_low != null && sig.entry_high != null && sig.entry_low !== sig.entry_high
-                    ? `${formatPrice(sig.entry_low, market)} - ${formatPrice(sig.entry_high, market)}`
-                    : formatPrice(sig.entry, market)
+                    ? `${fmtPrice(sig.entry_low)} - ${fmtPrice(sig.entry_high)}`
+                    : fmtPrice(sig.entry)
                 }
                 color={colors.accentBlue}
                 colors={colors}
               />
-              <EntryCell label={t("detail_stop")} value={formatPrice(sig.stop_loss, market)} color={colors.accentDown} colors={colors} />
-              <EntryCell label={t("detail_tp")} value={formatPrice(sig.take_profit, market)} color={colors.accentUp} colors={colors} />
+              <EntryCell label={t("detail_stop")} value={fmtPrice(sig.stop_loss)} color={colors.accentDown} colors={colors} />
+              <EntryCell label={t("detail_tp")} value={fmtPrice(sig.take_profit)} color={colors.accentUp} colors={colors} />
             </View>
             {sig.reasons.length > 0 && (
               <View style={{ marginTop: 10 }}>
@@ -729,18 +740,18 @@ export default function AssetDetail() {
                   s.entry_low != null &&
                   s.entry_high != null &&
                   s.entry_low !== s.entry_high
-                    ? `${formatPrice(s.entry_low, market)} – ${formatPrice(s.entry_high, market)}`
-                    : formatPrice(s.entry, market);
+                    ? `${fmtPrice(s.entry_low)} – ${fmtPrice(s.entry_high)}`
+                    : fmtPrice(s.entry);
                 const suggestion = isUp
                   ? t(isCrypto ? "ai_pred_prepare_buy_crypto" : "ai_pred_prepare_buy_stock")
                       .replace("{entry}", entryStr)
-                      .replace("{tp}", formatPrice(s.take_profit, market))
-                      .replace("{sl}", formatPrice(s.stop_loss, market))
+                      .replace("{tp}", fmtPrice(s.take_profit))
+                      .replace("{sl}", fmtPrice(s.stop_loss))
                   : isDown
                     ? t(isCrypto ? "ai_pred_prepare_sell_crypto" : "ai_pred_prepare_sell_stock")
                         .replace("{entry}", entryStr)
-                        .replace("{tp}", formatPrice(s.take_profit, market))
-                        .replace("{sl}", formatPrice(s.stop_loss, market))
+                        .replace("{tp}", fmtPrice(s.take_profit))
+                        .replace("{sl}", fmtPrice(s.stop_loss))
                     : t("ai_pred_wait");
 
                 // v8.2.3 — R/R info line: backend already provides risk_reward,
