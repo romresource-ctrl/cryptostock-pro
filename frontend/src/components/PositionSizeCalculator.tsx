@@ -359,8 +359,17 @@ const styles = StyleSheet.create({
   readonlyCell: { flex: 1 },
   readonlyLabel: { fontSize: 10, letterSpacing: 0.4, textTransform: "uppercase" },
   readonlyValue: { fontSize: 14, fontWeight: "900", marginTop: 2, fontVariant: ["tabular-nums"] },
-  inputRow: { flexDirection: "row", marginTop: 10 },
-  inputLabel: { fontSize: 10, letterSpacing: 0.4, textTransform: "uppercase", marginBottom: 4 },
+  inputRow: { flexDirection: "row", marginTop: 10, alignItems: "flex-end" },
+  inputLabel: {
+    fontSize: 10,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+    marginBottom: 4,
+    // v8.5.1 — Reserve 2 lines so 3-word labels ("SALDO AKUN (IDR)") don't
+    // push their input below the shorter labels ("RISK %", "LEVERAGE (×)").
+    minHeight: 26,
+    lineHeight: 12,
+  },
   input: {
     borderWidth: 1,
     borderRadius: 8,
