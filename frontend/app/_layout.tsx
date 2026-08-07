@@ -5,6 +5,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
 import { Platform } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
@@ -128,20 +129,22 @@ export default function RootLayout() {
   if (!loaded && !error) return null;
 
   return (
-    <SafeAreaProvider>
-      <KeyboardProvider>
-        <ThemeProvider>
-          <I18nProvider>
-            <AuthProvider>
-              <SubscriptionProvider>
-                <PushRegistrar />
-                <PushTapListener />
-                <RootStack />
-              </SubscriptionProvider>
-            </AuthProvider>
-          </I18nProvider>
-        </ThemeProvider>
-      </KeyboardProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <KeyboardProvider>
+          <ThemeProvider>
+            <I18nProvider>
+              <AuthProvider>
+                <SubscriptionProvider>
+                  <PushRegistrar />
+                  <PushTapListener />
+                  <RootStack />
+                </SubscriptionProvider>
+              </AuthProvider>
+            </I18nProvider>
+          </ThemeProvider>
+        </KeyboardProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

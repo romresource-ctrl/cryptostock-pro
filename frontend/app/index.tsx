@@ -18,6 +18,10 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAuth } from "@/src/auth/AuthContext";
+import CategoryReorderSheet, {
+  type CategoryKey,
+  useCategoryPrefs,
+} from "@/src/components/CategoryReorderSheet";
 import LoginModal from "@/src/components/LoginModal";
 import ChatSheet from "@/src/components/ChatSheet";
 import Sparkline from "@/src/components/Sparkline";
@@ -286,14 +290,32 @@ export default function Dashboard() {
     [],
   );
 
-  // Ordered categories — put user-selected (view[]) FIRST so they appear at the
-  // start of the horizontal scroll on phones (2 visible per screen). This lets
-  // the user pick which two columns they see first on the dashboard.
+  // Ordered categories — user's saved order from CategoryReorderSheet takes
+  // top priority.  Hidden categories are filtered out entirely from the
+  // horizontal scroll. If the user has NOT customized the order yet, we
+  // still lift the chip-selected view[] pair to the front (legacy quick-
+  // filter). Once they touch the reorder sheet their explicit order wins.
+  const [categoryPrefs, saveCategoryPrefs] = useCategoryPrefs();
+  const [reorderOpen, setReorderOpen] = useState(false);
+  const DEFAULT_ORDER_ARR: Category[] = useMemo(
+    () => ["crypto", "etf", "stock_id", "stock_us", "gold_silver", "commodity", "forex"],
+    [],
+  );
   const orderedCategories: Category[] = useMemo(() => {
-    const selected = view.filter((v) => ALL_CATEGORIES.includes(v));
-    const rest = ALL_CATEGORIES.filter((k) => !selected.includes(k));
+    const savedOrder = categoryPrefs.order as Category[];
+    const visible = savedOrder.filter((k) => !categoryPrefs.hidden.has(k as CategoryKey));
+    if (visible.length === 0) return ALL_CATEGORIES; // safety net
+    // Detect "untouched" prefs → saved order matches default & nothing hidden.
+    const isDefault =
+      categoryPrefs.hidden.size === 0 &&
+      savedOrder.length === DEFAULT_ORDER_ARR.length &&
+      savedOrder.every((k, i) => k === DEFAULT_ORDER_ARR[i]);
+    if (!isDefault) return visible; // respect user's saved order strictly.
+    // Legacy behaviour: lift `view[]` chips to the front on default order.
+    const selected = view.filter((v) => visible.includes(v));
+    const rest = visible.filter((k) => !selected.includes(k));
     return [...selected, ...rest];
-  }, [view, ALL_CATEGORIES]);
+  }, [view, categoryPrefs, ALL_CATEGORIES, DEFAULT_ORDER_ARR]);
 
   // v8.0.4 — Lazy-load. On the first paint we only fetch the TWO markets
   // the user currently has on-screen (`view`). The other 6 markets stay
@@ -712,6 +734,34 @@ export default function Dashboard() {
         </TouchableOpacity>
       </View>
 
+      {/* v8.5.0 — Reorder button. Compact pill just under the search bar so
+          it's discoverable without crowding the header row. Tapping opens
+          CategoryReorderSheet where users drag columns and toggle
+          visibility. Hidden when the user is actively searching to avoid
+          overlap with the search-results header. */}
+      {!searchQuery.trim() ? (
+        <View style={styles.reorderRow}>
+          <TouchableOpacity
+            onPress={() => setReorderOpen(true)}
+            testID="dashboard-reorder-button"
+            style={[
+              styles.reorderBtn,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
+            <Ionicons name="reorder-three-outline" size={14} color={colors.accentBlue} />
+            <Text style={[styles.reorderBtnText, { color: colors.textPrimary }]}>
+              {t("reorder_button") || "Atur Kolom"}
+            </Text>
+          </TouchableOpacity>
+          {categoryPrefs.hidden.size > 0 ? (
+            <Text style={[styles.reorderHiddenBadge, { color: colors.textMuted }]}>
+              {categoryPrefs.hidden.size} {t("reorder_hidden_suffix") || "disembunyikan"}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+
       {/* Asset lists — always show ALL 7 category columns.
        * On phone: 2 columns fit per screen, swipe horizontally for others.
        * On tablet/Chromebook: 4-7 columns fit at once (no swipe needed).
@@ -800,6 +850,22 @@ export default function Dashboard() {
           the dashboard interactable so premium users can chat while
           still scrolling through asset columns / candles above. */}
       <ChatSheet visible={chatOpen} onClose={() => setChatOpen(false)} />
+
+      {/* v8.5.0 — Category reorder / hide sheet.  Only mount once prefs
+          are hydrated to avoid a first-render flicker where the sheet
+          shows the default order and immediately re-snaps to the user's
+          saved order. */}
+      {categoryPrefs.ready ? (
+        <CategoryReorderSheet
+          visible={reorderOpen}
+          onClose={() => setReorderOpen(false)}
+          initialOrder={categoryPrefs.order}
+          initialHidden={categoryPrefs.hidden}
+          onSave={(order, hidden) => {
+            void saveCategoryPrefs(order, hidden);
+          }}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -1057,6 +1123,26 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   searchChatBtnText: { fontSize: 11, fontWeight: "800", letterSpacing: 0.4 },
+  reorderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-start",
+    paddingHorizontal: 12,
+    paddingTop: 4,
+    paddingBottom: 4,
+    gap: 8,
+  },
+  reorderBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  reorderBtnText: { fontSize: 11, fontWeight: "700", letterSpacing: 0.3 },
+  reorderHiddenBadge: { fontSize: 10.5, fontWeight: "600" },
   viewRow: { height: 50, justifyContent: "center" },
   viewPill: {
     height: 36, paddingHorizontal: 14, borderRadius: 18, borderWidth: 1, flexShrink: 0,

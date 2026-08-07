@@ -31,6 +31,25 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   category_commodity: { id: "Commodities", en: "Commodities", ru: "Сырьё", cn: "大宗商品" },
   category_forex: { id: "Forex", en: "Forex", ru: "Форекс", cn: "外汇" },
 
+  // v8.5.0 — Category reorder sheet
+  reorder_button: { id: "Atur Kolom", en: "Reorder", ru: "Порядок", cn: "排列" },
+  reorder_title: { id: "Atur Urutan Kategori", en: "Reorder Categories", ru: "Порядок Категорий", cn: "类别排序" },
+  reorder_hint: {
+    id: "Tekan & tahan ⋮ untuk menyeret. Toggle untuk menampilkan/menyembunyikan kolom di dashboard.",
+    en: "Long-press ⋮ to drag. Toggle to show/hide a column on the dashboard.",
+    ru: "Удерживайте ⋮ для перетаскивания. Переключатель — показать/скрыть колонку.",
+    cn: "长按 ⋮ 以拖动。切换开关以显示/隐藏该列。",
+  },
+  reorder_reset: {
+    id: "Kembalikan ke urutan bawaan",
+    en: "Reset to default order",
+    ru: "Сбросить порядок",
+    cn: "恢复默认顺序",
+  },
+  reorder_hidden_suffix: { id: "disembunyikan", en: "hidden", ru: "скрыто", cn: "已隐藏" },
+  common_cancel: { id: "Batal", en: "Cancel", ru: "Отмена", cn: "取消" },
+  common_save: { id: "Simpan", en: "Save", ru: "Сохранить", cn: "保存" },
+
   // Search bar
   search_placeholder: { id: "Cari simbol aset…", en: "Search asset symbol…", ru: "Поиск символа…", cn: "搜索资产…" },
   search_no_results: { id: "Tidak ada hasil", en: "No results", ru: "Ничего не найдено", cn: "无结果" },
