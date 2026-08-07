@@ -714,18 +714,16 @@ export default function Dashboard() {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          // v8.3.9 (final) — Zero horizontal padding on the scroll
-          // container. Columns render edge-to-edge, with a single 8px
-          // marginRight between adjacent columns. This is the ONLY
-          // configuration where the math is clean:
-          //   colW = (SCREEN_W − innerGap) / 2   →   2×colW + gap = SCREEN_W
-          //   snap = colW + gap                  →   advances exactly one column
-          // No 3rd-column sliver leaks on any snap position.
+          // v8.3.9 (final v2) — Snap advances by TWO columns per swipe so
+          // user always lands on a clean pair (col1+col2 → col3+col4 → …).
+          // Snapping by ONE column made half-cards appear mid-viewport.
+          //   colW  = (SCREEN_W − 8) / 2
+          //   snap  = 2 × (colW + 8)   →   full pair advance
           contentContainerStyle={{ paddingHorizontal: 0 }}
           decelerationRate="fast"
           snapToInterval={
             SCREEN_W < 640
-              ? Math.floor((SCREEN_W - 8) / 2) + 8
+              ? (Math.floor((SCREEN_W - 8) / 2) + 8) * 2
               : undefined
           }
           snapToAlignment="start"
