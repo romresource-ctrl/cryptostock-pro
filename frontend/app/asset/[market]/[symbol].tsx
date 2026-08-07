@@ -1143,8 +1143,6 @@ export default function AssetDetail() {
           </View>
         ) : null}
       </ScrollView>
-
-      {/* v8.6.2 — AlertModal removed. */}
     </SafeAreaView>
   );
 }

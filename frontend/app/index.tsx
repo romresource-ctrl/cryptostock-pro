@@ -34,7 +34,6 @@ import {
   useUsdtLocalRate,
 } from "@/src/components/UsdtLocalRateStrip";
 import VipModal from "@/src/components/VipModal";
-import { useAlertEngine } from "@/src/hooks/useAlertEngine";
 import { useI18n } from "@/src/i18n/I18nContext";
 import {
   type AssetSignal,
@@ -337,9 +336,7 @@ export default function Dashboard() {
     return out;
   }, [watchlist.entries, watchlist.ready, watchlist.size, data]);
 
-  // v8.5.3 — Alert engine: evaluates saved price alerts against every
-  // dashboard data refresh and fires a local notification when triggered.
-  useAlertEngine(data as Record<string, AssetSignal[]>);
+  // v8.6.3 — Alert engine removed together with the Alerts feature.
 
   const [categoryPrefs, saveCategoryPrefs] = useCategoryPrefs();
   const [reorderOpen, setReorderOpen] = useState(false); // eslint-disable-line @typescript-eslint/no-unused-vars
@@ -574,11 +571,8 @@ export default function Dashboard() {
           >
             <Ionicons name="newspaper-outline" size={18} color={colors.textPrimary} />
           </TouchableOpacity>
-          {/* v8.6.1 — Alerts (bell) button removed from header per user
-              request. Users can still manage alerts by tapping the 🔔
-              icon on each asset's detail page (top-left of that screen).
-              Reduces header clutter on narrow devices where 5+ buttons
-              were competing for space. */}
+          {/* v8.6.3 — Alerts feature removed entirely (bell in header +
+              🔔 on detail page + AlertModal + engine hook + i18n keys). */}
           <TouchableOpacity
             onPress={toggle}
             testID="theme-toggle-button"
