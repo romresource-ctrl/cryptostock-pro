@@ -15,6 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import CandlestickChart from "@/src/components/CandlestickChart";
 import PriceChart from "@/src/components/PriceChart";
+import PositionSizeCalculator from "@/src/components/PositionSizeCalculator";
 import TargetProfit from "@/src/components/TargetProfit";
 import { useI18n } from "@/src/i18n/I18nContext";
 import {
@@ -588,6 +589,16 @@ export default function AssetDetail() {
                   stopLoss={sig.stop_loss}
                   takeProfit={sig.take_profit}
                 />
+                {/* v8.3.9 — Position Size Calculator. Detail page is already
+                    gated to Premium (see usePremiumAccess above) so any user
+                    reaching this render is entitled. Pre-fills Entry & SL. */}
+                <PositionSizeCalculator
+                  entryPrice={sig.entry}
+                  stopLoss={sig.stop_loss}
+                  symbol={String(symbol)}
+                  action={sig.action}
+                  quoteLabel={market === "crypto" ? "USDT" : market === "stock_id" ? "IDR" : "USD"}
+                />
               </View>
             ) : null}
           </View>
@@ -997,6 +1008,17 @@ export default function AssetDetail() {
                 label={analysis.consensus.label}
                 stopLoss={analysis.consensus.stop_loss}
                 takeProfit={analysis.consensus.take_profit}
+              />
+
+              {/* v8.3.9 — Position Size Calculator (AI Consensus version).
+                  Uses the ensemble entry & SL so users can size trades
+                  against the multi-model recommendation. */}
+              <PositionSizeCalculator
+                entryPrice={analysis.consensus.entry ?? analysis.price ?? null}
+                stopLoss={analysis.consensus.stop_loss ?? null}
+                symbol={String(symbol)}
+                action={analysis.consensus.action}
+                quoteLabel={market === "crypto" ? "USDT" : market === "stock_id" ? "IDR" : "USD"}
               />
 
               {/* News & Risk */}

@@ -132,6 +132,35 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   legal_terms: { id: "Syarat & Ketentuan", en: "Terms of Service", ru: "Условия использования", cn: "服务条款" },
   legal_data_deletion: { id: "Hapus Akun & Data", en: "Delete Account & Data", ru: "Удалить аккаунт и данные", cn: "删除账户与数据" },
 
+  // v8.3.9 — Position Size Calculator
+  pos_calc_title: { id: "Kalkulator Ukuran Posisi", en: "Position Size Calculator", ru: "Калькулятор размера позиции", cn: "仓位大小计算器" },
+  pos_calc_subtitle: {
+    id: "Hitung otomatis dari Entry & SL sinyal",
+    en: "Auto-calculated from signal Entry & SL",
+    ru: "Автоматически из Entry и SL сигнала",
+    cn: "根据信号入场价与止损自动计算",
+  },
+  pos_calc_missing_signal: {
+    id: "Butuh Entry & Stop Loss dari sinyal aktif.",
+    en: "Needs active signal Entry & Stop Loss.",
+    ru: "Требуется активный сигнал с Entry и Stop Loss.",
+    cn: "需要有活跃信号的入场价与止损。",
+  },
+  pos_calc_entry: { id: "Entry Price", en: "Entry Price", ru: "Цена входа", cn: "入场价" },
+  pos_calc_sl: { id: "Stop Loss", en: "Stop Loss", ru: "Стоп-лосс", cn: "止损" },
+  pos_calc_balance: { id: "Saldo Akun", en: "Account Balance", ru: "Баланс счёта", cn: "账户余额" },
+  pos_calc_risk_pct: { id: "Risk %", en: "Risk %", ru: "Риск %", cn: "风险%" },
+  pos_calc_position_size: { id: "Ukuran Posisi", en: "Position Size", ru: "Размер позиции", cn: "仓位大小" },
+  pos_calc_position_value: { id: "Nilai Posisi", en: "Position Value", ru: "Стоимость позиции", cn: "仓位价值" },
+  pos_calc_max_loss: { id: "Maks. Kerugian", en: "Max Loss", ru: "Макс. убыток", cn: "最大亏损" },
+  pos_calc_leverage: { id: "Leverage", en: "Leverage", ru: "Плечо", cn: "杠杆" },
+  pos_calc_hint: {
+    id: "Tip: pakai Risk 1–2% per trade untuk jaga saldo jangka panjang.",
+    en: "Tip: use 1–2% risk per trade for long-term account preservation.",
+    ru: "Совет: используйте риск 1–2% на сделку.",
+    cn: "提示：每笔交易风险控制在1-2%以延长账户寿命。",
+  },
+
   // v8.3.5 — Market Brief page (re-read pushed briefings)
   news_tab_market_brief: { id: "Brief Pasar", en: "Market Brief", ru: "Брифинг", cn: "市场简报" },
   market_brief_title: { id: "Brief Pasar", en: "Market Brief", ru: "Брифинг рынка", cn: "市场简报" },

@@ -714,31 +714,34 @@ export default function Dashboard() {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 8, gap: 8 }}
+          // v8.3.9 (final) — Zero horizontal padding on the scroll
+          // container. Columns render edge-to-edge, with a single 8px
+          // marginRight between adjacent columns. This is the ONLY
+          // configuration where the math is clean:
+          //   colW = (SCREEN_W − innerGap) / 2   →   2×colW + gap = SCREEN_W
+          //   snap = colW + gap                  →   advances exactly one column
+          // No 3rd-column sliver leaks on any snap position.
+          contentContainerStyle={{ paddingHorizontal: 0 }}
           decelerationRate="fast"
-          pagingEnabled={SCREEN_W < 640}
-          // v8.3.8 — snap MUST equal (columnWidth + gap) exactly, otherwise
-          // the 3rd column peeks in from the right on every page. Old code
-          // used ((SCREEN_W - 16) / 2) + 8 which didn't match the actual
-          // colW below and caused the "Forex sliver" bug the user reported.
           snapToInterval={
             SCREEN_W < 640
-              ? Math.floor((SCREEN_W - 24) / 2) + 8
+              ? Math.floor((SCREEN_W - 8) / 2) + 8
               : undefined
           }
           snapToAlignment="start"
         >
-          {orderedCategories.map((k) => {
+          {orderedCategories.map((k, idx) => {
             const catLabel = t(`category_${k}`).toUpperCase();
-            // Column width: phone → exactly 2 per screen; tablet → fixed ~190.
-            // Formula: (SCREEN_W - 2×paddingHorizontal(8) - 1×gap(8)) / 2 = (SCREEN_W - 24) / 2
-            const colW = SCREEN_W < 640 ? Math.floor((SCREEN_W - 24) / 2) : 190;
+            const colW = SCREEN_W < 640 ? Math.floor((SCREEN_W - 8) / 2) : 190;
+            const isLast = idx === orderedCategories.length - 1;
             return (
-              // v8.3.8 — All columns render at full opacity so the contrast
-              // is uniform across categories. The previous 0.72 dimming for
-              // "non-current" columns was making ETF/IDX/Gold/Commodity/Forex
-              // look washed-out relative to Crypto & World Stocks.
-              <View key={k} style={{ width: colW }}>
+              <View
+                key={k}
+                style={{
+                  width: colW,
+                  marginRight: isLast ? 0 : 8,
+                }}
+              >
                 <ListColumn
                   title={catLabel}
                   market={k}
