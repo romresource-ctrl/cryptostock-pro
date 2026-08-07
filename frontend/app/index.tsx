@@ -21,6 +21,11 @@ import { useAuth } from "@/src/auth/AuthContext";
 import LoginModal from "@/src/components/LoginModal";
 import ChatSheet from "@/src/components/ChatSheet";
 import Sparkline from "@/src/components/Sparkline";
+import UsdtLocalRateStrip, {
+  STABLECOIN_SYMBOLS,
+  formatStablecoinLocal,
+  useUsdtLocalRate,
+} from "@/src/components/UsdtLocalRateStrip";
 import VipModal from "@/src/components/VipModal";
 import { useI18n } from "@/src/i18n/I18nContext";
 import {
@@ -138,6 +143,18 @@ const AssetCard = React.memo(function AssetCard({
   const premium = asset.is_premium;
   const premiumGold = "#F0B90B";
 
+  // v8.4.0 — For USD-pegged stablecoins, render the price in the user's
+  // LOCAL currency (Rp / ¥ / € / …) instead of "$1.00". Users trading in
+  // non-USD countries want to know how much a stablecoin is worth in
+  // their own money. `useUsdtLocalRate()` returns null (skip) for USD
+  // locales or when the FX API is unreachable, so USD users still see
+  // the original price.
+  const localFx = useUsdtLocalRate();
+  const isStable = market === "crypto" && STABLECOIN_SYMBOLS.has(asset.symbol.toUpperCase());
+  const priceDisplay =
+    (isStable && formatStablecoinLocal(asset.price, localFx)) ||
+    formatPrice(asset.price, market);
+
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -177,7 +194,7 @@ const AssetCard = React.memo(function AssetCard({
       </View>
       <View style={styles.cardMid}>
         <Text style={[styles.price, { color: colors.textPrimary }]} numberOfLines={1}>
-          {formatPrice(asset.price, market)}
+          {priceDisplay}
         </Text>
         <Text style={[styles.change, { color: changeColor }]} numberOfLines={1}>
           {formatPct(asset.change_pct_24h)}
@@ -501,6 +518,11 @@ export default function Dashboard() {
           )}
         </View>
       </View>
+
+      {/* v8.4.0 — Live FX widget: shows "1 USDT ≈ <local currency>" based
+          on device locale. Hides silently for USD locales / unsupported
+          currencies / offline. See UsdtLocalRateStrip.tsx. */}
+      <UsdtLocalRateStrip />
 
       {/* v8.1.3 — Region filter chips (replaces old asset-category chips).
           Filter World Stocks column by country/region. "All" shows all

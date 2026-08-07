@@ -24,8 +24,10 @@ import { useTheme } from "@/src/theme/ThemeContext";
 
 const STORAGE_BALANCE = "pos_calc_balance";
 const STORAGE_RISK_PCT = "pos_calc_risk_pct";
+const STORAGE_LEVERAGE = "pos_calc_leverage";
 const DEFAULT_RISK_PCT = "1.0";
 const DEFAULT_BALANCE = "1000";
+const DEFAULT_LEVERAGE = "1";
 
 type Props = {
   entryPrice: number | null | undefined;
@@ -33,6 +35,11 @@ type Props = {
   symbol: string;
   action?: string; // BUY / SELL / HOLD / LONG / SHORT
   quoteLabel?: string; // e.g. "USD" for BTC/USDT, "IDR" for BBCA
+  // v8.4.0 — Optional TP passthrough so the calculator can show a full
+  // projected P/L at the recommended take-profit level. Users trading
+  // real capital want to see "if TP hits I make $X" alongside "if SL
+  // hits I lose $Y" — both anchored to their actual leverage.
+  takeProfit?: number | null;
 };
 
 function formatMoney(n: number, decimals = 2): string {
@@ -57,23 +64,27 @@ export default function PositionSizeCalculator({
   symbol,
   action,
   quoteLabel = "USD",
+  takeProfit,
 }: Props) {
   const { colors } = useTheme();
   const { t } = useI18n();
   const [collapsed, setCollapsed] = useState(false);
   const [balance, setBalance] = useState<string>(DEFAULT_BALANCE);
   const [riskPct, setRiskPct] = useState<string>(DEFAULT_RISK_PCT);
+  const [leverage, setLeverage] = useState<string>(DEFAULT_LEVERAGE);
 
   // Load persisted values on mount so returning users don't re-enter.
   useEffect(() => {
     (async () => {
       try {
-        const [b, r] = await Promise.all([
+        const [b, r, l] = await Promise.all([
           AsyncStorage.getItem(STORAGE_BALANCE),
           AsyncStorage.getItem(STORAGE_RISK_PCT),
+          AsyncStorage.getItem(STORAGE_LEVERAGE),
         ]);
         if (b) setBalance(b);
         if (r) setRiskPct(r);
+        if (l) setLeverage(l);
       } catch {
         /* fall back to defaults */
       }
@@ -94,16 +105,45 @@ export default function PositionSizeCalculator({
     const r = parseFloat(riskPct) || 0;
     const e = Number(entryPrice) || 0;
     const s = Number(stopLoss) || 0;
+    const lev = Math.max(1, parseFloat(leverage) || 1);
     if (b <= 0 || r <= 0 || e <= 0 || s <= 0 || e === s) return null;
     const riskAmount = b * (r / 100);
     const distance = Math.abs(e - s);
     const distancePct = (distance / e) * 100;
+    // Position size (units) is anchored to the RISK amount, not leverage —
+    // this is the whole point of risk-based sizing. Leverage only affects
+    // how much margin is required and how the notional relates to balance.
     const positionSize = riskAmount / distance;
-    const positionValue = positionSize * e;
-    // Leverage estimate: how many × the account balance the trade uses.
-    const leverage = positionValue / b;
-    return { riskAmount, distance, distancePct, positionSize, positionValue, leverage };
-  }, [balance, riskPct, entryPrice, stopLoss]);
+    const notional = positionSize * e; // total exposure ("Position Value")
+    const marginRequired = notional / lev;
+    const marginPctOfBalance = (marginRequired / b) * 100;
+    // TP projection (only if a valid TP was supplied by the parent).
+    const tp = Number(takeProfit) || 0;
+    const isBuy = (action || "").toUpperCase() === "BUY" ||
+      (action || "").toUpperCase() === "LONG";
+    const isSell = (action || "").toUpperCase() === "SELL" ||
+      (action || "").toUpperCase() === "SHORT";
+    // Only project profit when TP is on the RIGHT side of entry for the
+    // signal direction — otherwise ignore (backend may have returned an
+    // invalid TP mid-refresh).
+    const tpValid =
+      tp > 0 &&
+      ((isBuy && tp > e) || (isSell && tp < e));
+    const projectedProfit = tpValid ? Math.abs(tp - e) * positionSize : null;
+    const rrRatio = tpValid && riskAmount > 0 ? projectedProfit! / riskAmount : null;
+    return {
+      riskAmount,
+      distance,
+      distancePct,
+      positionSize,
+      notional,
+      marginRequired,
+      marginPctOfBalance,
+      leverageX: lev,
+      projectedProfit,
+      rrRatio,
+    };
+  }, [balance, riskPct, leverage, entryPrice, stopLoss, takeProfit, action]);
 
   // Hide entirely when there is no valid signal to base the calc on
   // (e.g. HOLD signal returned entry == stop_loss). Users can still
@@ -167,9 +207,9 @@ export default function PositionSizeCalculator({
             </View>
           </View>
 
-          {/* User inputs — Balance + Risk % */}
+          {/* User inputs — Balance, Risk %, Leverage */}
           <View style={styles.inputRow}>
-            <View style={{ flex: 1, marginRight: 6 }}>
+            <View style={{ flex: 1, marginRight: 4 }}>
               <Text style={[styles.inputLabel, { color: colors.textMuted }]}>
                 {t("pos_calc_balance")} ({quoteLabel})
               </Text>
@@ -187,7 +227,7 @@ export default function PositionSizeCalculator({
                 ]}
               />
             </View>
-            <View style={{ flex: 1, marginLeft: 6 }}>
+            <View style={{ flex: 1, marginHorizontal: 4 }}>
               <Text style={[styles.inputLabel, { color: colors.textMuted }]}>
                 {t("pos_calc_risk_pct")}
               </Text>
@@ -198,6 +238,28 @@ export default function PositionSizeCalculator({
                 onEndEditing={() => persist(STORAGE_RISK_PCT, riskPct)}
                 keyboardType="decimal-pad"
                 placeholder="1.0"
+                placeholderTextColor={colors.textMuted}
+                style={[
+                  styles.input,
+                  { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.background },
+                ]}
+              />
+            </View>
+            {/* v8.4.0 — Leverage input. Default 1× (spot). Users trading
+                futures/margin can enter their actual leverage (up to 100×
+                is typical on crypto perps). The calculator recalculates
+                Margin Required and R/R accordingly. */}
+            <View style={{ flex: 1, marginLeft: 4 }}>
+              <Text style={[styles.inputLabel, { color: colors.textMuted }]}>
+                {t("pos_calc_leverage_input")}
+              </Text>
+              <TextInput
+                testID="pos-calc-leverage-input"
+                value={leverage}
+                onChangeText={setLeverage}
+                onEndEditing={() => persist(STORAGE_LEVERAGE, leverage)}
+                keyboardType="decimal-pad"
+                placeholder="1"
                 placeholderTextColor={colors.textMuted}
                 style={[
                   styles.input,
@@ -228,9 +290,23 @@ export default function PositionSizeCalculator({
                   {t("pos_calc_position_value")}
                 </Text>
                 <Text style={[styles.resultValue, { color: colors.textPrimary }]}>
-                  {formatMoney(calc.positionValue)} {quoteLabel}
+                  {formatMoney(calc.notional)} {quoteLabel}
                 </Text>
               </View>
+              {/* v8.4.0 — Margin required (only shown when leverage > 1) */}
+              {calc.leverageX > 1 ? (
+                <View style={styles.resultRow}>
+                  <Text style={[styles.resultLabel, { color: colors.textMuted }]}>
+                    {t("pos_calc_margin_required")}
+                  </Text>
+                  <Text style={[styles.resultValue, { color: colors.textPrimary }]}>
+                    {formatMoney(calc.marginRequired)} {quoteLabel}
+                    <Text style={{ fontSize: 10, color: colors.textMuted }}>
+                      {"  "}({calc.marginPctOfBalance.toFixed(1)}% {t("pos_calc_of_balance")})
+                    </Text>
+                  </Text>
+                </View>
+              ) : null}
               <View style={styles.resultRow}>
                 <Text style={[styles.resultLabel, { color: colors.textMuted }]}>
                   {t("pos_calc_max_loss")}
@@ -242,18 +318,19 @@ export default function PositionSizeCalculator({
                   </Text>
                 </Text>
               </View>
-              {calc.leverage > 1 ? (
+              {/* v8.4.0 — Projected profit at TP (if TP passed by parent) */}
+              {calc.projectedProfit != null ? (
                 <View style={styles.resultRow}>
                   <Text style={[styles.resultLabel, { color: colors.textMuted }]}>
-                    {t("pos_calc_leverage")}
+                    {t("pos_calc_projected_profit")}
                   </Text>
-                  <Text
-                    style={[
-                      styles.resultValue,
-                      { color: calc.leverage > 3 ? colors.accentDown : colors.textPrimary },
-                    ]}
-                  >
-                    {calc.leverage.toFixed(2)}×
+                  <Text style={[styles.resultValue, { color: colors.accentUp }]}>
+                    +{formatMoney(calc.projectedProfit)} {quoteLabel}
+                    {calc.rrRatio != null ? (
+                      <Text style={{ fontSize: 10, color: colors.textMuted }}>
+                        {"  "}(R/R 1:{calc.rrRatio.toFixed(2)})
+                      </Text>
+                    ) : null}
                   </Text>
                 </View>
               ) : null}

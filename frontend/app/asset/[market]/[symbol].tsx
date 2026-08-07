@@ -591,10 +591,12 @@ export default function AssetDetail() {
                 />
                 {/* v8.3.9 — Position Size Calculator. Detail page is already
                     gated to Premium (see usePremiumAccess above) so any user
-                    reaching this render is entitled. Pre-fills Entry & SL. */}
+                    reaching this render is entitled. Pre-fills Entry & SL.
+                    v8.4.0: also pass TP so users see projected profit at TP. */}
                 <PositionSizeCalculator
                   entryPrice={sig.entry}
                   stopLoss={sig.stop_loss}
+                  takeProfit={sig.take_profit}
                   symbol={String(symbol)}
                   action={sig.action}
                   quoteLabel={market === "crypto" ? "USDT" : market === "stock_id" ? "IDR" : "USD"}
@@ -1012,10 +1014,12 @@ export default function AssetDetail() {
 
               {/* v8.3.9 — Position Size Calculator (AI Consensus version).
                   Uses the ensemble entry & SL so users can size trades
-                  against the multi-model recommendation. */}
+                  against the multi-model recommendation.
+                  v8.4.0: also pass TP + supports user leverage input. */}
               <PositionSizeCalculator
                 entryPrice={analysis.consensus.entry ?? analysis.price ?? null}
                 stopLoss={analysis.consensus.stop_loss ?? null}
+                takeProfit={analysis.consensus.take_profit ?? null}
                 symbol={String(symbol)}
                 action={analysis.consensus.action}
                 quoteLabel={market === "crypto" ? "USDT" : market === "stock_id" ? "IDR" : "USD"}

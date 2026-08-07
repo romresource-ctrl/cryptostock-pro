@@ -154,6 +154,11 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   pos_calc_position_value: { id: "Nilai Posisi", en: "Position Value", ru: "Стоимость позиции", cn: "仓位价值" },
   pos_calc_max_loss: { id: "Maks. Kerugian", en: "Max Loss", ru: "Макс. убыток", cn: "最大亏损" },
   pos_calc_leverage: { id: "Leverage", en: "Leverage", ru: "Плечо", cn: "杠杆" },
+  // v8.4.0 — Leverage input + margin & projected profit
+  pos_calc_leverage_input: { id: "Leverage (×)", en: "Leverage (×)", ru: "Плечо (×)", cn: "杠杆(×)" },
+  pos_calc_margin_required: { id: "Margin Dibutuhkan", en: "Margin Required", ru: "Требуемая маржа", cn: "所需保证金" },
+  pos_calc_of_balance: { id: "dari saldo", en: "of balance", ru: "от баланса", cn: "占余额" },
+  pos_calc_projected_profit: { id: "Proyeksi Profit (TP)", en: "Projected Profit (TP)", ru: "Прогноз прибыли (TP)", cn: "预期收益 (TP)" },
   pos_calc_hint: {
     id: "Tip: pakai Risk 1–2% per trade untuk jaga saldo jangka panjang.",
     en: "Tip: use 1–2% risk per trade for long-term account preservation.",
