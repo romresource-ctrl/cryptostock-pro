@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import CandlestickChart from "@/src/components/CandlestickChart";
+import FlashPrice from "@/src/components/FlashPrice";
 import PriceChart from "@/src/components/PriceChart";
 import PositionSizeCalculator from "@/src/components/PositionSizeCalculator";
 import TargetProfit from "@/src/components/TargetProfit";
@@ -384,15 +385,24 @@ export default function AssetDetail() {
                   "badge_stock_id"
                 )}</Text>
               </Text>
-              <Text style={[styles.priceBig, { color: colors.textPrimary }]}>
-                {fmtPrice(displayPrice)}{" "}
-                <Text style={{ color: changeColor, fontSize: 14, fontWeight: "600" }}>{formatPct(displayChangePct)}</Text>
+              {/* v8.6.8 — Header price now flashes green/red on every
+                  live tick from Binance WS (200ms cadence for crypto).
+                  Non-crypto still flashes but only on REST refresh. */}
+              <View style={{ flexDirection: "row", alignItems: "baseline", flexWrap: "wrap" }}>
+                <FlashPrice
+                  value={displayPrice}
+                  formatted={`${fmtPrice(displayPrice)} `}
+                  style={[styles.priceBig, { color: colors.textPrimary }]}
+                />
+                <Text style={{ color: changeColor, fontSize: 14, fontWeight: "600" }}>
+                  {formatPct(displayChangePct)}
+                </Text>
                 {rt.connected ? (
                   <Text style={{ fontSize: 10, fontWeight: "800", color: colors.accentUp }}>
                     {"  "}● LIVE
                   </Text>
                 ) : null}
-              </Text>
+              </View>
             </View>
             <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
               {/* v8.2.2 — Risk/Reward badge di kiri Target Profit.

@@ -27,6 +27,7 @@ import {
 } from "@/src/components/CategoryReorderSheet";
 import LoginModal from "@/src/components/LoginModal";
 import ChatSheet from "@/src/components/ChatSheet";
+import FlashPrice from "@/src/components/FlashPrice";
 import Sparkline from "@/src/components/Sparkline";
 import {
   STABLECOIN_SYMBOLS,
@@ -225,9 +226,14 @@ const AssetCard = React.memo(function AssetCard({
         </View>
       </View>
       <View style={styles.cardMid}>
-        <Text style={[styles.price, { color: colors.textPrimary }]} numberOfLines={1}>
-          {priceDisplay}
-        </Text>
+        {/* v8.6.8 — <FlashPrice> flashes green/red for 500ms whenever
+            the numeric value moves. Users get an unmistakable "this
+            just ticked" cue every ~20s (dashboard poll interval). */}
+        <FlashPrice
+          value={asset.price}
+          formatted={priceDisplay}
+          style={[styles.price, { color: colors.textPrimary }]}
+        />
         <Text style={[styles.change, { color: changeColor }]} numberOfLines={1}>
           {formatPct(asset.change_pct_24h)}
         </Text>
