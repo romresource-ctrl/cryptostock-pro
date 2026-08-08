@@ -64,19 +64,14 @@ const CODE_META: Record<string, { symbol: string; flag: string }> = {
   SAR: { symbol: "﷼", flag: "🇸🇦" },
 };
 
-// App-language override → force a specific currency regardless of the
-// device region.  Common on web preview / dev builds where the browser
-// reports en-US even though the user is clearly Indonesian / Russian /
-// Chinese.  "en" is intentionally missing — English users get their real
-// device region so a British player still sees GBP, a French user EUR.
-const APP_LANG_TO_CODE: Record<Exclude<Lang, "en">, string> = {
-  id: "IDR",
-  ru: "RUB",
-  cn: "CNY",
-};
-
-// Cheap in-memory memo so we're not calling getLocales() on every render.
+// v8.6.5 — Legacy helpers removed. We used to compute device-currency &
+// app-lang overrides, but the calculator now uses USDT globally except
+// for IDX Stocks (see getQuoteInfo below).
+//
+// Cheap in-memory memo — kept in case future features re-introduce
+// device-currency detection.
 let _cachedDeviceInfo: QuoteInfo | null = null;
+void _cachedDeviceInfo;
 
 function metaFor(code: string): QuoteInfo {
   const upper = code.toUpperCase();
@@ -87,52 +82,26 @@ function metaFor(code: string): QuoteInfo {
   return { code: upper, symbol: upper, flag: "" };
 }
 
-function readDeviceQuote(): QuoteInfo {
-  if (_cachedDeviceInfo) return _cachedDeviceInfo;
-  try {
-    const locales = Localization.getLocales();
-    if (locales && locales.length > 0) {
-      const first = locales[0];
-      // `currencyCode` is the ISO 4217 the OS/browser associates with the
-      // primary locale — exactly what we want for the quote label.
-      if (first.currencyCode) {
-        _cachedDeviceInfo = metaFor(String(first.currencyCode));
-        return _cachedDeviceInfo;
-      }
-      // As a secondary, use `currencySymbol` when currencyCode is missing
-      // (some older browsers).  We can't derive an ISO code from a bare
-      // symbol so we default to USD but keep whatever symbol the OS gave.
-      if (first.currencySymbol) {
-        _cachedDeviceInfo = { ...FALLBACK, symbol: first.currencySymbol };
-        return _cachedDeviceInfo;
-      }
-    }
-  } catch {
-    /* fallthrough to USD */
-  }
-  _cachedDeviceInfo = FALLBACK;
-  return _cachedDeviceInfo;
-}
-
 /**
  * Pick the correct quote label for a given market and app language.
  *
- * Rules (in priority order):
- *   1. `stock_id` → always IDR (the exchange is Jakarta).
- *   2. App language pill (id / ru / cn) → force IDR / RUB / CNY so the
- *      user's explicit choice always beats a mis-detected device region.
- *   3. Device locale via expo-localization (`currencyCode`).
- *   4. USD fallback.
+ * v8.6.5 — Simplified per user requirement: global trading platforms
+ * quote in USDT regardless of user language. Only Indonesia Stock
+ * Exchange (`stock_id`) prices are in Rupiah because that's how they
+ * appear on IDX. Language pill no longer overrides the quote — a
+ * Chinese-speaking user still sees "USDT" for Bitcoin, not "CNY".
+ *
+ * Rules:
+ *   1. `stock_id` → IDR (Jakarta exchange native currency).
+ *   2. Every other market (crypto, world_stocks, stock_us, etf,
+ *      gold_silver, commodity, forex) → USDT.
  */
 export function getQuoteInfo(
   market: string,
-  appLang: Lang,
+  _appLang: Lang, // kept for API compatibility; no longer read
 ): QuoteInfo {
   if (market === "stock_id") return metaFor("IDR");
-  if (appLang !== "en" && APP_LANG_TO_CODE[appLang]) {
-    return metaFor(APP_LANG_TO_CODE[appLang]);
-  }
-  return readDeviceQuote();
+  return { code: "USDT", symbol: "$", flag: "" };
 }
 
 /**

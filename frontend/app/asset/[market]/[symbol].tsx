@@ -562,6 +562,9 @@ export default function AssetDetail() {
               candles={liveCandles as never}
               width={screenW - 24}
               height={220}
+              /* v8.6.5 — Only crypto markets subscribe to Binance
+                 kline WS, so isLive should mirror that condition. */
+              isLive={market === "crypto" && rt.connected}
             />
           ) : (
             <PriceChart candles={liveCandles as never} width={screenW - 24} height={180} />

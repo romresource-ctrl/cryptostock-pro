@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { PanResponder, StyleSheet, Text, View } from "react-native";
+import { Animated, PanResponder, StyleSheet, Text, View } from "react-native";
 import Svg, { Line, Rect, Text as SvgText } from "react-native-svg";
 
 import { useTheme } from "@/src/theme/ThemeContext";
@@ -20,6 +20,10 @@ type Props = {
   showVolume?: boolean;
   showGrid?: boolean;
   currency?: string;
+  /** v8.6.5 — When true, draw a pulsing horizontal line at last close
+      + animated dot at the tip so users can *see* the market breathing
+      even for sub-cent price moves. */
+  isLive?: boolean;
 };
 
 /**
@@ -37,10 +41,28 @@ export default function CandlestickChart({
   showVolume = true,
   showGrid = true,
   currency: _currency,
+  isLive = false,
 }: Props) {
   const { colors } = useTheme();
   // Hooks must run before any early return.
   const [cursorX, setCursorX] = useState<number | null>(null);
+  // v8.6.5 — Pulse animation for the live-price dot. useNativeDriver keeps
+  // this off the JS thread so it never stutters even during heavy renders.
+  const pulseAnim = React.useRef(new Animated.Value(0)).current;
+  React.useEffect(() => {
+    if (!isLive) {
+      pulseAnim.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1, duration: 900, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 0, duration: 900, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [isLive, pulseAnim]);
   const panResponder = React.useMemo(
     () =>
       PanResponder.create({
@@ -306,6 +328,50 @@ export default function CandlestickChart({
         });
       })()}
 
+      {/* v8.6.5 — Live-price line + pulsing dot. Renders whenever
+          `isLive` is true (parent controls this via Binance WS connect
+          state). The horizontal dashed line + right-edge price tag are
+          drawn inside SVG. The pulsing dot animation is a sibling
+          <Animated.View> laid on top of the SVG because SVG elements
+          can't be animated with useNativeDriver on RN. */}
+      {isLive && candles.length > 0 ? (() => {
+        const lastCandle = displayed[displayed.length - 1];
+        const lastY = priceToY(lastCandle.close);
+        const isUp = lastCandle.close >= lastCandle.open;
+        const liveColor = isUp ? upColor : downColor;
+        return (
+          <>
+            <Line
+              x1={0}
+              x2={chartW}
+              y1={lastY}
+              y2={lastY}
+              stroke={liveColor}
+              strokeWidth={1}
+              strokeDasharray="4 3"
+              opacity={0.9}
+            />
+            <Rect
+              x={chartW}
+              y={lastY - 8}
+              width={rightPad - 2}
+              height={16}
+              fill={liveColor}
+              rx={2}
+            />
+            <SvgText
+              x={chartW + 4}
+              y={lastY + 4}
+              fontSize={9.5}
+              fontWeight="800"
+              fill="#000"
+            >
+              {formatPriceLabel(lastCandle.close)}
+            </SvgText>
+          </>
+        );
+      })() : null}
+
       {/* v8.5.0 — Crosshair overlay (rendered last so it sits above candles). */}
       {hover ? (
         <>
@@ -351,6 +417,59 @@ export default function CandlestickChart({
         </>
       ) : null}
     </Svg>
+    {/* v8.6.5 — Pulsing live-price dot overlaid on top of the SVG at
+        the right edge of the last candle. Animated at 60fps via
+        useNativeDriver so it visibly "breathes" even when the WS
+        price itself doesn't change every tick. */}
+    {isLive && candles.length > 0 ? (() => {
+      const lastCandle = displayed[displayed.length - 1];
+      const lastX = (displayed.length - 1) * step + candleGap / 2 + candleWidth / 2;
+      const lastY = priceToY(lastCandle.close);
+      const isUp = lastCandle.close >= lastCandle.open;
+      const liveColor = isUp ? upColor : downColor;
+      const dotSize = 10;
+      return (
+        <View
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            left: lastX - dotSize / 2,
+            top: lastY - dotSize / 2,
+            width: dotSize,
+            height: dotSize,
+          }}
+        >
+          {/* Outer pulsing halo — scales 1→2.4 and fades 0.55→0 */}
+          <Animated.View
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              width: dotSize,
+              height: dotSize,
+              borderRadius: dotSize / 2,
+              backgroundColor: liveColor,
+              opacity: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0] }),
+              transform: [
+                { scale: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 2.4] }) },
+              ],
+            }}
+          />
+          {/* Solid inner dot */}
+          <View
+            style={{
+              position: "absolute",
+              left: dotSize * 0.25,
+              top: dotSize * 0.25,
+              width: dotSize * 0.5,
+              height: dotSize * 0.5,
+              borderRadius: (dotSize * 0.5) / 2,
+              backgroundColor: liveColor,
+            }}
+          />
+        </View>
+      );
+    })() : null}
     {/* Floating OHLC tooltip — pinned to top of chart, offset to avoid finger. */}
     {hover ? (
       <View
