@@ -353,17 +353,17 @@ export default function CandlestickChart({
             />
             <Rect
               x={chartW}
-              y={lastY - 8}
+              y={lastY - 11}
               width={rightPad - 2}
-              height={16}
+              height={22}
               fill={liveColor}
-              rx={2}
+              rx={3}
             />
             <SvgText
               x={chartW + 4}
-              y={lastY + 4}
-              fontSize={9.5}
-              fontWeight="800"
+              y={lastY + 5}
+              fontSize={11}
+              fontWeight="900"
               fill="#000"
             >
               {formatPriceLabel(lastCandle.close)}
@@ -427,7 +427,7 @@ export default function CandlestickChart({
       const lastY = priceToY(lastCandle.close);
       const isUp = lastCandle.close >= lastCandle.open;
       const liveColor = isUp ? upColor : downColor;
-      const dotSize = 10;
+      const dotSize = 16;
       return (
         <View
           pointerEvents="none"
@@ -451,7 +451,7 @@ export default function CandlestickChart({
               backgroundColor: liveColor,
               opacity: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0] }),
               transform: [
-                { scale: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 2.4] }) },
+                { scale: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 4.5] }) },
               ],
             }}
           />
