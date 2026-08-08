@@ -360,10 +360,11 @@ export default function PositionSizeCalculator({
                   {formatMoney(calc.notional)} {quoteLabel}
                 </Text>
               </View>
-              {/* v8.5.2 — Margin Dibutuhkan SELALU tampil, bahkan saat
-                  leverage=1. Ini penting: user harus tahu berapa margin
-                  yang dibutuhkan supaya efek dari input Leverage jelas.
-                  Pada 1× margin = notional (100% dari nilai posisi). */}
+              {/* v8.6.4 — "% of balance" secondary text removed from
+                  Margin Required + Max Loss rows and R/R ratio removed
+                  from Projected Profit per user request. Reasoning:
+                  primary numbers are already crystal clear, secondary
+                  percentages added visual noise without decision value. */}
               <View style={styles.resultRow}>
                 <Text style={[styles.resultLabel, { color: colors.textMuted }]}>
                   {t("pos_calc_margin_required")}
@@ -373,9 +374,6 @@ export default function PositionSizeCalculator({
                 </Text>
                 <Text style={[styles.resultValue, { color: colors.textPrimary }]}>
                   {formatMoney(calc.marginRequired)} {quoteLabel}
-                  <Text style={{ fontSize: 10, color: colors.textMuted }}>
-                    {"  "}({calc.marginPctOfBalance.toFixed(1)}% {t("pos_calc_of_balance")})
-                  </Text>
                 </Text>
               </View>
               <View style={styles.resultRow}>
@@ -384,9 +382,6 @@ export default function PositionSizeCalculator({
                 </Text>
                 <Text style={[styles.resultValue, { color: colors.accentDown }]}>
                   −{formatMoney(calc.riskAmount)} {quoteLabel}
-                  <Text style={{ fontSize: 10, color: colors.textMuted }}>
-                    {"  "}({calc.maxLossPctOfMargin.toFixed(1)}% {t("pos_calc_of_balance")})
-                  </Text>
                 </Text>
               </View>
               {/* v8.5.4 — Liquidation warning: if max loss at SL >= margin,
@@ -407,11 +402,6 @@ export default function PositionSizeCalculator({
                   </Text>
                   <Text style={[styles.resultValue, { color: colors.accentUp }]}>
                     +{formatMoney(calc.projectedProfit)} {quoteLabel}
-                    {calc.rrRatio != null ? (
-                      <Text style={{ fontSize: 10, color: colors.textMuted }}>
-                        {"  "}(R/R 1:{calc.rrRatio.toFixed(2)})
-                      </Text>
-                    ) : null}
                   </Text>
                 </View>
               ) : null}
