@@ -66,10 +66,12 @@ export function useBinanceRealtime(
     }
 
     const streamPath = `${upper.toLowerCase()}${quote}@ticker`;
-    // v8.5.0 — Fallback chain: `binance.com` is geo-blocked in some regions
-    // (e.g. US-based CI/preview pods return HTTP 451).  We try US mirror
-    // second so real users abroad get sub-second ticks either way.
+    // v8.6.7 — Lead with `data-stream.binance.vision` (Cloudflare-fronted
+    // read-only mirror, works from more regions than the main endpoint).
+    // The other URLs remain as fallbacks — including the US mirror so
+    // US-restricted pods can still subscribe.
     const urls = [
+      `wss://data-stream.binance.vision/ws/${streamPath}`,
       `wss://stream.binance.com:9443/ws/${streamPath}`,
       `wss://stream.binance.us:9443/ws/${streamPath}`,
     ];
@@ -77,9 +79,18 @@ export function useBinanceRealtime(
     let cancelled = false;
     let ws: WebSocket | null = null;
     let attempt = 0;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
     const tryConnect = () => {
-      if (cancelled || attempt >= urls.length) return;
+      if (cancelled) return;
+      // v8.6.7 — Reconnect loop: after every URL has been tried we wrap
+      // back to attempt 0 with a short backoff so the LIVE badge / price
+      // ticker recovers automatically after a dropped or idle-out socket.
+      if (attempt >= urls.length) {
+        attempt = 0;
+        reconnectTimer = setTimeout(tryConnect, 1500);
+        return;
+      }
       const url = urls[attempt++];
       try {
         ws = new WebSocket(url);
@@ -117,17 +128,16 @@ export function useBinanceRealtime(
       ws.onclose = () => {
         if (cancelled) return;
         setTick((prev) => ({ ...prev, connected: false }));
-        if (attempt < urls.length) {
-          // Give the browser a beat before retrying the next endpoint —
-          // otherwise Chrome sometimes coalesces both requests.
-          setTimeout(tryConnect, 250);
-        }
+        // Always retry — either the next URL in the list, or (when the
+        // list is exhausted) wrap around after backoff inside tryConnect.
+        reconnectTimer = setTimeout(tryConnect, 250);
       };
     };
     tryConnect();
 
     return () => {
       cancelled = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       try {
         ws?.close();
       } catch {

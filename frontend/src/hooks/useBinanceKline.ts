@@ -69,7 +69,11 @@ export function useBinanceKline(
     }
     const bInterval = TF_MAP[timeframe] || "1h";
     const streamPath = `${upper.toLowerCase()}usdt@kline_${bInterval}`;
+    // v8.6.7 — Lead with `data-stream.binance.vision` (Binance's public
+    // read-only mirror hosted on Cloudflare — allowed from most regions
+    // including preview pods). Fallback to main + US mirror if it drops.
     const urls = [
+      `wss://data-stream.binance.vision/ws/${streamPath}`,
       `wss://stream.binance.com:9443/ws/${streamPath}`,
       `wss://stream.binance.us:9443/ws/${streamPath}`,
     ];
@@ -77,9 +81,20 @@ export function useBinanceKline(
     let cancelled = false;
     let ws: WebSocket | null = null;
     let attempt = 0;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
     const tryConnect = () => {
-      if (cancelled || attempt >= urls.length) return;
+      if (cancelled) return;
+      // v8.6.7 — Reconnect loop: once we've tried every URL, wait a
+      // short backoff and start over from index 0. This means candle
+      // ticking automatically recovers after a dropped/idle-out
+      // connection instead of freezing until the user backgrounds and
+      // reopens the app.
+      if (attempt >= urls.length) {
+        attempt = 0;
+        reconnectTimer = setTimeout(tryConnect, 1500);
+        return;
+      }
       const url = urls[attempt++];
       try {
         ws = new WebSocket(url);
@@ -117,7 +132,9 @@ export function useBinanceKline(
       };
       ws.onclose = () => {
         if (cancelled) return;
-        if (attempt < urls.length) setTimeout(tryConnect, 250);
+        // Advance to the next URL immediately; if all URLs are
+        // exhausted, tryConnect() will wrap around after backoff.
+        reconnectTimer = setTimeout(tryConnect, 250);
       };
       ws.onerror = () => {
         /* wait for close → fallback URL */
@@ -127,6 +144,7 @@ export function useBinanceKline(
 
     return () => {
       cancelled = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       try {
         ws?.close();
       } catch {
