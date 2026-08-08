@@ -157,10 +157,19 @@ export function useBinanceKline(
 }
 
 /**
- * Patch a REST candles array with the current live kline.  If the live
+ * Patch a REST candles array with the current live kline. If the live
  * kline is for the same open-time as the last REST candle, we replace it
- * in place.  Otherwise (new candle after last close), we append.
+ * in place. Otherwise (new candle after last close), we append.
  * Callers pass the result straight to the chart component.
+ *
+ * v8.6.9 — Timestamp-unit fix. REST candles use `t` in milliseconds
+ * (from `/api/chart/*`) but WS klines store `t` in seconds (see the
+ * `Math.floor(t / 1000)` inside setKline above). The old code compared
+ * these directly → the delta was always ~1e12, never < 60, so the
+ * "same candle" branch never fired and the chart looked static. We now
+ * normalize `last.t` to seconds JUST for the comparison, and preserve
+ * the REST millisecond format on the patched candle so the SVG X-axis
+ * renderer keeps working unchanged.
  */
 export function patchCandlesWithLive<C extends { t: number }>(
   candles: C[],
@@ -168,22 +177,33 @@ export function patchCandlesWithLive<C extends { t: number }>(
 ): C[] {
   if (!live || !candles || candles.length === 0) return candles;
   const last = candles[candles.length - 1];
+
+  // Normalize REST `t` to seconds ONLY for the comparison. Any value
+  // greater than 1e12 must be in ms (year > 33,000 in seconds would hit
+  // that ceiling — safe heuristic). Values ≤ 1e12 are already seconds.
+  const lastTs = last.t > 1e12 ? Math.floor(last.t / 1000) : last.t;
+
+  // Rebuild `t` in the *same unit as the input candles* so downstream
+  // renderers (SVG X-axis, tooltip time formatter) stay consistent.
+  const patchedT = last.t > 1e12 ? live.t * 1000 : live.t;
+
   const patched: C = {
     ...last,
-    t: live.t,
-    open: (live.open as any),
-    high: (live.high as any),
-    low: (live.low as any),
-    close: (live.close as any),
-    volume: (live.volume as any),
+    t: patchedT as never,
+    open: live.open as never,
+    high: live.high as never,
+    low: live.low as never,
+    close: live.close as never,
+    volume: live.volume as never,
   };
-  if (Math.abs(last.t - live.t) < 60) {
+
+  if (Math.abs(lastTs - live.t) < 60) {
     // Same candle — replace in place.
     const copy = candles.slice(0, -1);
     copy.push(patched);
     return copy;
   }
-  if (live.t > last.t) {
+  if (live.t > lastTs) {
     // A new bar just opened — append.
     return [...candles, patched];
   }

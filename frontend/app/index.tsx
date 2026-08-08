@@ -49,7 +49,12 @@ import { APP_VERSION } from "@/src/lib/version";
 import { useWatchlist } from "@/src/lib/watchlist";
 import { useTheme } from "@/src/theme/ThemeContext";
 
-const REFRESH_INTERVAL_MS = 60_000;
+// v8.6.8 — Reduced from 60_000 (60s) to 20_000 (20s) per user "Opsi B".
+// Backend cache TTL is 60s so we still hit the same batched endpoint at
+// most 3× per minute — no extra load — but users see 3× more frequent
+// price refreshes. Combined with the <FlashPrice> component below, this
+// makes the dashboard feel closer to a live trading terminal.
+const REFRESH_INTERVAL_MS = 20_000;
 type Category = Market;
 
 const CATEGORIES: { key: Category; label: string; icon: string }[] = [
