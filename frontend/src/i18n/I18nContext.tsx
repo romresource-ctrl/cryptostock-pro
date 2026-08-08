@@ -218,10 +218,10 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     cn: "过去24小时推送简报",
   },
   market_brief_banner: {
-    id: "Push notif kemarin sudah otomatis hilang. Yang ini akan diperbarui tiap sesi (pre-market, close, dst).",
-    en: "Yesterday's briefings expire automatically. This list refreshes each session (pre-market, close, etc.).",
-    ru: "Вчерашние брифинги автоматически исчезают. Список обновляется каждую сессию.",
-    cn: "昨日简报自动过期。此列表在每场交易更新。",
+    id: "⚠️ PERHATIAN! Brief akan hilang dalam 24 jam.",
+    en: "⚠️ ATTENTION! Briefs will disappear in 24 hours.",
+    ru: "⚠️ ВНИМАНИЕ! Брифинги исчезнут через 24 часа.",
+    cn: "⚠️ 注意！简报将在 24 小时后消失。",
   },
   market_brief_empty_title: {
     id: "Belum ada brief hari ini",
