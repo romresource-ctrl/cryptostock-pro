@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Animated, PanResponder, StyleSheet, Text, View } from "react-native";
+import { Animated, StyleSheet, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Svg, { Line, Rect, Text as SvgText } from "react-native-svg";
 
@@ -115,32 +115,17 @@ export default function CandlestickChart({
     return () => loop.stop();
   }, [isLive, pulseAnim]);
 
-  // v8.6.14 — Two-tier gesture stack:
-  //
-  //  1. `chartGesture` (Gesture.Pan + Gesture.Pinch composed) — handled
-  //     by react-native-gesture-handler on the UI thread. Pan slides
-  //     `endIndex`; pinch scales `visibleCount`. Pan is horizontal-only
-  //     via `activeOffsetX` + `failOffsetY` so vertical scrolls of the
-  //     parent ScrollView still work.
-  //  2. `panResponder` — kept as the ORIGINAL tap-to-see-price
-  //     crosshair. Tap without meaningful drag → crosshair. Drag
-  //     horizontally → RNGH intercepts (crosshair auto-cancels because
-  //     onMoveShouldSet returns false past 3px).
-  const panResponder = React.useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        // Only claim if the move is small (i.e. more like a tap-hold);
-        // any bigger movement is a pan/pinch and RNGH takes over.
-        onMoveShouldSetPanResponder: (_evt, gs) =>
-          Math.abs(gs.dx) < 4 && Math.abs(gs.dy) < 4,
-        onPanResponderGrant: (evt) => setCursorX(evt.nativeEvent.locationX),
-        onPanResponderMove: (evt) => setCursorX(evt.nativeEvent.locationX),
-        onPanResponderRelease: () => setCursorX(null),
-        onPanResponderTerminate: () => setCursorX(null),
-      }),
-    [],
-  );
+  // v8.6.17 — Unified gesture stack, ALL via react-native-gesture-handler:
+  //   • Gesture.Pan()   → horizontal slide to inspect history
+  //   • Gesture.Pinch() → zoom in/out to change candles-per-viewport
+  //   • Gesture.Tap()   → tap-to-place-crosshair (replaces the old
+  //                       PanResponder that ran in parallel)
+  // All three are composed inside a single `Gesture.Simultaneous` so
+  // exactly ONE gesture system is attached to the chart view, avoiding
+  // race conditions where PanResponder + RNGH would fight for touches.
+  // The tap also drives `setCursorX` on a longer hold (Tap.numberOfTaps
+  // 1 with maxDuration long-enough for read-off) — pan/pinch still win
+  // for any real drag/scale.
 
   // Refs used by UI-thread gesture callbacks so they always see the
   // latest committed state without re-registering the gesture handler.
@@ -183,7 +168,7 @@ export default function CandlestickChart({
     // — imperceptible for chart panning at 60fps.
     const pan = Gesture.Pan()
       // Activate only after 10px horizontal movement — leaves smaller
-      // gestures free for the crosshair PanResponder above.
+      // gestures free for the crosshair Tap gesture in the same stack.
       .activeOffsetX([-10, 10])
       // If the finger travels vertically first, fail this gesture so
       // the parent ScrollView can scroll the page.
@@ -207,7 +192,22 @@ export default function CandlestickChart({
         applyPinch(e.scale, pinchStart.visible);
       });
 
-    return Gesture.Simultaneous(pan, pinch);
+    // v8.6.17 — Crosshair tap. Fires on a quick tap → shows crosshair
+    // at the touch X for ~1.2s then auto-hides (setTimeout scheduled
+    // in onEnd). Pan wins over Tap for any real horizontal drag; Pinch
+    // wins for two-finger gestures. Tap only fires when neither of
+    // the other gestures activates (Race semantics of the Simultaneous
+    // composition + Tap's short activation window).
+    const tap = Gesture.Tap()
+      .maxDuration(250)
+      .runOnJS(true)
+      .onEnd((e) => {
+        setCursorX(e.x);
+        // Auto-hide crosshair after 1.2s so it doesn't linger.
+        setTimeout(() => setCursorX(null), 1200);
+      });
+
+    return Gesture.Simultaneous(pan, pinch, tap);
   }, [applyPan, applyPinch, candles.length]);
 
   if (!candles || candles.length < 2) {
@@ -222,19 +222,54 @@ export default function CandlestickChart({
   const chartH = height - volumeH - 4;
   const chartW = width - rightPad;
 
-  // v8.6.14 — Panning + pinch-zoom aware slice. `visibleCount` is now
-  // dynamic (Gesture.Pinch resizes the window at runtime); `endIndex`
-  // remains the array-index of the right-most visible bar. Auto-advance
-  // to the newest candle happens ONLY IF the user was already pinned
-  // to the latest bar before an append (see useEffect below).
+  // v8.6.14 — Panning + pinch-zoom aware slice.
   const startIdx = Math.max(0, clampedEnd - visibleCount + 1);
   const endIdx = Math.max(0, clampedEnd) + 1;
-  const displayed = candles.slice(startIdx, endIdx);
+  const rawDisplayed = candles.slice(startIdx, endIdx);
+
+  // v8.6.17 — Live-tick candle mutation. When `isLive` + `livePrice` are
+  // both truthy, override the last visible candle's `close/high/low`
+  // with the live price so the body/wick redraw on every ticker frame.
+  //   - close   = livePrice (drives the body top/bottom on falling ticks)
+  //   - high    = max(candle.high, livePrice)  (wick grows if price
+  //               exceeds current bar high)
+  //   - low     = min(candle.low,  livePrice)  (wick grows if price
+  //               drops below current bar low)
+  // This is applied ONLY to the last candle so historical bars remain
+  // immutable. The mutation also feeds into the Y-axis range
+  // calculation below, so the scale auto-expands if the live price
+  // wanders outside the pre-existing highs/lows.
+  const displayed =
+    isLive &&
+    typeof livePrice === "number" &&
+    Number.isFinite(livePrice) &&
+    rawDisplayed.length > 0
+      ? (() => {
+          const arr = rawDisplayed.slice();
+          const lc = arr[arr.length - 1];
+          arr[arr.length - 1] = {
+            ...lc,
+            close: livePrice,
+            high: Math.max(lc.high, livePrice),
+            low: Math.min(lc.low, livePrice),
+          } as (typeof lc);
+          return arr;
+        })()
+      : rawDisplayed;
 
   const highs = displayed.map((c) => c.high);
   const lows = displayed.map((c) => c.low);
-  const priceMax = Math.max(...highs);
-  const priceMin = Math.min(...lows);
+  // v8.6.17 — Ensure the live price ALWAYS lands inside the visible
+  // range even before the last-candle mutation propagates through React
+  // state. Guarantees the dashed live-line + right-tag never render off-
+  // screen when the market suddenly spikes/dumps past the previous
+  // candle extremes.
+  const liveP =
+    isLive && typeof livePrice === "number" && Number.isFinite(livePrice)
+      ? livePrice
+      : null;
+  const priceMax = Math.max(...highs, liveP ?? -Infinity);
+  const priceMin = Math.min(...lows, liveP ?? Infinity);
   const priceRange = priceMax - priceMin || Math.abs(priceMax) * 0.01 || 1;
   // Add 3% headroom
   const priceHi = priceMax + priceRange * 0.03;
@@ -290,7 +325,7 @@ export default function CandlestickChart({
 
   // ---------------------------------------------------------------------
   // v8.5.0 — Interactive crosshair (touch & drag to inspect a candle).
-  // Hooks (`cursorX`, `panResponder`) are declared at the top of this
+  // Hooks (`cursorX`, gesture memos) are declared at the top of this
   // component; here we just compute the hovered candle from the current
   // cursor position.
   // ---------------------------------------------------------------------
@@ -322,7 +357,7 @@ export default function CandlestickChart({
 
   return (
     <GestureDetector gesture={chartGesture}>
-    <View style={{ width, height }} {...panResponder.panHandlers} testID="candlestick-chart">
+    <View style={{ width, height }} testID="candlestick-chart">
     <Svg width={width} height={height}>
       {gridEls}
       {displayed.map((c, i) => {
