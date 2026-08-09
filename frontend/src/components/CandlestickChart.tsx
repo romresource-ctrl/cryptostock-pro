@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { Animated, PanResponder, StyleSheet, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import { runOnJS } from "react-native-reanimated";
 import Svg, { Line, Rect, Text as SvgText } from "react-native-svg";
 
 import { useTheme } from "@/src/theme/ThemeContext";
@@ -178,6 +177,10 @@ export default function CandlestickChart({
   const chartGesture = React.useMemo(() => {
     const panStart = { end: candles.length - 1 };
     const pinchStart = { visible: DEFAULT_VISIBLE };
+    // v8.6.15 — Gesture callbacks run on the JS thread (no `"worklet"`
+    // directive, no `runOnJS`) so we don't require the Reanimated
+    // Babel plugin to touch this file. Pan/pinch latency is 1-2 frames
+    // — imperceptible for chart panning at 60fps.
     const pan = Gesture.Pan()
       // Activate only after 10px horizontal movement — leaves smaller
       // gestures free for the crosshair PanResponder above.
@@ -185,23 +188,23 @@ export default function CandlestickChart({
       // If the finger travels vertically first, fail this gesture so
       // the parent ScrollView can scroll the page.
       .failOffsetY([-15, 15])
+      // `.runOnJS(true)` = handler bodies stay on JS thread. Safe
+      // because we don't use any Reanimated shared values here.
+      .runOnJS(true)
       .onStart(() => {
-        "worklet";
         panStart.end = endIndexRef.current;
       })
       .onUpdate((e) => {
-        "worklet";
-        runOnJS(applyPan)(e.translationX, panStart.end);
+        applyPan(e.translationX, panStart.end);
       });
 
     const pinch = Gesture.Pinch()
+      .runOnJS(true)
       .onStart(() => {
-        "worklet";
         pinchStart.visible = visibleCountRef.current;
       })
       .onUpdate((e) => {
-        "worklet";
-        runOnJS(applyPinch)(e.scale, pinchStart.visible);
+        applyPinch(e.scale, pinchStart.visible);
       });
 
     return Gesture.Simultaneous(pan, pinch);
