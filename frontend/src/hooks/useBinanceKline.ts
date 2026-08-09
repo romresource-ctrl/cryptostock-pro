@@ -170,6 +170,15 @@ export function useBinanceKline(
  * normalize `last.t` to seconds JUST for the comparison, and preserve
  * the REST millisecond format on the patched candle so the SVG X-axis
  * renderer keeps working unchanged.
+ *
+ * v8.6.13 — Made new-bar append explicit and interval-safe. The old
+ * heuristic `Math.abs(lastTs - live.t) < 60` was a 1-minute window that
+ * happened to work but had ambiguous edges. We now use strict equality
+ * for "same candle" and `live.t > lastTs` for the append case, so a
+ * 1-minute chart cleanly rolls over the instant the minute crosses.
+ * The returned array is ALWAYS a fresh reference when we append or
+ * replace, so React sees a new prop and re-renders — no more staying
+ * frozen after a minute change.
  */
 export function patchCandlesWithLive<C extends { t: number }>(
   candles: C[],
@@ -197,15 +206,29 @@ export function patchCandlesWithLive<C extends { t: number }>(
     volume: live.volume as never,
   };
 
-  if (Math.abs(lastTs - live.t) < 60) {
-    // Same candle — replace in place.
+  if (lastTs === live.t) {
+    // Same candle open-time — replace last bar in place.
+    // Fresh array reference guarantees React re-renders the chart.
     const copy = candles.slice(0, -1);
     copy.push(patched);
     return copy;
   }
   if (live.t > lastTs) {
-    // A new bar just opened — append.
-    return [...candles, patched];
+    // A brand-new bar just opened — append. The dedicated "new candle"
+    // object uses `patchedT` (already in the input's time unit) and the
+    // WS OHLCV so the chart immediately shows the fresh bar on the
+    // right edge. The oldest bar rolls off naturally once the caller
+    // slices to a fixed visible window (v8.6.13 in CandlestickChart).
+    const nextBar: C = {
+      ...last,
+      t: patchedT as never,
+      open: live.open as never,
+      high: live.high as never,
+      low: live.low as never,
+      close: live.close as never,
+      volume: live.volume as never,
+    };
+    return [...candles, nextBar];
   }
   // Older kline — ignore (out-of-order retransmission).
   return candles;

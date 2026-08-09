@@ -51,6 +51,45 @@ export default function CandlestickChart({
   livePrice = null,
 }: Props) {
   const { colors } = useTheme();
+
+  // v8.6.13 — Panning state. `endIndex` is the array-index of the
+  // right-most visible candle. Default = latest bar. Users can drag
+  // horizontally to inspect history; the chart AUTO-ADVANCES to the
+  // newest candle ONLY IF endIndex was pinned to the latest before an
+  // append. If the user has scrolled back, we freeze the view so they
+  // can inspect the past without being yanked forward.
+  const VISIBLE_COUNT = 120;
+  const [endIndex, setEndIndex] = useState<number>(candles.length - 1);
+  // `panStartEndIndex` remembers where endIndex was when the drag began,
+  // so `dx` maps cleanly to a delta from that baseline.
+  const panStartEndIndexRef = React.useRef<number>(candles.length - 1);
+  // `isPanningRef` distinguishes horizontal-drag (pan) from tap/vertical
+  // (crosshair). Decided within the first ~8px of movement.
+  const isPanningRef = React.useRef<boolean>(false);
+
+  // Auto-advance: when a new bar arrives (candles.length increases), bump
+  // endIndex ONLY when the user was already viewing the newest bar.
+  const prevLenRef = React.useRef<number>(candles.length);
+  React.useEffect(() => {
+    const prev = prevLenRef.current;
+    const curr = candles.length;
+    if (curr > prev) {
+      // A new bar was appended. Pinned-to-right if endIndex was at the
+      // previous last index.
+      if (endIndex >= prev - 1) {
+        setEndIndex(curr - 1);
+      }
+    } else if (curr < prev) {
+      // Data reset / timeframe change — snap to latest.
+      setEndIndex(curr - 1);
+    }
+    prevLenRef.current = curr;
+  }, [candles.length, endIndex]);
+
+  // If the incoming `candles` array is smaller than our recorded index
+  // (e.g. after a timeframe switch that returns fewer bars), clamp.
+  const clampedEnd = Math.min(endIndex, Math.max(0, candles.length - 1));
+
   // Hooks must run before any early return.
   const [cursorX, setCursorX] = useState<number | null>(null);
   // v8.6.5 — Pulse animation for the live-price dot. useNativeDriver keeps
@@ -70,17 +109,54 @@ export default function CandlestickChart({
     loop.start();
     return () => loop.stop();
   }, [isLive, pulseAnim]);
+
+  // Panning uses `step` (px per candle) which depends on chartW. We
+  // recompute inside the responder using the latest layout so the
+  // finger tracks the candle it's over even on rotate/resize.
   const panResponder = React.useMemo(
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderGrant: (evt) => setCursorX(evt.nativeEvent.locationX),
-        onPanResponderMove: (evt) => setCursorX(evt.nativeEvent.locationX),
-        onPanResponderRelease: () => setCursorX(null),
-        onPanResponderTerminate: () => setCursorX(null),
+        onMoveShouldSetPanResponder: (_evt, gs) =>
+          Math.abs(gs.dx) > 3 || Math.abs(gs.dy) > 3,
+        onPanResponderGrant: (evt) => {
+          isPanningRef.current = false;
+          panStartEndIndexRef.current = endIndex;
+          setCursorX(evt.nativeEvent.locationX);
+        },
+        onPanResponderMove: (evt, gs) => {
+          // Decide pan-vs-crosshair on first significant move.
+          if (!isPanningRef.current && Math.abs(gs.dx) > 8 && Math.abs(gs.dx) > Math.abs(gs.dy) * 1.5) {
+            isPanningRef.current = true;
+            setCursorX(null); // hide crosshair once we lock into pan
+          }
+          if (isPanningRef.current) {
+            // Approximate step: chartW / VISIBLE_COUNT (finger travels
+            // 1 candle-width to shift endIndex by 1). Direction: swipe
+            // LEFT → move forward in time (endIndex ↑); swipe RIGHT →
+            // move back in time (endIndex ↓).
+            const approxStep = Math.max(1, (width - 56) / VISIBLE_COUNT);
+            const deltaCandles = Math.round(-gs.dx / approxStep);
+            const target = panStartEndIndexRef.current + deltaCandles;
+            const minEnd = Math.max(0, Math.min(VISIBLE_COUNT - 1, candles.length - 1));
+            const maxEnd = candles.length - 1;
+            setEndIndex(Math.min(maxEnd, Math.max(minEnd, target)));
+          } else {
+            setCursorX(evt.nativeEvent.locationX);
+          }
+        },
+        onPanResponderRelease: () => {
+          isPanningRef.current = false;
+          setCursorX(null);
+        },
+        onPanResponderTerminate: () => {
+          isPanningRef.current = false;
+          setCursorX(null);
+        },
       }),
-    [],
+    // Recreate responder if candles length or width change so the
+    // clamping arithmetic uses current bounds.
+    [candles.length, endIndex, width],
   );
 
   if (!candles || candles.length < 2) {
@@ -95,12 +171,14 @@ export default function CandlestickChart({
   const chartH = height - volumeH - 4;
   const chartW = width - rightPad;
 
-  // Cap candles to keep rendering fast on low-end phones
-  const MAX_CANDLES = 120;
-  const displayed =
-    candles.length > MAX_CANDLES
-      ? candles.slice(candles.length - MAX_CANDLES)
-      : candles;
+  // v8.6.13 — Panning-aware slice. Instead of hardcoding "last 120", we
+  // slice a 120-bar window ending at `clampedEnd`. When the user pans
+  // left, endIndex decreases → the window slides into the past. When a
+  // new bar arrives AND the user was pinned at the newest bar, endIndex
+  // auto-bumps → the oldest bar rolls off the left edge naturally.
+  const startIdx = Math.max(0, clampedEnd - VISIBLE_COUNT + 1);
+  const endIdx = Math.max(0, clampedEnd) + 1;
+  const displayed = candles.slice(startIdx, endIdx);
 
   const highs = displayed.map((c) => c.high);
   const lows = displayed.map((c) => c.low);
