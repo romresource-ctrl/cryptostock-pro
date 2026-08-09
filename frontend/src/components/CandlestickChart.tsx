@@ -24,6 +24,12 @@ type Props = {
       + animated dot at the tip so users can *see* the market breathing
       even for sub-cent price moves. */
   isLive?: boolean;
+  /** v8.6.12 — Override for the "live close" value that drives the
+      dashed line, right-edge tag and pulsing dot. When provided (from
+      the parent's Binance ticker WS), this keeps the header price and
+      chart live-line in perfect lock-step — otherwise the chart uses
+      the last candle's close which lags a beat behind the ticker. */
+  livePrice?: number | null;
 };
 
 /**
@@ -42,6 +48,7 @@ export default function CandlestickChart({
   showGrid = true,
   currency: _currency,
   isLive = false,
+  livePrice = null,
 }: Props) {
   const { colors } = useTheme();
   // Hooks must run before any early return.
@@ -336,8 +343,16 @@ export default function CandlestickChart({
           can't be animated with useNativeDriver on RN. */}
       {isLive && candles.length > 0 ? (() => {
         const lastCandle = displayed[displayed.length - 1];
-        const lastY = priceToY(lastCandle.close);
-        const isUp = lastCandle.close >= lastCandle.open;
+        // v8.6.12 — Prefer the ticker WS price (updates every ~200ms)
+        // over the kline WS close (updates every 1-2s and rounds to
+        // whole units on the wire). Falls back to candle close when no
+        // ticker price has arrived yet.
+        const liveClose =
+          typeof livePrice === "number" && Number.isFinite(livePrice)
+            ? livePrice
+            : lastCandle.close;
+        const lastY = priceToY(liveClose);
+        const isUp = liveClose >= lastCandle.open;
         const liveColor = isUp ? upColor : downColor;
         return (
           <>
@@ -366,7 +381,7 @@ export default function CandlestickChart({
               fontWeight="900"
               fill="#000"
             >
-              {formatPriceLabel(lastCandle.close)}
+              {formatPriceLabel(liveClose)}
             </SvgText>
           </>
         );
@@ -424,7 +439,14 @@ export default function CandlestickChart({
     {isLive && candles.length > 0 ? (() => {
       const lastCandle = displayed[displayed.length - 1];
       const lastX = (displayed.length - 1) * step + candleGap / 2 + candleWidth / 2;
-      const lastY = priceToY(lastCandle.close);
+      // v8.6.12 — Dot Y must match the same live-close used by the
+      // dashed line + right-edge tag above; otherwise the dot appears
+      // to hover a fraction of a pixel away from its own price line.
+      const liveCloseDot =
+        typeof livePrice === "number" && Number.isFinite(livePrice)
+          ? livePrice
+          : lastCandle.close;
+      const lastY = priceToY(liveCloseDot);
       const isUp = lastCandle.close >= lastCandle.open;
       const liveColor = isUp ? upColor : downColor;
       const dotSize = 16;
@@ -544,10 +566,11 @@ const styles = StyleSheet.create({
 });
 
 function formatPriceLabel(p: number): string {
+  // v8.6.12 — Aligned with formatPrice(): exactly 2 decimals for
+  // regular prices; extra precision preserved only for sub-cent tokens
+  // so SHIB/PEPE-style entries don't collapse into "0.00".
   const abs = Math.abs(p);
-  if (abs >= 1000) return p.toFixed(0);
-  if (abs >= 10) return p.toFixed(2);
-  if (abs >= 1) return p.toFixed(3);
-  if (abs >= 0.01) return p.toFixed(4);
-  return p.toFixed(6);
+  if (abs >= 0.01) return p.toFixed(2);
+  if (abs >= 0.0001) return p.toFixed(6);
+  return p.toFixed(8);
 }

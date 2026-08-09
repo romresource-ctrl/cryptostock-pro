@@ -313,14 +313,18 @@ export function formatPrice(v: number | null | undefined, market: Market): strin
   if (market === "stock_id") {
     return v.toLocaleString("id-ID", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   }
-  if (market === "stock_us" || market === "etf") {
+  // v8.6.12 — Standardized to EXACTLY 2 decimals for every non-IDR
+  // display (crypto, US stocks, ETF, forex, gold, commodity, world
+  // stocks). Header, chart axis, live labels, and stat cells now all
+  // match — a user can visually compare "1919.96" with "1919.96"
+  // without wondering whether the trailing digit was rounded.
+  // Exception: sub-cent tokens (SHIB/PEPE/etc, v < 0.01) keep extra
+  // precision so they don't collapse to "0.00".
+  if (v >= 0.01 || v <= -0.01) {
     return v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
-  if (v >= 1000) return v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  if (v >= 1) return v.toFixed(3);
-  if (v >= 0.01) return v.toFixed(4);
-  if (v >= 0.0001) return v.toFixed(6);
-  if (v >= 0.00000001) return v.toFixed(8);
+  if (v >= 0.0001 || v <= -0.0001) return v.toFixed(6);
+  if (v >= 0.00000001 || v <= -0.00000001) return v.toFixed(8);
   return v.toFixed(10).replace(/0+$/, "").replace(/\.$/, "");
 }
 

@@ -15,6 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import CandlestickChart from "@/src/components/CandlestickChart";
 import FlashPrice from "@/src/components/FlashPrice";
+import TickCounter from "@/src/components/TickCounter";
 import PriceChart from "@/src/components/PriceChart";
 import PositionSizeCalculator from "@/src/components/PositionSizeCalculator";
 import TargetProfit from "@/src/components/TargetProfit";
@@ -125,7 +126,14 @@ export default function AssetDetail() {
   const displaySymbol = (market === "forex" || market === "gold_silver")
     ? symbol.replace(/-/g, "/")
     : symbol;
-  const initialTf = (TIMEFRAMES.includes(params.timeframe as Timeframe) ? params.timeframe : "1h") as Timeframe;
+  // v8.6.12 — Default timeframe now depends on market:
+  // - crypto → "1m" (Binance WS emits ~1 frame/sec, visible candle motion)
+  // - non-crypto → "1h" (no WS anyway, longer TF is more useful)
+  // The user can still override via ?timeframe=… query param.
+  const defaultTfForMarket: Timeframe = market === "crypto" ? "1m" : "1h";
+  const initialTf = (
+    TIMEFRAMES.includes(params.timeframe as Timeframe) ? params.timeframe : defaultTfForMarket
+  ) as Timeframe;
 
   const [timeframe, setTimeframe] = useState<Timeframe>(initialTf);
   const [chart, setChart] = useState<ChartResponse | null>(null);
@@ -402,6 +410,13 @@ export default function AssetDetail() {
                     {"  "}● LIVE
                   </Text>
                 ) : null}
+                {/* v8.6.12 — TICK counter: increments each time Binance
+                    WS delivers a new kline frame. Undeniable proof to
+                    users that data IS streaming, even when the candle
+                    body itself changes by sub-pixel amounts. */}
+                {market === "crypto" && liveKline ? (
+                  <TickCounter updatedAt={liveKline.updatedAt} />
+                ) : null}
               </View>
             </View>
             <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
@@ -575,6 +590,12 @@ export default function AssetDetail() {
               /* v8.6.5 — Only crypto markets subscribe to Binance
                  kline WS, so isLive should mirror that condition. */
               isLive={market === "crypto" && rt.connected}
+              /* v8.6.12 — Sync chart live-line + right-edge tag +
+                 pulsing dot to the SAME ticker price shown in the
+                 header. rt.price updates every ~200ms which gives the
+                 chart the same tempo as the header, and users no
+                 longer see two different numbers (1919.96 vs 1920). */
+              livePrice={rt.connected && Number.isFinite(rt.price) ? rt.price : null}
             />
           ) : (
             <PriceChart candles={liveCandles as never} width={screenW - 24} height={180} />
