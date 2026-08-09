@@ -2109,7 +2109,52 @@ async def market_brief_endpoint(
     }
 
 
-@api.post("/market-brief/generate", include_in_schema=False)
+@api.post("/admin/reset-wr-history", include_in_schema=False)
+async def admin_reset_wr_history(admin_token: str = Query(..., description="Admin bypass")) -> dict[str, Any]:
+    """Nuke the signals collection so the WR track record starts fresh.
+
+    Used AFTER shipping a tightened AI formula. Idempotent — the same call
+    twice just deletes nothing the second time. Guarded by the admin token.
+    """
+    if admin_token != os.environ.get("ADMIN_UNLOCK_TOKEN", ""):
+        raise HTTPException(status_code=403, detail="forbidden")
+    result = await db.signals.delete_many({})
+    marker = "v8.7.3-manual"
+    await db.app_meta.replace_one(
+        {"_id": "wr_reset_marker"},
+        {"_id": "wr_reset_marker", "version": marker, "at": datetime.now(timezone.utc)},
+        upsert=True,
+    )
+    return {"ok": True, "deleted": result.deleted_count, "marker": marker}
+
+
+# v8.7.3 — Auto-reset marker: bump this string whenever we ship a formula
+# change that requires wiping the historic WR track record. On startup,
+# if the persisted marker < WR_RESET_TARGET, the signals collection is
+# dropped ONCE and the marker is updated. Safe to redeploy repeatedly.
+WR_RESET_TARGET = "v8.7.3"
+
+
+async def _wr_reset_on_version_bump() -> None:
+    """Wipe signals collection ONCE per WR_RESET_TARGET bump."""
+    try:
+        marker_doc = await db.app_meta.find_one({"_id": "wr_reset_marker"})
+        cur = (marker_doc or {}).get("version", "")
+        if cur == WR_RESET_TARGET:
+            logger.info("wr-reset: already at %s, skip", WR_RESET_TARGET)
+            return
+        deleted = await db.signals.delete_many({})
+        await db.app_meta.replace_one(
+            {"_id": "wr_reset_marker"},
+            {"_id": "wr_reset_marker", "version": WR_RESET_TARGET, "at": datetime.now(timezone.utc)},
+            upsert=True,
+        )
+        logger.info(
+            "wr-reset: wiped %d stale signals (bumped marker %s → %s)",
+            deleted.deleted_count, cur or "<none>", WR_RESET_TARGET,
+        )
+    except Exception as e:
+        logger.warning("wr-reset failed: %s", e)
 async def market_brief_generate(admin_token: str = Query(..., description="Admin bypass")) -> dict[str, Any]:
     """Manual trigger — used by the admin/cron warmup to regenerate a brief
     off-schedule. Guarded by the admin token so it can't be abused.
@@ -2371,6 +2416,11 @@ async def _startup_bootstrap() -> None:
     _start_push_scheduler()
     # v8.3.5 — Ensure push_history TTL index exists (24h auto-expiry).
     asyncio.create_task(ensure_history_indexes(db))
+    # v8.7.3 — Auto-reset WR history on version bump (one-time per deployment).
+    # This is what wipes stale sub-50% WR data when the tightened v8.7.0
+    # formula ships to a NEW production deployment. Runs before any other
+    # startup task so evaluations don't overlap.
+    asyncio.create_task(_wr_reset_on_version_bump())
     # v8.7.1 — Ensure market_briefs TTL index (48h auto-expiry) + start
     # the Claude-powered Daily Market Brief scheduler (06:00 & 18:00 WIB).
     asyncio.create_task(ensure_brief_ttl_index(db))
