@@ -26,6 +26,7 @@ interface Props {
   entryLow: number | null | undefined;
   entryHigh: number | null | undefined;
   takeProfit: number | null | undefined;
+  stopLoss: number | null | undefined;
   action: Side;
 }
 
@@ -35,6 +36,7 @@ interface Props {
 const BEEP_URL =
   "https://customer-assets.emergentagent.com/job_swift-market/artifacts/uwx4jcxr_beep.mp3";
 const TP_BAND_PCT = 0.0015; // ±0.15% around take_profit
+const SL_BAND_PCT = 0.0015; // ±0.15% around stop_loss
 
 function inRange(px: number, low: number, high: number): boolean {
   return px >= low && px <= high;
@@ -45,12 +47,15 @@ const PriceAlertOverlay: React.FC<Props> = ({
   entryLow,
   entryHigh,
   takeProfit,
+  stopLoss,
   action,
 }) => {
   const { colors } = useTheme();
-  const [state, setState] = useState<"idle" | "entry" | "tp">("idle");
+  const [state, setState] = useState<"idle" | "entry" | "tp" | "sl">("idle");
   const blinkAnim = useRef(new Animated.Value(1)).current;
-  const armedRef = useRef<{ entry: boolean; tp: boolean }>({ entry: true, tp: true });
+  const armedRef = useRef<{ entry: boolean; tp: boolean; sl: boolean }>({
+    entry: true, tp: true, sl: true,
+  });
   const player = useAudioPlayer({ uri: BEEP_URL });
 
   // Determine current zone based on live price
@@ -59,10 +64,17 @@ const PriceAlertOverlay: React.FC<Props> = ({
       setState("idle");
       return;
     }
-    let nextState: "idle" | "entry" | "tp" = "idle";
+    let nextState: "idle" | "entry" | "tp" | "sl" = "idle";
 
-    // TP zone (highest priority — a "close" alert is more urgent than entry)
-    if (takeProfit != null && Number.isFinite(takeProfit)) {
+    // SL zone — HIGHEST priority (loss alert is most urgent)
+    if (stopLoss != null && Number.isFinite(stopLoss)) {
+      const slLow = stopLoss * (1 - SL_BAND_PCT);
+      const slHigh = stopLoss * (1 + SL_BAND_PCT);
+      if (inRange(livePrice, slLow, slHigh)) nextState = "sl";
+    }
+
+    // TP zone
+    if (nextState === "idle" && takeProfit != null && Number.isFinite(takeProfit)) {
       const tpLow = takeProfit * (1 - TP_BAND_PCT);
       const tpHigh = takeProfit * (1 + TP_BAND_PCT);
       if (inRange(livePrice, tpLow, tpHigh)) nextState = "tp";
@@ -88,20 +100,22 @@ const PriceAlertOverlay: React.FC<Props> = ({
       } else if (nextState === "tp" && armedRef.current.tp) {
         armedRef.current.tp = false;
         _playBeep(player);
+      } else if (nextState === "sl" && armedRef.current.sl) {
+        armedRef.current.sl = false;
+        _playBeep(player);
       }
       if (nextState === "idle") {
-        // Re-arm both when we leave any zone
-        armedRef.current.entry = true;
-        armedRef.current.tp = true;
-      } else if (nextState === "entry") {
-        // Leaving TP but still in Entry → re-arm tp
-        armedRef.current.tp = true;
-      } else if (nextState === "tp") {
-        armedRef.current.entry = true;
+        // Re-arm all zones when we leave any zone
+        armedRef.current = { entry: true, tp: true, sl: true };
+      } else {
+        // Re-arm the OTHER zones when we jump between them
+        if (nextState !== "entry") armedRef.current.entry = true;
+        if (nextState !== "tp") armedRef.current.tp = true;
+        if (nextState !== "sl") armedRef.current.sl = true;
       }
       return nextState;
     });
-  }, [livePrice, entryLow, entryHigh, takeProfit, player]);
+  }, [livePrice, entryLow, entryHigh, takeProfit, stopLoss, player]);
 
   // Blink animation loop
   useEffect(() => {
@@ -121,16 +135,18 @@ const PriceAlertOverlay: React.FC<Props> = ({
 
   if (state === "idle") return null;
 
+  const isSl = state === "sl";
   const isTp = state === "tp";
-  const label = isTp ? "🎯 TP HIT!" : "🚀 ENTRY!";
-  // Colour hint: TP always gold, Entry follows signal side.
-  const bg =
-    isTp
+  const label = isSl ? "🛑 SL HIT!" : isTp ? "🎯 TP HIT!" : "🚀 ENTRY!";
+  // Colour hint: SL always red, TP always gold, Entry follows signal side.
+  const bg = isSl
+    ? colors.accentDown
+    : isTp
       ? "#f5c518"
       : action === "SELL"
         ? colors.accentDown
         : colors.accentUp;
-  const fg = "#000";
+  const fg = isSl ? "#fff" : "#000";
 
   return (
     <View pointerEvents="none" style={styles.container} testID={`price-alert-${state}`}>

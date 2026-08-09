@@ -661,6 +661,7 @@ export default function AssetDetail() {
                   entryLow={sig.entry_low ?? sig.entry}
                   entryHigh={sig.entry_high ?? sig.entry}
                   takeProfit={sig.take_profit}
+                  stopLoss={sig.stop_loss}
                   action={sig.action}
                 />
               )}
