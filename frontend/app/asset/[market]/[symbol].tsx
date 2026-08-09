@@ -20,6 +20,7 @@ import PriceChart from "@/src/components/PriceChart";
 import PositionSizeCalculator from "@/src/components/PositionSizeCalculator";
 import TargetProfit from "@/src/components/TargetProfit";
 import WrHistoryModal, { type WrPeriod } from "@/src/components/WrHistoryModal";
+import PriceAlertOverlay from "@/src/components/PriceAlertOverlay";
 import {
   STABLECOIN_SYMBOLS,
   formatStablecoinLocal,
@@ -636,20 +637,34 @@ export default function AssetDetail() {
               <ActivityIndicator color={colors.accentBlue} />
             </View>
           ) : chartType === "candlestick" ? (
-            <CandlestickChart
-              candles={liveCandles as never}
-              width={screenW - 24}
-              height={220}
-              /* v8.6.5 — Only crypto markets subscribe to Binance
-                 kline WS, so isLive should mirror that condition. */
-              isLive={market === "crypto" && rt.connected}
-              /* v8.6.12 — Sync chart live-line + right-edge tag +
-                 pulsing dot to the SAME ticker price shown in the
-                 header. rt.price updates every ~200ms which gives the
-                 chart the same tempo as the header, and users no
-                 longer see two different numbers (1919.96 vs 1920). */
-              livePrice={rt.connected && Number.isFinite(rt.price) ? rt.price : null}
-            />
+            <View style={{ position: "relative" }}>
+              <CandlestickChart
+                candles={liveCandles as never}
+                width={screenW - 24}
+                height={220}
+                /* v8.6.5 — Only crypto markets subscribe to Binance
+                   kline WS, so isLive should mirror that condition. */
+                isLive={market === "crypto" && rt.connected}
+                /* v8.6.12 — Sync chart live-line + right-edge tag +
+                   pulsing dot to the SAME ticker price shown in the
+                   header. rt.price updates every ~200ms which gives the
+                   chart the same tempo as the header, and users no
+                   longer see two different numbers (1919.96 vs 1920). */
+                livePrice={rt.connected && Number.isFinite(rt.price) ? rt.price : null}
+              />
+              {/* v8.7.5 — Blinking ENTRY / TP HIT overlay + beep when
+                  the live ticker enters the signal's own entry_low /
+                  entry_high band, or crosses take_profit (±0.15%). */}
+              {sig && (
+                <PriceAlertOverlay
+                  livePrice={rt.connected && Number.isFinite(rt.price) ? rt.price : (ticker.price ?? null)}
+                  entryLow={sig.entry_low ?? sig.entry}
+                  entryHigh={sig.entry_high ?? sig.entry}
+                  takeProfit={sig.take_profit}
+                  action={sig.action}
+                />
+              )}
+            </View>
           ) : (
             <PriceChart candles={liveCandles as never} width={screenW - 24} height={180} />
           )}
