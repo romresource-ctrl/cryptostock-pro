@@ -79,6 +79,30 @@ def _is_hit(action: str, pct_change: float) -> bool:
     return abs(pct_change) < HIT_THRESHOLD_PCT
 
 
+# v8.7.0 — 3-way outcome classification for the WR history popup.
+#   WIN   : signal target was hit (as before).
+#   LOSS  : price moved against the signal by >= HIT_THRESHOLD (i.e. SL zone).
+#   BE    : price stayed within ±HIT_THRESHOLD (break-even / chop).
+def _classify_outcome(action: str, pct_change: float) -> str:
+    a = action.upper()
+    if a == "BUY":
+        if pct_change >= HIT_THRESHOLD_PCT:
+            return "WIN"
+        if pct_change <= -HIT_THRESHOLD_PCT:
+            return "LOSS"
+        return "BE"
+    if a == "SELL":
+        if pct_change <= -HIT_THRESHOLD_PCT:
+            return "WIN"
+        if pct_change >= HIT_THRESHOLD_PCT:
+            return "LOSS"
+        return "BE"
+    # HOLD: WIN when it stayed flat, LOSS if it broke out either way.
+    if abs(pct_change) < HIT_THRESHOLD_PCT:
+        return "WIN"
+    return "LOSS"
+
+
 async def _fetch_current_price(market: str, symbol: str) -> float | None:
     snap = await (
         get_crypto_snapshot(symbol, "1h") if market == "crypto"
@@ -141,6 +165,7 @@ async def evaluate_pending(db: AsyncIOMotorDatabase, market: str | None = None, 
             continue
         pct = (cur - p0) / p0 * 100.0
         hit = _is_hit(doc.get("action", "HOLD"), pct)
+        outcome = _classify_outcome(doc.get("action", "HOLD"), pct)
         await db.signals.update_one(
             {"_id": doc["_id"]},
             {"$set": {
@@ -149,6 +174,7 @@ async def evaluate_pending(db: AsyncIOMotorDatabase, market: str | None = None, 
                     "price_after": cur,
                     "pct_change": round(pct, 4),
                     "hit": bool(hit),
+                    "outcome": outcome,
                     "evaluated_at": now,
                 },
             }},
@@ -159,8 +185,16 @@ async def evaluate_pending(db: AsyncIOMotorDatabase, market: str | None = None, 
 
 async def get_track_record(
     db: AsyncIOMotorDatabase, market: str, symbol: str,
+    *, history_limit: int = 500,
 ) -> dict[str, Any]:
-    """Return win-rate stats for one symbol."""
+    """Return win-rate stats + full history for one symbol.
+
+    v8.7.0 — Returns:
+      * win_rate_7d / 30d / all buckets (with wins/losses/be counts)
+      * full `history` list (up to `history_limit`) with per-signal outcome
+        (WIN/LOSS/BE), created_at, timeframe, action, price, pct_change.
+        Frontend consumes this to render the tappable WR history popup.
+    """
     await evaluate_pending(db, market=market, symbol=symbol)
     now = _now()
     cutoff_7d = now - timedelta(days=7)
@@ -170,30 +204,61 @@ async def get_track_record(
     cursor = db.signals.find(
         {"market": market, "symbol": symbol.upper(), "evaluated": True},
         {"_id": 0, "action": 1, "label": 1, "confidence": 1, "evaluation": 1, "created_at": 1, "timeframe": 1, "price_at_signal": 1},
-    ).sort("created_at", -1).limit(120)
+    ).sort("created_at", -1).limit(history_limit)
     async for d in cursor:
         docs.append(d)
 
+    def _outcome_of(x: dict[str, Any]) -> str:
+        ev = x.get("evaluation") or {}
+        o = ev.get("outcome")
+        if o in ("WIN", "LOSS", "BE"):
+            return o
+        # Legacy rows without `outcome` — derive from `hit`.
+        return "WIN" if ev.get("hit") else "LOSS"
+
     def _wr(items: list[dict[str, Any]]) -> dict[str, Any]:
         total = len(items)
-        hits = sum(1 for x in items if (x.get("evaluation") or {}).get("hit"))
+        wins = sum(1 for x in items if _outcome_of(x) == "WIN")
+        losses = sum(1 for x in items if _outcome_of(x) == "LOSS")
+        be = sum(1 for x in items if _outcome_of(x) == "BE")
         return {
             "total": total,
-            "hits": hits,
-            "win_rate": round(hits / total * 100.0, 1) if total else None,
+            "hits": wins,       # kept for backward compat with older UI
+            "wins": wins,
+            "losses": losses,
+            "break_even": be,
+            "win_rate": round(wins / total * 100.0, 1) if total else None,
         }
 
-    recent: list[dict[str, Any]] = []
-    for d in docs[:8]:
+    def _serialise(d: dict[str, Any]) -> dict[str, Any]:
         created = d.get("created_at")
         if isinstance(created, datetime):
-            d["created_at"] = (
+            iso = (
                 created.replace(tzinfo=timezone.utc) if created.tzinfo is None else created
             ).isoformat()
-        recent.append(d)
+        else:
+            iso = str(created)
+        ev = d.get("evaluation") or {}
+        return {
+            "action": d.get("action"),
+            "label": d.get("label"),
+            "confidence": d.get("confidence"),
+            "timeframe": d.get("timeframe"),
+            "price_at_signal": d.get("price_at_signal"),
+            "created_at": iso,
+            "outcome": _outcome_of(d),
+            "pct_change": ev.get("pct_change"),
+            "price_after": ev.get("price_after"),
+            "evaluation": ev,  # keep raw for backward compat
+        }
+
+    history_all = [_serialise(d) for d in docs]
+    recent = history_all[:8]  # backward compat field
 
     in_7d = [d for d in docs if _to_dt(d.get("created_at")) >= cutoff_7d]
     in_30d = [d for d in docs if _to_dt(d.get("created_at")) >= cutoff_30d]
+    history_7d = [_serialise(d) for d in in_7d]
+    history_30d = [_serialise(d) for d in in_30d]
 
     return {
         "symbol": symbol.upper(),
@@ -201,7 +266,10 @@ async def get_track_record(
         "win_rate_7d": _wr(in_7d),
         "win_rate_30d": _wr(in_30d),
         "win_rate_all": _wr(docs),
-        "recent_signals": recent,
+        "recent_signals": recent,        # legacy field (top 8)
+        "history_7d": history_7d,        # v8.7.0 — full 7d history for popup
+        "history_30d": history_30d,      # v8.7.0 — full 30d history for popup
+        "history_all": history_all,      # v8.7.0 — full history for popup
     }
 
 

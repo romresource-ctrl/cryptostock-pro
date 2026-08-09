@@ -559,19 +559,16 @@ def _build_signal(snapshot: dict, tr: dict | None = None, *, min_conf: int = 85,
     wr = tr_mini.wr_30d
     action_ok = sig["action"] != "HOLD"
     conf_ok = sig["confidence"] >= min_conf
-    # v8.0.9 — Premium badge logic (previously required wr_30d>=min_wr
-    # for the primary path, and bumped the threshold to 90 when the WR
-    # was missing — which silently disqualified brand-new assets whose
-    # track-record collection hadn't been populated yet, e.g. after a
-    # fresh Mongo deploy or when the background signals writer is idle).
-    #
-    # New rule:
-    #   • If we have a WR sample → require both `conf_ok` AND `wr >= min_wr`.
-    #   • If we DO NOT have a WR sample → fall back to `conf_ok` alone.
-    #     No extra threshold bump. This matches the v2.1.8 behaviour that
-    #     users experienced as "reliable Premium coverage".
+    # v8.7.0 — Restored strict Premium gate (target WR > 70%).
+    # Old v8.0.9 logic let signals without a WR sample slip into Premium
+    # via `is_premium = action_ok and conf_ok` (WR=None fallback) — this
+    # caused the 50% WR degradation. New rule:
+    #   • If we have a WR sample → require conf_ok AND wr >= min_wr AND
+    #     confidence >= min_conf.
+    #   • If we DO NOT have a WR sample → require confidence >= min_conf + 5
+    #     (stricter bar to compensate for the unknown WR).
     if wr is None:
-        is_premium = action_ok and conf_ok
+        is_premium = action_ok and sig["confidence"] >= (min_conf + 5)
     else:
         is_premium = action_ok and conf_ok and wr >= min_wr
     # v8.1.3 — Attach region (japan/china/us/etc.) for World Stocks

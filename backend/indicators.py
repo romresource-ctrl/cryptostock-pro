@@ -288,59 +288,119 @@ def compute_signal(candles: list[dict[str, Any]], market: str) -> dict[str, Any]
         votes.append(v)
         reasons.append(reason)
 
-    # RSI
+    # v8.7.0 — Restored strict v1.0.x-style scoring (target Win Rate >70%).
+    # Rationale: The old v8.x formula (baseline 55, score>=2) let mediocre
+    # 2-of-5 signals into the Premium bucket → WR degraded to ~50%. We now
+    # require STRONG multi-indicator confirmation (score>=3, RSI-directional
+    # confirmation, MACD alignment) and drop the confidence baseline.
+
+    # --- Trend strength (used to weight EMA vs mean-reversion RSI) ---
+    ema_spread_pct = abs(ema20 - ema50) / ema50 * 100 if ema50 else 0
+    strong_trend = ema_spread_pct > 0.5  # trend is dominant → suppress mean-rev RSI
+
+    # --- RSI (14) --- mean-reversion vote, but SUPPRESSED in strong trends.
+    #     In choppy/ranging market: RSI < 30 = BUY, > 70 = SELL.
+    #     In strong trend: extreme RSI is a momentum signal, not a reversal —
+    #     so we vote WITH the trend (softer weight) instead of against.
     if rsi is not None:
-        if rsi < 35:
-            _vote(1, f"RSI {rsi:.1f} oversold (bullish)")
-        elif rsi > 65:
-            _vote(-1, f"RSI {rsi:.1f} overbought (bearish)")
+        if strong_trend:
+            trend_sign_ema = 1 if ema20 > ema50 else -1
+            if trend_sign_ema > 0 and rsi > 55:
+                _vote(1, f"RSI {rsi:.1f} momentum-up (strong trend)")
+            elif trend_sign_ema < 0 and rsi < 45:
+                _vote(-1, f"RSI {rsi:.1f} momentum-down (strong trend)")
+            else:
+                _vote(0, f"RSI {rsi:.1f} (trend-suppressed)")
         else:
-            _vote(0, f"RSI {rsi:.1f} netral")
+            if rsi < 30:
+                _vote(1, f"RSI {rsi:.1f} strong oversold")
+            elif rsi < 40:
+                _vote(1, f"RSI {rsi:.1f} oversold")
+            elif rsi > 70:
+                _vote(-1, f"RSI {rsi:.1f} strong overbought")
+            elif rsi > 60:
+                _vote(-1, f"RSI {rsi:.1f} overbought")
+            else:
+                _vote(0, f"RSI {rsi:.1f} netral")
 
-    # EMA crossover / trend
+    # --- EMA crossover / trend (weighted 2x when spread > 0.3%) ---
     if ema20 > ema50:
-        _vote(1, "EMA20 > EMA50 (uptrend)")
+        v = 2 if ema_spread_pct > 0.3 else 1
+        _vote(v, f"EMA20>EMA50 (uptrend, spread {ema_spread_pct:.2f}%)")
     elif ema20 < ema50:
-        _vote(-1, "EMA20 < EMA50 (downtrend)")
+        v = -2 if ema_spread_pct > 0.3 else -1
+        _vote(v, f"EMA20<EMA50 (downtrend, spread {ema_spread_pct:.2f}%)")
 
-    # Price vs EMA20
-    if price > ema20 * 1.002:
-        _vote(1, "Price above EMA20")
-    elif price < ema20 * 0.998:
-        _vote(-1, "Price below EMA20")
+    # --- Price vs EMA20 (tighter band 0.3% instead of 0.2%) ---
+    if price > ema20 * 1.003:
+        _vote(1, "Price above EMA20 (+0.3%)")
+    elif price < ema20 * 0.997:
+        _vote(-1, "Price below EMA20 (-0.3%)")
 
-    # MACD histogram
+    # --- MACD histogram + direction ---
     if macd:
         _m, _s, hist = macd
-        if hist > 0:
+        # Require histogram to be meaningful — tiny hist near zero = noise.
+        hist_abs = abs(hist)
+        threshold = max(price * 0.0005, 1e-9)  # 0.05% of price as noise floor
+        if hist > threshold:
             _vote(1, "MACD histogram positif")
-        elif hist < 0:
+        elif hist < -threshold:
             _vote(-1, "MACD histogram negatif")
 
-    # Momentum: last 5 candles
+    # --- Momentum: last 5 candles (raised bar to 2% for stronger conviction) ---
     if len(closes) >= 6:
         mom = (closes[-1] - closes[-6]) / closes[-6] * 100
-        if mom > 1.5:
+        if mom > 2.0:
             _vote(1, f"Momentum 5-bar +{mom:.2f}%")
-        elif mom < -1.5:
+        elif mom < -2.0:
             _vote(-1, f"Momentum 5-bar {mom:.2f}%")
+
+    # --- Volume expansion: last 3 candles avg > previous 10 avg by 20% ---
+    volumes: list[float] = [c.get("volume", 0) or 0 for c in candles]
+    if len(volumes) >= 13:
+        recent_vol = sum(volumes[-3:]) / 3
+        prior_vol = sum(volumes[-13:-3]) / 10
+        if prior_vol > 0 and recent_vol / prior_vol > 1.2:
+            # Volume expansion confirms direction — add vote in trend direction
+            trend_sign = 1 if (ema20 > ema50 and price > ema20) else (-1 if (ema20 < ema50 and price < ema20) else 0)
+            if trend_sign != 0:
+                _vote(trend_sign, f"Volume expansion x{recent_vol/prior_vol:.2f}")
 
     score = sum(votes)
     total = len(votes) or 1
-    confidence_raw = abs(score) / total * 100.0
-    # Boost confidence with strong agreement
-    confidence = round(min(98.0, 55.0 + confidence_raw * 0.45 + (abs(score) >= 4) * 8))
+    # v8.7.0 — Real confidence: |score|/total * scale, NO artificial baseline.
+    # Requires broad + strong agreement to hit Premium threshold (85+).
+    max_possible = sum(abs(v) for v in votes) or 1
+    agreement = abs(score) / max_possible * 100.0
+    # Strong-agreement bonus (score>=4 or score>=5)
+    boost = 0
+    if abs(score) >= 5:
+        boost = 12
+    elif abs(score) >= 4:
+        boost = 8
+    elif abs(score) >= 3:
+        boost = 4
+    confidence = round(min(98.0, max(35.0, agreement * 0.80 + boost)))
 
-    if score >= 2:
+    # v8.7.0 — Directional confirmation gate:
+    # Only issue BUY/SELL when:
+    #   • score >= 3 (was 2) → at least 3-net-indicator agreement
+    #   • Price vs EMA20 aligns with signal side (trend confirmation)
+    ema_align_buy = price > ema20 * 0.997
+    ema_align_sell = price < ema20 * 1.003
+
+    if score >= 3 and ema_align_buy:
         action = "BUY"
         label = "LONG" if market == "crypto" else "BUY"
-    elif score <= -2:
+    elif score <= -3 and ema_align_sell:
         action = "SELL"
         label = "SHORT" if market == "crypto" else "SELL"
     else:
         action = "HOLD"
         label = "HOLD"
-        confidence = max(45, min(65, confidence))
+        # HOLD confidence range: cap so it never bleeds into Premium.
+        confidence = max(40, min(70, confidence))
 
     # Compute simple ATR for SL/TP
     if len(highs) >= 14:

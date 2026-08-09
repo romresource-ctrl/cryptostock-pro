@@ -19,6 +19,7 @@ import TickCounter from "@/src/components/TickCounter";
 import PriceChart from "@/src/components/PriceChart";
 import PositionSizeCalculator from "@/src/components/PositionSizeCalculator";
 import TargetProfit from "@/src/components/TargetProfit";
+import WrHistoryModal, { type WrPeriod } from "@/src/components/WrHistoryModal";
 import {
   STABLECOIN_SYMBOLS,
   formatStablecoinLocal,
@@ -139,6 +140,8 @@ export default function AssetDetail() {
   const [chart, setChart] = useState<ChartResponse | null>(null);
   const [analysis, setAnalysis] = useState<AnalyzeResponse | null>(null);
   const [trackRecord, setTrackRecord] = useState<TrackRecordResponse | null>(null);
+  // v8.7.0 — WR history modal state (period tab: 7d / 30d / all)
+  const [wrModalPeriod, setWrModalPeriod] = useState<WrPeriod | null>(null);
   // Live-fetched AI model labels from backend. If backend swaps models
   // (e.g. Sonnet 4.6 → Sonnet 5), the hint text updates without a
   // mobile rebuild. Falls back to a generic label if endpoint is down.
@@ -751,10 +754,13 @@ export default function AssetDetail() {
                 {trackRecord.win_rate_all.total} {t("detail_historic_signals")}
               </Text>
             </View>
+            <Text style={[styles.aiHint, { color: colors.textMuted, marginBottom: 6 }]}>
+              👆 {t("wr_modal_hint")}
+            </Text>
             <View style={styles.entryRow}>
-              <WrCell label={t("detail_wr_7d")} stat={trackRecord.win_rate_7d} colors={colors} />
-              <WrCell label={t("detail_wr_30d")} stat={trackRecord.win_rate_30d} colors={colors} />
-              <WrCell label={t("detail_wr_all")} stat={trackRecord.win_rate_all} colors={colors} />
+              <WrCell label={t("detail_wr_7d")} stat={trackRecord.win_rate_7d} colors={colors} onPress={() => setWrModalPeriod("7d")} />
+              <WrCell label={t("detail_wr_30d")} stat={trackRecord.win_rate_30d} colors={colors} onPress={() => setWrModalPeriod("30d")} />
+              <WrCell label={t("detail_wr_all")} stat={trackRecord.win_rate_all} colors={colors} onPress={() => setWrModalPeriod("all")} />
             </View>
             {trackRecord.recent_signals.length > 0 && (
               <View style={{ marginTop: 12 }}>
@@ -1227,6 +1233,15 @@ export default function AssetDetail() {
           </View>
         ) : null}
       </ScrollView>
+
+      {/* v8.7.0 — Win-Rate History Modal */}
+      <WrHistoryModal
+        visible={wrModalPeriod !== null}
+        onClose={() => setWrModalPeriod(null)}
+        initialPeriod={wrModalPeriod ?? "30d"}
+        data={trackRecord}
+        langCode={lang as "id" | "en" | "ru" | "cn"}
+      />
     </SafeAreaView>
   );
 }
@@ -1252,14 +1267,15 @@ function EntryCell({ label, value, color, colors }: {
   );
 }
 
-function WrCell({ label, stat, colors }: {
+function WrCell({ label, stat, colors, onPress }: {
   label: string;
   stat: { total: number; hits: number; win_rate: number | null };
   colors: ReturnType<typeof useTheme>["colors"];
+  onPress?: () => void;
 }) {
   const wr = stat.win_rate;
   const color = wr === null ? colors.textMuted : wr >= 65 ? colors.accentUp : wr >= 50 ? colors.accentHold : colors.accentDown;
-  return (
+  const content = (
     <View style={[styles.entryCell, { backgroundColor: colors.surfaceAlt, borderLeftColor: color }]}>
       <Text style={[styles.entryLabel, { color: colors.textMuted }]}>{label}</Text>
       <Text style={[styles.entryVal, { color }]}>
@@ -1269,6 +1285,17 @@ function WrCell({ label, stat, colors }: {
         {stat.hits}/{stat.total} hit
       </Text>
     </View>
+  );
+  if (!onPress) return content;
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.7}
+      style={{ flex: 1, marginRight: 6 }}
+      testID={`wr-cell-${label.toLowerCase().replace(/\s+/g, "-")}`}
+    >
+      {content}
+    </TouchableOpacity>
   );
 }
 

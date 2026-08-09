@@ -182,21 +182,38 @@ export interface AnalyzeResponse {
   generated_at: string;
 }
 
+export interface TrackRecordWrBucket {
+  total: number;
+  hits: number;      // legacy alias (= wins)
+  wins?: number;
+  losses?: number;
+  break_even?: number;
+  win_rate: number | null;
+}
+
+export interface TrackRecordHistoryItem {
+  action: string;
+  label: string;
+  confidence: number;
+  timeframe: string;
+  price_at_signal: number;
+  created_at: string;
+  outcome?: "WIN" | "LOSS" | "BE";
+  pct_change?: number;
+  price_after?: number;
+  evaluation?: { pct_change: number; hit: boolean; price_after: number; outcome?: string };
+}
+
 export interface TrackRecordResponse {
   symbol: string;
   market: Market;
-  win_rate_7d: { total: number; hits: number; win_rate: number | null };
-  win_rate_30d: { total: number; hits: number; win_rate: number | null };
-  win_rate_all: { total: number; hits: number; win_rate: number | null };
-  recent_signals: {
-    action: string;
-    label: string;
-    confidence: number;
-    timeframe: string;
-    price_at_signal: number;
-    created_at: string;
-    evaluation: { pct_change: number; hit: boolean; price_after: number };
-  }[];
+  win_rate_7d: TrackRecordWrBucket;
+  win_rate_30d: TrackRecordWrBucket;
+  win_rate_all: TrackRecordWrBucket;
+  recent_signals: TrackRecordHistoryItem[];
+  history_7d?: TrackRecordHistoryItem[];
+  history_30d?: TrackRecordHistoryItem[];
+  history_all?: TrackRecordHistoryItem[];
 }
 
 import { APP_VERSION } from "./version";
