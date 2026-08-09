@@ -328,9 +328,59 @@ export default function AssetDetail() {
   const rt = useBinanceRealtime(String(symbol), market);
   // v8.5.3 — Kline WS: patches the last candle so the chart updates live.
   const liveKline = useBinanceKline(String(symbol), market, timeframe);
+
+  // v8.6.18 — Growing-candles history. Instead of feeding
+  // `chart.candles` (frozen REST snapshot) directly into
+  // `patchCandlesWithLive`, we maintain a mutable copy that grows
+  // whenever the WS delivers a CLOSED kline (`k.x === true`) newer
+  // than our current tail. That way the chart accumulates real,
+  // persistent bars over time and `patchCandlesWithLive` only has to
+  // paint the currently-forming candle on top. Panning/zoom in
+  // CandlestickChart still uses endIndex/visibleCount unchanged; they
+  // just have MORE data to work with as the day goes on.
+  const [growingCandles, setGrowingCandles] = React.useState<typeof chart.candles>(
+    () => (chart?.candles ?? []) as never,
+  );
+
+  // (a) Re-seed when the REST snapshot changes (e.g. user switches
+  // timeframe or symbol). We prefer the REST array wholesale because
+  // it already contains historical bars we don't want to lose. Any
+  // subsequent CLOSED WS candle is appended on top.
+  React.useEffect(() => {
+    if (chart?.candles && chart.candles.length > 0) {
+      setGrowingCandles(chart.candles);
+    }
+  }, [chart?.candles]);
+
+  // (b) Append CLOSED WS candles that are strictly newer than the
+  // tail. Compares `t` after normalizing to seconds — REST candles
+  // use ms, WS candles use s (see patchCandlesWithLive comment). We
+  // append with the SAME time unit as the existing array so the
+  // downstream SVG renderer stays consistent.
+  React.useEffect(() => {
+    if (!liveKline || !liveKline.isClosed) return;
+    setGrowingCandles((prev) => {
+      if (!prev || prev.length === 0) return prev;
+      const last = prev[prev.length - 1];
+      const lastTs = last.t > 1e12 ? Math.floor(last.t / 1000) : last.t;
+      if (liveKline.t <= lastTs) return prev; // stale/duplicate
+      const nextT = last.t > 1e12 ? liveKline.t * 1000 : liveKline.t;
+      const nextBar = {
+        ...last,
+        t: nextT,
+        open: liveKline.open,
+        high: liveKline.high,
+        low: liveKline.low,
+        close: liveKline.close,
+        volume: liveKline.volume,
+      } as (typeof last);
+      return [...prev, nextBar];
+    });
+  }, [liveKline]);
+
   const liveCandles = React.useMemo(
-    () => patchCandlesWithLive(chart?.candles ?? [], liveKline),
-    [chart?.candles, liveKline],
+    () => patchCandlesWithLive(growingCandles ?? [], liveKline),
+    [growingCandles, liveKline],
   );
   const displayPrice = rt.connected && Number.isFinite(rt.price)
     ? rt.price
