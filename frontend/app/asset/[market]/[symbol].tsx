@@ -745,8 +745,8 @@ export default function AssetDetail() {
           </View>
         )}
 
-        {/* Track Record */}
-        {trackRecord && (trackRecord.win_rate_30d.total > 0 || trackRecord.win_rate_7d.total > 0) && (
+        {/* Track Record — always visible (v8.7.4). Shows "—" when no evaluated signals yet. */}
+        {trackRecord && (
           <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]} testID="track-record-section">
             <View style={styles.sectionHeader}>
               <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>📊 {t("detail_track_record")}</Text>
