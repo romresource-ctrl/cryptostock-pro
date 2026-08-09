@@ -285,6 +285,14 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   brief_empty_title: { id: "Belum ada brief", en: "No brief yet", ru: "Пока нет брифинга", cn: "暂无简报" },
   brief_empty_body: { id: "Brief pertama akan otomatis dibuat sebentar lagi. Tarik ke bawah untuk refresh.", en: "The first brief will be generated shortly. Pull down to refresh.", ru: "Первый брифинг появится совсем скоро.", cn: "首份简报即将自动生成。" },
   brief_retry: { id: "Coba lagi", en: "Try again", ru: "Повторить", cn: "重试" },
+  brief_paywall_title: { id: "🔒 Analisis Aksi Premium", en: "🔒 Premium Actionable Analysis", ru: "🔒 Премиум-разбор", cn: "🔒 高级操作分析" },
+  brief_paywall_body: {
+    id: "Rekomendasi beli/jual/long/short per aset (Crypto, Saham, Forex, Emas) hanya tersedia untuk anggota Premium. Upgrade untuk akses insight AI penuh.",
+    en: "Per-asset buy/sell/long/short recommendations (Crypto, Stocks, Forex, Gold) are Premium only. Upgrade to unlock the full AI insight.",
+    ru: "Рекомендации купить/продать/long/short по активам доступны только Premium.",
+    cn: "买/卖/多/空 建议仅限高级会员使用。",
+  },
+  brief_paywall_cta: { id: "Upgrade ke Premium", en: "Upgrade to Premium", ru: "Оформить Premium", cn: "升级会员" },
 
   // v8.2.3 — AI Prediction box: Beli/Jual (stocks) vs BUY/SELL (crypto) & Risk/Reward info
   ai_pred_action_buy_stock: { id: "BELI", en: "BUY", ru: "ПОКУПКА", cn: "买入" },

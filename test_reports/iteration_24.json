@@ -1,0 +1,36 @@
+{
+  "summary": "v8.7.2 backend fully verified — 23/23 pytest passed (100%) in 23.0s against the public URL. (1) Adaptive premium threshold per market is correct on all 8 markets: crypto→(87, 72.0); stock_us / world_stocks / stock_id / etf / forex → (88, 75.0); gold_silver / commodity → (90, 75.0). Live curl confirms every market returns dashboard.premium_threshold matching the table. (2) /api/dashboard/batch?markets=crypto,stock_us,forex,gold_silver and the full-8-market batch both carry the correct per-market premium_threshold inside each entry of the `markets` map. (3) Overrides work: ?min_confidence=80&min_wr=65 → (80, 65.0); partial override ?min_confidence=95 on gold_silver → (95, 75.0) so the adaptive default fills the un-supplied field. (4) WR reset verified: /api/asset/crypto/BTC/track-record now returns win_rate_all={total:0, hits:0, wins:0, losses:0, break_even:0, win_rate:null} and history_all=[] — the 48+ pre-wipe evaluated signals are gone; assertion tolerates up to <5 new post-wipe entries. (5) Market Brief FREE gating works perfectly with AND without a bogus device_id: is_premium=false, brief.premium_locked=true, brief.sections={}, brief.top_movers=[]; but brief.summary (573 chars), brief.sentiment, brief.warning_zones (3 items), brief.top_headlines (3 items) remain populated so free-tier users still see general info. (6) Envelope keys {available, lang, brief, is_premium} intact; lang echoes correctly. (7) lang=id free tier still receives a translated summary (differs from EN) plus translated warning_zones — translation pipeline is not affected by the premium gate. (8) Regression clean: POST /api/asset/crypto/BTC/analyze still returns 200 (~17s AI ensemble), /api/push/history?language=en still returns the legacy dict shape, /api/dashboard?market=crypto&min_confidence=80&min_wr=65 override still honored end-to-end. No files under /app/backend modified — only the new test file was added.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter25_v872_adaptive_premium_and_brief_gating.py",
+    "/app/test_reports/pytest/iter25.xml"
+  ],
+  "action_items": [
+    "No action required — v8.7.2 backend contract is 100% green. Frontend can safely (a) render market-specific threshold badges from dashboard.premium_threshold, (b) show a paywall card whenever brief.premium_locked is true (already implemented per E1's note), (c) rely on translated summary/warning_zones even for free-tier users."
+  ],
+  "critical_code_review_comments": [
+    "server.py lines 778-794: _MARKET_THRESHOLDS + _threshold_for_market are clean; fallback (87, 72.0) is safe for any unrecognized market string. The 'stock' → 'stock_id' alias is handled at both the lookup layer and _build_dashboard_response (line 835), which matches the query-literal in the /dashboard route.",
+    "server.py lines 810-820 and 935-940: adaptive default lands in both the single-market and batch endpoints; partial override (only one of min_confidence / min_wr provided) correctly falls back to the market's adaptive default for the missing field — verified live (gold_silver + ?min_confidence=95 → min_wr=75.0).",
+    "server.py lines 2076-2109: /market-brief premium gate is minimal and correct. Shallow-copies the cached brief before mutating (line 2097) so subsequent lang queries against the same cached doc aren't corrupted. Sets premium_locked=true on lock-path and premium_locked=false on unlock-path — frontend gets a stable flag either way. is_premium is computed only when device_id is provided (line 2095), so an absent device_id short-circuits to free tier without touching Mongo.",
+    "server.py line 2095: `_is_device_entitled(device_id.strip())` — leading/trailing whitespace resilient. Bogus device_id returns False cleanly (no row match) — verified live.",
+    "Nit (non-blocking, carried from iter23): server.py is now 2557 lines; still growing. When time permits, split into dashboard.py / market_brief.py / entitlement.py routers. Not related to this iteration's contract."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter25_v872_adaptive_premium_and_brief_gating.py (new)"
+  ],
+  "success_rate": {"backend": "100% (23/23)", "frontend": "N/A — backend-only scope per request"},
+  "seed_data_creation": "None. Live public URL + live MongoDB Atlas (signals collection was already wiped by main agent; brief docs are warm-started at boot).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Test file: /app/backend/tests/test_iter25_v872_adaptive_premium_and_brief_gating.py (23 tests, ~23s). Coverage: (a) parametrized dashboard threshold on 8 markets, (b) override + partial-override behavior, (c) batch endpoint 4-market + 8-market adaptive thresholds, (d) BTC track-record post-wipe state (total<5, history<20, any surviving items have created_at>=2026-01), (e) market-brief FREE gating with no device_id + bogus device_id + ID-lang translation + envelope integrity, (f) regression on POST /analyze, /push/history?language=en, and dashboard override. Note: /api/asset/{market}/{symbol}/analyze is a POST, not GET (returns 405 on GET). Live current state at test time: BTC wr_all.total=0, history_all=[]. Free-tier market-brief summary length=573 chars, warning_zones=3, top_headlines=3, sections={} locked. If main agent later opens premium gate via a real entitled device_id, the sections dict should re-populate with per-market analysis and top_movers with buy/sell notes — that path is NOT covered here (no premium test device_id available).",
+  "rca_of_issue": "N/A — no bugs found. v8.7.2 delivers the 3 requested changes (adaptive per-market premium threshold, WR history reset, market-brief premium gating) with zero regression on prior contracts."
+}

@@ -25,6 +25,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 
 import { API_BASE } from "@/src/lib/api";
+import { getDeviceId } from "@/src/lib/deviceId";
 import { useI18n, type Lang } from "@/src/i18n/I18nContext";
 import { useTheme } from "@/src/theme/ThemeContext";
 
@@ -59,12 +60,19 @@ export interface MarketBrief {
   top_movers?: TopMover[];
   top_headlines?: TopHeadline[];
   warning_zones?: string[];
+  premium_locked?: boolean;
 }
 
 interface BriefResponse {
   available: boolean;
   lang: string;
   brief: MarketBrief | null;
+  is_premium?: boolean;
+}
+
+interface Props {
+  lang: Lang;
+  onUpgrade?: () => void;
 }
 
 function formatRelative(iso: string, langCode: string, t: (k: string) => string): string {
@@ -103,21 +111,26 @@ interface Props {
   lang: Lang;
 }
 
-const AiMarketBriefCard: React.FC<Props> = ({ lang }) => {
+const AiMarketBriefCard: React.FC<Props> = ({ lang, onUpgrade }) => {
   const { colors } = useTheme();
   const { t } = useI18n();
   const [brief, setBrief] = useState<MarketBrief | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [isPremium, setIsPremium] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const r = await fetch(`${API_BASE}/market-brief?lang=${lang}`);
+      const deviceId = await getDeviceId().catch(() => "");
+      const r = await fetch(
+        `${API_BASE}/market-brief?lang=${lang}&device_id=${encodeURIComponent(deviceId || "")}`,
+      );
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const data: BriefResponse = await r.json();
       setBrief(data.available ? data.brief : null);
+      setIsPremium(!!data.is_premium);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -235,8 +248,32 @@ const AiMarketBriefCard: React.FC<Props> = ({ lang }) => {
 
       {expanded && (
         <View style={styles.expandedBody}>
-          {/* Per-market sections */}
-          {brief.sections
+          {/* v8.7.2 — Free users get a paywall for actionable sections & movers */}
+          {brief.premium_locked && !isPremium && (
+            <View style={[styles.paywall, { backgroundColor: colors.accentUp + "12", borderColor: colors.accentUp }]}>
+              <Ionicons name="lock-closed" size={22} color={colors.accentUp} />
+              <Text style={[styles.paywallTitle, { color: colors.textPrimary }]}>
+                {t("brief_paywall_title")}
+              </Text>
+              <Text style={[styles.paywallBody, { color: colors.textSecondary }]}>
+                {t("brief_paywall_body")}
+              </Text>
+              {onUpgrade ? (
+                <TouchableOpacity
+                  onPress={onUpgrade}
+                  style={[styles.paywallBtn, { backgroundColor: colors.accentUp }]}
+                  testID="brief-paywall-cta"
+                >
+                  <Text style={{ color: "#000", fontWeight: "800" }}>
+                    {t("brief_paywall_cta")}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          )}
+
+          {/* Per-market sections (Premium only) */}
+          {brief.sections && Object.keys(brief.sections).length > 0
             ? SECTION_META.map((s) => {
                 const txt = brief.sections?.[s.key];
                 if (!txt) return null;
@@ -416,6 +453,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   retryText: { fontSize: 12, fontWeight: "600" },
+  paywall: {
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: "center",
+    gap: 6,
+  },
+  paywallTitle: { fontSize: 14, fontWeight: "700", marginTop: 4, textAlign: "center" },
+  paywallBody: { fontSize: 12, textAlign: "center", lineHeight: 17 },
+  paywallBtn: {
+    marginTop: 6,
+    paddingVertical: 9,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+  },
 });
 
 export default AiMarketBriefCard;

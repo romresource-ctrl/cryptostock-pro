@@ -770,26 +770,51 @@ async def update_watchlist(payload: WatchlistPayload) -> WatchlistResponse:
 
 # -------- Dashboard --------
 
+# v8.7.2 — Adaptive premium thresholds per market.
+# Rationale: different markets have different noise/volatility profiles.
+# The one-size-fits-all 85/70 was too permissive for macro-heavy markets
+# (forex/commodity/gold), so we raise the bar there. Callers can still
+# override via query params (?min_confidence=&min_wr=).
+_MARKET_THRESHOLDS: dict[str, tuple[int, float]] = {
+    # market key            (min_conf, min_wr)
+    "crypto":               (87, 72.0),
+    "stock_id":             (88, 75.0),
+    "stock_us":             (88, 75.0),
+    "world_stocks":         (88, 75.0),
+    "etf":                  (88, 75.0),
+    "gold_silver":          (90, 75.0),
+    "commodity":            (90, 75.0),
+    "forex":                (88, 75.0),
+}
+
+
+def _threshold_for_market(market: str) -> tuple[int, float]:
+    """Return (min_conf, min_wr) tuned for the given market."""
+    eff = "stock_id" if market == "stock" else market
+    return _MARKET_THRESHOLDS.get(eff, (87, 72.0))
+
+
 @api.get("/dashboard", response_model=DashboardResponse)
 async def dashboard(
     market: Literal["crypto", "stock", "etf", "stock_id", "stock_us", "world_stocks", "gold_silver", "commodity", "forex"] = Query("crypto"),
     timeframe: str = Query("1h"),
     sort: Literal["default", "premium", "confidence", "wr"] = Query("default"),
     premium_only: bool = Query(False),
-    min_confidence: int = Query(85, ge=0, le=100),
-    min_wr: float = Query(70.0, ge=0.0, le=100.0),
+    min_confidence: int | None = Query(None, ge=0, le=100, description="Override premium threshold (default: adaptive per market)"),
+    min_wr: float | None = Query(None, ge=0.0, le=100.0, description="Override WR threshold"),
     full: bool = Query(False),
-    region: str | None = Query(None, description="Optional region filter for World Stocks: us/europe/japan/china/hongkong/taiwan/korea/singapore/malaysia/india/canada/australia/gulf/latam/africa/russia"),
+    region: str | None = Query(None, description="Optional region filter for World Stocks"),
 ) -> DashboardResponse:
     if timeframe not in TIMEFRAME_MAP:
         raise HTTPException(400, f"Invalid timeframe. Use one of {TIMEFRAMES}")
+    default_conf, default_wr = _threshold_for_market(market)
     return await _build_dashboard_response(
         market=market,
         timeframe=timeframe,
         sort=sort,
         premium_only=premium_only,
-        min_confidence=min_confidence,
-        min_wr=min_wr,
+        min_confidence=min_confidence if min_confidence is not None else default_conf,
+        min_wr=min_wr if min_wr is not None else default_wr,
         full=full,
         region=region,
     )
@@ -894,8 +919,8 @@ async def dashboard_batch(
     timeframe: str = Query("1h"),
     sort: Literal["default", "premium", "confidence", "wr"] = Query("premium"),
     full: bool = Query(False),
-    min_confidence: int = Query(85, ge=0, le=100),
-    min_wr: float = Query(70.0, ge=0.0, le=100.0),
+    min_confidence: int | None = Query(None, ge=0, le=100, description="Override (default: adaptive per market)"),
+    min_wr: float | None = Query(None, ge=0.0, le=100.0),
     region: str | None = Query(None, description="Regional filter applied to stock_us only"),
 ) -> dict[str, Any]:
     if timeframe not in TIMEFRAME_MAP:
@@ -907,19 +932,28 @@ async def dashboard_batch(
              "etf", "gold_silver", "commodity", "forex"}
     market_keys = [m for m in market_keys if m in known][:9]
 
-    tasks = [
-        _build_dashboard_response(
-            market=m,
-            timeframe=timeframe,
-            sort=sort,
-            full=full,
-            min_confidence=min_confidence,
-            min_wr=min_wr,
-            # v8.1.3 — Only apply region to stock_us; other markets ignore it.
-            region=region if m in ("stock_us", "world_stocks") else None,
+    def _cfg(m: str) -> tuple[int, float]:
+        d_conf, d_wr = _threshold_for_market(m)
+        return (
+            min_confidence if min_confidence is not None else d_conf,
+            min_wr if min_wr is not None else d_wr,
         )
-        for m in market_keys
-    ]
+
+    tasks = []
+    for m in market_keys:
+        c, w = _cfg(m)
+        tasks.append(
+            _build_dashboard_response(
+                market=m,
+                timeframe=timeframe,
+                sort=sort,
+                full=full,
+                min_confidence=c,
+                min_wr=w,
+                # v8.1.3 — Only apply region to stock_us; other markets ignore it.
+                region=region if m in ("stock_us", "world_stocks") else None,
+            )
+        )
     results = await asyncio.gather(*tasks, return_exceptions=True)
     out: dict[str, Any] = {}
     for m, r in zip(market_keys, results, strict=False):
@@ -2042,14 +2076,37 @@ async def push_history_endpoint(
 @api.get("/market-brief")
 async def market_brief_endpoint(
     lang: str = Query("en", description="One of: id / en / ru / cn"),
+    device_id: str = Query("", description="Optional device_id for premium gating"),
 ) -> dict[str, Any]:
     lang_key = (lang or "en").lower()
     if lang_key not in ("id", "en", "ru", "cn"):
         lang_key = "en"
     brief = await get_latest_brief(db, lang_key)
     if not brief:
-        return {"available": False, "lang": lang_key, "brief": None}
-    return {"available": True, "lang": lang_key, "brief": brief}
+        return {"available": False, "lang": lang_key, "brief": None, "is_premium": False}
+
+    # v8.7.2 — Premium gating.
+    # FREE tier gets: sentiment, sentiment_score, summary, top_headlines,
+    #                 warning_zones (general market info + risk awareness).
+    # PREMIUM tier ADDITIONALLY gets: sections (per-market actionable analysis)
+    #                                 and top_movers (which include buy/sell
+    #                                 rationale notes). Everything else stays
+    #                                 identical so the shape is stable.
+    is_premium = await _is_device_entitled(device_id.strip()) if device_id else False
+    if not is_premium:
+        brief = dict(brief)  # shallow copy so we don't mutate the cached doc
+        brief["sections"] = {}      # locked → frontend renders paywall card
+        brief["top_movers"] = []    # locked
+        brief["premium_locked"] = True
+    else:
+        brief["premium_locked"] = False
+
+    return {
+        "available": True,
+        "lang": lang_key,
+        "brief": brief,
+        "is_premium": is_premium,
+    }
 
 
 @api.post("/market-brief/generate", include_in_schema=False)

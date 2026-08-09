@@ -470,8 +470,8 @@ function MarketBriefPane({
         contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 32 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* v8.7.1 — AI-generated Daily Market Brief available for everyone */}
-        <AiMarketBriefCard lang={lang} />
+        {/* v8.7.1 — AI-generated Daily Market Brief available for everyone (Premium-gated sections inside) */}
+        <AiMarketBriefCard lang={lang} onUpgrade={onGoDashboard} />
 
         <View style={[styles.premiumCard, { backgroundColor: colors.surface, borderColor: colors.accentUp }]}>
           <Ionicons name="lock-closed" size={40} color={colors.accentUp} />
@@ -529,7 +529,7 @@ function MarketBriefPane({
       </View>
 
       {/* v8.7.1 — AI-generated Daily Market Brief (Claude Sonnet 4.6) */}
-      <AiMarketBriefCard lang={lang} />
+      <AiMarketBriefCard lang={lang} onUpgrade={onGoDashboard} />
 
       {error ? (
         <View style={[styles.briefCard, { backgroundColor: colors.surface, borderColor: colors.accentDown }]}>
