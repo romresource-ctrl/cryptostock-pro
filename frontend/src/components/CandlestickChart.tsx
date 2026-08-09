@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { Animated, PanResponder, StyleSheet, Text, View } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { runOnJS } from "react-native-reanimated";
 import Svg, { Line, Rect, Text as SvgText } from "react-native-svg";
 
 import { useTheme } from "@/src/theme/ThemeContext";
@@ -52,20 +54,24 @@ export default function CandlestickChart({
 }: Props) {
   const { colors } = useTheme();
 
-  // v8.6.13 — Panning state. `endIndex` is the array-index of the
-  // right-most visible candle. Default = latest bar. Users can drag
-  // horizontally to inspect history; the chart AUTO-ADVANCES to the
+  // v8.6.14 — Zoomable window via pinch. `visibleCount` was hardcoded
+  // 120 in v8.6.13; now it's stateful so `Gesture.Pinch()` can shrink
+  // (zoom in / see more detail per candle) or grow (zoom out / see
+  // longer history) the visible window at runtime.
+  const DEFAULT_VISIBLE = 120;
+  const MIN_VISIBLE = 20;   // most zoomed-in
+  const MAX_VISIBLE = 300;  // most zoomed-out (max candles the SVG will render)
+  const [visibleCount, setVisibleCount] = useState<number>(DEFAULT_VISIBLE);
+  // Panning state. `endIndex` is the array-index of the right-most
+  // visible candle. Default = latest bar. Users can drag horizontally
+  // (Gesture.Pan) to inspect history; the chart AUTO-ADVANCES to the
   // newest candle ONLY IF endIndex was pinned to the latest before an
   // append. If the user has scrolled back, we freeze the view so they
   // can inspect the past without being yanked forward.
-  const VISIBLE_COUNT = 120;
   const [endIndex, setEndIndex] = useState<number>(candles.length - 1);
-  // `panStartEndIndex` remembers where endIndex was when the drag began,
-  // so `dx` maps cleanly to a delta from that baseline.
-  const panStartEndIndexRef = React.useRef<number>(candles.length - 1);
-  // `isPanningRef` distinguishes horizontal-drag (pan) from tap/vertical
-  // (crosshair). Decided within the first ~8px of movement.
-  const isPanningRef = React.useRef<boolean>(false);
+  // `panStartEndIndex` and `isPanningRef` from v8.6.13 were removed —
+  // the new UI-thread Gesture.Pan (v8.6.14) uses `endIndexRef` +
+  // per-gesture closures instead.
 
   // Auto-advance: when a new bar arrives (candles.length increases), bump
   // endIndex ONLY when the user was already viewing the newest bar.
@@ -110,54 +116,96 @@ export default function CandlestickChart({
     return () => loop.stop();
   }, [isLive, pulseAnim]);
 
-  // Panning uses `step` (px per candle) which depends on chartW. We
-  // recompute inside the responder using the latest layout so the
-  // finger tracks the candle it's over even on rotate/resize.
+  // v8.6.14 — Two-tier gesture stack:
+  //
+  //  1. `chartGesture` (Gesture.Pan + Gesture.Pinch composed) — handled
+  //     by react-native-gesture-handler on the UI thread. Pan slides
+  //     `endIndex`; pinch scales `visibleCount`. Pan is horizontal-only
+  //     via `activeOffsetX` + `failOffsetY` so vertical scrolls of the
+  //     parent ScrollView still work.
+  //  2. `panResponder` — kept as the ORIGINAL tap-to-see-price
+  //     crosshair. Tap without meaningful drag → crosshair. Drag
+  //     horizontally → RNGH intercepts (crosshair auto-cancels because
+  //     onMoveShouldSet returns false past 3px).
   const panResponder = React.useMemo(
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
+        // Only claim if the move is small (i.e. more like a tap-hold);
+        // any bigger movement is a pan/pinch and RNGH takes over.
         onMoveShouldSetPanResponder: (_evt, gs) =>
-          Math.abs(gs.dx) > 3 || Math.abs(gs.dy) > 3,
-        onPanResponderGrant: (evt) => {
-          isPanningRef.current = false;
-          panStartEndIndexRef.current = endIndex;
-          setCursorX(evt.nativeEvent.locationX);
-        },
-        onPanResponderMove: (evt, gs) => {
-          // Decide pan-vs-crosshair on first significant move.
-          if (!isPanningRef.current && Math.abs(gs.dx) > 8 && Math.abs(gs.dx) > Math.abs(gs.dy) * 1.5) {
-            isPanningRef.current = true;
-            setCursorX(null); // hide crosshair once we lock into pan
-          }
-          if (isPanningRef.current) {
-            // Approximate step: chartW / VISIBLE_COUNT (finger travels
-            // 1 candle-width to shift endIndex by 1). Direction: swipe
-            // LEFT → move forward in time (endIndex ↑); swipe RIGHT →
-            // move back in time (endIndex ↓).
-            const approxStep = Math.max(1, (width - 56) / VISIBLE_COUNT);
-            const deltaCandles = Math.round(-gs.dx / approxStep);
-            const target = panStartEndIndexRef.current + deltaCandles;
-            const minEnd = Math.max(0, Math.min(VISIBLE_COUNT - 1, candles.length - 1));
-            const maxEnd = candles.length - 1;
-            setEndIndex(Math.min(maxEnd, Math.max(minEnd, target)));
-          } else {
-            setCursorX(evt.nativeEvent.locationX);
-          }
-        },
-        onPanResponderRelease: () => {
-          isPanningRef.current = false;
-          setCursorX(null);
-        },
-        onPanResponderTerminate: () => {
-          isPanningRef.current = false;
-          setCursorX(null);
-        },
+          Math.abs(gs.dx) < 4 && Math.abs(gs.dy) < 4,
+        onPanResponderGrant: (evt) => setCursorX(evt.nativeEvent.locationX),
+        onPanResponderMove: (evt) => setCursorX(evt.nativeEvent.locationX),
+        onPanResponderRelease: () => setCursorX(null),
+        onPanResponderTerminate: () => setCursorX(null),
       }),
-    // Recreate responder if candles length or width change so the
-    // clamping arithmetic uses current bounds.
-    [candles.length, endIndex, width],
+    [],
   );
+
+  // Refs used by UI-thread gesture callbacks so they always see the
+  // latest committed state without re-registering the gesture handler.
+  const endIndexRef = React.useRef<number>(endIndex);
+  React.useEffect(() => { endIndexRef.current = endIndex; }, [endIndex]);
+  const visibleCountRef = React.useRef<number>(visibleCount);
+  React.useEffect(() => { visibleCountRef.current = visibleCount; }, [visibleCount]);
+
+  const candlesLen = candles.length;
+  const applyPan = React.useCallback(
+    (translationX: number, startEnd: number) => {
+      const chartWidthPx = width - 56;
+      const stepPx = Math.max(1, chartWidthPx / visibleCountRef.current);
+      const deltaCandles = Math.round(-translationX / stepPx);
+      const target = startEnd + deltaCandles;
+      const minEnd = Math.max(0, Math.min(visibleCountRef.current - 1, candlesLen - 1));
+      const maxEnd = candlesLen - 1;
+      setEndIndex(Math.min(maxEnd, Math.max(minEnd, target)));
+    },
+    [width, candlesLen],
+  );
+
+  const applyPinch = React.useCallback(
+    (scale: number, startVisible: number) => {
+      // Pinch OUT (scale > 1) → zoom IN → fewer candles visible.
+      // Pinch IN  (scale < 1) → zoom OUT → more candles visible.
+      const next = Math.round(startVisible / Math.max(0.1, scale));
+      const clamped = Math.min(MAX_VISIBLE, Math.max(MIN_VISIBLE, next));
+      setVisibleCount(clamped);
+    },
+    [],
+  );
+
+  const chartGesture = React.useMemo(() => {
+    const panStart = { end: candles.length - 1 };
+    const pinchStart = { visible: DEFAULT_VISIBLE };
+    const pan = Gesture.Pan()
+      // Activate only after 10px horizontal movement — leaves smaller
+      // gestures free for the crosshair PanResponder above.
+      .activeOffsetX([-10, 10])
+      // If the finger travels vertically first, fail this gesture so
+      // the parent ScrollView can scroll the page.
+      .failOffsetY([-15, 15])
+      .onStart(() => {
+        "worklet";
+        panStart.end = endIndexRef.current;
+      })
+      .onUpdate((e) => {
+        "worklet";
+        runOnJS(applyPan)(e.translationX, panStart.end);
+      });
+
+    const pinch = Gesture.Pinch()
+      .onStart(() => {
+        "worklet";
+        pinchStart.visible = visibleCountRef.current;
+      })
+      .onUpdate((e) => {
+        "worklet";
+        runOnJS(applyPinch)(e.scale, pinchStart.visible);
+      });
+
+    return Gesture.Simultaneous(pan, pinch);
+  }, [applyPan, applyPinch, candles.length]);
 
   if (!candles || candles.length < 2) {
     return (
@@ -171,12 +219,12 @@ export default function CandlestickChart({
   const chartH = height - volumeH - 4;
   const chartW = width - rightPad;
 
-  // v8.6.13 — Panning-aware slice. Instead of hardcoding "last 120", we
-  // slice a 120-bar window ending at `clampedEnd`. When the user pans
-  // left, endIndex decreases → the window slides into the past. When a
-  // new bar arrives AND the user was pinned at the newest bar, endIndex
-  // auto-bumps → the oldest bar rolls off the left edge naturally.
-  const startIdx = Math.max(0, clampedEnd - VISIBLE_COUNT + 1);
+  // v8.6.14 — Panning + pinch-zoom aware slice. `visibleCount` is now
+  // dynamic (Gesture.Pinch resizes the window at runtime); `endIndex`
+  // remains the array-index of the right-most visible bar. Auto-advance
+  // to the newest candle happens ONLY IF the user was already pinned
+  // to the latest bar before an append (see useEffect below).
+  const startIdx = Math.max(0, clampedEnd - visibleCount + 1);
   const endIdx = Math.max(0, clampedEnd) + 1;
   const displayed = candles.slice(startIdx, endIdx);
 
@@ -270,6 +318,7 @@ export default function CandlestickChart({
   };
 
   return (
+    <GestureDetector gesture={chartGesture}>
     <View style={{ width, height }} {...panResponder.panHandlers} testID="candlestick-chart">
     <Svg width={width} height={height}>
       {gridEls}
@@ -619,6 +668,7 @@ export default function CandlestickChart({
       </View>
     ) : null}
     </View>
+    </GestureDetector>
   );
 }
 
