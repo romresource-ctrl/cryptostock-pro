@@ -77,6 +77,11 @@ from push_notifications import (  # noqa: E402
     save_subscriber,
 )
 from push_scheduler import build_scheduler  # noqa: E402
+from market_brief import (  # noqa: E402
+    ensure_ttl_index as ensure_brief_ttl_index,
+    generate_and_store_brief,
+    get_latest_brief,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s | %(message)s")
 logger = logging.getLogger("aitrade")
@@ -2027,6 +2032,39 @@ async def push_history_endpoint(
     return {"language": lang, "count": len(items), "items": items}
 
 
+# ---------------------- Market Brief (v8.7.1) --------------------------
+#
+# AI-generated narrative recap of the last session. Powered by Claude
+# Sonnet 4.6 via the Emergent LLM Key. Runs 2x/day (06:00 & 18:00 WIB).
+# Frontend consumes the latest brief in the caller's language via
+# GET /api/market-brief?lang=id.
+
+@api.get("/market-brief")
+async def market_brief_endpoint(
+    lang: str = Query("en", description="One of: id / en / ru / cn"),
+) -> dict[str, Any]:
+    lang_key = (lang or "en").lower()
+    if lang_key not in ("id", "en", "ru", "cn"):
+        lang_key = "en"
+    brief = await get_latest_brief(db, lang_key)
+    if not brief:
+        return {"available": False, "lang": lang_key, "brief": None}
+    return {"available": True, "lang": lang_key, "brief": brief}
+
+
+@api.post("/market-brief/generate", include_in_schema=False)
+async def market_brief_generate(admin_token: str = Query(..., description="Admin bypass")) -> dict[str, Any]:
+    """Manual trigger — used by the admin/cron warmup to regenerate a brief
+    off-schedule. Guarded by the admin token so it can't be abused.
+    """
+    if admin_token != os.environ.get("ADMIN_UNLOCK_TOKEN", ""):
+        raise HTTPException(status_code=403, detail="forbidden")
+    doc = await generate_and_store_brief(
+        db, _brief_dashboard_batch_fetch, _brief_news_fetch,
+    )
+    return {"ok": bool(doc), "id": doc.get("_id") if doc else None}
+
+
 app.include_router(api)
 app.add_middleware(
     CORSMiddleware,
@@ -2276,6 +2314,14 @@ async def _startup_bootstrap() -> None:
     _start_push_scheduler()
     # v8.3.5 — Ensure push_history TTL index exists (24h auto-expiry).
     asyncio.create_task(ensure_history_indexes(db))
+    # v8.7.1 — Ensure market_briefs TTL index (48h auto-expiry) + start
+    # the Claude-powered Daily Market Brief scheduler (06:00 & 18:00 WIB).
+    asyncio.create_task(ensure_brief_ttl_index(db))
+    _start_market_brief_scheduler()
+    # Warm-start: if no brief exists yet (fresh deploy or 48h TTL evicted
+    # everything), generate one in the background so the News tab isn't
+    # empty for first-time users.
+    asyncio.create_task(_brief_warm_start())
 
 
 # --------------- Push scheduler wiring (v8.3.0) ---------------
@@ -2343,6 +2389,111 @@ async def _shutdown() -> None:
             sched.shutdown(wait=False)  # type: ignore[union-attr]
         except Exception:
             pass
+    # v8.7.1 — Also stop the Market Brief scheduler.
+    bsched = _brief_scheduler_state.get("scheduler")
+    if bsched is not None:
+        try:
+            bsched.shutdown(wait=False)  # type: ignore[union-attr]
+        except Exception:
+            pass
     from market_data import close_http_client
     await close_http_client()
     client.close()
+
+
+# --------------- Market Brief scheduler (v8.7.1) ---------------
+
+_brief_scheduler_state: dict[str, object] = {"scheduler": None}
+
+
+async def _brief_dashboard_batch_fetch(markets: list[str]) -> dict[str, Any]:
+    """Return a `{market: {assets, premium_count}}` dict for the brief
+    LLM prompt. Uses the same builder as /api/dashboard/batch.
+    """
+    out: dict[str, Any] = {}
+    for m in markets:
+        try:
+            resp = await _build_dashboard_response(
+                market=m,
+                timeframe="1h",
+                sort="confidence",
+                full=False,
+                min_confidence=85,
+                min_wr=70.0,
+                region=None,
+            )
+            out[m] = {
+                "assets": [a.model_dump() for a in resp.assets[:20]],
+                "premium_count": resp.premium_count,
+            }
+        except Exception as e:
+            logger.warning("brief dashboard fetch failed for %s: %s", m, e)
+            out[m] = {"assets": [], "premium_count": 0}
+    return out
+
+
+async def _brief_news_fetch(market_key: str = "all") -> list[dict[str, Any]]:
+    """Return top news across all markets for the brief LLM prompt."""
+    try:
+        items = await get_news(market_key, limit=10)
+        return [i.model_dump() if hasattr(i, "model_dump") else dict(i) for i in items]
+    except Exception as e:
+        logger.warning("brief news fetch failed: %s", e)
+        return []
+
+
+async def _brief_run_job() -> None:
+    """Scheduled cron job: generate & persist a Market Brief."""
+    try:
+        await generate_and_store_brief(db, _brief_dashboard_batch_fetch, _brief_news_fetch)
+    except Exception as e:
+        logger.exception("scheduled market brief generation failed: %s", e)
+
+
+async def _brief_warm_start() -> None:
+    """Generate an initial brief if none exists (first deploy / TTL wipe).
+
+    Wait 30s so heavy startup tasks (index build, universe load) settle.
+    """
+    try:
+        await asyncio.sleep(30)
+        existing = await db.market_briefs.find_one(sort=[("generated_at", -1)])
+        if existing:
+            logger.info("brief warm-start skipped: existing brief %s", existing.get("_id"))
+            return
+        logger.info("brief warm-start: no existing brief, generating one now")
+        await _brief_run_job()
+    except Exception as e:
+        logger.warning("brief warm-start failed: %s", e)
+
+
+def _start_market_brief_scheduler() -> None:
+    if _brief_scheduler_state.get("scheduler"):
+        return
+    try:
+        from apscheduler.schedulers.asyncio import AsyncIOScheduler
+        from apscheduler.triggers.cron import CronTrigger
+        import pytz
+        wib = pytz.timezone("Asia/Jakarta")
+        sched = AsyncIOScheduler(timezone=wib)
+        # Morning brief — 06:00 WIB (right after US close, pre-Asia session)
+        sched.add_job(
+            _brief_run_job,
+            trigger=CronTrigger(hour=6, minute=0, timezone=wib),
+            id="market_brief_morning",
+            max_instances=1, coalesce=True, misfire_grace_time=1800,
+            replace_existing=True,
+        )
+        # Evening brief — 18:00 WIB (post-EU open, mid US-day)
+        sched.add_job(
+            _brief_run_job,
+            trigger=CronTrigger(hour=18, minute=0, timezone=wib),
+            id="market_brief_evening",
+            max_instances=1, coalesce=True, misfire_grace_time=1800,
+            replace_existing=True,
+        )
+        sched.start()
+        _brief_scheduler_state["scheduler"] = sched
+        logger.info("market brief scheduler started with %d jobs", len(sched.get_jobs()))
+    except Exception as e:
+        logger.exception("failed to start market brief scheduler: %s", e)

@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { api, API_BASE, type Market, type NewsItem } from "@/src/lib/api";
+import AiMarketBriefCard from "@/src/components/AiMarketBriefCard";
 import { useI18n, type Lang } from "@/src/i18n/I18nContext";
 import { useSubscription } from "@/src/lib/subscriptionContext";
 import { useTheme } from "@/src/theme/ThemeContext";
@@ -460,7 +461,8 @@ function MarketBriefPane({
     load();
   }, [load]);
 
-  // Non-premium — show upgrade CTA rather than briefs (feature is Premium).
+  // Non-premium — show AI Market Brief on top (free teaser) + upgrade CTA
+  // below for the push-history archive (Premium-gated).
   if (!isPremium) {
     return (
       <ScrollView
@@ -468,6 +470,9 @@ function MarketBriefPane({
         contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 32 }}
         showsVerticalScrollIndicator={false}
       >
+        {/* v8.7.1 — AI-generated Daily Market Brief available for everyone */}
+        <AiMarketBriefCard lang={lang} />
+
         <View style={[styles.premiumCard, { backgroundColor: colors.surface, borderColor: colors.accentUp }]}>
           <Ionicons name="lock-closed" size={40} color={colors.accentUp} />
           <Text style={[styles.premiumTitle, { color: colors.textPrimary }]}>
@@ -522,6 +527,9 @@ function MarketBriefPane({
           {t("market_brief_banner")}
         </Text>
       </View>
+
+      {/* v8.7.1 — AI-generated Daily Market Brief (Claude Sonnet 4.6) */}
+      <AiMarketBriefCard lang={lang} />
 
       {error ? (
         <View style={[styles.briefCard, { backgroundColor: colors.surface, borderColor: colors.accentDown }]}>
