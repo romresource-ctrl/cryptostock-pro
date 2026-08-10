@@ -20,7 +20,7 @@ import PriceChart from "@/src/components/PriceChart";
 import PositionSizeCalculator from "@/src/components/PositionSizeCalculator";
 import TargetProfit from "@/src/components/TargetProfit";
 import WrHistoryModal, { type WrPeriod } from "@/src/components/WrHistoryModal";
-import PriceAlertOverlay from "@/src/components/PriceAlertOverlay";
+import { usePriceZoneAlert } from "@/src/hooks/usePriceZoneAlert";
 import {
   STABLECOIN_SYMBOLS,
   formatStablecoinLocal,
@@ -333,6 +333,17 @@ export default function AssetDetail() {
   // v8.5.3 — Kline WS: patches the last candle so the chart updates live.
   const liveKline = useBinanceKline(String(symbol), market, timeframe);
 
+  // v8.7.7 — Zone alert (ENTRY / TP HIT / SL HIT) driven by live ticker
+  // and the signal's own entry_low / entry_high / TP / SL levels. Fires
+  // a single beep on entering a zone, re-armed on exit.
+  const zoneAlert = usePriceZoneAlert({
+    livePrice: rt.connected && Number.isFinite(rt.price) ? rt.price : ticker.price,
+    entryLow: sig?.entry_low ?? sig?.entry ?? null,
+    entryHigh: sig?.entry_high ?? sig?.entry ?? null,
+    takeProfit: sig?.take_profit ?? null,
+    stopLoss: sig?.stop_loss ?? null,
+  });
+
   // v8.6.18 — Growing-candles history. Instead of feeding
   // `chart.candles` (frozen REST snapshot) directly into
   // `patchCandlesWithLive`, we maintain a mutable copy that grows
@@ -637,35 +648,25 @@ export default function AssetDetail() {
               <ActivityIndicator color={colors.accentBlue} />
             </View>
           ) : chartType === "candlestick" ? (
-            <View style={{ position: "relative" }}>
-              <CandlestickChart
-                candles={liveCandles as never}
-                width={screenW - 24}
-                height={220}
-                /* v8.6.5 — Only crypto markets subscribe to Binance
-                   kline WS, so isLive should mirror that condition. */
-                isLive={market === "crypto" && rt.connected}
-                /* v8.6.12 — Sync chart live-line + right-edge tag +
-                   pulsing dot to the SAME ticker price shown in the
-                   header. rt.price updates every ~200ms which gives the
-                   chart the same tempo as the header, and users no
-                   longer see two different numbers (1919.96 vs 1920). */
-                livePrice={rt.connected && Number.isFinite(rt.price) ? rt.price : null}
-              />
-              {/* v8.7.5 — Blinking ENTRY / TP HIT overlay + beep when
-                  the live ticker enters the signal's own entry_low /
-                  entry_high band, or crosses take_profit (±0.15%). */}
-              {sig && (
-                <PriceAlertOverlay
-                  livePrice={rt.connected && Number.isFinite(rt.price) ? rt.price : (ticker.price ?? null)}
-                  entryLow={sig.entry_low ?? sig.entry}
-                  entryHigh={sig.entry_high ?? sig.entry}
-                  takeProfit={sig.take_profit}
-                  stopLoss={sig.stop_loss}
-                  action={sig.action}
-                />
-              )}
-            </View>
+            <CandlestickChart
+              candles={liveCandles as never}
+              width={screenW - 24}
+              height={220}
+              /* v8.6.5 — Only crypto markets subscribe to Binance
+                 kline WS, so isLive should mirror that condition. */
+              isLive={market === "crypto" && rt.connected}
+              /* v8.6.12 — Sync chart live-line + right-edge tag +
+                 pulsing dot to the SAME ticker price shown in the
+                 header. rt.price updates every ~200ms which gives the
+                 chart the same tempo as the header, and users no
+                 longer see two different numbers (1919.96 vs 1920). */
+              livePrice={rt.connected && Number.isFinite(rt.price) ? rt.price : null}
+              /* v8.7.7 — Blinking alert pill on the LEFT edge of the
+                 live-price line + beep. Uses the signal's own
+                 entry_low / entry_high / TP / SL bands, no recompute. */
+              alertZone={zoneAlert}
+              signalAction={sig?.action}
+            />
           ) : (
             <PriceChart candles={liveCandles as never} width={screenW - 24} height={180} />
           )}

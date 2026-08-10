@@ -31,6 +31,14 @@ type Props = {
       chart live-line in perfect lock-step — otherwise the chart uses
       the last candle's close which lags a beat behind the ticker. */
   livePrice?: number | null;
+  /** v8.7.7 — Small blinking pill drawn at the LEFT edge of the live-price
+      line, tracks vertically with the price (so it looks like a moving
+      badge riding the ticker). Passed as-is from `usePriceZoneAlert()`.
+      When "idle" nothing is drawn. */
+  alertZone?: "idle" | "entry" | "tp" | "sl";
+  /** v8.7.7 — signal direction (BUY / SELL / HOLD) used only to colour
+      the ENTRY badge (BUY = green, SELL = red). */
+  signalAction?: string;
 };
 
 /**
@@ -50,6 +58,8 @@ export default function CandlestickChart({
   currency: _currency,
   isLive = false,
   livePrice = null,
+  alertZone = "idle",
+  signalAction,
 }: Props) {
   const { colors } = useTheme();
 
@@ -657,6 +667,36 @@ export default function CandlestickChart({
         </View>
       );
     })() : null}
+
+    {/* v8.7.7 — Alert pill (ENTRY / TP HIT / SL HIT) riding the live-price
+        line at the LEFT edge. Same vertical Y as the right-edge tag so
+        it visually "hangs" off the same horizontal price line. Small so
+        it doesn't dominate the chart. */}
+    {isLive && candles.length > 0 && alertZone !== "idle" ? (() => {
+      const lastCandle = displayed[displayed.length - 1];
+      const liveClose =
+        typeof livePrice === "number" && Number.isFinite(livePrice)
+          ? livePrice
+          : lastCandle.close;
+      const lastY = priceToY(liveClose);
+      const isSl = alertZone === "sl";
+      const isTp = alertZone === "tp";
+      const label = isSl ? "SL HIT" : isTp ? "TP HIT" : "ENTRY";
+      const bg = isSl
+        ? downColor
+        : isTp
+          ? "#f5c518"
+          : (signalAction === "SELL" ? downColor : upColor);
+      const fg = isSl ? "#fff" : "#000";
+      return (
+        <AlertPill
+          top={lastY - 10}
+          bg={bg}
+          fg={fg}
+          label={label}
+        />
+      );
+    })() : null}
     {/* Floating OHLC tooltip — pinned to top of chart, offset to avoid finger. */}
     {hover ? (
       <View
@@ -739,4 +779,43 @@ function formatPriceLabel(p: number): string {
   if (abs >= 0.01) return p.toFixed(2);
   if (abs >= 0.0001) return p.toFixed(6);
   return p.toFixed(8);
+}
+
+/**
+ * Small blinking "ENTRY / TP HIT / SL HIT" pill overlaid on the left
+ * edge of the live-price line. Uses opacity animation loop (400ms fade)
+ * with native driver so it stays smooth even while candles tick.
+ */
+function AlertPill({ top, bg, fg, label }: { top: number; bg: string; fg: string; label: string }) {
+  const opacity = React.useRef(new Animated.Value(1)).current;
+  React.useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 0.25, duration: 400, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 1, duration: 400, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [opacity]);
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={{
+        position: "absolute",
+        left: 2,
+        top,
+        backgroundColor: bg,
+        borderRadius: 3,
+        paddingHorizontal: 5,
+        paddingVertical: 1,
+        opacity,
+      }}
+      testID={`chart-alert-pill-${label.toLowerCase().replace(/\s+/g, "-")}`}
+    >
+      <Text style={{ color: fg, fontSize: 9, fontWeight: "900", letterSpacing: 0.4 }}>
+        {label}
+      </Text>
+    </Animated.View>
+  );
 }
