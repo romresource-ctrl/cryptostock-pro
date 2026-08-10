@@ -68,13 +68,10 @@ const LadderAlertBadge: React.FC<Props> = ({ zone }) => {
 
 const styles = StyleSheet.create({
   badge: {
-    position: "absolute",
-    top: 6,
-    left: 6,
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 6,
-    zIndex: 30,
+    alignSelf: "center",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.35,

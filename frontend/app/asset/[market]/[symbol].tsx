@@ -586,6 +586,11 @@ export default function AssetDetail() {
         <View style={[styles.chartBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           {/* Chart type toggle */}
           <View style={styles.chartToggleRow}>
+            {/* v8.7.9 — Ladder alert badge (TP-1/2/3, BUY 1/2/3) sits just
+                to the LEFT of the Candlestick/Line toggles so it doesn't
+                overlap the price-line pill inside the chart. */}
+            <LadderAlertBadge zone={zoneAlert} />
+            <View style={{ flexDirection: "row", gap: 6 }}>
             <TouchableOpacity
               testID="chart-toggle-candlestick"
               onPress={() => setChartType("candlestick")}
@@ -643,30 +648,29 @@ export default function AssetDetail() {
                 Line
               </Text>
             </TouchableOpacity>
+            </View>
           </View>
           {loadingChart ? (
             <View style={styles.chartLoader}>
               <ActivityIndicator color={colors.accentBlue} />
             </View>
           ) : chartType === "candlestick" ? (
-            <View style={{ position: "relative" }}>
-              <CandlestickChart
-                candles={liveCandles as never}
-                width={screenW - 24}
-                height={220}
-                /* v8.6.5 — Only crypto markets subscribe to Binance
-                   kline WS, so isLive should mirror that condition. */
-                isLive={market === "crypto" && rt.connected}
-                livePrice={rt.connected && Number.isFinite(rt.price) ? rt.price : null}
-                /* v8.7.9 — ENTRY / TP HIT / SL HIT pill on the LEFT edge
-                   of the live-price line (rendered inside the chart). */
-                alertZone={zoneAlert}
-                signalAction={sig?.action}
-              />
-              {/* v8.7.9 — Laddered popup (TP-1/2/3 or BUY-3/2/1) at the
-                  top-left corner of the chart, per user spec. */}
-              <LadderAlertBadge zone={zoneAlert} />
-            </View>
+            <CandlestickChart
+              candles={liveCandles as never}
+              width={screenW - 24}
+              height={220}
+              /* v8.6.5 — Only crypto markets subscribe to Binance
+                 kline WS, so isLive should mirror that condition. */
+              isLive={market === "crypto" && rt.connected}
+              livePrice={rt.connected && Number.isFinite(rt.price) ? rt.price : null}
+              /* v8.7.9 — ENTRY / TP HIT / SL HIT pill on the LEFT edge
+                 of the live-price line (rendered inside the chart).
+                 The specific ladder level (TP-1/2/3 or BUY 1/2/3) is
+                 rendered separately as an inline badge in the toggle
+                 row above, so the two never overlap. */
+              alertZone={zoneAlert}
+              signalAction={sig?.action}
+            />
           ) : (
             <PriceChart candles={liveCandles as never} width={screenW - 24} height={180} />
           )}
@@ -1357,7 +1361,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 6,
     marginBottom: 10,
-    justifyContent: "flex-end",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   chartToggleBtn: {
     flexDirection: "row",
