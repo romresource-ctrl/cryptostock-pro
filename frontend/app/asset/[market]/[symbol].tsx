@@ -586,11 +586,13 @@ export default function AssetDetail() {
         <View style={[styles.chartBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           {/* Chart type toggle */}
           <View style={styles.chartToggleRow}>
-            {/* v8.7.9 — Ladder alert badge (TP-1/2/3, BUY 1/2/3) sits just
-                to the LEFT of the Candlestick/Line toggles so it doesn't
-                overlap the price-line pill inside the chart. */}
-            <LadderAlertBadge zone={zoneAlert} />
-            <View style={{ flexDirection: "row", gap: 6 }}>
+            {/* v8.7.11 — Ladder alert badge (TP-1/2/3, BUY 1/2/3)
+                absolute-positioned on the LEFT so the Candlestick/Line
+                toggles stay pinned to the right regardless of alert
+                state. Renders null when idle → zero layout impact. */}
+            <View style={{ position: "absolute", left: 0, top: 0, bottom: 0, justifyContent: "center" }}>
+              <LadderAlertBadge zone={zoneAlert} />
+            </View>
             <TouchableOpacity
               testID="chart-toggle-candlestick"
               onPress={() => setChartType("candlestick")}
@@ -648,7 +650,6 @@ export default function AssetDetail() {
                 Line
               </Text>
             </TouchableOpacity>
-            </View>
           </View>
           {loadingChart ? (
             <View style={styles.chartLoader}>
@@ -1361,8 +1362,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 6,
     marginBottom: 10,
-    justifyContent: "space-between",
+    justifyContent: "flex-end",
     alignItems: "center",
+    position: "relative",
   },
   chartToggleBtn: {
     flexDirection: "row",
