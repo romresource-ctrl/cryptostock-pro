@@ -603,12 +603,16 @@ export default function AssetDetail() {
         <View style={[styles.chartBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           {/* Chart type toggle */}
           <View style={styles.chartToggleRow}>
-            {/* v8.7.11 — Ladder alert badge (TP-1/2/3, BUY 1/2/3)
+            {/* v8.7.17 — Ladder alert badge (TP-1/2/3, BUY 1/2/3)
                 absolute-positioned on the LEFT so the Candlestick/Line
                 toggles stay pinned to the right regardless of alert
-                state. Renders null when idle → zero layout impact. */}
+                state. Only rendered once the chart has loaded AND the
+                zone hook has emitted a real (non-idle) signal — this
+                prevents a stale first-frame flash on page open. */}
             <View style={{ position: "absolute", left: 0, top: 0, bottom: 0, justifyContent: "center" }}>
-              <LadderAlertBadge zone={zoneAlert} />
+              {!loadingChart && chart && zoneAlert !== "idle" ? (
+                <LadderAlertBadge zone={zoneAlert} />
+              ) : null}
             </View>
             <TouchableOpacity
               testID="chart-toggle-candlestick"
