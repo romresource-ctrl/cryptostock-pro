@@ -43,6 +43,11 @@ interface Args {
   entryLow: number | null | undefined;
   entryHigh: number | null | undefined;
   takeProfit: number | null | undefined;
+  /** v8.7.23 — Optional backend-computed ladder (regime-aware crypto).
+   *  When both are present the hook trusts them; otherwise it derives
+   *  tp2/tp3 from entry_high like before. */
+  takeProfit2?: number | null | undefined;
+  takeProfit3?: number | null | undefined;
   stopLoss: number | null | undefined;
   /** v8.7.12 — Gate: alerts only fire when the underlying signal is
    *  ACTIONABLE. Otherwise HOLD/low-conf signals spam ENTRY/BUY/TP badges
@@ -73,7 +78,7 @@ function pctBand(target: number): [number, number] {
 }
 
 export function usePriceZoneAlert({
-  livePrice, entryLow, entryHigh, takeProfit, stopLoss,
+  livePrice, entryLow, entryHigh, takeProfit, takeProfit2, takeProfit3, stopLoss,
   action, confidence, isPremium,
 }: Args): AlertZone {
   const player = useAudioPlayer({ uri: BEEP_URL });
@@ -103,15 +108,17 @@ export function usePriceZoneAlert({
     let tp1: number | null = tp;
     let tp2: number | null = null;
     let tp3: number | null = null;
-    if (tp != null && eHigh != null && tp > eHigh) {
-      // v8.7.17 — Anchor TP-2 / TP-3 on the STABLE entry_high (not the
-      // live ticker). Anchoring on the same livePrice we're testing
-      // against creates a self-reference: on the first frame the price
-      // could land inside a band derived from itself and fire a false
-      // positive. entry_high is fixed for the life of the signal.
+    // v8.7.23 — Prefer backend-computed ladder (regime-aware crypto)
+    const backendTp2 = Number.isFinite(takeProfit2 as number) ? (takeProfit2 as number) : null;
+    const backendTp3 = Number.isFinite(takeProfit3 as number) ? (takeProfit3 as number) : null;
+    if (backendTp2 != null && backendTp3 != null) {
+      tp2 = backendTp2;
+      tp3 = backendTp3;
+    } else if (tp != null && eHigh != null && tp > eHigh) {
+      // Fallback: derive from entry_high (stocklike / HOLD)
       const step = tp - eHigh;
-      tp2 = eHigh + step * 1.7;   // ≈ TP1 + 0.7 × step
-      tp3 = eHigh + step * 2.5;   // ≈ TP1 + 1.5 × step
+      tp2 = eHigh + step * 1.7;
+      tp3 = eHigh + step * 2.5;
     }
 
     let buy3: number | null = eLow;

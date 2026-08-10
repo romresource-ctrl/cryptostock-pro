@@ -96,6 +96,81 @@ def _find_swings(
     return peaks, valleys
 
 
+def _atr_percent_history(highs: list[float], lows: list[float], closes: list[float],
+                         period: int = 7, lookback: int = 30) -> tuple[float | None, float | None]:
+    """Return (current_atr_pct, avg_atr_pct_over_lookback).
+
+    v8.7.23 — Ported from user's btc_trading_formula.py to power the
+    market-regime detector. ATR% (ATR ÷ price × 100) is far more stable
+    across price scales than raw ATR.
+    """
+    def _atr(h: list[float], lo: list[float], c: list[float], p: int) -> float | None:
+        if len(c) < p + 1:
+            return None
+        trs = []
+        for i in range(1, len(c)):
+            tr = max(h[i] - lo[i], abs(h[i] - c[i - 1]), abs(lo[i] - c[i - 1]))
+            trs.append(tr)
+        return sum(trs[-p:]) / p if trs else None
+
+    if not closes:
+        return None, None
+    a_now = _atr(highs, lows, closes, period)
+    if not a_now or closes[-1] <= 0:
+        return None, None
+    pct_now = (a_now / closes[-1]) * 100.0
+
+    hist: list[float] = []
+    for i in range(lookback):
+        idx = len(closes) - lookback + i
+        if idx - period < 0:
+            continue
+        a_i = _atr(highs[:idx + 1], lows[:idx + 1], closes[:idx + 1], period)
+        if a_i and closes[idx] > 0:
+            hist.append((a_i / closes[idx]) * 100.0)
+    avg = sum(hist) / len(hist) if hist else None
+    return pct_now, avg
+
+
+def _detect_regime(closes: list[float], highs: list[float], lows: list[float],
+                   ema_slow_period: int = 50) -> dict:
+    """v8.7.23 — Market regime detector (ported from user formula).
+
+    Returns one of BULL / SIDEWAYS / BEAR / BEAR_CAPITULATION / UNKNOWN.
+    Logic:
+      • price > EMA50 → BULL
+      • price < EMA50 + ATR% > 1.5× 30-period avg → BEAR_CAPITULATION
+      • price < EMA50 + normal vol → BEAR
+      • fallback → SIDEWAYS
+    """
+    if len(closes) < ema_slow_period + 8:
+        return {"regime": "UNKNOWN"}
+    ema_slow = _ema(closes, ema_slow_period)
+    if not ema_slow:
+        return {"regime": "UNKNOWN"}
+    price = closes[-1]
+    is_down = price < ema_slow[-1]
+    pct_now, avg = _atr_percent_history(highs, lows, closes)
+    high_vol = (pct_now is not None and avg is not None and pct_now > avg * 1.5)
+    if not is_down:
+        return {"regime": "BULL", "atr_pct_now": pct_now, "atr_pct_avg": avg}
+    regime = "BEAR_CAPITULATION" if high_vol else "BEAR"
+    return {"regime": regime, "atr_pct_now": pct_now, "atr_pct_avg": avg, "high_vol": high_vol}
+
+
+# v8.7.23 — Regime → parameter preset (buffer × ATR for entry band,
+# SL multiplier × ATR for stop distance). BEAR gets tighter entry (avoid
+# chasing lower highs) and wider SL (survive volatility). BEAR_CAPITULATION
+# is even more defensive.
+REGIME_PRESETS: dict[str, dict[str, float]] = {
+    "BULL":              {"entry_buffer_mult": 0.25, "sl_atr_mult": 1.5},
+    "SIDEWAYS":          {"entry_buffer_mult": 0.25, "sl_atr_mult": 1.5},
+    "BEAR":              {"entry_buffer_mult": 0.20, "sl_atr_mult": 2.0},
+    "BEAR_CAPITULATION": {"entry_buffer_mult": 0.15, "sl_atr_mult": 2.5},
+    "UNKNOWN":           {"entry_buffer_mult": 0.25, "sl_atr_mult": 1.5},
+}
+
+
 def _compute_deep_levels(
     action: str,
     price: float,
@@ -103,6 +178,7 @@ def _compute_deep_levels(
     peaks: list[float],
     valleys: list[float],
     market: str = "crypto",
+    regime: str = "UNKNOWN",
 ) -> dict[str, float]:
     """Return entry/SL/TP using tier-based deep-entry formula.
 
@@ -167,59 +243,52 @@ def _compute_deep_levels(
             "stop_loss_moderate": sl_moderate,
             "stop_loss_aggressive": sl_aggressive,
             "take_profit": take_profit,
+            # v8.7.23 — stocklike doesn't use the regime R:R ladder; frontend
+            # falls back to its own derived tp2/tp3 when these are None.
+            "take_profit_2": None,
+            "take_profit_3": None,
             "avg_peak": avg_peak,
             "avg_valley": avg_valley,
         }
 
     if action == "BUY":
-        # v8.1.8 — Three tiers + entry ZONE (v8.1.9). User trades a
-        # range not a point, so we return low/high bounds around each
-        # tier at ±0.4 ATR (typical band width ≈ user's expected
-        # 1915-1925 range for ETH).
-        entry_deep = ((avg_valley + lowest_valley) / 2.0) - atr * 0.5
-        entry_moderate = ((price + avg_valley) / 2.0) + atr * 0.3
-        entry_aggressive = price - atr * 0.3
-        # v8.3.6 — TP min-distance (see previous doc block).
-        min_tp_pct_entry = entry_deep * 1.010
-        min_tp_pct_price = price * 1.005
-        take_profit = max(
-            avg_peak,
-            entry_deep + atr * 3.0,
-            min_tp_pct_entry,
-            min_tp_pct_price,
-        )
-        # v8.3.7 — SL min-distance. The old `entry_deep - atr * 0.5`
-        # produced SL only $2 below entry on ETH 3m — meaningless. We
-        # now require SL to be at least the greater of:
-        #   • 1.5× ATR from entry     (volatility floor)
-        #   • 0.8% of entry price     (percentage floor)
-        # so R:R stays >= ~1:1 even on tiny-ATR timeframes.
-        min_sl_distance = max(atr * 1.5, entry_deep * 0.008)
-        sl_deep = min(entry_deep - atr * 0.5, entry_deep - min_sl_distance)
-        sl_moderate = min(entry_moderate - atr * 0.5, entry_moderate - min_sl_distance)
-        sl_aggressive = min(entry_aggressive - atr * 0.5, entry_aggressive - min_sl_distance)
-        stop_loss = sl_deep
-        band = atr * 0.4
+        # v8.7.23 — Regime-aware crypto BUY (per user's btc_trading_formula).
+        # entry_deep = price − buffer×ATR, SL = entry − sl_mult×ATR,
+        # risk = entry − SL, TP1/2/3 = 1×/2×/3× risk (R:R 1:1, 1:2, 1:3).
+        # Preset buffer/sl_mult varies by regime (BEAR gets tighter buffer
+        # + wider SL). Falls back to swing anchors if ATR is degenerate.
+        preset = REGIME_PRESETS.get(regime, REGIME_PRESETS["UNKNOWN"])
+        buf = atr * preset["entry_buffer_mult"]
+        sl_dist = atr * preset["sl_atr_mult"]
+        entry_deep = price - buf
+        entry_moderate = price
+        entry_aggressive = price + buf * 0.5
+        band = buf
+        stop_loss = entry_deep - sl_dist
+        risk = max(entry_deep - stop_loss, price * 0.005)
+        take_profit = entry_deep + risk * 1.0    # TP-1 = 1R
+        take_profit_2 = entry_deep + risk * 2.0  # TP-2 = 2R
+        take_profit_3 = entry_deep + risk * 3.0  # TP-3 = 3R
+        sl_deep = stop_loss
+        sl_moderate = entry_moderate - sl_dist
+        sl_aggressive = entry_aggressive - sl_dist
     elif action == "SELL":
-        entry_deep = ((avg_peak + highest_peak) / 2.0) + atr * 0.5
-        entry_moderate = ((price + avg_peak) / 2.0) - atr * 0.3
-        entry_aggressive = price + atr * 0.3
-        # v8.3.6 — TP min-distance (mirror of BUY).
-        min_tp_pct_entry = entry_deep * 0.990
-        min_tp_pct_price = price * 0.995
-        take_profit = min(
-            avg_valley,
-            entry_deep - atr * 3.0,
-            min_tp_pct_entry,
-            min_tp_pct_price,
-        )
-        # v8.3.7 — SL min-distance (mirror). SL sits ABOVE entry for SHORT.
-        min_sl_distance = max(atr * 1.5, entry_deep * 0.008)
-        sl_deep = max(entry_deep + atr * 0.5, entry_deep + min_sl_distance)
-        sl_moderate = max(entry_moderate + atr * 0.5, entry_moderate + min_sl_distance)
-        sl_aggressive = max(entry_aggressive + atr * 0.5, entry_aggressive + min_sl_distance)
-        stop_loss = sl_deep
-        band = atr * 0.4
+        # v8.7.23 — Regime-aware crypto SELL (mirror of BUY).
+        preset = REGIME_PRESETS.get(regime, REGIME_PRESETS["UNKNOWN"])
+        buf = atr * preset["entry_buffer_mult"]
+        sl_dist = atr * preset["sl_atr_mult"]
+        entry_deep = price + buf
+        entry_moderate = price
+        entry_aggressive = price - buf * 0.5
+        band = buf
+        stop_loss = entry_deep + sl_dist
+        risk = max(stop_loss - entry_deep, price * 0.005)
+        take_profit = entry_deep - risk * 1.0
+        take_profit_2 = entry_deep - risk * 2.0
+        take_profit_3 = entry_deep - risk * 3.0
+        sl_deep = stop_loss
+        sl_moderate = entry_moderate + sl_dist
+        sl_aggressive = entry_aggressive + sl_dist
     else:  # HOLD
         # v8.7.16 — Market-scoped HOLD formulas:
         # • CRYPTO → dip-buy zone (per user spec: ETH $1907-$1924, TP1
@@ -246,6 +315,8 @@ def _compute_deep_levels(
             stop_loss = min(price - atr * 2.5, price * 0.992)
             band = atr * 0.4
         sl_deep = sl_moderate = sl_aggressive = stop_loss
+        take_profit_2 = None
+        take_profit_3 = None
 
     return {
         "entry": entry_deep,
@@ -266,6 +337,10 @@ def _compute_deep_levels(
         "stop_loss_moderate": sl_moderate,
         "stop_loss_aggressive": sl_aggressive,
         "take_profit": take_profit,
+        # v8.7.23 — Laddered TP-1/2/3 (1R / 2R / 3R for regime-aware crypto).
+        # None for HOLD and stock-like markets → frontend hook derives own.
+        "take_profit_2": take_profit_2,
+        "take_profit_3": take_profit_3,
         "avg_peak": avg_peak,
         "avg_valley": avg_valley,
     }
@@ -436,7 +511,12 @@ def compute_signal(candles: list[dict[str, Any]], market: str) -> dict[str, Any]
     # entry BELOW recent structure so users don't buy tops or short
     # bottoms. Falls back to ATR-based default if not enough swings.
     peaks, valleys = _find_swings(highs, lows, window=10)
-    levels = _compute_deep_levels(action, price, atr, peaks, valleys, market=market)
+    # v8.7.23 — Detect market regime (BULL / BEAR / BEAR_CAPITULATION / …)
+    # once per compute so all three level tiers (deep / moderate / aggr)
+    # share the SAME regime preset. Crypto only — other markets ignore it.
+    regime_info = _detect_regime(closes, highs, lows) if market == "crypto" else {"regime": "UNKNOWN"}
+    regime = regime_info.get("regime", "UNKNOWN")
+    levels = _compute_deep_levels(action, price, atr, peaks, valleys, market=market, regime=regime)
     entry = levels["entry"]
     stop_loss = levels["stop_loss"]
     take_profit = levels["take_profit"]
@@ -445,8 +525,8 @@ def compute_signal(candles: list[dict[str, Any]], market: str) -> dict[str, Any]
     # the AI ensemble can pick either direction with the same swing
     # structure — even if the AI action disagrees with the technical
     # rule vote.
-    buy_levels = _compute_deep_levels("BUY", price, atr, peaks, valleys, market=market)
-    sell_levels = _compute_deep_levels("SELL", price, atr, peaks, valleys, market=market)
+    buy_levels = _compute_deep_levels("BUY", price, atr, peaks, valleys, market=market, regime=regime)
+    sell_levels = _compute_deep_levels("SELL", price, atr, peaks, valleys, market=market, regime=regime)
 
     return {
         "action": action,
@@ -474,11 +554,17 @@ def compute_signal(candles: list[dict[str, Any]], market: str) -> dict[str, Any]
         "entry_aggressive": round(levels["entry_aggressive"], 8),
         "stop_loss": round(stop_loss, 8),
         "take_profit": round(take_profit, 8),
+        # v8.7.23 — Laddered TP-1/2/3 (R:R 1x / 2x / 3x for regime-aware
+        # crypto BUY/SELL). None for HOLD and stock-like markets — the
+        # frontend hook derives its own ladder in that case.
+        "take_profit_2": round(levels["take_profit_2"], 8) if levels.get("take_profit_2") is not None else None,
+        "take_profit_3": round(levels["take_profit_3"], 8) if levels.get("take_profit_3") is not None else None,
+        "regime": regime,
         # Full per-action level map, consumed by ai_engine._aggregate to
         # place AI-consensus entry/SL/TP with the same deterministic
         # formula the technical card uses.
         "_all_levels": {
-            "BUY":  {k: round(v, 8) for k, v in buy_levels.items()},
-            "SELL": {k: round(v, 8) for k, v in sell_levels.items()},
+            "BUY":  {k: (round(v, 8) if v is not None else None) for k, v in buy_levels.items()},
+            "SELL": {k: (round(v, 8) if v is not None else None) for k, v in sell_levels.items()},
         },
     }

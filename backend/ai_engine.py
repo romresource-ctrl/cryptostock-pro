@@ -377,12 +377,17 @@ def _aggregate(results: list[dict[str, Any]], fallback_ta: dict[str, Any], lang:
         entry_out = side.get(entry_key, side.get("entry"))
         sl_out = side.get(sl_key, side.get("stop_loss"))
         tp_out = side.get("take_profit")
+        # v8.7.23 — Pass laddered TP-2 / TP-3 through to AI consensus.
+        tp2_out = side.get("take_profit_2")
+        tp3_out = side.get("take_profit_3")
         entry_low_out = side.get(zone_low_key)
         entry_high_out = side.get(zone_high_key)
     else:
         entry_out = fallback_ta.get("entry")
         sl_out = fallback_ta.get("stop_loss")
         tp_out = fallback_ta.get("take_profit")
+        tp2_out = fallback_ta.get("take_profit_2")
+        tp3_out = fallback_ta.get("take_profit_3")
         entry_low_out = fallback_ta.get("entry_low")
         entry_high_out = fallback_ta.get("entry_high")
 
@@ -444,6 +449,9 @@ def _aggregate(results: list[dict[str, Any]], fallback_ta: dict[str, Any], lang:
         "entry_high": entry_high_out,
         "stop_loss": sl_out,
         "take_profit": tp_out,
+        # v8.7.23 — Laddered R:R targets (regime-aware crypto only).
+        "take_profit_2": tp2_out,
+        "take_profit_3": tp3_out,
         "entry_bias": consensus_bias,
         "timeframe_view": tf_view_out,
         "macro_context": macro_out,
