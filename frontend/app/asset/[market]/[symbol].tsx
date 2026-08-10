@@ -20,6 +20,7 @@ import PriceChart from "@/src/components/PriceChart";
 import PositionSizeCalculator from "@/src/components/PositionSizeCalculator";
 import TargetProfit from "@/src/components/TargetProfit";
 import WrHistoryModal, { type WrPeriod } from "@/src/components/WrHistoryModal";
+import LadderAlertBadge from "@/src/components/LadderAlertBadge";
 import { usePriceZoneAlert } from "@/src/hooks/usePriceZoneAlert";
 import {
   STABLECOIN_SYMBOLS,
@@ -648,25 +649,24 @@ export default function AssetDetail() {
               <ActivityIndicator color={colors.accentBlue} />
             </View>
           ) : chartType === "candlestick" ? (
-            <CandlestickChart
-              candles={liveCandles as never}
-              width={screenW - 24}
-              height={220}
-              /* v8.6.5 — Only crypto markets subscribe to Binance
-                 kline WS, so isLive should mirror that condition. */
-              isLive={market === "crypto" && rt.connected}
-              /* v8.6.12 — Sync chart live-line + right-edge tag +
-                 pulsing dot to the SAME ticker price shown in the
-                 header. rt.price updates every ~200ms which gives the
-                 chart the same tempo as the header, and users no
-                 longer see two different numbers (1919.96 vs 1920). */
-              livePrice={rt.connected && Number.isFinite(rt.price) ? rt.price : null}
-              /* v8.7.7 — Blinking alert pill on the LEFT edge of the
-                 live-price line + beep. Uses the signal's own
-                 entry_low / entry_high / TP / SL bands, no recompute. */
-              alertZone={zoneAlert}
-              signalAction={sig?.action}
-            />
+            <View style={{ position: "relative" }}>
+              <CandlestickChart
+                candles={liveCandles as never}
+                width={screenW - 24}
+                height={220}
+                /* v8.6.5 — Only crypto markets subscribe to Binance
+                   kline WS, so isLive should mirror that condition. */
+                isLive={market === "crypto" && rt.connected}
+                livePrice={rt.connected && Number.isFinite(rt.price) ? rt.price : null}
+                /* v8.7.9 — ENTRY / TP HIT / SL HIT pill on the LEFT edge
+                   of the live-price line (rendered inside the chart). */
+                alertZone={zoneAlert}
+                signalAction={sig?.action}
+              />
+              {/* v8.7.9 — Laddered popup (TP-1/2/3 or BUY-3/2/1) at the
+                  top-left corner of the chart, per user spec. */}
+              <LadderAlertBadge zone={zoneAlert} />
+            </View>
           ) : (
             <PriceChart candles={liveCandles as never} width={screenW - 24} height={180} />
           )}

@@ -673,10 +673,12 @@ export default function CandlestickChart({
       );
     })() : null}
 
-    {/* v8.7.8 — Alert pill (ENTRY / TP-1/2/3 / BUY-3/2/1 / SL HIT) riding
-        the live-price line at the LEFT edge. Same vertical Y as the
-        right-edge tag so it visually "hangs" off the same horizontal
-        price line. Small so it doesn't dominate the chart. */}
+    {/* v8.7.9 — Alert pill (ENTRY / TP HIT / SL HIT) riding the live-price
+        line at the LEFT edge. Same vertical Y as the right-edge tag so
+        it visually "hangs" off the same horizontal price line. Small so
+        it doesn't dominate the chart. The specific ladder level (BUY-1/2/3
+        or TP-1/2/3) is rendered separately as a top-left badge overlay
+        from [symbol].tsx. */}
     {isLive && candles.length > 0 && alertZone !== "idle" ? (() => {
       const lastCandle = displayed[displayed.length - 1];
       const liveClose =
@@ -684,25 +686,26 @@ export default function CandlestickChart({
           ? livePrice
           : lastCandle.close;
       const lastY = priceToY(liveClose);
-      // Level metadata per alertZone
-      const meta: Record<string, { label: string; bg: string; fg: string }> = {
-        sl:    { label: "SL HIT",  bg: downColor, fg: "#fff" },
-        tp3:   { label: "TP-3",    bg: "#00d4aa", fg: "#000" },
-        tp2:   { label: "TP-2",    bg: "#22c55e", fg: "#000" },
-        tp1:   { label: "TP-1",    bg: "#f5c518", fg: "#000" },
-        entry: { label: "ENTRY",   bg: signalAction === "SELL" ? downColor : upColor, fg: "#000" },
-        buy3:  { label: "BUY 3",   bg: "#60a5fa", fg: "#000" },
-        buy2:  { label: "BUY 2",   bg: "#3b82f6", fg: "#fff" },
-        buy1:  { label: "BUY 1",   bg: "#1d4ed8", fg: "#fff" },
-      };
-      const m = meta[alertZone];
-      if (!m) return null;
+      // Map ladder → primary 3-state pill
+      const isSl = alertZone === "sl";
+      const isTp = alertZone === "tp1" || alertZone === "tp2" || alertZone === "tp3";
+      const isEntry =
+        alertZone === "entry" ||
+        alertZone === "buy3" || alertZone === "buy2" || alertZone === "buy1";
+      if (!isSl && !isTp && !isEntry) return null;
+      const label = isSl ? "SL HIT" : isTp ? "TP HIT" : "ENTRY";
+      const bg = isSl
+        ? downColor
+        : isTp
+          ? "#f5c518"
+          : (signalAction === "SELL" ? downColor : upColor);
+      const fg = isSl ? "#fff" : "#000";
       return (
         <AlertPill
           top={lastY - 10}
-          bg={m.bg}
-          fg={m.fg}
-          label={m.label}
+          bg={bg}
+          fg={fg}
+          label={label}
         />
       );
     })() : null}
