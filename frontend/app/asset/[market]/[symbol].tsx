@@ -355,13 +355,17 @@ export default function AssetDetail() {
   // v8.5.3 — Kline WS: patches the last candle so the chart updates live.
   const liveKline = useBinanceKline(String(symbol), market, timeframe);
 
-  // v8.7.12 — Zone alert gated to Premium-actionable signals only.
-  // HOLD or confidence < 85 → hook stays "idle", no popup spam.
+  // v8.8.0 — Zone alert now uses regime-aware ladder TP-1/2/3 from
+  // backend (see backend/indicators.py REGIME_PRESETS). Frontend hook
+  // falls back to entry_high-derived ladder if backend fields are null
+  // (HOLD, non-crypto).
   const zoneAlert = usePriceZoneAlert({
     livePrice: rt.connected && Number.isFinite(rt.price) ? rt.price : ticker.price,
     entryLow: sig?.entry_low ?? sig?.entry ?? null,
     entryHigh: sig?.entry_high ?? sig?.entry ?? null,
     takeProfit: sig?.take_profit ?? null,
+    takeProfit2: (sig as any)?.take_profit_2 ?? null,
+    takeProfit3: (sig as any)?.take_profit_3 ?? null,
     stopLoss: sig?.stop_loss ?? null,
     action: sig?.action ?? null,
     confidence: sig?.confidence ?? null,
