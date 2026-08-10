@@ -31,11 +31,16 @@ type Props = {
       chart live-line in perfect lock-step — otherwise the chart uses
       the last candle's close which lags a beat behind the ticker. */
   livePrice?: number | null;
-  /** v8.7.7 — Small blinking pill drawn at the LEFT edge of the live-price
+  /** v8.7.8 — Small blinking pill drawn at the LEFT edge of the live-price
       line, tracks vertically with the price (so it looks like a moving
       badge riding the ticker). Passed as-is from `usePriceZoneAlert()`.
+      Supports laddered zones: entry, tp1/tp2/tp3, buy3/buy2/buy1, sl.
       When "idle" nothing is drawn. */
-  alertZone?: "idle" | "entry" | "tp" | "sl";
+  alertZone?:
+    | "idle" | "entry"
+    | "tp1" | "tp2" | "tp3"
+    | "buy3" | "buy2" | "buy1"
+    | "sl";
   /** v8.7.7 — signal direction (BUY / SELL / HOLD) used only to colour
       the ENTRY badge (BUY = green, SELL = red). */
   signalAction?: string;
@@ -668,10 +673,10 @@ export default function CandlestickChart({
       );
     })() : null}
 
-    {/* v8.7.7 — Alert pill (ENTRY / TP HIT / SL HIT) riding the live-price
-        line at the LEFT edge. Same vertical Y as the right-edge tag so
-        it visually "hangs" off the same horizontal price line. Small so
-        it doesn't dominate the chart. */}
+    {/* v8.7.8 — Alert pill (ENTRY / TP-1/2/3 / BUY-3/2/1 / SL HIT) riding
+        the live-price line at the LEFT edge. Same vertical Y as the
+        right-edge tag so it visually "hangs" off the same horizontal
+        price line. Small so it doesn't dominate the chart. */}
     {isLive && candles.length > 0 && alertZone !== "idle" ? (() => {
       const lastCandle = displayed[displayed.length - 1];
       const liveClose =
@@ -679,21 +684,25 @@ export default function CandlestickChart({
           ? livePrice
           : lastCandle.close;
       const lastY = priceToY(liveClose);
-      const isSl = alertZone === "sl";
-      const isTp = alertZone === "tp";
-      const label = isSl ? "SL HIT" : isTp ? "TP HIT" : "ENTRY";
-      const bg = isSl
-        ? downColor
-        : isTp
-          ? "#f5c518"
-          : (signalAction === "SELL" ? downColor : upColor);
-      const fg = isSl ? "#fff" : "#000";
+      // Level metadata per alertZone
+      const meta: Record<string, { label: string; bg: string; fg: string }> = {
+        sl:    { label: "SL HIT",  bg: downColor, fg: "#fff" },
+        tp3:   { label: "TP-3",    bg: "#00d4aa", fg: "#000" },
+        tp2:   { label: "TP-2",    bg: "#22c55e", fg: "#000" },
+        tp1:   { label: "TP-1",    bg: "#f5c518", fg: "#000" },
+        entry: { label: "ENTRY",   bg: signalAction === "SELL" ? downColor : upColor, fg: "#000" },
+        buy3:  { label: "BUY 3",   bg: "#60a5fa", fg: "#000" },
+        buy2:  { label: "BUY 2",   bg: "#3b82f6", fg: "#fff" },
+        buy1:  { label: "BUY 1",   bg: "#1d4ed8", fg: "#fff" },
+      };
+      const m = meta[alertZone];
+      if (!m) return null;
       return (
         <AlertPill
           top={lastY - 10}
-          bg={bg}
-          fg={fg}
-          label={label}
+          bg={m.bg}
+          fg={m.fg}
+          label={m.label}
         />
       );
     })() : null}

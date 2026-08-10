@@ -1,23 +1,42 @@
 /**
- * usePriceZoneAlert — v8.7.7
+ * usePriceZoneAlert — v8.7.8
  *
- * Watches the live ticker price against the AI signal's own entry_low /
- * entry_high band, take_profit (±0.15%) and stop_loss (±0.15%) levels.
- * Returns the current alert zone ("entry" | "tp" | "sl" | "idle") and
- * plays a single beep the first time the price enters a zone (re-armed
- * once it exits). Do NOT recompute the entry band here — reuse whatever
- * the backend indicator already produced.
+ * Laddered zone-alert hook. Watches live ticker price against multiple
+ * levels derived from the AI signal:
+ *
+ *   Upside ladder (bullish continuation):
+ *     • TP-1  = take_profit                             (original TP)
+ *     • TP-2  = entry_high + reward × 1.75              (extended target)
+ *     • TP-3  = entry_high + reward × 2.5               (max profit target)
+ *
+ *   Downside ladder (buy-the-dip):
+ *     • BUY-3 = entry_low                              (first dip below entry)
+ *     • BUY-2 = entry_low − risk × 0.35                (deeper dip)
+ *     • BUY-1 = entry_low − risk × 0.70                (bottom / max value)
+ *
+ *   Terminal zones:
+ *     • ENTRY = original entry_low..entry_high band
+ *     • SL    = stop_loss ±0.15%
+ *
+ * A single beep plays the first time price enters ANY new level; each
+ * level re-arms once price exits. All bands are ±0.15% around the target
+ * unless the level is already a range (ENTRY). Do NOT recompute the base
+ * entry / TP / SL — use the backend's own numbers.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Platform } from "react-native";
 import { useAudioPlayer } from "expo-audio";
 
-export type AlertZone = "idle" | "entry" | "tp" | "sl";
+export type AlertZone =
+  | "idle"
+  | "entry"
+  | "tp1" | "tp2" | "tp3"
+  | "buy3" | "buy2" | "buy1"
+  | "sl";
 
 const BEEP_URL =
   "https://customer-assets.emergentagent.com/job_swift-market/artifacts/uwx4jcxr_beep.mp3";
-const TP_BAND_PCT = 0.0015; // ±0.15%
-const SL_BAND_PCT = 0.0015;
+const BAND_PCT = 0.0015; // ±0.15%
 
 interface Args {
   livePrice: number | null | undefined;
@@ -27,66 +46,123 @@ interface Args {
   stopLoss: number | null | undefined;
 }
 
+interface Levels {
+  entryLow: number | null;
+  entryHigh: number | null;
+  tp1: number | null;
+  tp2: number | null;
+  tp3: number | null;
+  buy3: number | null;
+  buy2: number | null;
+  buy1: number | null;
+  sl: number | null;
+}
+
 function inRange(px: number, lo: number, hi: number): boolean {
   return px >= lo && px <= hi;
+}
+
+function pctBand(target: number): [number, number] {
+  return [target * (1 - BAND_PCT), target * (1 + BAND_PCT)];
 }
 
 export function usePriceZoneAlert({
   livePrice, entryLow, entryHigh, takeProfit, stopLoss,
 }: Args): AlertZone {
-  const [zone, setZone] = useState<AlertZone>("idle");
-  const armedRef = useRef<{ entry: boolean; tp: boolean; sl: boolean }>({
-    entry: true, tp: true, sl: true,
-  });
   const player = useAudioPlayer({ uri: BEEP_URL });
+
+  // Compute ladder levels once per signal input change
+  const levels: Levels = useMemo(() => {
+    const eLow = Number.isFinite(entryLow as number) ? (entryLow as number) : null;
+    const eHigh = Number.isFinite(entryHigh as number) ? (entryHigh as number) : null;
+    const tp = Number.isFinite(takeProfit as number) ? (takeProfit as number) : null;
+    const sl = Number.isFinite(stopLoss as number) ? (stopLoss as number) : null;
+
+    let tp1: number | null = tp;
+    let tp2: number | null = null;
+    let tp3: number | null = null;
+    if (eHigh != null && tp != null && tp > eHigh) {
+      const reward = tp - eHigh;
+      tp2 = eHigh + reward * 1.75;
+      tp3 = eHigh + reward * 2.5;
+    }
+
+    let buy3: number | null = eLow;
+    let buy2: number | null = null;
+    let buy1: number | null = null;
+    if (eLow != null && sl != null && eLow > sl) {
+      const risk = eLow - sl;
+      buy2 = eLow - risk * 0.35;
+      buy1 = eLow - risk * 0.70;
+    }
+
+    return { entryLow: eLow, entryHigh: eHigh, tp1, tp2, tp3, buy3, buy2, buy1, sl };
+  }, [entryLow, entryHigh, takeProfit, stopLoss]);
+
+  const [zone, setZone] = useState<AlertZone>("idle");
+  const armedRef = useRef<Record<AlertZone, boolean>>({
+    idle: true,
+    entry: true,
+    tp1: true, tp2: true, tp3: true,
+    buy3: true, buy2: true, buy1: true,
+    sl: true,
+  });
 
   useEffect(() => {
     if (livePrice == null || !Number.isFinite(livePrice)) {
       setZone("idle");
       return;
     }
+    const px = livePrice as number;
     let next: AlertZone = "idle";
 
-    if (stopLoss != null && Number.isFinite(stopLoss)) {
-      const lo = stopLoss * (1 - SL_BAND_PCT);
-      const hi = stopLoss * (1 + SL_BAND_PCT);
-      if (inRange(livePrice, lo, hi)) next = "sl";
-    }
-    if (next === "idle" && takeProfit != null && Number.isFinite(takeProfit)) {
-      const lo = takeProfit * (1 - TP_BAND_PCT);
-      const hi = takeProfit * (1 + TP_BAND_PCT);
-      if (inRange(livePrice, lo, hi)) next = "tp";
-    }
+    // Priority: SL > TP-3 > TP-2 > TP-1 > ENTRY > BUY-3 > BUY-2 > BUY-1
+    // (highest / most-actionable level wins if two overlap)
+    const check = (target: number | null, tag: AlertZone) => {
+      if (next !== "idle" || target == null) return;
+      const [lo, hi] = pctBand(target);
+      if (inRange(px, lo, hi)) next = tag;
+    };
+
+    // Terminal loss
+    check(levels.sl, "sl");
+    // Upside ladder — highest first
+    check(levels.tp3, "tp3");
+    check(levels.tp2, "tp2");
+    check(levels.tp1, "tp1");
+    // Original entry band (uses actual entry_low..entry_high, no ± band)
     if (
       next === "idle" &&
-      entryLow != null && entryHigh != null &&
-      Number.isFinite(entryLow) && Number.isFinite(entryHigh)
+      levels.entryLow != null && levels.entryHigh != null &&
+      inRange(px, levels.entryLow, levels.entryHigh)
     ) {
-      if (inRange(livePrice, entryLow, entryHigh)) next = "entry";
+      next = "entry";
     }
+    // Downside ladder — nearest dip first
+    check(levels.buy3, "buy3");
+    check(levels.buy2, "buy2");
+    check(levels.buy1, "buy1");
 
     setZone((prev) => {
       if (prev === next) return prev;
-      if (next === "entry" && armedRef.current.entry) {
-        armedRef.current.entry = false;
-        _playBeep(player);
-      } else if (next === "tp" && armedRef.current.tp) {
-        armedRef.current.tp = false;
-        _playBeep(player);
-      } else if (next === "sl" && armedRef.current.sl) {
-        armedRef.current.sl = false;
+      if (next !== "idle" && armedRef.current[next]) {
+        armedRef.current[next] = false;
         _playBeep(player);
       }
       if (next === "idle") {
-        armedRef.current = { entry: true, tp: true, sl: true };
+        // Re-arm ALL levels once we leave any zone
+        (Object.keys(armedRef.current) as AlertZone[]).forEach((k) => {
+          armedRef.current[k] = true;
+        });
       } else {
-        if (next !== "entry") armedRef.current.entry = true;
-        if (next !== "tp") armedRef.current.tp = true;
-        if (next !== "sl") armedRef.current.sl = true;
+        // Re-arm all OTHER levels
+        (Object.keys(armedRef.current) as AlertZone[]).forEach((k) => {
+          if (k !== next) armedRef.current[k] = true;
+        });
       }
       return next;
     });
-  }, [livePrice, entryLow, entryHigh, takeProfit, stopLoss, player]);
+  }, [livePrice, levels, player]);
 
   return zone;
 }
