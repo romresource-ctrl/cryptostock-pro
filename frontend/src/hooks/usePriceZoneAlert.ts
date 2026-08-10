@@ -127,12 +127,16 @@ export function usePriceZoneAlert({
   }, [entryLow, entryHigh, takeProfit, stopLoss]);
 
   const [zone, setZone] = useState<AlertZone>("idle");
-  // v8.7.17 — Tick-counter gate: require at least 2 real live ticks
-  // before emitting any non-idle zone. This prevents the very first
-  // render — where livePrice can be a momentarily stale mount value —
-  // from painting a green alert badge before the WebSocket has actually
-  // said anything.
+  // v8.7.18 — Two-stage settle gate:
+  //   1. `settled` — flipped true 400ms after first non-null livePrice.
+  //      Absorbs any late-mount WS callback that would otherwise fire
+  //      an alert during the initial paint.
+  //   2. `tickCountRef ≥ 5` — require FIVE real live ticks before we
+  //      ever emit a non-idle zone. Combined with (1) this eliminates
+  //      the green flicker on detail-page open.
   const tickCountRef = useRef(0);
+  const [settled, setSettled] = useState(false);
+  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const armedRef = useRef<Record<AlertZone, boolean>>({
     idle: true,
     entry: true,
@@ -140,6 +144,18 @@ export function usePriceZoneAlert({
     buy3: true, buy2: true, buy1: true,
     sl: true,
   });
+
+  // Reset settle state whenever the gate flips off (signal changes)
+  useEffect(() => {
+    if (!gateOk) {
+      setSettled(false);
+      tickCountRef.current = 0;
+      if (settleTimerRef.current) {
+        clearTimeout(settleTimerRef.current);
+        settleTimerRef.current = null;
+      }
+    }
+  }, [gateOk]);
 
   useEffect(() => {
     // Gate: no actionable signal → no alert at all
@@ -152,9 +168,16 @@ export function usePriceZoneAlert({
       setZone("idle");
       return;
     }
-    // v8.7.17 — require ≥2 real ticks before we ever emit non-idle
+    // Start settle timer on the first real live price we ever see
+    if (!settled && settleTimerRef.current == null) {
+      settleTimerRef.current = setTimeout(() => {
+        setSettled(true);
+        settleTimerRef.current = null;
+      }, 400);
+    }
+    // v8.7.18 — require BOTH settled AND ≥5 real ticks before non-idle
     tickCountRef.current += 1;
-    if (tickCountRef.current < 2) {
+    if (!settled || tickCountRef.current < 5) {
       setZone("idle");
       return;
     }
@@ -207,7 +230,7 @@ export function usePriceZoneAlert({
       }
       return next;
     });
-  }, [livePrice, levels, player, gateOk]);
+  }, [livePrice, levels, player, gateOk, settled]);
 
   return zone;
 }

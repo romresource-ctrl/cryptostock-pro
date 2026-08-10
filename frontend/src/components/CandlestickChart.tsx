@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Animated, StyleSheet, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Svg, { Line, Rect, Text as SvgText } from "react-native-svg";
@@ -112,6 +112,17 @@ export default function CandlestickChart({
 
   // Hooks must run before any early return.
   const [cursorX, setCursorX] = useState<number | null>(null);
+
+  // v8.7.18 — Hide the live-price OVERLAYS (right-edge SVG price tag
+  // and the pulsing halo) for the first 300ms after mount so they
+  // don't paint at full saturation on the very first frame (green
+  // flicker). Chart data, gestures, live-price sync are untouched —
+  // this is a display-only opacity gate applied via `overlayOpacity`.
+  const [overlayOpacity, setOverlayOpacity] = useState(0);
+  useEffect(() => {
+    const t = setTimeout(() => setOverlayOpacity(1), 300);
+    return () => clearTimeout(t);
+  }, []);
   // v8.6.5 — Pulse animation for the live-price dot. useNativeDriver keeps
   // this off the JS thread so it never stutters even during heavy renders.
   const pulseAnim = React.useRef(new Animated.Value(0)).current;
@@ -553,6 +564,7 @@ export default function CandlestickChart({
               height={22}
               fill={liveColor}
               rx={3}
+              opacity={overlayOpacity}
             />
             <SvgText
               x={chartW + 4}
@@ -560,6 +572,7 @@ export default function CandlestickChart({
               fontSize={11}
               fontWeight="900"
               fill="#000"
+              opacity={overlayOpacity}
             >
               {formatPriceLabel(liveClose)}
             </SvgText>
@@ -639,6 +652,7 @@ export default function CandlestickChart({
             top: lastY - dotSize / 2,
             width: dotSize,
             height: dotSize,
+            opacity: overlayOpacity,
           }}
         >
           {/* Outer pulsing halo — scales 1→2.4 and fades 0.55→0 */}
