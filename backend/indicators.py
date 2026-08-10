@@ -221,20 +221,30 @@ def _compute_deep_levels(
         stop_loss = sl_deep
         band = atr * 0.4
     else:  # HOLD
-        # v8.7.14 — HOLD acts as an OPPORTUNISTIC DIP-BUY zone (per user
-        # spec): even when the raw signal is HOLD, most users watching a
-        # strong-BTC / ETH-lagging setup want to know WHERE the realistic
-        # pullback entry sits. So HOLD levels are:
-        #   • Entry range = ~1.0-1.3% BELOW price (dip zone)
-        #   • TP1         = ~+0.33% from price   (near-term target)
-        #   • SL          = ~0.6% below entry    (protects the dip buy)
-        # Frontend hook derives TP-2 / TP-3 as ladder extensions of TP1.
-        entry_deep = price * 0.994       # ~0.6% below (mid of dip zone)
-        entry_moderate = price * 0.997   # ~0.3% below
-        entry_aggressive = price * 0.999 # ~0.1% below
-        band = price * 0.0044            # ±0.44% band → e.g. ETH $1907-$1924
-        take_profit = price * 1.0033     # +0.33% from price
-        stop_loss = entry_deep * 0.994   # −0.6% below dip entry
+        # v8.7.16 — Market-scoped HOLD formulas:
+        # • CRYPTO → dip-buy zone (per user spec: ETH $1907-$1924, TP1
+        #   +0.33%, SL below dip). Crypto users watch pullbacks in a
+        #   strong-BTC context and need to see the realistic dip entry.
+        # • Non-crypto (stocks / ETF / gold-silver / commodity / forex)
+        #   → keep the original ATR-based HOLD projection (informational,
+        #   symmetric around price). These markets are less volatile and
+        #   the dip-buy framing doesn't fit their trading style.
+        if market == "crypto":
+            entry_deep = price * 0.994       # ~0.6% below (mid of dip zone)
+            entry_moderate = price * 0.997   # ~0.3% below
+            entry_aggressive = price * 0.999 # ~0.1% below
+            band = price * 0.0044            # ±0.44% band → e.g. ETH $1907-$1924
+            take_profit = price * 1.0033     # +0.33% from price
+            stop_loss = entry_deep * 0.994   # −0.6% below dip entry
+        else:
+            # v8.3.6 (original) — informational HOLD projection for
+            # stock-like markets. Symmetric around current price.
+            entry_deep = price
+            entry_moderate = price
+            entry_aggressive = price
+            take_profit = max(price + atr * 2.5, price * 1.008)
+            stop_loss = min(price - atr * 2.5, price * 0.992)
+            band = atr * 0.4
         sl_deep = sl_moderate = sl_aggressive = stop_loss
 
     return {
