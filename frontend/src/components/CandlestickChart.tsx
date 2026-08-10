@@ -44,6 +44,13 @@ type Props = {
   /** v8.7.7 — signal direction (BUY / SELL / HOLD) used only to colour
       the ENTRY badge (BUY = green, SELL = red). */
   signalAction?: string;
+  /** v8.7.22 — Gate for the LEFT-edge ENTRY / TP HIT / SL HIT alert
+      pill. When false, the pill is suppressed even if `alertZone` is
+      non-idle. Parent sets this to `!loadingChart && !!chart` so the
+      pill never appears before the chart data is fully ready. Does
+      NOT affect the live-price line, right-edge tag, halo, gestures,
+      or any real-time price syncing. */
+  isReady?: boolean;
 };
 
 /**
@@ -65,6 +72,7 @@ export default function CandlestickChart({
   livePrice = null,
   alertZone = "idle",
   signalAction,
+  isReady = true,
 }: Props) {
   const { colors } = useTheme();
 
@@ -704,7 +712,7 @@ export default function CandlestickChart({
         it doesn't dominate the chart. The specific ladder level (BUY-1/2/3
         or TP-1/2/3) is rendered separately as a top-left badge overlay
         from [symbol].tsx. */}
-    {isLive && candles.length > 0 && alertZone !== "idle" ? (() => {
+    {isLive && isReady && candles.length > 0 && alertZone !== "idle" ? (() => {
       const lastCandle = displayed[displayed.length - 1];
       const liveClose =
         typeof livePrice === "number" && Number.isFinite(livePrice)

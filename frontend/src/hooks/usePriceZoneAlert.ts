@@ -127,16 +127,14 @@ export function usePriceZoneAlert({
   }, [entryLow, entryHigh, takeProfit, stopLoss]);
 
   const [zone, setZone] = useState<AlertZone>("idle");
-  // v8.7.18 — Two-stage settle gate:
-  //   1. `settled` — flipped true 400ms after first non-null livePrice.
-  //      Absorbs any late-mount WS callback that would otherwise fire
-  //      an alert during the initial paint.
-  //   2. `tickCountRef ≥ 5` — require FIVE real live ticks before we
-  //      ever emit a non-idle zone. Combined with (1) this eliminates
-  //      the green flicker on detail-page open.
-  const tickCountRef = useRef(0);
-  const [settled, setSettled] = useState(false);
+  // v8.7.22 — 700ms stability gate: a candidate zone must persist for
+  // at least 700ms before it commits and paints on the UI. Prevents
+  // the price from momentarily grazing a zone during initial WS
+  // handshake / mount from firing a false alert. Idle commits
+  // immediately (no wait) so alerts can DISAPPEAR fast.
   const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingRef = useRef<{ zone: AlertZone } | null>(null);
+  const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const armedRef = useRef<Record<AlertZone, boolean>>({
     idle: true,
     entry: true,
@@ -145,11 +143,14 @@ export function usePriceZoneAlert({
     sl: true,
   });
 
-  // Reset settle state whenever the gate flips off (signal changes)
+  // Reset stability state whenever the gate flips off (signal changes)
   useEffect(() => {
     if (!gateOk) {
-      setSettled(false);
-      tickCountRef.current = 0;
+      pendingRef.current = null;
+      if (commitTimerRef.current) {
+        clearTimeout(commitTimerRef.current);
+        commitTimerRef.current = null;
+      }
       if (settleTimerRef.current) {
         clearTimeout(settleTimerRef.current);
         settleTimerRef.current = null;
@@ -161,25 +162,16 @@ export function usePriceZoneAlert({
     // Gate: no actionable signal → no alert at all
     if (!gateOk) {
       setZone("idle");
-      tickCountRef.current = 0;
+      pendingRef.current = null;
+      if (commitTimerRef.current) {
+        clearTimeout(commitTimerRef.current);
+        commitTimerRef.current = null;
+      }
       return;
     }
     if (livePrice == null || !Number.isFinite(livePrice)) {
       setZone("idle");
-      return;
-    }
-    // Start settle timer on the first real live price we ever see
-    if (!settled && settleTimerRef.current == null) {
-      settleTimerRef.current = setTimeout(() => {
-        setSettled(true);
-        settleTimerRef.current = null;
-      }, 400);
-    }
-    // v8.7.20 — Settle gate: settled flag + ≥2 real live ticks. Balance
-    // between fast responsiveness and no first-frame flicker.
-    tickCountRef.current += 1;
-    if (!settled || tickCountRef.current < 2) {
-      setZone("idle");
+      pendingRef.current = null;
       return;
     }
     const px = livePrice as number;
@@ -212,26 +204,49 @@ export function usePriceZoneAlert({
     check(levels.buy2, "buy2");
     check(levels.buy1, "buy1");
 
-    setZone((prev) => {
-      if (prev === next) return prev;
-      if (next !== "idle" && armedRef.current[next]) {
-        armedRef.current[next] = false;
-        _playBeep(player);
-      }
-      if (next === "idle") {
-        // Re-arm ALL levels once we leave any zone
-        (Object.keys(armedRef.current) as AlertZone[]).forEach((k) => {
-          armedRef.current[k] = true;
-        });
-      } else {
-        // Re-arm all OTHER levels
-        (Object.keys(armedRef.current) as AlertZone[]).forEach((k) => {
-          if (k !== next) armedRef.current[k] = true;
-        });
-      }
-      return next;
-    });
-  }, [livePrice, levels, player, gateOk, settled]);
+    // v8.7.22 — Stability commit: only setZone(next) if the candidate
+    // has been the same for ≥700ms. Idle commits immediately so alerts
+    // clear fast. Each new candidate resets the 700ms timer.
+    const commitZone = (committed: AlertZone) => {
+      setZone((prev) => {
+        if (prev === committed) return prev;
+        if (committed !== "idle" && armedRef.current[committed]) {
+          armedRef.current[committed] = false;
+          _playBeep(player);
+        }
+        if (committed === "idle") {
+          (Object.keys(armedRef.current) as AlertZone[]).forEach((k) => {
+            armedRef.current[k] = true;
+          });
+        } else {
+          (Object.keys(armedRef.current) as AlertZone[]).forEach((k) => {
+            if (k !== committed) armedRef.current[k] = true;
+          });
+        }
+        return committed;
+      });
+    };
+
+    if (pendingRef.current?.zone === next) {
+      // Same candidate as last tick — timer already scheduled (or already
+      // committed). Nothing to do.
+      return;
+    }
+    // New candidate: cancel any pending commit, restart the 700ms timer
+    if (commitTimerRef.current) {
+      clearTimeout(commitTimerRef.current);
+      commitTimerRef.current = null;
+    }
+    pendingRef.current = { zone: next };
+    if (next === "idle") {
+      commitZone("idle");
+    } else {
+      commitTimerRef.current = setTimeout(() => {
+        commitZone(next);
+        commitTimerRef.current = null;
+      }, 700);
+    }
+  }, [livePrice, levels, player, gateOk]);
 
   return zone;
 }

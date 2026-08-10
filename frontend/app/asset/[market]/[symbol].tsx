@@ -197,14 +197,16 @@ export default function AssetDetail() {
 
   const loadChart = useCallback(
     async (tf: Timeframe) => {
-      setLoadingChart(true);
+      // v8.7.22 — Atomic state flip: error CLEARED and loadingChart SET
+      // in the same paint. The red banner is gated on `error && !loadingChart`
+      // (see line ~1275) so once we're loading, no red box can appear.
       setError("");
-      // v8.7.20 — First attempt fires immediately (no pre-emptive sleep).
-      // ONE retry with 150ms backoff, but ONLY when the failure is a 502
-      // (cold-start) or a network/fetch error. Any other failure surfaces
-      // immediately so we don't hide real problems from the user.
+      setLoadingChart(true);
+      // 3-attempt backoff (150ms → 300ms). Retries on transient failures
+      // (502 / network / fetch / timeout); other failures surface fast.
+      const backoffs = [150, 300];
       let lastErr: unknown = null;
-      for (let attempt = 0; attempt < 2; attempt += 1) {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
         try {
           const c = await api.chart(market, symbol, tf);
           setChart(c);
@@ -213,11 +215,11 @@ export default function AssetDetail() {
           return;
         } catch (e) {
           lastErr = e;
-          if (attempt === 0) {
+          if (attempt < 2) {
             const msg = String((e as Error)?.message || "");
             const retryable = /\b502\b|network|fetch|timeout|failed to fetch/i.test(msg);
             if (retryable) {
-              await new Promise((r) => setTimeout(r, 150));
+              await new Promise((r) => setTimeout(r, backoffs[attempt]));
               continue;
             }
           }
@@ -689,6 +691,10 @@ export default function AssetDetail() {
                  row above, so the two never overlap. */
               alertZone={zoneAlert}
               signalAction={sig?.action}
+              /* v8.7.22 — Hide the left-edge ENTRY/TP/SL pill until the
+                 chart data is fully ready. Prevents any first-frame
+                 flicker before candles finish loading. */
+              isReady={!loadingChart && !!chart}
             />
           ) : (
             <PriceChart candles={liveCandles as never} width={screenW - 24} height={180} />
