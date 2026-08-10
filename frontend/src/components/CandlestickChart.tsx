@@ -113,16 +113,27 @@ export default function CandlestickChart({
   // Hooks must run before any early return.
   const [cursorX, setCursorX] = useState<number | null>(null);
 
-  // v8.7.18 — Hide the live-price OVERLAYS (right-edge SVG price tag
-  // and the pulsing halo) for the first 300ms after mount so they
-  // don't paint at full saturation on the very first frame (green
-  // flicker). Chart data, gestures, live-price sync are untouched —
-  // this is a display-only opacity gate applied via `overlayOpacity`.
+  // v8.7.19 — Fade-in the live-price OVERLAYS (right-edge tag + halo)
+  // from opacity 0 → 1 over 200ms once chart data is ready. Prevents
+  // the green flicker on first paint. Uses requestAnimationFrame-based
+  // setState so SVG opacity animates smoothly. Chart data, gestures and
+  // real-time price sync are NOT touched.
   const [overlayOpacity, setOverlayOpacity] = useState(0);
   useEffect(() => {
-    const t = setTimeout(() => setOverlayOpacity(1), 300);
-    return () => clearTimeout(t);
-  }, []);
+    if (candles.length === 0) {
+      setOverlayOpacity(0);
+      return;
+    }
+    const start = Date.now();
+    let raf = 0;
+    const tick = () => {
+      const p = Math.min((Date.now() - start) / 200, 1);
+      setOverlayOpacity(p);
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [candles.length]);
   // v8.6.5 — Pulse animation for the live-price dot. useNativeDriver keeps
   // this off the JS thread so it never stutters even during heavy renders.
   const pulseAnim = React.useRef(new Animated.Value(0)).current;

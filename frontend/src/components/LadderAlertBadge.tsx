@@ -35,20 +35,32 @@ const META: Record<
 };
 
 const LadderAlertBadge: React.FC<Props> = ({ zone }) => {
-  const opacity = useRef(new Animated.Value(1)).current;
+  // v8.7.19 — Start at opacity 0 and fade in over 200ms on first
+  // non-idle emission. Then the blink loop kicks in. Prevents the
+  // first-frame green flicker when the badge mounts.
+  const opacity = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     if (zone === "idle" || zone === "entry" || zone === "sl") {
-      opacity.setValue(1);
+      opacity.setValue(0);
       return;
     }
-    const loop = Animated.loop(
+    // Fade in 0 → 1 over 200ms, THEN start blink loop
+    const fadeIn = Animated.timing(opacity, {
+      toValue: 1, duration: 200, useNativeDriver: true,
+    });
+    const blink = Animated.loop(
       Animated.sequence([
         Animated.timing(opacity, { toValue: 0.3, duration: 400, useNativeDriver: true }),
         Animated.timing(opacity, { toValue: 1, duration: 400, useNativeDriver: true }),
       ]),
     );
-    loop.start();
-    return () => loop.stop();
+    fadeIn.start(({ finished }) => {
+      if (finished) blink.start();
+    });
+    return () => {
+      fadeIn.stop();
+      blink.stop();
+    };
   }, [zone, opacity]);
 
   if (zone === "idle" || zone === "entry" || zone === "sl") return null;

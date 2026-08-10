@@ -175,9 +175,10 @@ export function usePriceZoneAlert({
         settleTimerRef.current = null;
       }, 400);
     }
-    // v8.7.18 — require BOTH settled AND ≥5 real ticks before non-idle
+    // v8.7.20 — Settle gate: settled flag + ≥2 real live ticks. Balance
+    // between fast responsiveness and no first-frame flicker.
     tickCountRef.current += 1;
-    if (!settled || tickCountRef.current < 5) {
+    if (!settled || tickCountRef.current < 2) {
       setZone("idle");
       return;
     }

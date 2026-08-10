@@ -199,14 +199,12 @@ export default function AssetDetail() {
     async (tf: Timeframe) => {
       setLoadingChart(true);
       setError("");
-      // v8.7.17 — 2-shot retry with 400ms backoff before we ever paint
-      // the red error banner. The very first REST call after opening the
-      // detail page occasionally races the auth cookie / cold-start of
-      // the FastAPI worker and returns 502 for ~200ms — we swallow that
-      // and retry once so the UI never flickers red.
-      const attempts = 2;
+      // v8.7.20 — First attempt fires immediately (no pre-emptive sleep).
+      // ONE retry with 150ms backoff, but ONLY when the failure is a 502
+      // (cold-start) or a network/fetch error. Any other failure surfaces
+      // immediately so we don't hide real problems from the user.
       let lastErr: unknown = null;
-      for (let i = 0; i < attempts; i += 1) {
+      for (let attempt = 0; attempt < 2; attempt += 1) {
         try {
           const c = await api.chart(market, symbol, tf);
           setChart(c);
@@ -215,9 +213,15 @@ export default function AssetDetail() {
           return;
         } catch (e) {
           lastErr = e;
-          if (i < attempts - 1) {
-            await new Promise((r) => setTimeout(r, 400));
+          if (attempt === 0) {
+            const msg = String((e as Error)?.message || "");
+            const retryable = /\b502\b|network|fetch|timeout|failed to fetch/i.test(msg);
+            if (retryable) {
+              await new Promise((r) => setTimeout(r, 150));
+              continue;
+            }
           }
+          break;
         }
       }
       setError(lastErr instanceof Error ? lastErr.message : String(lastErr));
@@ -603,17 +607,6 @@ export default function AssetDetail() {
         <View style={[styles.chartBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           {/* Chart type toggle */}
           <View style={styles.chartToggleRow}>
-            {/* v8.7.17 — Ladder alert badge (TP-1/2/3, BUY 1/2/3)
-                absolute-positioned on the LEFT so the Candlestick/Line
-                toggles stay pinned to the right regardless of alert
-                state. Only rendered once the chart has loaded AND the
-                zone hook has emitted a real (non-idle) signal — this
-                prevents a stale first-frame flash on page open. */}
-            <View style={{ position: "absolute", left: 0, top: 0, bottom: 0, justifyContent: "center" }}>
-              {!loadingChart && chart && zoneAlert !== "idle" ? (
-                <LadderAlertBadge zone={zoneAlert} />
-              ) : null}
-            </View>
             <TouchableOpacity
               testID="chart-toggle-candlestick"
               onPress={() => setChartType("candlestick")}
@@ -672,6 +665,10 @@ export default function AssetDetail() {
               </Text>
             </TouchableOpacity>
           </View>
+          {/* v8.7.20 — Chart wrapper with position:relative so the
+              LadderAlertBadge below can be absolute-positioned inside
+              (top:8, left:8) without shifting the toggle row above. */}
+          <View style={{ position: "relative" }}>
           {loadingChart ? (
             <View style={styles.chartLoader}>
               <ActivityIndicator color={colors.accentBlue} />
@@ -696,6 +693,12 @@ export default function AssetDetail() {
           ) : (
             <PriceChart candles={liveCandles as never} width={screenW - 24} height={180} />
           )}
+          {!loadingChart && chart && zoneAlert !== "idle" ? (
+            <View style={{ position: "absolute", top: 8, left: 8, zIndex: 10 }} pointerEvents="none">
+              <LadderAlertBadge zone={zoneAlert} />
+            </View>
+          ) : null}
+          </View>
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
               <Text style={[styles.statLabel, { color: colors.textMuted }]}>HIGH 24H</Text>
