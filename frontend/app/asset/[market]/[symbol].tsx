@@ -199,14 +199,29 @@ export default function AssetDetail() {
     async (tf: Timeframe) => {
       setLoadingChart(true);
       setError("");
-      try {
-        const c = await api.chart(market, symbol, tf);
-        setChart(c);
-      } catch (e) {
-        setError((e as Error).message);
-      } finally {
-        setLoadingChart(false);
+      // v8.7.17 — 2-shot retry with 400ms backoff before we ever paint
+      // the red error banner. The very first REST call after opening the
+      // detail page occasionally races the auth cookie / cold-start of
+      // the FastAPI worker and returns 502 for ~200ms — we swallow that
+      // and retry once so the UI never flickers red.
+      const attempts = 2;
+      let lastErr: unknown = null;
+      for (let i = 0; i < attempts; i += 1) {
+        try {
+          const c = await api.chart(market, symbol, tf);
+          setChart(c);
+          setError("");
+          setLoadingChart(false);
+          return;
+        } catch (e) {
+          lastErr = e;
+          if (i < attempts - 1) {
+            await new Promise((r) => setTimeout(r, 400));
+          }
+        }
       }
+      setError(lastErr instanceof Error ? lastErr.message : String(lastErr));
+      setLoadingChart(false);
     },
     [market, symbol],
   );
@@ -1251,7 +1266,11 @@ export default function AssetDetail() {
           )}
         </View>
 
-        {error ? (
+        {/* v8.7.17 — Only paint the persistent error banner when a load
+            is NOT currently in progress. Prevents the momentary red
+            flicker when the detail page first opens and the chart REST
+            call races the cold-start latency. */}
+        {error && !loadingChart ? (
           <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.accentDown }]}>
             <Text style={{ color: colors.accentDown }}>Error: {error}</Text>
           </View>
