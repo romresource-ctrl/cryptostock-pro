@@ -44,6 +44,12 @@ interface Args {
   entryHigh: number | null | undefined;
   takeProfit: number | null | undefined;
   stopLoss: number | null | undefined;
+  /** v8.7.12 — Gate: alerts only fire when the underlying signal is
+   *  ACTIONABLE. Otherwise HOLD/low-conf signals spam ENTRY/BUY/TP badges
+   *  from arbitrary entry ranges the backend still returns. */
+  action?: string | null;
+  confidence?: number | null;
+  isPremium?: boolean | null;
 }
 
 interface Levels {
@@ -68,8 +74,24 @@ function pctBand(target: number): [number, number] {
 
 export function usePriceZoneAlert({
   livePrice, entryLow, entryHigh, takeProfit, stopLoss,
+  action, confidence, isPremium,
 }: Args): AlertZone {
   const player = useAudioPlayer({ uri: BEEP_URL });
+
+  // v8.7.12 — Gate alerts to Premium-quality actionable signals only.
+  // Rules (ALL must hold):
+  //   • action is BUY or SELL (never HOLD)
+  //   • confidence >= 85 (matches _MARKET_THRESHOLDS min_conf floor)
+  //   • is_premium flag from backend, when available, must be true
+  // This prevents the ENTRY / BUY-3 / TP badges from spamming when the
+  // backend returns wide, arbitrary entry ranges around a HOLD signal.
+  const gateOk = useMemo(() => {
+    const act = String(action || "").toUpperCase();
+    if (act !== "BUY" && act !== "SELL") return false;
+    if (confidence != null && Number.isFinite(confidence) && confidence < 85) return false;
+    if (isPremium === false) return false; // explicit false disables; null/undefined stays permissive
+    return true;
+  }, [action, confidence, isPremium]);
 
   // Compute ladder levels once per signal input change
   const levels: Levels = useMemo(() => {
@@ -109,6 +131,11 @@ export function usePriceZoneAlert({
   });
 
   useEffect(() => {
+    // Gate: no actionable signal → no alert at all
+    if (!gateOk) {
+      setZone("idle");
+      return;
+    }
     if (livePrice == null || !Number.isFinite(livePrice)) {
       setZone("idle");
       return;
@@ -162,7 +189,7 @@ export function usePriceZoneAlert({
       }
       return next;
     });
-  }, [livePrice, levels, player]);
+  }, [livePrice, levels, player, gateOk]);
 
   return zone;
 }

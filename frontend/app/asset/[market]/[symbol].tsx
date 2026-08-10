@@ -334,15 +334,17 @@ export default function AssetDetail() {
   // v8.5.3 — Kline WS: patches the last candle so the chart updates live.
   const liveKline = useBinanceKline(String(symbol), market, timeframe);
 
-  // v8.7.7 — Zone alert (ENTRY / TP HIT / SL HIT) driven by live ticker
-  // and the signal's own entry_low / entry_high / TP / SL levels. Fires
-  // a single beep on entering a zone, re-armed on exit.
+  // v8.7.12 — Zone alert gated to Premium-actionable signals only.
+  // HOLD or confidence < 85 → hook stays "idle", no popup spam.
   const zoneAlert = usePriceZoneAlert({
     livePrice: rt.connected && Number.isFinite(rt.price) ? rt.price : ticker.price,
     entryLow: sig?.entry_low ?? sig?.entry ?? null,
     entryHigh: sig?.entry_high ?? sig?.entry ?? null,
     takeProfit: sig?.take_profit ?? null,
     stopLoss: sig?.stop_loss ?? null,
+    action: sig?.action ?? null,
+    confidence: sig?.confidence ?? null,
+    isPremium: sig?.is_premium ?? null,
   });
 
   // v8.6.18 — Growing-candles history. Instead of feeding
