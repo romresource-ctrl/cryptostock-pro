@@ -99,14 +99,23 @@ export function usePriceZoneAlert({
     const eHigh = Number.isFinite(entryHigh as number) ? (entryHigh as number) : null;
     const tp = Number.isFinite(takeProfit as number) ? (takeProfit as number) : null;
     const sl = Number.isFinite(stopLoss as number) ? (stopLoss as number) : null;
+    const px = Number.isFinite(livePrice as number) ? (livePrice as number) : null;
 
     let tp1: number | null = tp;
     let tp2: number | null = null;
     let tp3: number | null = null;
-    if (eHigh != null && tp != null && tp > eHigh) {
-      const reward = tp - eHigh;
-      tp2 = eHigh + reward * 1.75;
-      tp3 = eHigh + reward * 2.5;
+    if (tp != null) {
+      // v8.7.14 — Ladder step = distance from CURRENT PRICE to TP1 (not
+      // entry_high). When the signal parks entry deep below price (dip
+      // buy zone), entry_high−TP1 is huge and inflates TP-2/TP-3. Using
+      // price as the reference gives realistic +$7 / +$15 steps.
+      // Falls back to entry_high-based step only if livePrice missing.
+      const anchor = px ?? eHigh;
+      if (anchor != null && tp > anchor) {
+        const step = tp - anchor;
+        tp2 = tp + step * 1.15;
+        tp3 = tp + step * 2.5;
+      }
     }
 
     let buy3: number | null = eLow;
@@ -119,7 +128,7 @@ export function usePriceZoneAlert({
     }
 
     return { entryLow: eLow, entryHigh: eHigh, tp1, tp2, tp3, buy3, buy2, buy1, sl };
-  }, [entryLow, entryHigh, takeProfit, stopLoss]);
+  }, [entryLow, entryHigh, takeProfit, stopLoss, livePrice]);
 
   const [zone, setZone] = useState<AlertZone>("idle");
   const armedRef = useRef<Record<AlertZone, boolean>>({

@@ -221,16 +221,21 @@ def _compute_deep_levels(
         stop_loss = sl_deep
         band = atr * 0.4
     else:  # HOLD
-        entry_deep = price
-        entry_moderate = price
-        entry_aggressive = price
-        # v8.3.6 — HOLD is informational (no active trade recommended)
-        # but the numbers still surface in the UI. Widen the projection
-        # so users see realistic "if the market breaks upward" targets.
-        take_profit = max(price + atr * 2.5, price * 1.008)
-        stop_loss = min(price - atr * 2.5, price * 0.992)
+        # v8.7.14 — HOLD acts as an OPPORTUNISTIC DIP-BUY zone (per user
+        # spec): even when the raw signal is HOLD, most users watching a
+        # strong-BTC / ETH-lagging setup want to know WHERE the realistic
+        # pullback entry sits. So HOLD levels are:
+        #   • Entry range = ~1.0-1.3% BELOW price (dip zone)
+        #   • TP1         = ~+0.33% from price   (near-term target)
+        #   • SL          = ~0.6% below entry    (protects the dip buy)
+        # Frontend hook derives TP-2 / TP-3 as ladder extensions of TP1.
+        entry_deep = price * 0.9893      # ~1.07% below (dip mid)
+        entry_moderate = price * 0.994   # ~0.6% below
+        entry_aggressive = price * 0.997 # ~0.3% below
+        band = price * 0.0022            # ±0.22% band (~$4 on ETH @1900)
+        take_profit = price * 1.0033     # +0.33% from price
+        stop_loss = entry_deep * 0.994   # −0.6% below dip entry
         sl_deep = sl_moderate = sl_aggressive = stop_loss
-        band = atr * 0.4
 
     return {
         "entry": entry_deep,
