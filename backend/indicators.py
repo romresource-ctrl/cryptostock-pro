@@ -229,10 +229,10 @@ def _compute_deep_levels(
         #   • TP1         = ~+0.33% from price   (near-term target)
         #   • SL          = ~0.6% below entry    (protects the dip buy)
         # Frontend hook derives TP-2 / TP-3 as ladder extensions of TP1.
-        entry_deep = price * 0.9893      # ~1.07% below (dip mid)
-        entry_moderate = price * 0.994   # ~0.6% below
-        entry_aggressive = price * 0.997 # ~0.3% below
-        band = price * 0.0022            # ±0.22% band (~$4 on ETH @1900)
+        entry_deep = price * 0.994       # ~0.6% below (mid of dip zone)
+        entry_moderate = price * 0.997   # ~0.3% below
+        entry_aggressive = price * 0.999 # ~0.1% below
+        band = price * 0.0044            # ±0.44% band → e.g. ETH $1907-$1924
         take_profit = price * 1.0033     # +0.33% from price
         stop_loss = entry_deep * 0.994   # −0.6% below dip entry
         sl_deep = sl_moderate = sl_aggressive = stop_loss
