@@ -172,13 +172,20 @@ def _compute_deep_levels(
         }
 
     if action == "BUY":
-        # v8.1.8 — Three tiers + entry ZONE (v8.1.9). User trades a
-        # range not a point, so we return low/high bounds around each
-        # tier at ±0.4 ATR (typical band width ≈ user's expected
-        # 1915-1925 range for ETH).
-        entry_deep = ((avg_valley + lowest_valley) / 2.0) - atr * 0.5
-        entry_moderate = ((price + avg_valley) / 2.0) + atr * 0.3
-        entry_aggressive = price - atr * 0.3
+        # v8.7.13 — Restored deeper entry (v8.6.13-style). Old v8.7.x formula
+        # used (avg_valley + lowest_valley)/2 which produced entries too
+        # close to current price. We now anchor on the LOWEST valley and
+        # enforce a minimum 1.2% distance below price so LONG entries sit
+        # in a real dip, not right at market.
+        entry_deep_raw = lowest_valley - atr * 0.5
+        min_dip_pct = price * 0.988  # at least 1.2% below current price
+        entry_deep = min(entry_deep_raw, min_dip_pct)
+        # Moderate/aggressive stay closer to price but still below it
+        entry_moderate = min(
+            ((price + avg_valley) / 2.0) - atr * 0.2,
+            price * 0.995,  # at least 0.5% below price
+        )
+        entry_aggressive = min(price - atr * 0.2, price * 0.998)
         # v8.3.6 — TP min-distance (see previous doc block).
         min_tp_pct_entry = entry_deep * 1.010
         min_tp_pct_price = price * 1.005
@@ -188,22 +195,25 @@ def _compute_deep_levels(
             min_tp_pct_entry,
             min_tp_pct_price,
         )
-        # v8.3.7 — SL min-distance. The old `entry_deep - atr * 0.5`
-        # produced SL only $2 below entry on ETH 3m — meaningless. We
-        # now require SL to be at least the greater of:
-        #   • 1.5× ATR from entry     (volatility floor)
-        #   • 0.8% of entry price     (percentage floor)
-        # so R:R stays >= ~1:1 even on tiny-ATR timeframes.
+        # v8.3.7 — SL min-distance (unchanged).
         min_sl_distance = max(atr * 1.5, entry_deep * 0.008)
         sl_deep = min(entry_deep - atr * 0.5, entry_deep - min_sl_distance)
         sl_moderate = min(entry_moderate - atr * 0.5, entry_moderate - min_sl_distance)
         sl_aggressive = min(entry_aggressive - atr * 0.5, entry_aggressive - min_sl_distance)
         stop_loss = sl_deep
-        band = atr * 0.4
+        # v8.7.13 — Wider band (0.6 ATR was 0.4) — more realistic price
+        # travel window between low/high of the entry range.
+        band = atr * 0.6
     elif action == "SELL":
-        entry_deep = ((avg_peak + highest_peak) / 2.0) + atr * 0.5
-        entry_moderate = ((price + avg_peak) / 2.0) - atr * 0.3
-        entry_aggressive = price + atr * 0.3
+        # v8.7.13 — Restored higher entry (mirror of BUY fix).
+        entry_deep_raw = highest_peak + atr * 0.5
+        min_peak_pct = price * 1.012  # at least 1.2% above current price
+        entry_deep = max(entry_deep_raw, min_peak_pct)
+        entry_moderate = max(
+            ((price + avg_peak) / 2.0) + atr * 0.2,
+            price * 1.005,
+        )
+        entry_aggressive = max(price + atr * 0.2, price * 1.002)
         # v8.3.6 — TP min-distance (mirror of BUY).
         min_tp_pct_entry = entry_deep * 0.990
         min_tp_pct_price = price * 0.995
@@ -219,7 +229,7 @@ def _compute_deep_levels(
         sl_moderate = max(entry_moderate + atr * 0.5, entry_moderate + min_sl_distance)
         sl_aggressive = max(entry_aggressive + atr * 0.5, entry_aggressive + min_sl_distance)
         stop_loss = sl_deep
-        band = atr * 0.4
+        band = atr * 0.6
     else:  # HOLD
         entry_deep = price
         entry_moderate = price
