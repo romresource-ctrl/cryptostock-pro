@@ -122,14 +122,26 @@ function CandlestickChart({
   // Hooks must run before any early return.
   const [cursorX, setCursorX] = useState<number | null>(null);
 
-  // v8.7.19 — Fade-in the live-price OVERLAYS (right-edge tag + halo)
-  // from opacity 0 → 1 over 200ms once chart data is ready. Prevents
-  // the green flicker on first paint. Uses requestAnimationFrame-based
-  // setState so SVG opacity animates smoothly. Chart data, gestures and
-  // real-time price sync are NOT touched.
+  // v8.12.5 — Single stable "live data ready" flag. All live overlays
+  // (dashed price line, right-edge tag, pulsing dot, alert pill) mount
+  // ONLY when this flag flips to true, guaranteeing they never paint
+  // before a finite `livePrice` has actually arrived. Was previously
+  // gated on `candles.length > 0`, which allowed a frame or two of
+  // stale-price overlay when the ticker was still `null`.
+  const liveReady =
+    isLive &&
+    candles.length > 0 &&
+    typeof livePrice === "number" &&
+    Number.isFinite(livePrice);
+
+  // v8.7.19 → v8.12.5 — Fade-in the live-price OVERLAYS (right-edge tag
+  // + halo) from opacity 0 → 1 over 200ms once LIVE DATA is ready
+  // (not merely once candles arrive). Prevents the green flicker on
+  // first paint. Uses requestAnimationFrame-based setState so SVG
+  // opacity animates smoothly.
   const [overlayOpacity, setOverlayOpacity] = useState(0);
   useEffect(() => {
-    if (candles.length === 0) {
+    if (!liveReady) {
       setOverlayOpacity(0);
       return;
     }
@@ -142,7 +154,7 @@ function CandlestickChart({
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [candles.length]);
+  }, [liveReady]);
   // v8.6.5 — Pulse animation for the live-price dot. useNativeDriver keeps
   // this off the JS thread so it never stutters even during heavy renders.
   const pulseAnim = React.useRef(new Animated.Value(0)).current;
@@ -562,22 +574,12 @@ function CandlestickChart({
         });
       })()}
 
-      {/* v8.6.5 — Live-price line + pulsing dot. Renders whenever
-          `isLive` is true (parent controls this via Binance WS connect
-          state). The horizontal dashed line + right-edge price tag are
-          drawn inside SVG. The pulsing dot animation is a sibling
-          <Animated.View> laid on top of the SVG because SVG elements
-          can't be animated with useNativeDriver on RN. */}
-      {isLive && candles.length > 0 ? (() => {
-        const lastCandle = displayed[displayed.length - 1];
-        // v8.6.12 — Prefer the ticker WS price (updates every ~200ms)
-        // over the kline WS close (updates every 1-2s and rounds to
-        // whole units on the wire). Falls back to candle close when no
-        // ticker price has arrived yet.
-        const liveClose =
-          typeof livePrice === "number" && Number.isFinite(livePrice)
-            ? livePrice
-            : lastCandle.close;
+      {/* v8.12.5 — Live-price line + right-edge tag. Mounts ONLY when
+          liveReady is true (isLive + candles.length + finite livePrice)
+          so it never paints against a stale/null ticker. */}
+      {liveReady ? (() => {
+        // liveReady guarantees livePrice is a finite number here.
+        const liveClose = livePrice as number;
         const lastY = priceToY(liveClose);
         // v8.12.2 — Use stable last-closed-candle color; avoids red↔green
         // flicker when the ticker crosses the current bar's open.
@@ -664,16 +666,14 @@ function CandlestickChart({
     </Svg>
     {/* v8.12.2 — Extracted into memoized <LivePulseDot/> so it only
         re-renders when its own props change (position, colour, opacity).
-        The parent's outer React.memo (candlesEqual, 5-bps threshold)
-        additionally throttles sub-threshold updates. */}
-    {isLive && candles.length > 0 ? (() => {
-      const lastCandle = displayed[displayed.length - 1];
+        The parent's outer React.memo (candlesEqual, 3-bps threshold)
+        additionally throttles sub-threshold updates.
+        v8.12.5 — Gated on `liveReady` so it never mounts before a
+        finite livePrice arrives. */}
+    {liveReady ? (() => {
       const lastX = (displayed.length - 1) * step + candleGap / 2 + candleWidth / 2;
-      const liveCloseDot =
-        typeof livePrice === "number" && Number.isFinite(livePrice)
-          ? livePrice
-          : lastCandle.close;
-      const lastY = priceToY(liveCloseDot);
+      // liveReady guarantees livePrice is a finite number here.
+      const lastY = priceToY(livePrice as number);
       return (
         <LivePulseDot
           x={lastX}
@@ -690,13 +690,13 @@ function CandlestickChart({
         it visually "hangs" off the same horizontal price line. Small so
         it doesn't dominate the chart. The specific ladder level (BUY-1/2/3
         or TP-1/2/3) is rendered separately as a top-left badge overlay
-        from [symbol].tsx. */}
-    {isLive && isReady && candles.length > 0 && alertZone !== "idle" ? (() => {
-      const lastCandle = displayed[displayed.length - 1];
-      const liveClose =
-        typeof livePrice === "number" && Number.isFinite(livePrice)
-          ? livePrice
-          : lastCandle.close;
+        from [symbol].tsx.
+        v8.12.5 — Now gated on `liveReady` (finite livePrice + isLive +
+        candles) instead of just `isLive && candles.length > 0`, so the
+        pill never paints before a real price arrives. */}
+    {liveReady && isReady && alertZone !== "idle" ? (() => {
+      // liveReady guarantees livePrice is a finite number here.
+      const liveClose = livePrice as number;
       const lastY = priceToY(liveClose);
       // v8.12.1 — Pill labels per user spec:
       //   TP1-Hit! / TP2-Hit! / TP3-Hit! / SL-Hit! / HOLD /
