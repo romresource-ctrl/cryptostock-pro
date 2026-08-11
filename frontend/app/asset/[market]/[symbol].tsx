@@ -21,7 +21,9 @@ import PositionSizeCalculator from "@/src/components/PositionSizeCalculator";
 import TargetProfit from "@/src/components/TargetProfit";
 import WrHistoryModal, { type WrPeriod } from "@/src/components/WrHistoryModal";
 import LadderAlertBadge from "@/src/components/LadderAlertBadge";
+import DipTopPopup from "@/src/components/DipTopPopup";
 import { usePriceZoneAlert } from "@/src/hooks/usePriceZoneAlert";
+import { useDipTopAlert } from "@/src/hooks/useDipTopAlert";
 import {
   STABLECOIN_SYMBOLS,
   formatStablecoinLocal,
@@ -379,6 +381,16 @@ export default function AssetDetail() {
     isPremium: sig?.is_premium ?? null,
   });
 
+  // v8.13.0 — Micro-swing detector. Buffers the last 60s of livePrice
+  // and emits DIP 1/2/3 (drawdown) or TOP 1/2/3 (rally) when the move
+  // crosses 0.5% / 1.2% / 2.5% thresholds. Only active for crypto
+  // (WS ticker required). Non-crypto → null → hook stays idle.
+  const dipTopZone = useDipTopAlert({
+    livePrice: market === "crypto" && rt.connected && Number.isFinite(rt.price)
+      ? rt.price
+      : null,
+  });
+
   // v8.6.18 — Growing-candles history. Instead of feeding
   // `chart.candles` (frozen REST snapshot) directly into
   // `patchCandlesWithLive`, we maintain a mutable copy that grows
@@ -617,7 +629,16 @@ export default function AssetDetail() {
         </ScrollView>
 
         {/* Chart */}
-        <View style={[styles.chartBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <View style={[styles.chartBox, { backgroundColor: colors.surface, borderColor: colors.border, position: "relative" }]}>
+          {/* v8.13.0 — Mini "BUY THE DIP #3" / "SELL THE TOP #3" popup.
+              Only auto-appears when the micro-swing hook detects a
+              terminal drawdown / rally tier (dip3 / top3). Non-blocking
+              (pointerEvents="none"). */}
+          <DipTopPopup
+            zone={dipTopZone}
+            livePrice={rt.connected && Number.isFinite(rt.price) ? rt.price : ticker.price}
+            symbol={String(symbol || "")}
+          />
           {/* Chart type toggle */}
           <View style={styles.chartToggleRow}>
             {/* v8.12.1 — Ladder alert badge on the LEFT, chart type
@@ -630,6 +651,7 @@ export default function AssetDetail() {
                   zone={zoneAlert}
                   signalAction={sig?.action}
                   signalLabel={sig?.label}
+                  dipTopZone={dipTopZone}
                 />
               ) : null}
             </View>

@@ -1,25 +1,28 @@
 /**
- * LadderAlertBadge — v8.12.1
+ * LadderAlertBadge — v8.13.0
  *
  * Blinking popup badge rendered inline next to the Candlestick / Line
  * toggle buttons (per user spec — should NOT overlap the chart body).
- * Shows the SPECIFIC laddered level the live ticker just crossed:
+ * Shows either:
  *
- *   • Entry tiers (deep / moderate / aggressive):
- *       - BUY  side → "LONG 1", "LONG 2", "LONG 3"
- *       - SELL side → "SHORT 1", "SHORT 2", "SHORT 3"
- *       - Non-crypto BUY  → "BUY 1", "BUY 2", "BUY 3"
- *       - Non-crypto SELL → "SELL 1", "SELL 2", "SELL 3"
- *   • Take-profit ladder → "TP 1", "TP 2", "TP 3"
+ *   • Entry / TP tiers (from usePriceZoneAlert):
+ *       - BUY  side → "LONG 1 / 2 / 3" (crypto) or "BUY 1 / 2 / 3"
+ *       - SELL side → "SHORT 1 / 2 / 3" (crypto) or "SELL 1 / 2 / 3"
+ *       - Take-profit ladder → "TP 1 / 2 / 3"
  *
- * The primary ENTRY / TP HIT / SL HIT / HOLD pill lives on the price-line
- * at the LEFT edge (inside CandlestickChart). This badge is intentionally
- * a separate overlay so both can be shown simultaneously when relevant.
- * Beep is handled by the shared `usePriceZoneAlert` hook, not here.
+ *   • Micro-swing tiers (from useDipTopAlert) — v8.13.0:
+ *       - "DIP 1 / 2 / 3" — price dropped 0.5% / 1.2% / 2.5% from
+ *         the recent peak (blue palette).
+ *       - "TOP 1 / 2 / 3" — price rose 0.5% / 1.2% / 2.5% from the
+ *         recent trough (orange palette).
+ *
+ * When BOTH zones are active, entry/TP wins over dip/top since it is
+ * the higher-priority actionable signal.
  */
 import React, { useEffect, useRef } from "react";
-import { Animated, StyleSheet, Text } from "react-native";
+import { Animated, StyleSheet, Text, View } from "react-native";
 import type { AlertZone } from "@/src/hooks/usePriceZoneAlert";
+import type { DipTopZone } from "@/src/hooks/useDipTopAlert";
 
 interface Props {
   zone: AlertZone;
@@ -29,6 +32,10 @@ interface Props {
   /** Backend label — "LONG"/"SHORT" for crypto, "BUY"/"SELL" otherwise.
    *  Used to derive the correct verb prefix. */
   signalLabel?: string | null;
+  /** v8.13.0 — Independent micro-swing zone (buy-the-dip / sell-the-top).
+   *  Rendered as a SECOND badge to the right of the entry/TP badge
+   *  when both are active. */
+  dipTopZone?: DipTopZone;
 }
 
 type Meta = { label: string; bg: string; fg: string };
@@ -65,10 +72,32 @@ function metaForZone(zone: AlertZone, action: string, label: string): Meta | nul
   return null;
 }
 
-const LadderAlertBadge: React.FC<Props> = ({ zone, signalAction, signalLabel }) => {
+// v8.13.0 — Palette for micro-swing dip/top tiers.
+// DIP: cool blue (entry into value) → deeper = more saturated.
+// TOP: warm orange (take profit / exit at high) → higher = more saturated.
+const DIP_META: Record<"dip1" | "dip2" | "dip3", Meta> = {
+  dip1: { label: "💧 DIP 1", bg: "#38bdf8", fg: "#000" },
+  dip2: { label: "🌊 DIP 2", bg: "#0ea5e9", fg: "#fff" },
+  dip3: { label: "💎 DIP 3", bg: "#0369a1", fg: "#fff" },
+};
+const TOP_META: Record<"top1" | "top2" | "top3", Meta> = {
+  top1: { label: "📈 TOP 1", bg: "#fbbf24", fg: "#000" },
+  top2: { label: "🚀 TOP 2", bg: "#f97316", fg: "#fff" },
+  top3: { label: "🔥 TOP 3", bg: "#c2410c", fg: "#fff" },
+};
+
+function dipTopMeta(zone: DipTopZone): Meta | null {
+  if (zone === "dip1" || zone === "dip2" || zone === "dip3") return DIP_META[zone];
+  if (zone === "top1" || zone === "top2" || zone === "top3") return TOP_META[zone];
+  return null;
+}
+
+const LadderAlertBadge: React.FC<Props> = ({ zone, signalAction, signalLabel, dipTopZone = "idle" }) => {
   // Fade in 0→1 in 200ms then blink softly — prevents first-frame flicker
   // when the badge mounts.
   const opacity = useRef(new Animated.Value(0)).current;
+  const dipOpacity = useRef(new Animated.Value(0)).current;
+
   useEffect(() => {
     if (zone === "idle" || zone === "sl" || zone === "hold") {
       opacity.setValue(0);
@@ -92,24 +121,69 @@ const LadderAlertBadge: React.FC<Props> = ({ zone, signalAction, signalLabel }) 
     };
   }, [zone, opacity]);
 
-  if (zone === "idle" || zone === "sl" || zone === "hold") return null;
+  // v8.13.0 — Independent blink loop for the dip/top badge.
+  useEffect(() => {
+    if (dipTopZone === "idle") {
+      dipOpacity.setValue(0);
+      return;
+    }
+    const fadeIn = Animated.timing(dipOpacity, {
+      toValue: 1, duration: 200, useNativeDriver: true,
+    });
+    const blink = Animated.loop(
+      Animated.sequence([
+        Animated.timing(dipOpacity, { toValue: 0.4, duration: 450, useNativeDriver: true }),
+        Animated.timing(dipOpacity, { toValue: 1, duration: 450, useNativeDriver: true }),
+      ]),
+    );
+    fadeIn.start(({ finished }) => {
+      if (finished) blink.start();
+    });
+    return () => {
+      fadeIn.stop();
+      blink.stop();
+    };
+  }, [dipTopZone, dipOpacity]);
+
   const action = String(signalAction || "").toUpperCase();
   const label = String(signalLabel || "").toUpperCase();
-  const meta = metaForZone(zone, action, label);
-  if (!meta) return null;
+  const primaryMeta =
+    zone === "idle" || zone === "sl" || zone === "hold"
+      ? null
+      : metaForZone(zone, action, label);
+  const secondaryMeta = dipTopZone === "idle" ? null : dipTopMeta(dipTopZone);
+
+  if (!primaryMeta && !secondaryMeta) return null;
 
   return (
-    <Animated.View
-      pointerEvents="none"
-      style={[styles.badge, { backgroundColor: meta.bg, opacity }]}
-      testID={`ladder-alert-${zone}`}
-    >
-      <Text style={[styles.text, { color: meta.fg }]}>{meta.label}</Text>
-    </Animated.View>
+    <View style={styles.row} pointerEvents="none">
+      {primaryMeta ? (
+        <Animated.View
+          style={[styles.badge, { backgroundColor: primaryMeta.bg, opacity }]}
+          testID={`ladder-alert-${zone}`}
+        >
+          <Text style={[styles.text, { color: primaryMeta.fg }]}>{primaryMeta.label}</Text>
+        </Animated.View>
+      ) : null}
+      {secondaryMeta ? (
+        <Animated.View
+          style={[styles.badge, { backgroundColor: secondaryMeta.bg, opacity: dipOpacity }]}
+          testID={`diptop-alert-${dipTopZone}`}
+        >
+          <Text style={[styles.text, { color: secondaryMeta.fg }]}>{secondaryMeta.label}</Text>
+        </Animated.View>
+      ) : null}
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    flexWrap: "wrap",
+  },
   badge: {
     paddingHorizontal: 10,
     paddingVertical: 5,
