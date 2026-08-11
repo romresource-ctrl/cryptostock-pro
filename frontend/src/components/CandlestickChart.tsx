@@ -269,8 +269,75 @@ function CandlestickChart({
   }, [applyPan, applyPinch, candles.length]);
 
   if (!candles || candles.length < 2) {
+    // v8.12.14 — Static SVG skeleton (grid + axes only) instead of a
+    // blank box. Uses the SAME layout formulas as the real chart below
+    // (rightPad / volumeH / chartH / chartW) so the first paint is
+    // pixel-identical to the eventual candle render. When candles
+    // arrive, the grid stays in place and only the OHLC bodies +
+    // volume bars fade in — zero layout shift, zero blank frame.
+    const _rightPad = 56;
+    const _volumeH = showVolume ? Math.max(24, height * 0.18) : 0;
+    const _chartH = height - _volumeH - 4;
+    const _chartW = width - _rightPad;
+    const _rows = [0, 0.25, 0.5, 0.75, 1];
     return (
-      <View style={{ width, height, backgroundColor: colors.surface }} />
+      <View style={{ width, height, backgroundColor: colors.surface }}>
+        <Svg width={width} height={height}>
+          {showGrid
+            ? _rows.map((p, i) => {
+                const y = p * _chartH;
+                return (
+                  <Line
+                    key={`sk-grid-${i}`}
+                    x1={0}
+                    x2={_chartW}
+                    y1={y}
+                    y2={y}
+                    stroke={colors.border}
+                    strokeWidth={0.5}
+                    strokeDasharray="3 4"
+                    opacity={0.55}
+                  />
+                );
+              })
+            : null}
+          {/* Right-axis boundary (mirrors the axis padding of the real chart). */}
+          <Line
+            x1={_chartW}
+            x2={_chartW}
+            y1={0}
+            y2={_chartH}
+            stroke={colors.border}
+            strokeWidth={0.5}
+            opacity={0.35}
+          />
+          {/* Volume-band divider — shown even in skeleton so the vertical
+              proportion of price:volume never shifts when data lands. */}
+          {showVolume ? (
+            <Line
+              x1={0}
+              x2={_chartW}
+              y1={_chartH}
+              y2={_chartH}
+              stroke={colors.border}
+              strokeWidth={0.5}
+              opacity={0.55}
+            />
+          ) : null}
+          {/* Ghost "Vol" label placeholder at bottom-right of volume band. */}
+          {showVolume ? (
+            <SvgText
+              x={_chartW + 4}
+              y={_chartH + _volumeH - 2}
+              fontSize={9}
+              fill={colors.textMuted}
+              opacity={0.6}
+            >
+              Vol
+            </SvgText>
+          ) : null}
+        </Svg>
+      </View>
     );
   }
 

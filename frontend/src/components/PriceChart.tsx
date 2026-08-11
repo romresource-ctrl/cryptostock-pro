@@ -19,7 +19,32 @@ type Props = {
 export default function PriceChart({ candles, width, height }: Props) {
   const { colors } = useTheme();
   if (!candles || candles.length < 2) {
-    return <View style={{ width, height, backgroundColor: colors.surface }} />;
+    // v8.12.14 — Static SVG skeleton (dashed grid lines) instead of a
+    // blank box. Uses the SAME layout formulas the real chart uses below
+    // (padBottom / usableH) so the first paint is pixel-identical to the
+    // eventual line render. When candles arrive, the grid stays in place
+    // and only the area + line paths fade in — zero blank frame.
+    const _padBottom = 20;
+    const _usableH = height - _padBottom;
+    const _grids = [0.25, 0.5, 0.75].map((p) => p * _usableH);
+    return (
+      <View style={{ width, height, backgroundColor: colors.surface }}>
+        <Svg width={width} height={height}>
+          {_grids.map((y, i) => (
+            <Line
+              key={`sk-line-${i}`}
+              x1={0}
+              x2={width}
+              y1={y}
+              y2={y}
+              stroke={colors.border}
+              strokeWidth={0.5}
+              strokeDasharray="3 4"
+            />
+          ))}
+        </Svg>
+      </View>
+    );
   }
   const closes = candles.map((c) => c.close);
   const min = Math.min(...closes);
