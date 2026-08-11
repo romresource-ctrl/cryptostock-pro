@@ -440,10 +440,44 @@ export default function AssetDetail() {
     });
   }, [liveKline]);
 
-  const liveCandles = React.useMemo(
-    () => patchCandlesWithLive(growingCandles ?? [], liveKline),
-    [growingCandles, liveKline],
-  );
+  // v8.12.13 — Reference-stable liveCandles memo. Combines two optimizations:
+  //
+  //   (1) Below-threshold hold: if the last bar's close changed by less
+  //       than 3 bps (0.03%) — same epsilon the chart's memo comparator
+  //       uses for livePrice — return the previous array reference so
+  //       downstream React.memo(CandlestickChart) can bail out without
+  //       re-rendering the entire SVG grid + candle body list.
+  //
+  //   (2) Cold-start hold: if the new patched array has fewer than 2
+  //       bars but we already hold a good array, keep the previous one.
+  //       Prevents the empty-chart path from flashing during initial
+  //       load + timeframe swap. The spinner is overlaid on top in the
+  //       chart wrapper instead of swapping the chart out entirely.
+  const stableCandlesRef = React.useRef<any[]>([]);
+  const liveCandles = React.useMemo(() => {
+    const patched = patchCandlesWithLive(growingCandles ?? [], liveKline);
+    const prev = stableCandlesRef.current;
+
+    // Cold-start hold — keep last non-empty array while chart re-fetches.
+    if (patched.length < 2 && prev.length >= 2) return prev;
+
+    // Epsilon hold — same 3-bps threshold as CandlestickChart memo.
+    if (prev.length === patched.length && patched.length > 0) {
+      const pl = prev[prev.length - 1];
+      const nl = patched[patched.length - 1];
+      if (pl && nl && pl.t === nl.t) {
+        const a = pl.close;
+        const b = nl.close;
+        if (Number.isFinite(a) && Number.isFinite(b) && a > 0) {
+          const rel = Math.abs(b - a) / a;
+          if (rel < 0.0003) return prev;
+        }
+      }
+    }
+
+    stableCandlesRef.current = patched;
+    return patched;
+  }, [growingCandles, liveKline]);
   const displayPrice = rt.connected && Number.isFinite(rt.price)
     ? rt.price
     : (ticker.price ?? null);
@@ -715,47 +749,57 @@ export default function AssetDetail() {
             </TouchableOpacity>
             </View>
           </View>
-          {/* v8.12.1 — Chart wrapper no longer needs relative-positioning
-              since the LadderAlertBadge moved out to the toggle row. */}
-          <View>
-          {loadingChart ? (
-            <View style={styles.chartLoader}>
-              <ActivityIndicator color={colors.accentBlue} />
-            </View>
-          ) : chartType === "candlestick" ? (
-            <CandlestickChart
-              candles={liveCandles as never}
-              width={screenW - 24}
-              height={220}
-              /* v8.6.5 — Only crypto markets subscribe to Binance
-                 kline WS, so isLive should mirror that condition. */
-              isLive={market === "crypto" && rt.connected}
-              /* v8.12.5 — Prefer live ticker; else fall back to the last
-                 candle's close once chart is loaded (guarantees a finite
-                 livePrice so the CandlestickChart live-overlays can mount
-                 immediately without waiting for the WS to connect). */
-              livePrice={
-                rt.connected && Number.isFinite(rt.price)
-                  ? rt.price
-                  : (!loadingChart && liveCandles.length > 0
-                      ? liveCandles[liveCandles.length - 1].close
-                      : null)
-              }
-              /* v8.12.1 — Left-edge pill inside chart shows
-                 TP1-Hit! / TP2-Hit! / TP3-Hit! / SL-Hit! / HOLD /
-                 ENTRY-1 / ENTRY-2 / ENTRY-3. The verb badge
-                 (LONG/SHORT/BUY/SELL 1/2/3, TP 1/2/3) is the
-                 LadderAlertBadge in the toggle row above. */
-              alertZone={zoneAlert}
-              signalAction={sig?.action}
-              /* v8.7.22 — Hide the left-edge pill until the
-                 chart data is fully ready. Prevents any first-frame
-                 flicker before candles finish loading. */
-              isReady={!loadingChart && !!chart}
-            />
-          ) : (
-            <PriceChart candles={liveCandles as never} width={screenW - 24} height={180} />
-          )}
+          {/* v8.12.13 — Keep CandlestickChart / PriceChart MOUNTED with
+              stable keys and overlay the loading spinner on top when
+              needed. Previously the chart was swapped out for the spinner
+              entirely, forcing a full unmount/remount + SVG grid rebuild
+              every time `loadingChart` flipped (timeframe change, symbol
+              switch). Combined with the reference-stable `liveCandles`
+              memo above, cold-start no longer flashes an empty chart. */}
+          <View style={styles.chartContainer}>
+            {chartType === "candlestick" ? (
+              <CandlestickChart
+                key="ohlc"
+                candles={liveCandles as never}
+                width={screenW - 24}
+                height={220}
+                /* v8.6.5 — Only crypto markets subscribe to Binance
+                   kline WS, so isLive should mirror that condition. */
+                isLive={market === "crypto" && rt.connected}
+                /* v8.12.5 — Prefer live ticker; else fall back to the last
+                   candle's close once chart is loaded (guarantees a finite
+                   livePrice so the CandlestickChart live-overlays can mount
+                   immediately without waiting for the WS to connect). */
+                livePrice={
+                  rt.connected && Number.isFinite(rt.price)
+                    ? rt.price
+                    : (!loadingChart && liveCandles.length > 0
+                        ? liveCandles[liveCandles.length - 1].close
+                        : null)
+                }
+                /* v8.12.1 — Left-edge pill inside chart shows
+                   TP1-Hit! / TP2-Hit! / TP3-Hit! / SL-Hit! / HOLD /
+                   ENTRY-1 / ENTRY-2 / ENTRY-3. */
+                alertZone={zoneAlert}
+                signalAction={sig?.action}
+                /* v8.7.22 — Hide the left-edge pill until the
+                   chart data is fully ready. Prevents any first-frame
+                   flicker before candles finish loading. */
+                isReady={!loadingChart && !!chart && liveCandles.length >= 2}
+              />
+            ) : (
+              <PriceChart
+                key="line"
+                candles={liveCandles as never}
+                width={screenW - 24}
+                height={180}
+              />
+            )}
+            {loadingChart ? (
+              <View style={styles.chartLoaderOverlay} pointerEvents="none">
+                <ActivityIndicator color={colors.accentBlue} />
+              </View>
+            ) : null}
           </View>
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
@@ -1444,6 +1488,25 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   chartLoader: { height: 180, alignItems: "center", justifyContent: "center" },
+  chartContainer: {
+    // v8.12.13 — Wraps CandlestickChart/PriceChart so the loader can be
+    // overlaid absolutely without stealing layout from the chart itself.
+    position: "relative",
+    minHeight: 220,
+  },
+  chartLoaderOverlay: {
+    // Semi-opaque overlay so the (possibly stale) chart underneath is
+    // subtly visible during loading — signals "refreshing" rather than
+    // "empty".
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.28)",
+  },
   chartToggleRow: {
     flexDirection: "row",
     gap: 6,
