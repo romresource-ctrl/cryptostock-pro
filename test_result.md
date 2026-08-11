@@ -418,3 +418,141 @@ agent_communication:
       - Google Play Billing purchase (1/3/6/12 month plans)
       - Native ChatSheet keyboard
       - Android soft keyboard behaviour
+
+
+# ============================================================
+# v8.12.1 — Formula BTC (regime-aware) & UI Ladder Alert refactor
+# ============================================================
+backend:
+  - task: "Expose entry_moderate_low/high & entry_aggressive_low/high in /api/asset/{market}/{symbol}/chart signal payload"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/indicators.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          v8.12.1 — `compute_signal()` now surfaces the 3-tier entry
+          ranges (deep, moderate, aggressive) as low/high floats so the
+          frontend `usePriceZoneAlert` hook can trigger ENTRY-1 / ENTRY-2 /
+          ENTRY-3 pills independently against the live ticker.
+          Verified locally with curl on /api/asset/crypto/BTC/chart?timeframe=1h
+          — response now contains entry_low/high, entry_moderate_low/high,
+          entry_aggressive_low/high, plus regime (BULL/BEAR/BEAR_CAPITULATION/
+          SIDEWAYS/UNKNOWN) and take_profit_2/3 for regime-aware BUY/SELL.
+
+frontend:
+  - task: "LadderAlertBadge labels — LONG/SHORT/BUY/SELL 1/2/3 + TP 1/2/3"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/components/LadderAlertBadge.tsx, /app/frontend/app/asset/[market]/[symbol].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          v8.12.1 — Fixed a broken `META[zone]` reference (only tp1/2/3
+          worked before; entry tiers rendered nothing) by wiring both
+          TP_META and metaForZone(entry1/2/3) into a single lookup. Labels
+          now read:
+            • crypto BUY → LONG 1 / LONG 2 / LONG 3
+            • crypto SELL → SHORT 1 / SHORT 2 / SHORT 3
+            • stocks BUY → BUY 1 / BUY 2 / BUY 3
+            • stocks SELL → SELL 1 / SELL 2 / SELL 3
+            • TPs → TP 1 / TP 2 / TP 3
+          Layout: badge moved from absolute (top:8, left:8) inside the
+          chart body to INLINE on the LEFT of the chart-type toggle row
+          (right-hand group holds Candlestick + Line). This mirrors the
+          user's ETH screenshot request. 700ms stability gate + fade-in
+          protections preserved.
+  - task: "Pill labels on price-line (CandlestickChart)"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/components/CandlestickChart.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          v8.12.1 — Alert pill riding the live-price line now renders
+          user-requested labels: "TP1-Hit!", "TP2-Hit!", "TP3-Hit!",
+          "SL-Hit!", "HOLD", "ENTRY-1", "ENTRY-2", "ENTRY-3". Colour
+          scheme: SL → red, TP → yellow, HOLD → neutral grey, ENTRY →
+          side-tinted (green for BUY, red for SELL). alertZone type
+          expanded from {entry|buy1|buy2|buy3|tp1|tp2|tp3|sl} to the
+          new {entry1|entry2|entry3|tp1|tp2|tp3|sl|hold} set matching
+          usePriceZoneAlert.
+  - task: "Wire 3-tier entry ranges from backend into usePriceZoneAlert"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/asset/[market]/[symbol].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          v8.12.1 — Pass entry_moderate_low/high & entry_aggressive_low/high
+          from the /api/asset chart response into usePriceZoneAlert so the
+          hook can commit ENTRY-1/2/3 independently.
+  - task: "App version bump 8.8.0 → 8.12.1"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/lib/version.ts, /app/frontend/app.json"
+    stuck_count: 0
+    priority: "low"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Bumped version + verified via screenshot."
+
+metadata:
+  created_by: "main_agent"
+  version: "8.12.1"
+  test_sequence: 24
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Expose entry_moderate_low/high & entry_aggressive_low/high in /api/asset/{market}/{symbol}/chart signal payload"
+    - "LadderAlertBadge labels — LONG/SHORT/BUY/SELL 1/2/3 + TP 1/2/3"
+    - "Pill labels on price-line (CandlestickChart)"
+    - "Wire 3-tier entry ranges from backend into usePriceZoneAlert"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: |
+      v8.12.1 — Please validate the /api/asset/{market}/{symbol}/chart
+      endpoint signal payload:
+        1. For crypto (BTC, ETH, SOL, XRP, DOGE) with timeframe=1h and
+           timeframe=4h: response.signal MUST include ALL of these fields
+           as numeric floats (or null for HOLD/stock-like):
+             entry_low, entry_high,
+             entry_moderate_low, entry_moderate_high,
+             entry_aggressive_low, entry_aggressive_high,
+             take_profit, take_profit_2, take_profit_3,
+             stop_loss, regime, action, confidence, label.
+        2. `regime` must be one of BULL / BEAR / BEAR_CAPITULATION /
+           SIDEWAYS / UNKNOWN for crypto. Non-crypto (stock_us / stock_id
+           / etf / gold_silver) can be UNKNOWN.
+        3. When action ∈ {BUY, SELL}: entry_high > entry (deep) and
+           entry_aggressive_high > entry_moderate_high (i.e., three
+           distinct laddered ranges, not degenerate).
+        4. When action = HOLD: take_profit_2 and take_profit_3 may be null;
+           this is expected.
+        5. Dashboard endpoint (/api/dashboard?market=crypto) must still
+           return the standard AssetSignal fields (no regression).
+      NOT TO TEST via automated agent: live Binance WS streaming,
+      real Google Play billing.

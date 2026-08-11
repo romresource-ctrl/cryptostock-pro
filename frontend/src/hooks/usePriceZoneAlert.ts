@@ -29,10 +29,10 @@ import { useAudioPlayer } from "expo-audio";
 
 export type AlertZone =
   | "idle"
-  | "entry"
+  | "entry1" | "entry2" | "entry3"
   | "tp1" | "tp2" | "tp3"
-  | "buy3" | "buy2" | "buy1"
-  | "sl";
+  | "sl"
+  | "hold";
 
 const BEEP_URL =
   "https://customer-assets.emergentagent.com/job_swift-market/artifacts/uwx4jcxr_beep.mp3";
@@ -42,30 +42,25 @@ interface Args {
   livePrice: number | null | undefined;
   entryLow: number | null | undefined;
   entryHigh: number | null | undefined;
+  /** v8.8.1 — 3-tier entry ranges (deep=1, moderate=2, aggressive=3). */
+  entryModerateLow?: number | null;
+  entryModerateHigh?: number | null;
+  entryAggressiveLow?: number | null;
+  entryAggressiveHigh?: number | null;
   takeProfit: number | null | undefined;
-  /** v8.7.23 — Optional backend-computed ladder (regime-aware crypto).
-   *  When both are present the hook trusts them; otherwise it derives
-   *  tp2/tp3 from entry_high like before. */
   takeProfit2?: number | null | undefined;
   takeProfit3?: number | null | undefined;
   stopLoss: number | null | undefined;
-  /** v8.7.12 — Gate: alerts only fire when the underlying signal is
-   *  ACTIONABLE. Otherwise HOLD/low-conf signals spam ENTRY/BUY/TP badges
-   *  from arbitrary entry ranges the backend still returns. */
   action?: string | null;
   confidence?: number | null;
   isPremium?: boolean | null;
 }
 
 interface Levels {
-  entryLow: number | null;
-  entryHigh: number | null;
-  tp1: number | null;
-  tp2: number | null;
-  tp3: number | null;
-  buy3: number | null;
-  buy2: number | null;
-  buy1: number | null;
+  entry1Low: number | null; entry1High: number | null;
+  entry2Low: number | null; entry2High: number | null;
+  entry3Low: number | null; entry3High: number | null;
+  tp1: number | null; tp2: number | null; tp3: number | null;
   sl: number | null;
 }
 
@@ -79,59 +74,60 @@ function pctBand(target: number): [number, number] {
 
 export function usePriceZoneAlert({
   livePrice, entryLow, entryHigh, takeProfit, takeProfit2, takeProfit3, stopLoss,
+  entryModerateLow, entryModerateHigh, entryAggressiveLow, entryAggressiveHigh,
   action, confidence, isPremium,
 }: Args): AlertZone {
   const player = useAudioPlayer({ uri: BEEP_URL });
 
-  // v8.7.12 — Gate alerts to Premium-quality actionable signals only.
-  // Rules (ALL must hold):
-  //   • action is BUY or SELL (never HOLD)
-  //   • confidence >= 85 (matches _MARKET_THRESHOLDS min_conf floor)
-  //   • is_premium flag from backend, when available, must be true
-  // This prevents the ENTRY / BUY-3 / TP badges from spamming when the
-  // backend returns wide, arbitrary entry ranges around a HOLD signal.
-  const gateOk = useMemo(() => {
+  // v8.12.1 — Gate rules split by action:
+  //   • BUY/SELL: require confidence ≥ 85 + is_premium ≠ false. Fires
+  //     any of entry1/2/3, tp1/2/3, sl.
+  //   • HOLD: always allowed to render the "HOLD" pill (no confidence
+  //     floor — HOLD is informational, not actionable). Only zone="hold"
+  //     can be committed for HOLD signals.
+  //   • Any other (empty/null): no alert.
+  const gateMode = useMemo<"actionable" | "hold" | "off">(() => {
     const act = String(action || "").toUpperCase();
-    if (act !== "BUY" && act !== "SELL") return false;
-    if (confidence != null && Number.isFinite(confidence) && confidence < 85) return false;
-    if (isPremium === false) return false; // explicit false disables; null/undefined stays permissive
-    return true;
+    if (act === "HOLD") return "hold";
+    if (act !== "BUY" && act !== "SELL") return "off";
+    if (confidence != null && Number.isFinite(confidence) && confidence < 85) return "off";
+    if (isPremium === false) return "off";
+    return "actionable";
   }, [action, confidence, isPremium]);
+  const gateOk = gateMode !== "off";
 
   // Compute ladder levels once per signal input change
   const levels: Levels = useMemo(() => {
-    const eLow = Number.isFinite(entryLow as number) ? (entryLow as number) : null;
-    const eHigh = Number.isFinite(entryHigh as number) ? (entryHigh as number) : null;
-    const tp = Number.isFinite(takeProfit as number) ? (takeProfit as number) : null;
-    const sl = Number.isFinite(stopLoss as number) ? (stopLoss as number) : null;
+    const num = (x: unknown): number | null =>
+      Number.isFinite(x as number) ? (x as number) : null;
+    const e1Low = num(entryLow);
+    const e1High = num(entryHigh);
+    const e2Low = num(entryModerateLow) ?? e1Low;
+    const e2High = num(entryModerateHigh) ?? e1High;
+    const e3Low = num(entryAggressiveLow) ?? e1Low;
+    const e3High = num(entryAggressiveHigh) ?? e1High;
+    const tp = num(takeProfit);
+    const sl = num(stopLoss);
+    const bTp2 = num(takeProfit2);
+    const bTp3 = num(takeProfit3);
 
-    let tp1: number | null = tp;
-    let tp2: number | null = null;
-    let tp3: number | null = null;
-    // v8.7.23 — Prefer backend-computed ladder (regime-aware crypto)
-    const backendTp2 = Number.isFinite(takeProfit2 as number) ? (takeProfit2 as number) : null;
-    const backendTp3 = Number.isFinite(takeProfit3 as number) ? (takeProfit3 as number) : null;
-    if (backendTp2 != null && backendTp3 != null) {
-      tp2 = backendTp2;
-      tp3 = backendTp3;
-    } else if (tp != null && eHigh != null && tp > eHigh) {
-      // Fallback: derive from entry_high (stocklike / HOLD)
-      const step = tp - eHigh;
-      tp2 = eHigh + step * 1.7;
-      tp3 = eHigh + step * 2.5;
+    let tp1 = tp;
+    let tp2: number | null = bTp2;
+    let tp3: number | null = bTp3;
+    if ((tp2 == null || tp3 == null) && tp != null && e1High != null && tp > e1High) {
+      const step = tp - e1High;
+      tp2 = tp2 ?? e1High + step * 1.7;
+      tp3 = tp3 ?? e1High + step * 2.5;
     }
-
-    let buy3: number | null = eLow;
-    let buy2: number | null = null;
-    let buy1: number | null = null;
-    if (eLow != null && sl != null && eLow > sl) {
-      const risk = eLow - sl;
-      buy2 = eLow - risk * 0.35;
-      buy1 = eLow - risk * 0.70;
-    }
-
-    return { entryLow: eLow, entryHigh: eHigh, tp1, tp2, tp3, buy3, buy2, buy1, sl };
-  }, [entryLow, entryHigh, takeProfit, stopLoss]);
+    return {
+      entry1Low: e1Low, entry1High: e1High,
+      entry2Low: e2Low, entry2High: e2High,
+      entry3Low: e3Low, entry3High: e3High,
+      tp1, tp2, tp3, sl,
+    };
+  }, [entryLow, entryHigh, entryModerateLow, entryModerateHigh,
+      entryAggressiveLow, entryAggressiveHigh,
+      takeProfit, takeProfit2, takeProfit3, stopLoss]);
 
   const [zone, setZone] = useState<AlertZone>("idle");
   // v8.7.22 — 700ms stability gate: a candidate zone must persist for
@@ -144,10 +140,10 @@ export function usePriceZoneAlert({
   const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const armedRef = useRef<Record<AlertZone, boolean>>({
     idle: true,
-    entry: true,
+    entry1: true, entry2: true, entry3: true,
     tp1: true, tp2: true, tp3: true,
-    buy3: true, buy2: true, buy1: true,
     sl: true,
+    hold: true,
   });
 
   // Reset stability state whenever the gate flips off (signal changes)
@@ -184,8 +180,12 @@ export function usePriceZoneAlert({
     const px = livePrice as number;
     let next: AlertZone = "idle";
 
-    // Priority: SL > TP-3 > TP-2 > TP-1 > ENTRY > BUY-3 > BUY-2 > BUY-1
-    // (highest / most-actionable level wins if two overlap)
+    // v8.12.1 — HOLD mode: only the "hold" zone is emitted. No entry/TP/SL
+    // pills fire when the underlying signal is HOLD (they'd be misleading
+    // — HOLD has no valid entry ladder).
+    if (gateMode === "hold") {
+      next = "hold";
+    } else {
     const check = (target: number | null, tag: AlertZone) => {
       if (next !== "idle" || target == null) return;
       const [lo, hi] = pctBand(target);
@@ -198,18 +198,17 @@ export function usePriceZoneAlert({
     check(levels.tp3, "tp3");
     check(levels.tp2, "tp2");
     check(levels.tp1, "tp1");
-    // Original entry band (uses actual entry_low..entry_high, no ± band)
-    if (
-      next === "idle" &&
-      levels.entryLow != null && levels.entryHigh != null &&
-      inRange(px, levels.entryLow, levels.entryHigh)
-    ) {
-      next = "entry";
+    // v8.8.1 — 3-tier entry zones (deep = ENTRY-1, moderate = ENTRY-2,
+    // aggressive = ENTRY-3). Each uses its own low..high range from
+    // backend indicators.py.
+    const inBand = (lo: number | null, hi: number | null) =>
+      lo != null && hi != null && px >= Math.min(lo, hi) && px <= Math.max(lo, hi);
+    if (next === "idle" && inBand(levels.entry1Low, levels.entry1High)) next = "entry1";
+    if (next === "idle" && inBand(levels.entry2Low, levels.entry2High)) next = "entry2";
+    if (next === "idle" && inBand(levels.entry3Low, levels.entry3High)) next = "entry3";
     }
-    // Downside ladder — nearest dip first
-    check(levels.buy3, "buy3");
-    check(levels.buy2, "buy2");
-    check(levels.buy1, "buy1");
+    // v8.12.1 — Down-side/dip-buy zones removed; entry1/2/3 already cover
+    // the 3-tier entry ladder (deep/moderate/aggressive) uniformly.
 
     // v8.7.22 — Stability commit: only setZone(next) if the candidate
     // has been the same for ≥700ms. Idle commits immediately so alerts
@@ -253,7 +252,7 @@ export function usePriceZoneAlert({
         commitTimerRef.current = null;
       }, 700);
     }
-  }, [livePrice, levels, player, gateOk]);
+  }, [livePrice, levels, player, gateOk, gateMode]);
 
   return zone;
 }

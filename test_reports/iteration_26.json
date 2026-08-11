@@ -1,0 +1,41 @@
+{
+  "summary": "Backend v8.12.1 signal-payload validation — 35 passed / 10 skipped / 0 failed. All 17 required signal keys (entry, entry_low, entry_high, entry_moderate + low/high, entry_aggressive + low/high, take_profit, take_profit_2, take_profit_3, stop_loss, regime, action, confidence, label) are exposed by /api/asset/crypto/{SYMBOL}/chart for BTC, ETH, SOL, XRP, DOGE. Regime is one of BULL/BEAR/BEAR_CAPITULATION/SIDEWAYS/UNKNOWN. When action is BUY/SELL, the 3-tier ladder (deep < moderate <= aggressive for BUY, reversed for SELL) is enforced and TP1<TP2<TP3 distances from entry are monotonic. When action=HOLD, tp2/tp3=null (expected, no regression). Non-crypto /api/asset/stock_us/AAPL/chart also exposes entry_moderate_low/high & entry_aggressive_low/high with regime='UNKNOWN'. /api/dashboard?market=crypto&timeframe=1h still returns AssetSignal fields (entry_low, entry_high, entry_moderate, entry_aggressive, is_premium, action, confidence) — no schema regression.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "/api/asset/{market}/{symbol}/chart",
+        "issue": "Timeframes '4h' and '1d' requested by the review are NOT in TIMEFRAME_MAP (backend/market_data.py:627). Supported longer buckets are 3h/6h/12h/24h. Tests use '6h' (closest to 4h) and '24h' (closest to 1d). Endpoint correctly returns HTTP 400 {'detail':'Invalid timeframe'} for '4h'/'1d'. Not a v8.12.1 regression, but frontend/product spec may need to align its TF chip labels with backend keys."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter26_v812_signal_tiers.py",
+    "/app/test_reports/pytest/iter26.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: If product wants literal '4h' / '1d' TF strings from the frontend, extend TIMEFRAME_MAP in /app/backend/market_data.py:627 to alias 4h→binance:4h and 1d→binance:1d. Otherwise, ensure frontend continues to use 6h / 24h (which the dashboard already does).",
+    "No code changes required for the v8.12.1 payload — it is fully wired and returning the expected 3-tier ladder + regime + TP-1/2/3 for crypto."
+  ],
+  "critical_code_review_comments": [
+    "indicators.py:551-561 correctly rounds and forwards all 9 entry-tier fields (deep/moderate/aggressive × entry/low/high).",
+    "indicators.py:567-568 correctly maps tp2/tp3 to null when the underlying _compute_deep_levels returns None (HOLD path or stock-like markets).",
+    "indicators.py:517-518 gates regime detection to market=='crypto' only, so non-crypto markets always report regime='UNKNOWN' — matches review requirement #6.",
+    "server.py:1019-1024 returns ChartResponse with the raw sig dict, so all new keys automatically flow through without needing model changes."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter26_v812_signal_tiers.py (new)"
+  ],
+  "success_rate": {"backend": "100% (35/35 executed, 10 conditional skips for BUY/SELL-only or HOLD-only branches)", "frontend": "N/A (frontend testing skipped per request)"},
+  "seed_data_creation": "None — endpoints are read-only market data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend TIMEFRAME_MAP supports {1m,3m,5m,15m,30m,1h,3h,6h,12h,18h,24h,7d,14d,30d}. '4h' and '1d' are NOT supported (return HTTP 400). Use 6h/24h. The v8.12.1 signal contract lives in /app/backend/indicators.py compute_signal() return dict lines 550-577. Regime detection is crypto-only. Dashboard AssetSignal Pydantic model is at /app/backend/server.py:375-411.",
+  "rca_of_issue": "N/A — no bugs found. v8.12.1 signal payload changes are functioning as designed and match the frontend usePriceZoneAlert hook contract."
+}

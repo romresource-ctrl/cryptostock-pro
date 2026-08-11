@@ -363,6 +363,13 @@ export default function AssetDetail() {
     livePrice: rt.connected && Number.isFinite(rt.price) ? rt.price : ticker.price,
     entryLow: sig?.entry_low ?? sig?.entry ?? null,
     entryHigh: sig?.entry_high ?? sig?.entry ?? null,
+    // v8.12.1 — 3-tier entry zone ranges from backend indicators.py so
+    // usePriceZoneAlert can trigger ENTRY-1 / ENTRY-2 / ENTRY-3 pills
+    // independently against the live price.
+    entryModerateLow: (sig as any)?.entry_moderate_low ?? null,
+    entryModerateHigh: (sig as any)?.entry_moderate_high ?? null,
+    entryAggressiveLow: (sig as any)?.entry_aggressive_low ?? null,
+    entryAggressiveHigh: (sig as any)?.entry_aggressive_high ?? null,
     takeProfit: sig?.take_profit ?? null,
     takeProfit2: (sig as any)?.take_profit_2 ?? null,
     takeProfit3: (sig as any)?.take_profit_3 ?? null,
@@ -613,6 +620,20 @@ export default function AssetDetail() {
         <View style={[styles.chartBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           {/* Chart type toggle */}
           <View style={styles.chartToggleRow}>
+            {/* v8.12.1 — Ladder alert badge on the LEFT, chart type
+                toggle buttons on the RIGHT. The badge only renders when
+                zoneAlert is entry1/2/3 or tp1/2/3; SL / HOLD show only
+                in the pill inside the chart. */}
+            <View style={styles.ladderInline} pointerEvents="none">
+              {!loadingChart && chart ? (
+                <LadderAlertBadge
+                  zone={zoneAlert}
+                  signalAction={sig?.action}
+                  signalLabel={sig?.label}
+                />
+              ) : null}
+            </View>
+            <View style={styles.chartToggleGroup}>
             <TouchableOpacity
               testID="chart-toggle-candlestick"
               onPress={() => setChartType("candlestick")}
@@ -670,11 +691,11 @@ export default function AssetDetail() {
                 Line
               </Text>
             </TouchableOpacity>
+            </View>
           </View>
-          {/* v8.7.20 — Chart wrapper with position:relative so the
-              LadderAlertBadge below can be absolute-positioned inside
-              (top:8, left:8) without shifting the toggle row above. */}
-          <View style={{ position: "relative" }}>
+          {/* v8.12.1 — Chart wrapper no longer needs relative-positioning
+              since the LadderAlertBadge moved out to the toggle row. */}
+          <View>
           {loadingChart ? (
             <View style={styles.chartLoader}>
               <ActivityIndicator color={colors.accentBlue} />
@@ -688,14 +709,14 @@ export default function AssetDetail() {
                  kline WS, so isLive should mirror that condition. */
               isLive={market === "crypto" && rt.connected}
               livePrice={rt.connected && Number.isFinite(rt.price) ? rt.price : null}
-              /* v8.7.9 — ENTRY / TP HIT / SL HIT pill on the LEFT edge
-                 of the live-price line (rendered inside the chart).
-                 The specific ladder level (TP-1/2/3 or BUY 1/2/3) is
-                 rendered separately as an inline badge in the toggle
-                 row above, so the two never overlap. */
+              /* v8.12.1 — Left-edge pill inside chart shows
+                 TP1-Hit! / TP2-Hit! / TP3-Hit! / SL-Hit! / HOLD /
+                 ENTRY-1 / ENTRY-2 / ENTRY-3. The verb badge
+                 (LONG/SHORT/BUY/SELL 1/2/3, TP 1/2/3) is the
+                 LadderAlertBadge in the toggle row above. */
               alertZone={zoneAlert}
               signalAction={sig?.action}
-              /* v8.7.22 — Hide the left-edge ENTRY/TP/SL pill until the
+              /* v8.7.22 — Hide the left-edge pill until the
                  chart data is fully ready. Prevents any first-frame
                  flicker before candles finish loading. */
               isReady={!loadingChart && !!chart}
@@ -703,11 +724,6 @@ export default function AssetDetail() {
           ) : (
             <PriceChart candles={liveCandles as never} width={screenW - 24} height={180} />
           )}
-          {!loadingChart && chart && zoneAlert !== "idle" ? (
-            <View style={{ position: "absolute", top: 8, left: 8, zIndex: 10 }} pointerEvents="none">
-              <LadderAlertBadge zone={zoneAlert} />
-            </View>
-          ) : null}
           </View>
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
@@ -1400,9 +1416,22 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 6,
     marginBottom: 10,
-    justifyContent: "flex-end",
+    justifyContent: "space-between",
     alignItems: "center",
     position: "relative",
+  },
+  ladderInline: {
+    // Empty container occupies remaining space on the left when the
+    // badge is idle so the toggle buttons stay pinned to the right.
+    // The badge itself has alignSelf:'center' from LadderAlertBadge.
+    flexShrink: 1,
+    minHeight: 22,
+    justifyContent: "center",
+  },
+  chartToggleGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
   chartToggleBtn: {
     flexDirection: "row",

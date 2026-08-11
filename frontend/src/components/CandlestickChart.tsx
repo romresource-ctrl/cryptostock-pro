@@ -37,10 +37,11 @@ type Props = {
       Supports laddered zones: entry, tp1/tp2/tp3, buy3/buy2/buy1, sl.
       When "idle" nothing is drawn. */
   alertZone?:
-    | "idle" | "entry"
+    | "idle"
+    | "entry1" | "entry2" | "entry3"
     | "tp1" | "tp2" | "tp3"
-    | "buy3" | "buy2" | "buy1"
-    | "sl";
+    | "sl"
+    | "hold";
   /** v8.7.7 — signal direction (BUY / SELL / HOLD) used only to colour
       the ENTRY badge (BUY = green, SELL = red). */
   signalAction?: string;
@@ -719,20 +720,43 @@ export default function CandlestickChart({
           ? livePrice
           : lastCandle.close;
       const lastY = priceToY(liveClose);
-      // Map ladder → primary 3-state pill
+      // v8.12.1 — Pill labels per user spec:
+      //   TP1-Hit! / TP2-Hit! / TP3-Hit! / SL-Hit! / HOLD /
+      //   ENTRY-1 / ENTRY-2 / ENTRY-3
       const isSl = alertZone === "sl";
-      const isTp = alertZone === "tp1" || alertZone === "tp2" || alertZone === "tp3";
-      const isEntry =
-        alertZone === "entry" ||
-        alertZone === "buy3" || alertZone === "buy2" || alertZone === "buy1";
-      if (!isSl && !isTp && !isEntry) return null;
-      const label = isSl ? "SL HIT" : isTp ? "TP HIT" : "ENTRY";
-      const bg = isSl
-        ? downColor
-        : isTp
-          ? "#f5c518"
-          : (signalAction === "SELL" ? downColor : upColor);
-      const fg = isSl ? "#fff" : "#000";
+      const isHold = alertZone === "hold";
+      const isTp1 = alertZone === "tp1";
+      const isTp2 = alertZone === "tp2";
+      const isTp3 = alertZone === "tp3";
+      const isEntry1 = alertZone === "entry1";
+      const isEntry2 = alertZone === "entry2";
+      const isEntry3 = alertZone === "entry3";
+      let label: string | null = null;
+      if (isSl) label = "SL-Hit!";
+      else if (isTp1) label = "TP1-Hit!";
+      else if (isTp2) label = "TP2-Hit!";
+      else if (isTp3) label = "TP3-Hit!";
+      else if (isHold) label = "HOLD";
+      else if (isEntry1) label = "ENTRY-1";
+      else if (isEntry2) label = "ENTRY-2";
+      else if (isEntry3) label = "ENTRY-3";
+      if (!label) return null;
+      const isTp = isTp1 || isTp2 || isTp3;
+      const isEntry = isEntry1 || isEntry2 || isEntry3;
+      let bg: string;
+      let fg: string;
+      if (isSl) {
+        bg = downColor; fg = "#fff";
+      } else if (isTp) {
+        bg = "#f5c518"; fg = "#000";
+      } else if (isHold) {
+        bg = "#6b7280"; fg = "#fff";
+      } else if (isEntry) {
+        bg = signalAction === "SELL" ? downColor : upColor;
+        fg = "#fff";
+      } else {
+        bg = "#f5c518"; fg = "#000";
+      }
       return (
         <AlertPill
           top={lastY - 10}

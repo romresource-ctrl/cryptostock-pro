@@ -552,6 +552,13 @@ def compute_signal(candles: list[dict[str, Any]], market: str) -> dict[str, Any]
         "entry_high": round(levels["entry_high"], 8),
         "entry_moderate": round(levels["entry_moderate"], 8),
         "entry_aggressive": round(levels["entry_aggressive"], 8),
+        # v8.12.1 — Expose the low/high ranges for all three entry tiers
+        # so the frontend `usePriceZoneAlert` hook can render ENTRY-1,
+        # ENTRY-2, ENTRY-3 pills against the live price.
+        "entry_moderate_low": round(levels["entry_moderate_low"], 8),
+        "entry_moderate_high": round(levels["entry_moderate_high"], 8),
+        "entry_aggressive_low": round(levels["entry_aggressive_low"], 8),
+        "entry_aggressive_high": round(levels["entry_aggressive_high"], 8),
         "stop_loss": round(stop_loss, 8),
         "take_profit": round(take_profit, 8),
         # v8.7.23 — Laddered TP-1/2/3 (R:R 1x / 2x / 3x for regime-aware
