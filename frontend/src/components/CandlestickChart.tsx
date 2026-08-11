@@ -62,7 +62,7 @@ type Props = {
  * Red candle   = close <  open (bearish)
  * Wick = high↔low, Body = open↔close
  */
-export default function CandlestickChart({
+function CandlestickChart({
   candles,
   width,
   height,
@@ -334,6 +334,22 @@ export default function CandlestickChart({
   const upColor = colors.accentUp || "#10b981";
   const downColor = colors.accentDown || "#ef4444";
 
+  // v8.12.2 — Stable live-overlay color derived from the LAST CLOSED
+  // candle (the one BEFORE the currently-forming live bar). Prevents
+  // the dashed price line / right-edge tag / pulsing dot from flipping
+  // red↔green as the intraday ticker wiggles across the current bar's
+  // open. `rawDisplayed` (pre-live-mutation) is used so the reference
+  // bar is always a *closed* candle, never the one being patched by
+  // `livePrice` above. Falls back to the only candle if there is no
+  // prior bar (edge case — first data render).
+  const lastClosedCandle = rawDisplayed.length >= 2
+    ? rawDisplayed[rawDisplayed.length - 2]
+    : rawDisplayed[rawDisplayed.length - 1];
+  const liveIsUp = lastClosedCandle
+    ? lastClosedCandle.close >= lastClosedCandle.open
+    : true;
+  const liveColorStable = liveIsUp ? upColor : downColor;
+
   // Horizontal grid lines + price labels (4 rows)
   const rows = [0, 0.25, 0.5, 0.75, 1];
   const gridEls = showGrid
@@ -563,8 +579,9 @@ export default function CandlestickChart({
             ? livePrice
             : lastCandle.close;
         const lastY = priceToY(liveClose);
-        const isUp = liveClose >= lastCandle.open;
-        const liveColor = isUp ? upColor : downColor;
+        // v8.12.2 — Use stable last-closed-candle color; avoids red↔green
+        // flicker when the ticker crosses the current bar's open.
+        const liveColor = liveColorStable;
         return (
           <>
             <Line
@@ -645,65 +662,26 @@ export default function CandlestickChart({
         </>
       ) : null}
     </Svg>
-    {/* v8.6.5 — Pulsing live-price dot overlaid on top of the SVG at
-        the right edge of the last candle. Animated at 60fps via
-        useNativeDriver so it visibly "breathes" even when the WS
-        price itself doesn't change every tick. */}
+    {/* v8.12.2 — Extracted into memoized <LivePulseDot/> so it only
+        re-renders when its own props change (position, colour, opacity).
+        The parent's outer React.memo (candlesEqual, 5-bps threshold)
+        additionally throttles sub-threshold updates. */}
     {isLive && candles.length > 0 ? (() => {
       const lastCandle = displayed[displayed.length - 1];
       const lastX = (displayed.length - 1) * step + candleGap / 2 + candleWidth / 2;
-      // v8.6.12 — Dot Y must match the same live-close used by the
-      // dashed line + right-edge tag above; otherwise the dot appears
-      // to hover a fraction of a pixel away from its own price line.
       const liveCloseDot =
         typeof livePrice === "number" && Number.isFinite(livePrice)
           ? livePrice
           : lastCandle.close;
       const lastY = priceToY(liveCloseDot);
-      const isUp = lastCandle.close >= lastCandle.open;
-      const liveColor = isUp ? upColor : downColor;
-      const dotSize = 16;
       return (
-        <View
-          pointerEvents="none"
-          style={{
-            position: "absolute",
-            left: lastX - dotSize / 2,
-            top: lastY - dotSize / 2,
-            width: dotSize,
-            height: dotSize,
-            opacity: overlayOpacity,
-          }}
-        >
-          {/* Outer pulsing halo — scales 1→2.4 and fades 0.55→0 */}
-          <Animated.View
-            style={{
-              position: "absolute",
-              left: 0,
-              top: 0,
-              width: dotSize,
-              height: dotSize,
-              borderRadius: dotSize / 2,
-              backgroundColor: liveColor,
-              opacity: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0] }),
-              transform: [
-                { scale: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 4.5] }) },
-              ],
-            }}
-          />
-          {/* Solid inner dot */}
-          <View
-            style={{
-              position: "absolute",
-              left: dotSize * 0.25,
-              top: dotSize * 0.25,
-              width: dotSize * 0.5,
-              height: dotSize * 0.5,
-              borderRadius: (dotSize * 0.5) / 2,
-              backgroundColor: liveColor,
-            }}
-          />
-        </View>
+        <LivePulseDot
+          x={lastX}
+          y={lastY}
+          color={liveColorStable}
+          opacity={overlayOpacity}
+          pulseAnim={pulseAnim}
+        />
       );
     })() : null}
 
@@ -851,11 +829,76 @@ function formatPriceLabel(p: number): string {
 }
 
 /**
+ * v8.12.2 — Pulsing live-price dot, extracted into a memoized
+ * subcomponent so its 60fps halo animation is isolated from candle
+ * re-renders. React.memo skips re-render when x/y/color/opacity are
+ * unchanged; the parent's outer memo (candlesEqual, 5-bps threshold)
+ * further throttles the flow.
+ */
+const LivePulseDot = React.memo(function LivePulseDot({
+  x, y, color, opacity, pulseAnim,
+}: {
+  x: number;
+  y: number;
+  color: string;
+  opacity: number;
+  pulseAnim: Animated.Value;
+}) {
+  const dotSize = 16;
+  return (
+    <View
+      pointerEvents="none"
+      style={{
+        position: "absolute",
+        left: x - dotSize / 2,
+        top: y - dotSize / 2,
+        width: dotSize,
+        height: dotSize,
+        opacity,
+      }}
+    >
+      {/* Outer pulsing halo — scales 1→4.5 and fades 0.55→0 */}
+      <Animated.View
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          width: dotSize,
+          height: dotSize,
+          borderRadius: dotSize / 2,
+          backgroundColor: color,
+          opacity: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0] }),
+          transform: [
+            { scale: pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 4.5] }) },
+          ],
+        }}
+      />
+      {/* Solid inner dot */}
+      <View
+        style={{
+          position: "absolute",
+          left: dotSize * 0.25,
+          top: dotSize * 0.25,
+          width: dotSize * 0.5,
+          height: dotSize * 0.5,
+          borderRadius: (dotSize * 0.5) / 2,
+          backgroundColor: color,
+        }}
+      />
+    </View>
+  );
+});
+
+/**
  * Small blinking "ENTRY / TP HIT / SL HIT" pill overlaid on the left
  * edge of the live-price line. Uses opacity animation loop (400ms fade)
  * with native driver so it stays smooth even while candles tick.
+ * v8.12.2 — wrapped in React.memo so the blink animation is isolated
+ * from parent re-renders.
  */
-function AlertPill({ top, bg, fg, label }: { top: number; bg: string; fg: string; label: string }) {
+const AlertPill = React.memo(function AlertPill({
+  top, bg, fg, label,
+}: { top: number; bg: string; fg: string; label: string }) {
   const opacity = React.useRef(new Animated.Value(1)).current;
   React.useEffect(() => {
     const loop = Animated.loop(
@@ -887,4 +930,33 @@ function AlertPill({ top, bg, fg, label }: { top: number; bg: string; fg: string
       </Text>
     </Animated.View>
   );
+});
+
+
+/**
+ * v8.12.2 — React.memo comparator with a RELATIVE-epsilon threshold
+ * for `livePrice`. Sub-5-bps price jitter (0.05%) is treated as no-op,
+ * which suppresses re-render of the entire chart on high-frequency WS
+ * ticks. Reference-equality is used for `candles` (parent produces a
+ * stable array reference until a new bar closes) and layout / signal
+ * props are strict-equal.
+ *
+ * Relative (not absolute) epsilon so sub-cent tokens like SHIB/PEPE
+ * are handled correctly — same rationale as `formatPriceLabel` above.
+ */
+function candlesEqual(prev: Props, next: Props): boolean {
+  if (prev.candles !== next.candles) return false;
+  if (prev.width !== next.width || prev.height !== next.height) return false;
+  if (prev.isLive !== next.isLive || prev.isReady !== next.isReady) return false;
+  if (prev.alertZone !== next.alertZone || prev.signalAction !== next.signalAction) return false;
+  if (prev.showVolume !== next.showVolume || prev.showGrid !== next.showGrid) return false;
+  if (prev.currency !== next.currency) return false;
+  const a = prev.livePrice ?? null;
+  const b = next.livePrice ?? null;
+  if (a === null || b === null) return a === b;
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return a === b;
+  const rel = Math.abs(b - a) / (Math.abs(a) || 1);
+  return rel < 0.0005; // 5 bps — equal means skip render
 }
+
+export default React.memo(CandlestickChart, candlesEqual);
