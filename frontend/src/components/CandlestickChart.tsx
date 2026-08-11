@@ -956,7 +956,9 @@ function candlesEqual(prev: Props, next: Props): boolean {
   if (a === null || b === null) return a === b;
   if (!Number.isFinite(a) || !Number.isFinite(b)) return a === b;
   const rel = Math.abs(b - a) / (Math.abs(a) || 1);
-  return rel < 0.0005; // 5 bps — equal means skip render
+  return rel < 0.0003; // 3 bps — equal means skip render (v8.12.3: lowered
+                       // from 5 bps to make the live tag/line feel more
+                       // responsive without giving up cheap dampening).
 }
 
 export default React.memo(CandlestickChart, candlesEqual);
