@@ -1347,14 +1347,23 @@ export default function AssetDetail() {
         ) : null}
       </ScrollView>
 
-      {/* v8.7.0 — Win-Rate History Modal */}
-      <WrHistoryModal
-        visible={wrModalPeriod !== null}
-        onClose={() => setWrModalPeriod(null)}
-        initialPeriod={wrModalPeriod ?? "30d"}
-        data={trackRecord}
-        langCode={lang as "id" | "en" | "ru" | "cn"}
-      />
+      {/* v8.7.0 → v8.12.16 — Win-Rate History Modal.
+          CONDITIONAL MOUNT: previously the Modal stayed rendered with
+          `visible=false` after the user closed it, which kept the
+          internal FlatList + native Modal window alive and caused the
+          parent ScrollView to feel sluggish (post-close jank). Now we
+          only mount it while `wrModalPeriod` is non-null so every close
+          fully unmounts the FlatList and releases the gesture responder
+          back to the parent ScrollView. */}
+      {wrModalPeriod !== null ? (
+        <WrHistoryModal
+          visible={true}
+          onClose={() => setWrModalPeriod(null)}
+          initialPeriod={wrModalPeriod ?? "30d"}
+          data={trackRecord}
+          langCode={lang as "id" | "en" | "ru" | "cn"}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
