@@ -450,18 +450,8 @@ export default function AssetDetail() {
   const displayChangePct = rt.connected && Number.isFinite(rt.changePct)
     ? rt.changePct
     : (ticker.change_pct_24h ?? null);
-  // v8.12.18 — Use a NEUTRAL color while displayChangePct is null (first
-  // mount, before WS ticker + REST hero-data arrive). Previously we
-  // defaulted `change` to 0 and picked accentUp (green) via `>= 0`,
-  // which caused a red↔green flicker when the real value landed and
-  // proved to be negative. Neutral color = zero flicker guarantee.
   const change = displayChangePct ?? 0;
-  const changeColor =
-    displayChangePct === null || !Number.isFinite(displayChangePct)
-      ? colors.textMuted
-      : change >= 0
-        ? colors.accentUp
-        : colors.accentDown;
+  const changeColor = change >= 0 ? colors.accentUp : colors.accentDown;
 
   // Target Profit % — POSITIVE profit target regardless of direction.
   // v8.2.1 — For HOLD, show range (SL→TP potential) so the header
