@@ -450,8 +450,18 @@ export default function AssetDetail() {
   const displayChangePct = rt.connected && Number.isFinite(rt.changePct)
     ? rt.changePct
     : (ticker.change_pct_24h ?? null);
+  // v8.12.18 — Use a NEUTRAL color while displayChangePct is null (first
+  // mount, before WS ticker + REST hero-data arrive). Previously we
+  // defaulted `change` to 0 and picked accentUp (green) via `>= 0`,
+  // which caused a red↔green flicker when the real value landed and
+  // proved to be negative. Neutral color = zero flicker guarantee.
   const change = displayChangePct ?? 0;
-  const changeColor = change >= 0 ? colors.accentUp : colors.accentDown;
+  const changeColor =
+    displayChangePct === null || !Number.isFinite(displayChangePct)
+      ? colors.textMuted
+      : change >= 0
+        ? colors.accentUp
+        : colors.accentDown;
 
   // Target Profit % — POSITIVE profit target regardless of direction.
   // v8.2.1 — For HOLD, show range (SL→TP potential) so the header
@@ -715,52 +725,47 @@ export default function AssetDetail() {
             </TouchableOpacity>
             </View>
           </View>
-          {/* v8.12.17 — Chart wrapper. CandlestickChart / PriceChart stay
-              ALWAYS MOUNTED — they self-guard when candles.length < 2 by
-              rendering a blank <View> of the correct size. The loader is
-              overlaid on top as an absolutely-positioned sibling with a
-              semi-opaque backdrop, so flipping loadingChart on/off never
-              unmounts the chart nor causes a reflow. */}
-          <View style={styles.chartContainer}>
-            {chartType === "candlestick" ? (
-              <CandlestickChart
-                candles={liveCandles as never}
-                width={screenW - 24}
-                height={220}
-                /* v8.6.5 — Only crypto markets subscribe to Binance
-                   kline WS, so isLive should mirror that condition. */
-                isLive={market === "crypto" && rt.connected}
-                /* v8.12.5 — Prefer live ticker; else fall back to the last
-                   candle's close once chart is loaded (guarantees a finite
-                   livePrice so the CandlestickChart live-overlays can mount
-                   immediately without waiting for the WS to connect). */
-                livePrice={
-                  rt.connected && Number.isFinite(rt.price)
-                    ? rt.price
-                    : (!loadingChart && liveCandles.length > 0
-                        ? liveCandles[liveCandles.length - 1].close
-                        : null)
-                }
-                /* v8.12.1 — Left-edge pill inside chart shows
-                   TP1-Hit! / TP2-Hit! / TP3-Hit! / SL-Hit! / HOLD /
-                   ENTRY-1 / ENTRY-2 / ENTRY-3. The verb badge
-                   (LONG/SHORT/BUY/SELL 1/2/3, TP 1/2/3) is the
-                   LadderAlertBadge in the toggle row above. */
-                alertZone={zoneAlert}
-                signalAction={sig?.action}
-                /* v8.7.22 — Hide the left-edge pill until the
-                   chart data is fully ready. Prevents any first-frame
-                   flicker before candles finish loading. */
-                isReady={!loadingChart && !!chart}
-              />
-            ) : (
-              <PriceChart candles={liveCandles as never} width={screenW - 24} height={180} />
-            )}
-            {loadingChart ? (
-              <View style={styles.chartLoaderOverlay} pointerEvents="none">
-                <ActivityIndicator color={colors.accentBlue} />
-              </View>
-            ) : null}
+          {/* v8.12.1 — Chart wrapper no longer needs relative-positioning
+              since the LadderAlertBadge moved out to the toggle row. */}
+          <View>
+          {loadingChart ? (
+            <View style={styles.chartLoader}>
+              <ActivityIndicator color={colors.accentBlue} />
+            </View>
+          ) : chartType === "candlestick" ? (
+            <CandlestickChart
+              candles={liveCandles as never}
+              width={screenW - 24}
+              height={220}
+              /* v8.6.5 — Only crypto markets subscribe to Binance
+                 kline WS, so isLive should mirror that condition. */
+              isLive={market === "crypto" && rt.connected}
+              /* v8.12.5 — Prefer live ticker; else fall back to the last
+                 candle's close once chart is loaded (guarantees a finite
+                 livePrice so the CandlestickChart live-overlays can mount
+                 immediately without waiting for the WS to connect). */
+              livePrice={
+                rt.connected && Number.isFinite(rt.price)
+                  ? rt.price
+                  : (!loadingChart && liveCandles.length > 0
+                      ? liveCandles[liveCandles.length - 1].close
+                      : null)
+              }
+              /* v8.12.1 — Left-edge pill inside chart shows
+                 TP1-Hit! / TP2-Hit! / TP3-Hit! / SL-Hit! / HOLD /
+                 ENTRY-1 / ENTRY-2 / ENTRY-3. The verb badge
+                 (LONG/SHORT/BUY/SELL 1/2/3, TP 1/2/3) is the
+                 LadderAlertBadge in the toggle row above. */
+              alertZone={zoneAlert}
+              signalAction={sig?.action}
+              /* v8.7.22 — Hide the left-edge pill until the
+                 chart data is fully ready. Prevents any first-frame
+                 flicker before candles finish loading. */
+              isReady={!loadingChart && !!chart}
+            />
+          ) : (
+            <PriceChart candles={liveCandles as never} width={screenW - 24} height={180} />
+          )}
           </View>
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
@@ -1458,25 +1463,6 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   chartLoader: { height: 180, alignItems: "center", justifyContent: "center" },
-  chartContainer: {
-    // v8.12.13 — Wraps CandlestickChart/PriceChart so the loader can be
-    // overlaid absolutely without stealing layout from the chart itself.
-    position: "relative",
-    minHeight: 220,
-  },
-  chartLoaderOverlay: {
-    // Semi-opaque overlay so the (possibly stale) chart underneath is
-    // subtly visible during loading — signals "refreshing" rather than
-    // "empty".
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(0,0,0,0.28)",
-  },
   chartToggleRow: {
     flexDirection: "row",
     gap: 6,
