@@ -84,7 +84,7 @@
     "scheme": "aicryptostockpro",
     "slug": "ai-crypto-stock-pro",
     "userInterfaceStyle": "automatic",
-    "version": "8.12.19",
+    "version": "8.12.20",
     "web": {
       "bundler": "metro",
       "favicon": "./assets/images/favicon.png",
