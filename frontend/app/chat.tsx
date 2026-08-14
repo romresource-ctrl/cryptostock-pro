@@ -84,7 +84,9 @@ export default function ChatScreen() {
   // Initial fetch + polling
   const fetchMessages = useCallback(async () => {
     try {
-      const res = await fetch(`${backendBase()}/chat/messages?limit=100`);
+      const did = deviceIdRef.current;
+      const q = did ? `?limit=100&device_id=${encodeURIComponent(did)}` : "?limit=100";
+      const res = await fetch(`${backendBase()}/chat/messages${q}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const list: Msg[] = data.messages ?? [];

@@ -1900,6 +1900,10 @@ CHAT_IMAGE_MAX_CHARS = 750_000
 # ≈ ~340KB base64. Cap at 500KB to allow variance without abuse.
 CHAT_AUDIO_MAX_CHARS = 500_000
 CHAT_AUDIO_MAX_DURATION_MS = 30_000  # 30 s hard ceiling; client soft-caps at 20 s.
+# v8.12.19 — Chatroom presence tracking window (seconds). A device is
+# considered "online" if it has polled /chat/messages within this window.
+# 90 s = 3 poll cycles at 30 s (or 30 cycles at 3 s) grace period.
+PRESENCE_WINDOW_SEC = 90
 
 
 class ChatReplyInfo(BaseModel):
@@ -2043,11 +2047,18 @@ async def chat_send_message(payload: ChatMessagePayload) -> ChatMessage:
 async def chat_get_messages(
     after: str | None = None,
     limit: int = Query(100, ge=1, le=CHAT_HISTORY_LIMIT),
+    device_id: str | None = Query(None, description="Optional presence heartbeat"),
 ) -> dict[str, Any]:
     """Get recent chat messages. Pass `after` (ISO timestamp) to fetch only new ones.
 
     Messages older than CHAT_HISTORY_TTL_HOURS (16h) are hidden from
     everyone so new members do not see stale conversations.
+
+    v8.12.19 — When `device_id` is supplied we treat this poll as a
+    presence heartbeat: upsert into `chat_presence` and return the number
+    of distinct devices seen within the last PRESENCE_WINDOW_SEC seconds
+    as `online`. Missing / empty `device_id` skips presence and returns
+    `online: 0`.
     """
     from datetime import timedelta
 
@@ -2068,7 +2079,28 @@ async def chat_get_messages(
     ).limit(limit)
     rows = await cursor.to_list(length=limit)
     rows.reverse()  # oldest first for client convenience
-    return {"messages": rows, "server_time": _now_iso()}
+
+    # v8.12.19 — Presence tracking. TTL index on `chat_presence.last_seen`
+    # (created in _bootstrap_indexes) auto-expires stale rows after
+    # PRESENCE_WINDOW_SEC*2, so counting active rows is O(index).
+    online = 0
+    try:
+        now = datetime.now(timezone.utc)
+        if device_id:
+            did = device_id.strip()[:80]
+            if did:
+                await db.chat_presence.update_one(
+                    {"device_id": did},
+                    {"$set": {"device_id": did, "last_seen": now}},
+                    upsert=True,
+                )
+        # Count distinct devices seen within the sliding window (default 90s).
+        window_start = now - timedelta(seconds=PRESENCE_WINDOW_SEC)
+        online = await db.chat_presence.count_documents({"last_seen": {"$gte": window_start}})
+    except Exception:
+        pass
+
+    return {"messages": rows, "server_time": _now_iso(), "online": online}
 
 
 # ------------------------- Push notifications -------------------------
@@ -2344,6 +2376,21 @@ async def _bootstrap_indexes() -> None:
         # aggregation stays fast even after thousands of writes.
         await db.signals.create_index([("market", 1), ("symbol", 1), ("created_at", -1)])
         await db.signals.create_index("created_at")
+        # v8.12.19 — Chatroom presence collection. Unique per device_id
+        # (upserts on heartbeat), with a TTL that auto-purges rows once
+        # their `last_seen` is older than PRESENCE_WINDOW_SEC * 2 seconds
+        # so we don't count ghosts.
+        try:
+            await db.chat_presence.create_index("device_id", unique=True)
+        except Exception:
+            # Index may already exist with a different spec — ignore.
+            pass
+        try:
+            await db.chat_presence.create_index(
+                "last_seen", expireAfterSeconds=PRESENCE_WINDOW_SEC * 2
+            )
+        except Exception:
+            pass
     except Exception:
         pass
 

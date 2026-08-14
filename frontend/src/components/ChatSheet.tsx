@@ -222,6 +222,8 @@ export default function ChatSheet({
   const [input, setInput] = useState("");
   const [attachment, setAttachment] = useState<string | null>(null);
   const [attaching, setAttaching] = useState(false);
+  // v8.12.19 — Live count of devices currently polling the chatroom.
+  const [onlineCount, setOnlineCount] = useState<number>(0);
   // v8.1.5 — Reply state: the message currently being replied to, or null.
   const [replyTo, setReplyTo] = useState<DraftReply | null>(null);
   // v8.1.5 — Voice recording state.
@@ -252,11 +254,18 @@ export default function ChatSheet({
 
   const fetchMessages = useCallback(async () => {
     try {
-      const res = await fetch(`${backendBase()}/chat/messages?limit=100`);
+      const did = deviceIdRef.current;
+      const q = did ? `?limit=100&device_id=${encodeURIComponent(did)}` : "?limit=100";
+      const res = await fetch(`${backendBase()}/chat/messages${q}`);
       if (!res.ok) return;
       const j = await res.json();
       const list = (j?.messages || []) as Msg[];
       setMessages(list);
+      // v8.12.19 — Backend now returns `online` (count of distinct
+      // devices polling within the last PRESENCE_WINDOW_SEC seconds).
+      if (typeof j?.online === "number") {
+        setOnlineCount(j.online);
+      }
       // Auto-scroll to newest (list is chronological)
       setTimeout(() => {
         try {
@@ -835,6 +844,28 @@ export default function ChatSheet({
 
         {nickname !== null && (
           <View>
+            {/* v8.12.19 — Online users indicator strip. Sits at the
+                bottom of the slideable chat frame, right above the
+                composer. Small green dot + "N users online" text so
+                the user can tell how many peers are currently watching
+                the chat. */}
+            <View
+              style={[
+                styles.onlineStrip,
+                {
+                  backgroundColor: colors.surface,
+                  borderTopColor: colors.border,
+                },
+              ]}
+              testID="chat-online-count"
+            >
+              <View style={styles.onlineDot} />
+              <Text style={[styles.onlineText, { color: colors.textMuted }]}>
+                {onlineCount > 0
+                  ? `${onlineCount.toLocaleString()} ${onlineCount === 1 ? "user" : "users"} online`
+                  : "\u2014"}
+              </Text>
+            </View>
             {/* v8.1.5 — Reply preview strip above composer (WhatsApp-style). */}
             {replyTo ? (
               <View style={[styles.replyPreview, { backgroundColor: colors.surfaceAlt, borderTopColor: colors.border }]}>
@@ -1150,6 +1181,27 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     width: 40,
+  },
+  // v8.12.19 — Online users footer strip (sits above the composer).
+  onlineStrip: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderTopWidth: 0.5,
+  },
+  onlineDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#22c55e",
+  },
+  onlineText: {
+    fontSize: 10,
+    fontWeight: "600",
+    letterSpacing: 0.2,
   },
 });
 
