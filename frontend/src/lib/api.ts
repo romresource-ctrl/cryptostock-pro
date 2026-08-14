@@ -268,7 +268,7 @@ export const api = {
   dashboardBatch: (
     markets: Market[],
     timeframe: Timeframe,
-    opts: { sort?: DashboardSort; full?: boolean; region?: string } = {},
+    opts: { sort?: DashboardSort; full?: boolean; region?: string; extras?: string[] } = {},
   ) => {
     const params = new URLSearchParams({
       markets: markets.join(","),
@@ -277,6 +277,12 @@ export const api = {
     if (opts.sort) params.append("sort", opts.sort);
     if (opts.full) params.append("full", "true");
     if (opts.region && opts.region !== "all") params.append("region", opts.region);
+    // v8.12.18 — Ship watchlist entries as extras so the backend
+    // includes symbols beyond the default top-50 slice (e.g. BBCA at
+    // index 51 in stock_id). Format: `market:SYMBOL,market:SYMBOL`.
+    if (opts.extras && opts.extras.length > 0) {
+      params.append("extras", opts.extras.join(","));
+    }
     return get<{
       timeframe: Timeframe;
       server_time: string;

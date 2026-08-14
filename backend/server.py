@@ -830,6 +830,7 @@ async def _build_dashboard_response(
     min_wr: float = 70.0,
     full: bool = False,
     region: str | None = None,
+    extras: list[str] | None = None,
 ) -> DashboardResponse:
     # Backward-compat: "stock" -> "stock_id", "world_stocks" -> "stock_us" internally
     eff_market = "stock_id" if market == "stock" else market
@@ -869,6 +870,28 @@ async def _build_dashboard_response(
         }.get(eff_market, [])
         profile_id = prof["_id"]
         profile_name = prof.get("name", "Default")
+    # v8.12.18 — Merge in `extras` (watchlist symbols beyond the default
+    # top-50 slice) so favourites like BBCA, BBRI, etc. show up in the
+    # dashboard payload and the frontend Watchlist column can resolve
+    # them. We look them up against the FULL universe for this market
+    # (defence in depth: silently drop anything unknown).
+    if extras and not full:
+        full_universe = {
+            "crypto": FULL_CRYPTO,
+            "stock_id": FULL_STOCKS,
+            "etf": FULL_ETF,
+            "stock_us": FULL_STOCK_US,
+            "gold_silver": DEFAULT_GOLD_SILVER,
+            "commodity": DEFAULT_COMMODITY,
+            "forex": DEFAULT_FOREX,
+        }.get(eff_market, [])
+        allowed = {s.upper() for s in full_universe}
+        seen = {s.upper() for s in symbols}
+        for e in extras:
+            eu = e.upper()
+            if eu in allowed and eu not in seen:
+                symbols = [*symbols, eu]
+                seen.add(eu)
     if not symbols:
         return DashboardResponse(
             market=market, timeframe=timeframe, server_time=_now_iso(), assets=[],
@@ -922,6 +945,7 @@ async def dashboard_batch(
     min_confidence: int | None = Query(None, ge=0, le=100, description="Override (default: adaptive per market)"),
     min_wr: float | None = Query(None, ge=0.0, le=100.0),
     region: str | None = Query(None, description="Regional filter applied to stock_us only"),
+    extras: str | None = Query(None, description="Extra symbols to include, format: market:SYMBOL,market:SYMBOL"),
 ) -> dict[str, Any]:
     if timeframe not in TIMEFRAME_MAP:
         raise HTTPException(400, f"Invalid timeframe. Use one of {TIMEFRAMES}")
@@ -931,6 +955,24 @@ async def dashboard_batch(
     known = {"crypto", "stock", "stock_id", "stock_us", "world_stocks",
              "etf", "gold_silver", "commodity", "forex"}
     market_keys = [m for m in market_keys if m in known][:9]
+
+    # v8.12.18 — Parse extras "market:SYMBOL" pairs into per-market list.
+    # Ensures watchlist favourites beyond the default top-50 slice
+    # (e.g. BBCA in stock_id) are included in the response.
+    extras_by_market: dict[str, list[str]] = {}
+    if extras:
+        for pair in extras.split(","):
+            pair = pair.strip()
+            if not pair or ":" not in pair:
+                continue
+            mk, _, sym = pair.partition(":")
+            mk = mk.strip().lower()
+            sym = sym.strip().upper()
+            if not mk or not sym:
+                continue
+            # Map legacy alias same way as the builder does.
+            eff = "stock_id" if mk == "stock" else ("stock_us" if mk == "world_stocks" else mk)
+            extras_by_market.setdefault(eff, []).append(sym)
 
     def _cfg(m: str) -> tuple[int, float]:
         d_conf, d_wr = _threshold_for_market(m)
@@ -942,6 +984,7 @@ async def dashboard_batch(
     tasks = []
     for m in market_keys:
         c, w = _cfg(m)
+        eff_m = "stock_id" if m == "stock" else ("stock_us" if m == "world_stocks" else m)
         tasks.append(
             _build_dashboard_response(
                 market=m,
@@ -952,6 +995,7 @@ async def dashboard_batch(
                 min_wr=w,
                 # v8.1.3 — Only apply region to stock_us; other markets ignore it.
                 region=region if m in ("stock_us", "world_stocks") else None,
+                extras=extras_by_market.get(eff_m),
             )
         )
     results = await asyncio.gather(*tasks, return_exceptions=True)

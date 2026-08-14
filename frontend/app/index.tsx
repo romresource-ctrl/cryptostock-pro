@@ -457,6 +457,16 @@ export default function Dashboard() {
     orderedCategoriesRef.current = orderedCategories;
   }, [orderedCategories]);
 
+  // v8.12.18 — Live ref so the polling interval always reads the
+  // freshest watchlist without adding another dep to `load()`
+  // (which would cancel/restart the interval on every star toggle).
+  const watchlistExtrasRef = useRef<string[]>([]);
+  useEffect(() => {
+    watchlistExtrasRef.current = watchlist.entries.map(
+      (e) => `${e.market}:${e.symbol}`,
+    );
+  }, [watchlist.entries]);
+
   // v8.0.4 — Lazy-load. On the first paint we only fetch the TWO markets
   // the user currently has on-screen (`view`). The other 6 markets stay
   // empty until the user actually swipes to them (their `useEffect` will
@@ -474,6 +484,10 @@ export default function Dashboard() {
         sort: "premium",
         full: false,
         region: regionArg,
+        // v8.12.18 — Include starred symbols beyond the default top-50
+        // slice so the Watchlist column can render them (e.g. BBCA which
+        // sits at stock_id index 51).
+        extras: watchlistExtrasRef.current,
       });
       setData((prev) => {
         const next = { ...prev };
@@ -509,6 +523,26 @@ export default function Dashboard() {
     const id = setInterval(() => void load(timeframe, ALL_CATEGORIES, regionFilter), REFRESH_INTERVAL_MS);
     return () => clearInterval(id);
   }, [timeframe, ALL_CATEGORIES, load, regionFilter]);
+
+  // v8.12.18 — When the user stars or un-stars an asset, trigger a
+  // fresh fetch immediately so favourites beyond the default top-50
+  // slice (e.g. BBCA @ stock_id[51]) show up right away instead of
+  // waiting up to REFRESH_INTERVAL_MS for the polling tick. We key on
+  // a canonical string of the current entries so the effect only fires
+  // when the set actually changes.
+  const watchlistKey = useMemo(
+    () =>
+      watchlist.entries
+        .map((e) => `${e.market}:${e.symbol}`)
+        .sort()
+        .join(","),
+    [watchlist.entries],
+  );
+  useEffect(() => {
+    if (!watchlist.ready) return;
+    void load(timeframe, ALL_CATEGORIES, regionFilter);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchlistKey]);
 
   // v8.1.3 — toggleCategory kept for reference but no longer used by
   // the UI (the old asset-category chips were replaced by region chips).
