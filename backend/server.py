@@ -1945,25 +1945,66 @@ class ChatMessage(BaseModel):
 
 
 async def _is_device_entitled(device_id: str) -> bool:
-    """Check if a device has an active premium entitlement."""
+    """Check if a device has an active premium entitlement.
+
+    v8.12.21 — Sources of truth (either grants access):
+    1. Google Play subscription (collection: `subscriptions`, `entitled=True`
+       and `expiry_time` in the future).
+    2. Admin unlock code bound to this device (collection: `unlock_codes`,
+       `revoked=False` and `expires_at` in the future OR `duration=lifetime`).
+
+    Prior to v8.12.21 only source (1) was checked, so admins logged in
+    with an unlock code (e.g. beta testers) were locked out of chatroom
+    posting and Market Brief unlock even though the frontend showed them
+    as premium.
+    """
     if not device_id:
         return False
+
+    # --- Source 1: Google Play subscriptions ---
     row = await db.subscriptions.find_one(
         {"device_id": device_id}, sort=[("updated_at", -1)]
     )
-    if not row:
-        return False
-    if not row.get("entitled"):
-        return False
-    expiry = row.get("expiry_time")
-    if expiry:
+    if row and row.get("entitled"):
+        expiry = row.get("expiry_time")
+        if not expiry:
+            return True
         try:
             exp_dt = datetime.fromisoformat(expiry.replace("Z", "+00:00"))
-            if exp_dt <= datetime.now(timezone.utc):
-                return False
+            if exp_dt > datetime.now(timezone.utc):
+                return True
         except Exception:
+            # Fall through to source 2 rather than returning True on a
+            # malformed expiry — safer default.
             pass
-    return True
+
+    # --- Source 2: Admin unlock codes bound to this device ---
+    try:
+        code_row = await db.unlock_codes.find_one(
+            {
+                "device_id": device_id,
+                "revoked": {"$ne": True},
+            },
+            sort=[("last_used_at", -1)],
+        )
+        if code_row:
+            expires_at = code_row.get("expires_at")
+            if not expires_at:
+                # duration == "lifetime"
+                return True
+            try:
+                exp_dt = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
+                if exp_dt > datetime.now(timezone.utc):
+                    return True
+            except Exception:
+                pass
+    except Exception:
+        # DB error — degrade gracefully to False (no access), don't crash
+        # the caller. Should be extremely rare given the same DB just
+        # served source 1 above.
+        pass
+
+    return False
 
 
 @api.post("/chat/messages", response_model=ChatMessage)

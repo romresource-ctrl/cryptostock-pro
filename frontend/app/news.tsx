@@ -19,6 +19,7 @@ import { api, API_BASE, type Market, type NewsItem } from "@/src/lib/api";
 import AiMarketBriefCard from "@/src/components/AiMarketBriefCard";
 import { useI18n, type Lang } from "@/src/i18n/I18nContext";
 import { useSubscription } from "@/src/lib/subscriptionContext";
+import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
 import { useTheme } from "@/src/theme/ThemeContext";
 
 type MarketFilter = "all" | Market;
@@ -83,7 +84,12 @@ export default function NewsScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ tab?: string }>();
   const { lang, t } = useI18n();
-  const { isPremium } = useSubscription();
+  const { isPremium: isPaidPremium } = useSubscription();
+  // v8.12.21 — Combined premium: paid Google Play subscription OR admin
+  // unlock-code login. Fixes Market Brief staying locked for unlock-code
+  // users who saw a stale "Subscribe" prompt on this page.
+  const { hasAccess: isPremium } = usePremiumAccess();
+  void isPaidPremium;
   // v8.3.5 — 3-tab layout: market_brief | news | disclaimer. Market Brief
   // tab is gated to Premium subscribers; non-premium sees an upgrade CTA.
   const [tab, setTab] = useState<"market_brief" | "news" | "disclaimer">(() => {

@@ -28,6 +28,7 @@ import { API_BASE } from "@/src/lib/api";
 import { getDeviceId } from "@/src/lib/deviceId";
 import { useI18n, type Lang } from "@/src/i18n/I18nContext";
 import { useTheme } from "@/src/theme/ThemeContext";
+import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
 
 interface TopMover {
   symbol: string;
@@ -119,6 +120,13 @@ const AiMarketBriefCard: React.FC<Props> = ({ lang, onUpgrade }) => {
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [isPremium, setIsPremium] = useState(false);
+  // v8.12.21 — Also consider local admin-unlock access. Backend
+  // /market-brief was patched to grant `is_premium=true` for unlock-code
+  // users too, but if the backend response is briefly stale we still
+  // want the unlock-code user to see the full brief.
+  const { hasAccess } = usePremiumAccess();
+  const effectivePremium = isPremium || hasAccess;
+  void effectivePremium;
 
   const load = useCallback(async () => {
     setError(null);
@@ -249,7 +257,7 @@ const AiMarketBriefCard: React.FC<Props> = ({ lang, onUpgrade }) => {
       {expanded && (
         <View style={styles.expandedBody}>
           {/* v8.7.2 — Free users get a paywall for actionable sections & movers */}
-          {brief.premium_locked && !isPremium && (
+          {brief.premium_locked && !effectivePremium && (
             <View style={[styles.paywall, { backgroundColor: colors.accentUp + "12", borderColor: colors.accentUp }]}>
               <Ionicons name="lock-closed" size={22} color={colors.accentUp} />
               <Text style={[styles.paywallTitle, { color: colors.textPrimary }]}>

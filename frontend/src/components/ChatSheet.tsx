@@ -57,6 +57,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getDeviceId } from "@/src/lib/deviceId";
 import { useSubscription } from "@/src/lib/subscriptionContext";
+import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { storage } from "@/src/utils/storage";
 
@@ -122,7 +123,14 @@ export default function ChatSheet({
   onClose: () => void;
 }) {
   const { colors } = useTheme();
-  const { isPremium } = useSubscription();
+  const { isPremium: isPaidPremium } = useSubscription();
+  // v8.12.21 — Combine paid subscription + admin unlock-code entitlement
+  // so beta testers / admins unlocked via code can also post, send
+  // photos, and record voice notes. Before this fix chat gating was
+  // silently paywalled for unlock-code users even though the rest of
+  // the app treated them as premium.
+  const { hasAccess: isPremium } = usePremiumAccess();
+  void isPaidPremium;
   const insets = useSafeAreaInsets();
 
   // ── Keyboard tracking ──────────────────────────────────────────────

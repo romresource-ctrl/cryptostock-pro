@@ -21,6 +21,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getDeviceId } from "@/src/lib/deviceId";
 import { useSubscription } from "@/src/lib/subscriptionContext";
+import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { storage } from "@/src/utils/storage";
 
@@ -54,7 +55,10 @@ function isValidNickname(n: string): boolean {
 export default function ChatScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const { isPremium } = useSubscription();
+  const { isPremium: isPaidPremium } = useSubscription();
+  // v8.12.21 — Use combined premium access (paid sub OR admin unlock).
+  const { hasAccess: isPremium } = usePremiumAccess();
+  void isPaidPremium;
 
   const [nickname, setNickname] = useState<string | null>(null);
   const [nickInput, setNickInput] = useState("");
