@@ -392,13 +392,22 @@ def compute_signal(candles: list[dict[str, Any]], market: str) -> dict[str, Any]
     #     In choppy/ranging market: RSI < 30 = BUY, > 70 = SELL.
     #     In strong trend: extreme RSI is a momentum signal, not a reversal —
     #     so we vote WITH the trend (softer weight) instead of against.
+    #     v8.12.22 — But cap the "momentum continuation" vote at RSI 78
+    #     for uptrend and RSI 22 for downtrend so we don't help users
+    #     enter parabolic tops / capitulation bottoms.
     if rsi is not None:
         if strong_trend:
             trend_sign_ema = 1 if ema20 > ema50 else -1
-            if trend_sign_ema > 0 and rsi > 55:
+            if trend_sign_ema > 0 and 55 < rsi < 78:
                 _vote(1, f"RSI {rsi:.1f} momentum-up (strong trend)")
-            elif trend_sign_ema < 0 and rsi < 45:
+            elif trend_sign_ema < 0 and 22 < rsi < 45:
                 _vote(-1, f"RSI {rsi:.1f} momentum-down (strong trend)")
+            elif trend_sign_ema > 0 and rsi >= 78:
+                # Uptrend but RSI extreme — DO NOT vote BUY; flag caution.
+                _vote(0, f"RSI {rsi:.1f} extreme — avoid FOMO")
+            elif trend_sign_ema < 0 and rsi <= 22:
+                # Downtrend but RSI extreme — DO NOT vote SELL; flag caution.
+                _vote(0, f"RSI {rsi:.1f} extreme — avoid panic sell")
             else:
                 _vote(0, f"RSI {rsi:.1f} (trend-suppressed)")
         else:
@@ -480,16 +489,101 @@ def compute_signal(candles: list[dict[str, Any]], market: str) -> dict[str, Any]
     ema_align_buy = price > ema20 * 0.997
     ema_align_sell = price < ema20 * 1.003
 
-    if score >= 3 and ema_align_buy:
+    # v8.12.22 — Anti-FOMO / anti-panic overextension guard.
+    # v8.12.23 — Tightened + added "near recent high/low" veto.
+    # v8.12.24 — Per-market threshold tuning: each asset class has its
+    #             own volatility profile, so the "how far is too far
+    #             above EMA50" and "how hot is too hot RSI" thresholds
+    #             should reflect that. Small-cap IDX stocks mean-revert
+    #             fastest → tightest guards; crypto swings hardest →
+    #             loosest guards.
+    #
+    # Table: (ext_cap, rsi_extreme_hi, rsi_extreme_lo, near_extreme_rsi_hot, near_extreme_rsi_cold)
+    #   ext_cap                     = max allowed (price − ema50) / ema50
+    #   rsi_extreme_hi / lo         = belt-and-braces RSI veto (any score)
+    #   near_extreme_rsi_hot / cold = RSI trigger when price is within
+    #                                  2 % of the last 30-candle high / low
+    _GUARDS: dict[str, tuple[float, float, float, float, float]] = {
+        "crypto":       (0.12, 82.0, 18.0, 70.0, 30.0),
+        "stock_id":     (0.06, 78.0, 22.0, 65.0, 35.0),
+        "stock_us":     (0.05, 78.0, 22.0, 65.0, 35.0),
+        "world_stocks": (0.05, 78.0, 22.0, 65.0, 35.0),
+        "etf":          (0.04, 76.0, 24.0, 63.0, 37.0),
+        "gold_silver":  (0.05, 78.0, 22.0, 65.0, 35.0),
+        "commodity":    (0.06, 78.0, 22.0, 65.0, 35.0),
+        "forex":        (0.03, 75.0, 25.0, 62.0, 38.0),
+    }
+    ext_cap, rsi_hi_x, rsi_lo_x, rsi_hi_near, rsi_lo_near = _GUARDS.get(
+        market, (0.06, 78.0, 22.0, 65.0, 35.0)
+    )
+    extension = ((price - ema50) / ema50) if ema50 else 0.0
+    overextended_up = extension > ext_cap
+    overextended_dn = extension < -ext_cap
+    rsi_extreme_up = rsi is not None and rsi >= rsi_hi_x
+    rsi_extreme_dn = rsi is not None and rsi <= rsi_lo_x
+
+    # Near-recent-extreme veto — last 30 candles.
+    window = closes[-30:] if len(closes) >= 30 else closes
+    recent_high = max(window) if window else price
+    recent_low = min(window) if window else price
+    at_top = (price / recent_high) >= 0.98 if recent_high else False
+    at_bot = (price / recent_low) <= 1.02 if recent_low else False
+    near_top_hot = at_top and rsi is not None and rsi >= rsi_hi_near
+    near_bot_cold = at_bot and rsi is not None and rsi <= rsi_lo_near
+
+    veto_buy = overextended_up or rsi_extreme_up or near_top_hot
+    veto_sell = overextended_dn or rsi_extreme_dn or near_bot_cold
+
+    # v8.12.24 — Instead of downgrading to HOLD, FLIP the signal to a
+    # mean-reversion action so the user gets an actionable exit / entry:
+    #   Trend says BUY but price at top / overbought / overextended →
+    #      → SELL (take-profit) with reason "risiko FOMO — take profit"
+    #   Trend says SELL but price at bottom / oversold / overextended-down
+    #      → BUY (buy-the-dip) with reason "harga di dasar — accumulate"
+    # Original strong-trend BUY / SELL still fires when NO veto is set.
+    if score >= 3 and ema_align_buy and not veto_buy:
         action = "BUY"
         label = "LONG" if market == "crypto" else "BUY"
-    elif score <= -3 and ema_align_sell:
+    elif score <= -3 and ema_align_sell and not veto_sell:
         action = "SELL"
         label = "SHORT" if market == "crypto" else "SELL"
+    elif score >= 3 and veto_buy:
+        # Trend-up + overextended/overbought → take profit
+        action = "SELL"
+        label = "TP" if market == "crypto" else "SELL"
+        parts = []
+        if overextended_up:
+            parts.append(f"harga {extension * 100:+.1f}% dari EMA50")
+        if rsi_extreme_up:
+            parts.append(f"RSI {rsi:.0f} sangat overbought")
+        if near_top_hot:
+            parts.append("harga di puncak 30d")
+        reasons.append(
+            "TAKE PROFIT — " + ", ".join(parts) + ". Jangan kejar harga."
+        )
+        # Confidence for TP signal: high when overextended + RSI extreme,
+        # moderate when just near-top. Cap around momentum score.
+        tp_boost = (20 if overextended_up else 0) + (15 if rsi_extreme_up else 0) + (8 if near_top_hot else 0)
+        confidence = min(95, max(70, 60 + tp_boost))
+    elif score <= -3 and veto_sell:
+        # Trend-down + oversold → dip accumulation
+        action = "BUY"
+        label = "DIP" if market == "crypto" else "BUY"
+        parts = []
+        if overextended_dn:
+            parts.append(f"harga {extension * 100:+.1f}% dari EMA50")
+        if rsi_extreme_dn:
+            parts.append(f"RSI {rsi:.0f} sangat oversold")
+        if near_bot_cold:
+            parts.append("harga di dasar 30d")
+        reasons.append(
+            "BUY THE DIP — " + ", ".join(parts) + ". Accumulate bertahap."
+        )
+        dip_boost = (20 if overextended_dn else 0) + (15 if rsi_extreme_dn else 0) + (8 if near_bot_cold else 0)
+        confidence = min(95, max(70, 60 + dip_boost))
     else:
         action = "HOLD"
         label = "HOLD"
-        # HOLD confidence range: cap so it never bleeds into Premium.
         confidence = max(40, min(70, confidence))
 
     # Compute simple ATR for SL/TP
