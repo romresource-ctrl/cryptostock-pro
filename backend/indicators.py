@@ -491,30 +491,27 @@ def compute_signal(candles: list[dict[str, Any]], market: str) -> dict[str, Any]
 
     # v8.12.22 — Anti-FOMO / anti-panic overextension guard.
     # v8.12.23 — Tightened + added "near recent high/low" veto.
-    # v8.12.24 — Per-market threshold tuning: each asset class has its
-    #             own volatility profile, so the "how far is too far
-    #             above EMA50" and "how hot is too hot RSI" thresholds
-    #             should reflect that. Small-cap IDX stocks mean-revert
-    #             fastest → tightest guards; crypto swings hardest →
-    #             loosest guards.
+    # v8.12.24 — Per-market threshold tuning.
+    # v8.12.26 — Multi-timeframe extreme detection + rally-exhaustion:
+    #             DSSA rallied +28.8 % from its 120-day low but the 30-day
+    #             window said "not near a high" so the old guard missed it.
+    #             Now check 30 / 60 / 120-candle horizons AND a
+    #             "rally-exhaustion" trigger that fires when price has
+    #             surged >20 % from the multi-week low with elevated RSI.
     #
-    # Table: (ext_cap, rsi_extreme_hi, rsi_extreme_lo, near_extreme_rsi_hot, near_extreme_rsi_cold)
-    #   ext_cap                     = max allowed (price − ema50) / ema50
-    #   rsi_extreme_hi / lo         = belt-and-braces RSI veto (any score)
-    #   near_extreme_rsi_hot / cold = RSI trigger when price is within
-    #                                  2 % of the last 30-candle high / low
+    # Per-market thresholds (ext_cap, rsi_hi_x, rsi_lo_x, rsi_hi_near, rsi_lo_near):
     _GUARDS: dict[str, tuple[float, float, float, float, float]] = {
-        "crypto":       (0.12, 82.0, 18.0, 70.0, 30.0),
-        "stock_id":     (0.06, 78.0, 22.0, 65.0, 35.0),
-        "stock_us":     (0.05, 78.0, 22.0, 65.0, 35.0),
-        "world_stocks": (0.05, 78.0, 22.0, 65.0, 35.0),
-        "etf":          (0.04, 76.0, 24.0, 63.0, 37.0),
-        "gold_silver":  (0.05, 78.0, 22.0, 65.0, 35.0),
-        "commodity":    (0.06, 78.0, 22.0, 65.0, 35.0),
-        "forex":        (0.03, 75.0, 25.0, 62.0, 38.0),
+        "crypto":       (0.12, 82.0, 18.0, 68.0, 32.0),
+        "stock_id":     (0.05, 76.0, 24.0, 60.0, 40.0),
+        "stock_us":     (0.05, 76.0, 24.0, 60.0, 40.0),
+        "world_stocks": (0.05, 76.0, 24.0, 60.0, 40.0),
+        "etf":          (0.04, 74.0, 26.0, 58.0, 42.0),
+        "gold_silver":  (0.05, 76.0, 24.0, 60.0, 40.0),
+        "commodity":    (0.06, 76.0, 24.0, 60.0, 40.0),
+        "forex":        (0.03, 72.0, 28.0, 58.0, 42.0),
     }
     ext_cap, rsi_hi_x, rsi_lo_x, rsi_hi_near, rsi_lo_near = _GUARDS.get(
-        market, (0.06, 78.0, 22.0, 65.0, 35.0)
+        market, (0.05, 76.0, 24.0, 60.0, 40.0)
     )
     extension = ((price - ema50) / ema50) if ema50 else 0.0
     overextended_up = extension > ext_cap
@@ -522,25 +519,60 @@ def compute_signal(candles: list[dict[str, Any]], market: str) -> dict[str, Any]
     rsi_extreme_up = rsi is not None and rsi >= rsi_hi_x
     rsi_extreme_dn = rsi is not None and rsi <= rsi_lo_x
 
-    # Near-recent-extreme veto — last 30 candles.
-    window = closes[-30:] if len(closes) >= 30 else closes
-    recent_high = max(window) if window else price
-    recent_low = min(window) if window else price
-    at_top = (price / recent_high) >= 0.98 if recent_high else False
-    at_bot = (price / recent_low) <= 1.02 if recent_low else False
-    near_top_hot = at_top and rsi is not None and rsi >= rsi_hi_near
-    near_bot_cold = at_bot and rsi is not None and rsi <= rsi_lo_near
+    # Multi-timeframe recent-extreme veto: check 30 / 60 / 120-candle
+    # horizons. Wider horizons catch multi-week rallies (like DSSA
+    # rallying +28 % from a 4-month low).
+    def _near_extreme(window_size: int) -> tuple[bool, bool]:
+        w = closes[-window_size:] if len(closes) >= window_size else closes
+        if not w:
+            return False, False
+        hi = max(w)
+        lo = min(w)
+        at_top_local = (price / hi) >= 0.98 if hi else False
+        at_bot_local = (price / lo) <= 1.02 if lo else False
+        return at_top_local, at_bot_local
 
-    veto_buy = overextended_up or rsi_extreme_up or near_top_hot
-    veto_sell = overextended_dn or rsi_extreme_dn or near_bot_cold
+    at_top_30, at_bot_30 = _near_extreme(30)
+    at_top_60, at_bot_60 = _near_extreme(60)
+    at_top_120, at_bot_120 = _near_extreme(120)
+    at_any_top = at_top_30 or at_top_60 or at_top_120
+    at_any_bot = at_bot_30 or at_bot_60 or at_bot_120
 
-    # v8.12.24 — Instead of downgrading to HOLD, FLIP the signal to a
-    # mean-reversion action so the user gets an actionable exit / entry:
-    #   Trend says BUY but price at top / overbought / overextended →
-    #      → SELL (take-profit) with reason "risiko FOMO — take profit"
-    #   Trend says SELL but price at bottom / oversold / overextended-down
-    #      → BUY (buy-the-dip) with reason "harga di dasar — accumulate"
-    # Original strong-trend BUY / SELL still fires when NO veto is set.
+    near_top_hot = at_any_top and rsi is not None and rsi >= rsi_hi_near
+    near_bot_cold = at_any_bot and rsi is not None and rsi <= rsi_lo_near
+
+    # Rally / capitulation exhaustion: how far did the asset move from
+    # its longer-term extreme? A +20 % surge from the 60/120-day low is
+    # a classic euphoria zone even if the 4-hour RSI looks calm.
+    rally_pct_60 = ((price / min(closes[-60:])) - 1.0) * 100 if len(closes) >= 60 else 0.0
+    rally_pct_120 = ((price / min(closes[-120:])) - 1.0) * 100 if len(closes) >= 120 else 0.0
+    max_rally = max(rally_pct_60, rally_pct_120)
+    drop_pct_60 = (1.0 - (price / max(closes[-60:]))) * 100 if len(closes) >= 60 else 0.0
+    drop_pct_120 = (1.0 - (price / max(closes[-120:]))) * 100 if len(closes) >= 120 else 0.0
+    max_drop = max(drop_pct_60, drop_pct_120)
+
+    # Rally exhaustion trigger — different threshold per market.
+    exhaust_up_pct = 30.0 if market == "crypto" else 20.0
+    exhaust_dn_pct = 30.0 if market == "crypto" else 20.0
+    rally_exhausted = (
+        max_rally >= exhaust_up_pct
+        and at_any_top
+        and rsi is not None and rsi >= (rsi_hi_near - 5)  # e.g. 55+ for stocks
+    )
+    capitulation_exhausted = (
+        max_drop >= exhaust_dn_pct
+        and at_any_bot
+        and rsi is not None and rsi <= (rsi_lo_near + 5)
+    )
+
+    veto_buy = (
+        overextended_up or rsi_extreme_up or near_top_hot or rally_exhausted
+    )
+    veto_sell = (
+        overextended_dn or rsi_extreme_dn or near_bot_cold or capitulation_exhausted
+    )
+
+    # v8.12.24 — FLIP to mean-reversion action instead of demoting to HOLD.
     if score >= 3 and ema_align_buy and not veto_buy:
         action = "BUY"
         label = "LONG" if market == "crypto" else "BUY"
@@ -548,7 +580,7 @@ def compute_signal(candles: list[dict[str, Any]], market: str) -> dict[str, Any]
         action = "SELL"
         label = "SHORT" if market == "crypto" else "SELL"
     elif score >= 3 and veto_buy:
-        # Trend-up + overextended/overbought → take profit
+        # Trend-up + veto → take profit
         action = "SELL"
         label = "TP" if market == "crypto" else "SELL"
         parts = []
@@ -557,16 +589,17 @@ def compute_signal(candles: list[dict[str, Any]], market: str) -> dict[str, Any]
         if rsi_extreme_up:
             parts.append(f"RSI {rsi:.0f} sangat overbought")
         if near_top_hot:
-            parts.append("harga di puncak 30d")
+            horizon = "30d" if at_top_30 else ("60d" if at_top_60 else "120d")
+            parts.append(f"harga di puncak {horizon}")
+        if rally_exhausted:
+            parts.append(f"rally +{max_rally:.0f}% dari low — sudah kepanjangan")
         reasons.append(
             "TAKE PROFIT — " + ", ".join(parts) + ". Jangan kejar harga."
         )
-        # Confidence for TP signal: high when overextended + RSI extreme,
-        # moderate when just near-top. Cap around momentum score.
-        tp_boost = (20 if overextended_up else 0) + (15 if rsi_extreme_up else 0) + (8 if near_top_hot else 0)
+        tp_boost = (18 if overextended_up else 0) + (12 if rsi_extreme_up else 0) + (8 if near_top_hot else 0) + (15 if rally_exhausted else 0)
         confidence = min(95, max(70, 60 + tp_boost))
     elif score <= -3 and veto_sell:
-        # Trend-down + oversold → dip accumulation
+        # Trend-down + veto → buy the dip
         action = "BUY"
         label = "DIP" if market == "crypto" else "BUY"
         parts = []
@@ -575,11 +608,14 @@ def compute_signal(candles: list[dict[str, Any]], market: str) -> dict[str, Any]
         if rsi_extreme_dn:
             parts.append(f"RSI {rsi:.0f} sangat oversold")
         if near_bot_cold:
-            parts.append("harga di dasar 30d")
+            horizon = "30d" if at_bot_30 else ("60d" if at_bot_60 else "120d")
+            parts.append(f"harga di dasar {horizon}")
+        if capitulation_exhausted:
+            parts.append(f"turun {max_drop:.0f}% dari high — capitulasi")
         reasons.append(
             "BUY THE DIP — " + ", ".join(parts) + ". Accumulate bertahap."
         )
-        dip_boost = (20 if overextended_dn else 0) + (15 if rsi_extreme_dn else 0) + (8 if near_bot_cold else 0)
+        dip_boost = (18 if overextended_dn else 0) + (12 if rsi_extreme_dn else 0) + (8 if near_bot_cold else 0) + (15 if capitulation_exhausted else 0)
         confidence = min(95, max(70, 60 + dip_boost))
     else:
         action = "HOLD"
