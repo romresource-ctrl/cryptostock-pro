@@ -221,13 +221,21 @@ async def get_track_record(
         wins = sum(1 for x in items if _outcome_of(x) == "WIN")
         losses = sum(1 for x in items if _outcome_of(x) == "LOSS")
         be = sum(1 for x in items if _outcome_of(x) == "BE")
+        # v8.12.27 — WR now excludes break-even from the denominator
+        # (industry-standard trader definition). Old formula was
+        # wins / total which caused chop periods to drag WR down
+        # toward 50 % even when the loss ratio was actually much
+        # lower. Users saw this as "AI performance dropping" when
+        # in reality market was sideways.
+        decisive = wins + losses
+        wr = round(wins / decisive * 100.0, 1) if decisive else None
         return {
             "total": total,
             "hits": wins,       # kept for backward compat with older UI
             "wins": wins,
             "losses": losses,
             "break_even": be,
-            "win_rate": round(wins / total * 100.0, 1) if total else None,
+            "win_rate": wr,
         }
 
     def _serialise(d: dict[str, Any]) -> dict[str, Any]:

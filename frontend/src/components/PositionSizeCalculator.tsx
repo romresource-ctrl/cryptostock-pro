@@ -384,17 +384,9 @@ export default function PositionSizeCalculator({
                   −{formatMoney(calc.riskAmount)} {quoteLabel}
                 </Text>
               </View>
-              {/* v8.5.4 — Liquidation warning: if max loss at SL >= margin,
-                  the position gets liquidated before SL. Warn the user. */}
-              {calc.liquidationRisk ? (
-                <View style={[styles.liqWarn, { borderColor: colors.accentDown, backgroundColor: colors.accentDown + "18" }]}>
-                  <Ionicons name="warning" size={14} color={colors.accentDown} />
-                  <Text style={[styles.liqWarnTxt, { color: colors.accentDown }]}>
-                    {t("pos_calc_liquidation") ||
-                      `Peringatan: Max Loss (${calc.maxLossPctOfMargin.toFixed(0)}%) melebihi margin! Posisi akan likuidasi sebelum SL. Kurangi leverage ke ~${calc.suggestedLev}× untuk aman.`}
-                  </Text>
-                </View>
-              ) : null}
+              {/* v8.12.27 — Liquidation warning box removed at user
+                  request; the calculator still shows Max Loss so users
+                  can gauge risk themselves. */}
               {calc.projectedProfit != null ? (
                 <View style={styles.resultRow}>
                   <Text style={[styles.resultLabel, { color: colors.textMuted }]}>

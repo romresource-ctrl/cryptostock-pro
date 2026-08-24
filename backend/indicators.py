@@ -499,9 +499,14 @@ def compute_signal(candles: list[dict[str, Any]], market: str) -> dict[str, Any]
     #             "rally-exhaustion" trigger that fires when price has
     #             surged >20 % from the multi-week low with elevated RSI.
     #
-    # Per-market thresholds (ext_cap, rsi_hi_x, rsi_lo_x, rsi_hi_near, rsi_lo_near):
+    # v8.12.27 — Tightened for crypto blue-chips (BTC/ETH) which move
+    # in smaller % than small-caps. The old crypto ext_cap 12% and
+    # rally-exhaustion 30% never fired for ETH pumping 3-5% into a
+    # local top → user still saw LONG at the peak and got stopped out.
+    # New crypto row: ext 6% (was 12), RSI near 62 (was 68), rally
+    # exhaustion 12% (was 30). Same-day intraday spike also handled.
     _GUARDS: dict[str, tuple[float, float, float, float, float]] = {
-        "crypto":       (0.12, 82.0, 18.0, 68.0, 32.0),
+        "crypto":       (0.06, 78.0, 22.0, 62.0, 38.0),
         "stock_id":     (0.05, 76.0, 24.0, 60.0, 40.0),
         "stock_us":     (0.05, 76.0, 24.0, 60.0, 40.0),
         "world_stocks": (0.05, 76.0, 24.0, 60.0, 40.0),
@@ -552,8 +557,11 @@ def compute_signal(candles: list[dict[str, Any]], market: str) -> dict[str, Any]
     max_drop = max(drop_pct_60, drop_pct_120)
 
     # Rally exhaustion trigger — different threshold per market.
-    exhaust_up_pct = 30.0 if market == "crypto" else 20.0
-    exhaust_dn_pct = 30.0 if market == "crypto" else 20.0
+    # v8.12.27 — crypto lowered 30 % → 12 % because BTC/ETH pump into
+    # tops in smaller percentages than small-cap alts, so a 30 % rally
+    # from a 60-day low was near-never triggered on blue-chips.
+    exhaust_up_pct = 12.0 if market == "crypto" else 20.0
+    exhaust_dn_pct = 12.0 if market == "crypto" else 20.0
     rally_exhausted = (
         max_rally >= exhaust_up_pct
         and at_any_top
@@ -571,6 +579,23 @@ def compute_signal(candles: list[dict[str, Any]], market: str) -> dict[str, Any]
     veto_sell = (
         overextended_dn or rsi_extreme_dn or near_bot_cold or capitulation_exhausted
     )
+
+    # v8.12.27 — Short-term pump/dump veto. Catches ETH-style intraday
+    # spikes (2-5 % move in the last few candles into a local top) that
+    # the longer-window checks above miss. Threshold scaled per market.
+    short_pump_pct = 3.5 if market == "crypto" else 2.5
+    short_dump_pct = 3.5 if market == "crypto" else 2.5
+    if len(closes) >= 6:
+        mom5 = (closes[-1] - closes[-6]) / closes[-6] * 100
+        if mom5 >= short_pump_pct and rsi is not None and rsi >= (rsi_hi_near - 3):
+            veto_buy = True
+            # Attach descriptive reason if flip happens.
+            if score >= 3:
+                reasons.append(f"Short-term pump +{mom5:.1f}% dalam 5-bar — jangan chase.")
+        elif mom5 <= -short_dump_pct and rsi is not None and rsi <= (rsi_lo_near + 3):
+            veto_sell = True
+            if score <= -3:
+                reasons.append(f"Short-term dump {mom5:.1f}% dalam 5-bar — tunggu stabil.")
 
     # v8.12.24 — FLIP to mean-reversion action instead of demoting to HOLD.
     if score >= 3 and ema_align_buy and not veto_buy:
