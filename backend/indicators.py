@@ -688,23 +688,19 @@ def compute_signal(candles: list[dict[str, Any]], market: str) -> dict[str, Any]
             "valleys_found": len(valleys),
         },
         "reasons": reasons,
-        "entry": round(entry, 8),
-        "entry_low": round(levels["entry_low"], 8),
-        "entry_high": round(levels["entry_high"], 8),
-        "entry_moderate": round(levels["entry_moderate"], 8),
-        "entry_aggressive": round(levels["entry_aggressive"], 8),
-        # v8.12.1 — Expose the low/high ranges for all three entry tiers
-        # so the frontend `usePriceZoneAlert` hook can render ENTRY-1,
-        # ENTRY-2, ENTRY-3 pills against the live price.
-        "entry_moderate_low": round(levels["entry_moderate_low"], 8),
-        "entry_moderate_high": round(levels["entry_moderate_high"], 8),
-        "entry_aggressive_low": round(levels["entry_aggressive_low"], 8),
-        "entry_aggressive_high": round(levels["entry_aggressive_high"], 8),
-        "stop_loss": round(stop_loss, 8),
-        "take_profit": round(take_profit, 8),
-        # v8.7.23 — Laddered TP-1/2/3 (R:R 1x / 2x / 3x for regime-aware
-        # crypto BUY/SELL). None for HOLD and stock-like markets — the
-        # frontend hook derives its own ladder in that case.
+        # v8.12.28 — All entry/SL/TP levels are None for HOLD signals;
+        # use a null-safe rounder so we don't crash on `round(None)`.
+        "entry": (round(entry, 8) if entry is not None else None),
+        "entry_low": (round(levels["entry_low"], 8) if levels.get("entry_low") is not None else None),
+        "entry_high": (round(levels["entry_high"], 8) if levels.get("entry_high") is not None else None),
+        "entry_moderate": (round(levels["entry_moderate"], 8) if levels.get("entry_moderate") is not None else None),
+        "entry_aggressive": (round(levels["entry_aggressive"], 8) if levels.get("entry_aggressive") is not None else None),
+        "entry_moderate_low": (round(levels["entry_moderate_low"], 8) if levels.get("entry_moderate_low") is not None else None),
+        "entry_moderate_high": (round(levels["entry_moderate_high"], 8) if levels.get("entry_moderate_high") is not None else None),
+        "entry_aggressive_low": (round(levels["entry_aggressive_low"], 8) if levels.get("entry_aggressive_low") is not None else None),
+        "entry_aggressive_high": (round(levels["entry_aggressive_high"], 8) if levels.get("entry_aggressive_high") is not None else None),
+        "stop_loss": (round(stop_loss, 8) if stop_loss is not None else None),
+        "take_profit": (round(take_profit, 8) if take_profit is not None else None),
         "take_profit_2": round(levels["take_profit_2"], 8) if levels.get("take_profit_2") is not None else None,
         "take_profit_3": round(levels["take_profit_3"], 8) if levels.get("take_profit_3") is not None else None,
         "regime": regime,
