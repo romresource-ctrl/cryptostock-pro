@@ -246,7 +246,17 @@ async def get_track_record(
         # lower. Users saw this as "AI performance dropping" when
         # in reality market was sideways.
         decisive = wins + losses
-        wr = round(wins / decisive * 100.0, 1) if decisive else None
+        if decisive > 0:
+            wr = round(wins / decisive * 100.0, 1)
+        elif be > 0:
+            # v8.12.31 — When every evaluated trade closed at break-even
+            # (market chop), the "wins/(wins+losses)" formula divides by
+            # zero. Return 50 (neutral) instead of None so the UI shows a
+            # meaningful placeholder instead of "—/N hit" which looked
+            # like the metric was broken.
+            wr = 50.0
+        else:
+            wr = None
         return {
             "total": total,
             "hits": wins,       # kept for backward compat with older UI
