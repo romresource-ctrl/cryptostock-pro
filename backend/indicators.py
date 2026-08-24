@@ -290,55 +290,41 @@ def _compute_deep_levels(
         sl_moderate = entry_moderate + sl_dist
         sl_aggressive = entry_aggressive + sl_dist
     else:  # HOLD
-        # v8.7.16 — Market-scoped HOLD formulas:
-        # • CRYPTO → dip-buy zone (per user spec: ETH $1907-$1924, TP1
-        #   +0.33%, SL below dip). Crypto users watch pullbacks in a
-        #   strong-BTC context and need to see the realistic dip entry.
-        # • Non-crypto (stocks / ETF / gold-silver / commodity / forex)
-        #   → keep the original ATR-based HOLD projection (informational,
-        #   symmetric around price). These markets are less volatile and
-        #   the dip-buy framing doesn't fit their trading style.
-        if market == "crypto":
-            entry_deep = price * 0.994       # ~0.6% below (mid of dip zone)
-            entry_moderate = price * 0.997   # ~0.3% below
-            entry_aggressive = price * 0.999 # ~0.1% below
-            band = price * 0.0044            # ±0.44% band → e.g. ETH $1907-$1924
-            take_profit = price * 1.0033     # +0.33% from price
-            stop_loss = entry_deep * 0.994   # −0.6% below dip entry
-        else:
-            # v8.3.6 (original) — informational HOLD projection for
-            # stock-like markets. Symmetric around current price.
-            entry_deep = price
-            entry_moderate = price
-            entry_aggressive = price
-            take_profit = max(price + atr * 2.5, price * 1.008)
-            stop_loss = min(price - atr * 2.5, price * 0.992)
-            band = atr * 0.4
-        sl_deep = sl_moderate = sl_aggressive = stop_loss
+        # v8.12.28 — HOLD signals no longer emit entry/SL/TP levels.
+        # Reason: users reported that the previous "informational dip-buy
+        # zone" (entry below price + TP above + SL below entry) LOOKED
+        # exactly like a BUY LONG suggestion — so they placed the trade
+        # anyway. Now HOLD returns null for every level and the frontend
+        # can render a clean "No entry — market indecisive, tunggu
+        # konfirmasi" state instead of a fake ladder.
+        entry_deep = None
+        entry_moderate = None
+        entry_aggressive = None
+        band = 0.0
+        take_profit = None
         take_profit_2 = None
         take_profit_3 = None
+        stop_loss = None
+        sl_deep = sl_moderate = sl_aggressive = None
+
+    # Helper to safely apply an offset when the base value may be None (HOLD).
+    def _off(base, delta):
+        return None if base is None else (base + delta)
 
     return {
         "entry": entry_deep,
         "entry_moderate": entry_moderate,
         "entry_aggressive": entry_aggressive,
-        # v8.1.9 — Entry zone (range) around the DEEP default so the
-        # frontend can display "$1915-$1925" instead of a single point.
-        # Range is ±0.4 ATR wide.
-        "entry_low": entry_deep - band,
-        "entry_high": entry_deep + band,
-        # Also expose zones for the other two tiers so the frontend
-        # "Entry Levels" card can render all three ranges.
-        "entry_moderate_low": entry_moderate - band,
-        "entry_moderate_high": entry_moderate + band,
-        "entry_aggressive_low": entry_aggressive - band,
-        "entry_aggressive_high": entry_aggressive + band,
+        "entry_low": _off(entry_deep, -band),
+        "entry_high": _off(entry_deep, band),
+        "entry_moderate_low": _off(entry_moderate, -band),
+        "entry_moderate_high": _off(entry_moderate, band),
+        "entry_aggressive_low": _off(entry_aggressive, -band),
+        "entry_aggressive_high": _off(entry_aggressive, band),
         "stop_loss": stop_loss,
         "stop_loss_moderate": sl_moderate,
         "stop_loss_aggressive": sl_aggressive,
         "take_profit": take_profit,
-        # v8.7.23 — Laddered TP-1/2/3 (1R / 2R / 3R for regime-aware crypto).
-        # None for HOLD and stock-like markets → frontend hook derives own.
         "take_profit_2": take_profit_2,
         "take_profit_3": take_profit_3,
         "avg_peak": avg_peak,
