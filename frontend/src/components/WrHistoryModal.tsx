@@ -210,14 +210,6 @@ const WrHistoryModal: React.FC<Props> = ({ visible, onClose, initialPeriod, data
               <Text style={[styles.emptyText, { color: colors.textMuted }]}>
                 {t("wr_empty")}
               </Text>
-              {/* v8.12.32 — Guide user when the current tab is empty
-                  but wider tabs may have data. Fixes the confusion
-                  where 7d = empty but 30d = has data. */}
-              {period === "7d" && (
-                <Text style={[styles.emptyText, { color: colors.textMuted, marginTop: 6, fontSize: 11 }]}>
-                  Belum ada sinyal BUY/SELL dalam 7 hari. Coba tab 30d atau All.
-                </Text>
-              )}
             </View>
           ) : (
             <FlatList
