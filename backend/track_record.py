@@ -53,7 +53,15 @@ async def record_signal(
     confidence: int,
     price_at_signal: float,
 ) -> None:
-    """Insert a new signal row into the `signals` collection."""
+    """Insert a new signal row into the `signals` collection.
+
+    v8.12.29 — Skip HOLD signals: they aren't real trades so they
+    should never enter the win-rate stats. Prior versions were writing
+    them and later filtering — which still polluted the "18 signals
+    historis" count on the frontend.
+    """
+    if action.upper() == "HOLD":
+        return
     await db.signals.insert_one({
         "_id": str(uuid.uuid4()),
         "profile_id": profile_id,
@@ -202,7 +210,17 @@ async def get_track_record(
 
     docs: list[dict[str, Any]] = []
     cursor = db.signals.find(
-        {"market": market, "symbol": symbol.upper(), "evaluated": True},
+        {
+            "market": market,
+            "symbol": symbol.upper(),
+            "evaluated": True,
+            # v8.12.29 — Exclude HOLD signals from track record.
+            # HOLD = "no trade" → it never had a real entry/SL/TP, so
+            # measuring "did the price move up or down after HOLD" is
+            # meaningless. Users complained that HOLD signals were
+            # being labelled WIN/LOSS/SL/BE in the history modal.
+            "action": {"$in": ["BUY", "SELL"]},
+        },
         {"_id": 0, "action": 1, "label": 1, "confidence": 1, "evaluation": 1, "created_at": 1, "timeframe": 1, "price_at_signal": 1},
     ).sort("created_at", -1).limit(history_limit)
     async for d in cursor:
@@ -309,6 +327,8 @@ async def get_track_record_summary(
             "market": market,
             "symbol": {"$in": syms},
             "evaluated": True,
+            # v8.12.29 — Exclude HOLD signals (same reason as detail view).
+            "action": {"$in": ["BUY", "SELL"]},
             "created_at": {"$gte": cutoff_30d},
         }},
         {"$project": {
