@@ -162,9 +162,15 @@ const WrHistoryModal: React.FC<Props> = ({ visible, onClose, initialPeriod, data
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable
+        {/* v8.12.32 — Use a plain View here instead of a Pressable.
+            Wrapping a FlatList inside a Pressable was intercepting the
+            vertical pan gesture on some Android builds so the WR
+            history couldn't be scrolled. onPress={stopPropagation} is
+            no longer needed since the backdrop only fires when the
+            user taps OUTSIDE this container. */}
+        <View
           style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          onPress={(e) => e.stopPropagation()}
+          onStartShouldSetResponder={() => true}
         >
           {/* Header */}
           <View style={styles.header}>
@@ -201,7 +207,17 @@ const WrHistoryModal: React.FC<Props> = ({ visible, onClose, initialPeriod, data
           {/* List */}
           {items.length === 0 ? (
             <View style={styles.emptyBox}>
-              <Text style={[styles.emptyText, { color: colors.textMuted }]}>{t("wr_empty")}</Text>
+              <Text style={[styles.emptyText, { color: colors.textMuted }]}>
+                {t("wr_empty")}
+              </Text>
+              {/* v8.12.32 — Guide user when the current tab is empty
+                  but wider tabs may have data. Fixes the confusion
+                  where 7d = empty but 30d = has data. */}
+              {period === "7d" && (
+                <Text style={[styles.emptyText, { color: colors.textMuted, marginTop: 6, fontSize: 11 }]}>
+                  Belum ada sinyal BUY/SELL dalam 7 hari. Coba tab 30d atau All.
+                </Text>
+              )}
             </View>
           ) : (
             <FlatList
@@ -211,6 +227,7 @@ const WrHistoryModal: React.FC<Props> = ({ visible, onClose, initialPeriod, data
               style={{ maxHeight: 380 }}
               contentContainerStyle={{ paddingHorizontal: 4 }}
               showsVerticalScrollIndicator
+              nestedScrollEnabled
               testID="wr-history-list"
             />
           )}
@@ -223,7 +240,7 @@ const WrHistoryModal: React.FC<Props> = ({ visible, onClose, initialPeriod, data
           >
             <Text style={[styles.closeBtnText, { color: colors.textPrimary }]}>{t("wr_close")}</Text>
           </TouchableOpacity>
-        </Pressable>
+        </View>
       </Pressable>
     </Modal>
   );
