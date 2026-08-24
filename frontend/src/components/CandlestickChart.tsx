@@ -933,21 +933,49 @@ const AlertPill = React.memo(function AlertPill({
 });
 
 
+// v8.6.9 — Same relative-move threshold + throttle window used by
+// FlashPrice's flash gate (src/components/FlashPrice.tsx), applied
+// here to the live price-line's redraw/recolor instead of a flash.
+const LIVE_LINE_MIN_PCT_CHANGE = 0.0005; // ~0.05%
+const LIVE_LINE_THROTTLE_MS = 1500; // at most one recolor/redraw per 1.5s
+
+// Baseline the next comparison is measured against, and the timestamp
+// of the last allowed redraw. Module-level (not per-instance) because
+// only one CandlestickChart is ever live-mounted at a time (the asset
+// detail screen); reset whenever candles/isLive change below so a
+// symbol/timeframe switch or live-mode toggle doesn't compare against
+// a stale baseline from the previous instance.
+let liveLineFlashBase: number | null = null;
+let liveLineLastUpdateAt = 0;
+
 /**
  * v8.12.2 — React.memo comparator with a RELATIVE-epsilon threshold
- * for `livePrice`. Sub-5-bps price jitter (0.05%) is treated as no-op,
- * which suppresses re-render of the entire chart on high-frequency WS
- * ticks. Reference-equality is used for `candles` (parent produces a
- * stable array reference until a new bar closes) and layout / signal
- * props are strict-equal.
+ * for `livePrice`, gating re-render (and therefore the live-price
+ * line's position + up/down recolor) of the entire chart on
+ * high-frequency WS ticks. Reference-equality is used for `candles`
+ * (parent produces a stable array reference until a new bar closes)
+ * and layout / signal props are strict-equal.
  *
  * Relative (not absolute) epsilon so sub-cent tokens like SHIB/PEPE
  * are handled correctly — same rationale as `formatPriceLabel` above.
+ *
+ * v8.6.9 — Threshold restored to ~0.05% (was drifted to 3bps) and a
+ * throttle added: even once a move clears the threshold, the redraw
+ * is skipped if the last one happened under `LIVE_LINE_THROTTLE_MS`
+ * ago. Sub-threshold/throttled ticks don't reset the baseline, so a
+ * real move spread across several small ticks still lands once it
+ * clears the threshold and the throttle window.
  */
 function candlesEqual(prev: Props, next: Props): boolean {
-  if (prev.candles !== next.candles) return false;
+  if (prev.candles !== next.candles) {
+    liveLineFlashBase = null;
+    return false;
+  }
   if (prev.width !== next.width || prev.height !== next.height) return false;
-  if (prev.isLive !== next.isLive || prev.isReady !== next.isReady) return false;
+  if (prev.isLive !== next.isLive || prev.isReady !== next.isReady) {
+    liveLineFlashBase = null;
+    return false;
+  }
   if (prev.alertZone !== next.alertZone || prev.signalAction !== next.signalAction) return false;
   if (prev.showVolume !== next.showVolume || prev.showGrid !== next.showGrid) return false;
   if (prev.currency !== next.currency) return false;
@@ -955,10 +983,17 @@ function candlesEqual(prev: Props, next: Props): boolean {
   const b = next.livePrice ?? null;
   if (a === null || b === null) return a === b;
   if (!Number.isFinite(a) || !Number.isFinite(b)) return a === b;
-  const rel = Math.abs(b - a) / (Math.abs(a) || 1);
-  return rel < 0.0003; // 3 bps — equal means skip render (v8.12.3: lowered
-                       // from 5 bps to make the live tag/line feel more
-                       // responsive without giving up cheap dampening).
+
+  if (liveLineFlashBase == null) liveLineFlashBase = a;
+  const rel = Math.abs(b - liveLineFlashBase) / (Math.abs(liveLineFlashBase) || 1);
+  if (rel < LIVE_LINE_MIN_PCT_CHANGE) return true; // sub-threshold — equal, skip redraw
+
+  const now = Date.now();
+  if (now - liveLineLastUpdateAt < LIVE_LINE_THROTTLE_MS) return true; // throttled — equal, skip redraw
+
+  liveLineFlashBase = b;
+  liveLineLastUpdateAt = now;
+  return false; // redraw
 }
 
 export default React.memo(CandlestickChart, candlesEqual);

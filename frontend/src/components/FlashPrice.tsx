@@ -17,6 +17,14 @@
  *   - Silent when the value hasn't changed (avoids epilepsy-trigger
  *     flicker on unrelated re-renders).
  *   - Drop-in replacement for `<Text>` — accepts the same style prop.
+ *
+ * v8.6.9 — Gated on a RELATIVE move (default ~0.05%) instead of any
+ * change at all, and throttled to at most one flash per ~1.5-2s. Ticks
+ * that are too small or too frequent still update the displayed text
+ * (via `formatted`) but no longer trigger a flash — sub-threshold
+ * drift accumulates against the last-flashed baseline so a real move
+ * spread across several tiny ticks still flashes once it clears the
+ * threshold.
  */
 import React from "react";
 import { Animated, StyleProp, TextStyle } from "react-native";
@@ -32,8 +40,17 @@ type Props = {
   /** Flash duration in ms — default 500 (250 up, 250 back to base). */
   durationMs?: number;
   /** Minimum absolute delta to trigger flash. Prevents flashing on
-      1e-9 rounding noise. Default 0. */
+      1e-9 rounding noise. Default 0. Combined (AND) with `minPctChange`. */
   minDelta?: number;
+  /** Minimum RELATIVE move (fraction, e.g. 0.0005 = 0.05%) required to
+      trigger a flash. Default 0.0005 (~0.05%) — filters out sub-cent/
+      sub-bps ticker noise that isn't a meaningful price move. */
+  minPctChange?: number;
+  /** Minimum time between flashes, in ms. A qualifying move that
+      arrives before this elapses updates the displayed text but does
+      not re-trigger the flash animation. Default 1500 (throttles to at
+      most one flash roughly every 1.5-2s). */
+  throttleMs?: number;
 };
 
 export default function FlashPrice({
@@ -42,9 +59,15 @@ export default function FlashPrice({
   style,
   durationMs = 500,
   minDelta = 0,
+  minPctChange = 0.0005,
+  throttleMs = 1500,
 }: Props) {
   const { colors } = useTheme();
-  const prevRef = React.useRef<number | null>(null);
+  // Baseline the next flash's delta is measured against. Only advances
+  // when a flash actually fires, so sub-threshold ticks accumulate
+  // instead of resetting the comparison on every render.
+  const flashBaseRef = React.useRef<number | null>(null);
+  const lastFlashAtRef = React.useRef<number>(0);
   // 0 = base color, 1 = fully-saturated flash color.
   const anim = React.useRef(new Animated.Value(0)).current;
   // Which color to flash — we set this synchronously when the value
@@ -53,23 +76,38 @@ export default function FlashPrice({
 
   React.useEffect(() => {
     const curr = typeof value === "number" && Number.isFinite(value) ? value : null;
-    const prev = prevRef.current;
+    const base = flashBaseRef.current;
 
-    if (curr != null && prev != null && curr !== prev) {
-      const delta = curr - prev;
-      if (Math.abs(delta) > minDelta) {
-        flashColorRef.current = delta > 0 ? colors.accentUp : colors.accentDown;
-        // Snap to full-flash, then ease back to base.
-        anim.setValue(1);
-        Animated.timing(anim, {
-          toValue: 0,
-          duration: durationMs,
-          useNativeDriver: false, // color interpolation can't run on native
-        }).start();
-      }
+    if (curr == null) {
+      flashBaseRef.current = null;
+      return;
     }
-    prevRef.current = curr;
-  }, [value, minDelta, durationMs, anim, colors.accentUp, colors.accentDown]);
+    if (base == null) {
+      flashBaseRef.current = curr;
+      return;
+    }
+    if (curr === base) return;
+
+    const delta = curr - base;
+    const relChange = Math.abs(delta) / (Math.abs(base) || 1);
+    const now = Date.now();
+    const throttleOk = now - lastFlashAtRef.current >= throttleMs;
+
+    if (Math.abs(delta) > minDelta && relChange >= minPctChange && throttleOk) {
+      flashColorRef.current = delta > 0 ? colors.accentUp : colors.accentDown;
+      // Snap to full-flash, then ease back to base.
+      anim.setValue(1);
+      Animated.timing(anim, {
+        toValue: 0,
+        duration: durationMs,
+        useNativeDriver: false, // color interpolation can't run on native
+      }).start();
+      flashBaseRef.current = curr;
+      lastFlashAtRef.current = now;
+    }
+    // Below threshold or still throttled: leave flashBaseRef alone so
+    // the next tick's delta is measured cumulatively from here.
+  }, [value, minDelta, minPctChange, throttleMs, durationMs, anim, colors.accentUp, colors.accentDown]);
 
   // Interpolate between base text color (already in `style`) and flash.
   // We can't read `style.color` reliably so we interpolate against a

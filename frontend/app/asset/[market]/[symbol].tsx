@@ -505,14 +505,19 @@ export default function AssetDetail() {
                   "badge_stock_id"
                 )}</Text>
               </Text>
-              {/* v8.6.8 — Header price now flashes green/red on every
-                  live tick from Binance WS (200ms cadence for crypto).
-                  Non-crypto still flashes but only on REST refresh. */}
+              {/* v8.6.8 — Header price flashes green/red on live ticks
+                  from Binance WS (200ms cadence for crypto). Non-crypto
+                  still flashes but only on REST refresh.
+                  v8.6.9 — Explicit ~0.05% move threshold + 1.5s throttle
+                  so the high-frequency crypto WS cadence doesn't turn
+                  this into a strobe on sub-cent jitter. */}
               <View style={{ flexDirection: "row", alignItems: "baseline", flexWrap: "wrap" }}>
                 <FlashPrice
                   value={displayPrice}
                   formatted={`${fmtPrice(displayPrice)} `}
                   style={[styles.priceBig, { color: colors.textPrimary }]}
+                  minPctChange={0.0005}
+                  throttleMs={1500}
                 />
                 <Text style={{ color: changeColor, fontSize: 14, fontWeight: "600" }}>
                   {formatPct(displayChangePct)}
