@@ -24,6 +24,17 @@
     "experiments": {
       "typedRoutes": true
     },
+    "description": "AI Crypto Signal, Stock Signal & Trading Predictions — real-time signals for crypto, IDX / US stocks, ETF, gold, commodities & forex with Anti-FOMO Guard, Buy-The-Dip alerts, and live chatroom.",
+    "keywords": [
+      "crypto signal",
+      "stock signal",
+      "trading predictions",
+      "ai trading",
+      "buy the dip",
+      "take profit",
+      "market brief",
+      "crypto stock pro"
+    ],
     "icon": "./assets/images/icon.png",
     "ios": {
       "bundleIdentifier": "com.cryptostockapps.aicryptostockpro",
@@ -84,7 +95,7 @@
     "scheme": "aicryptostockpro",
     "slug": "ai-crypto-stock-pro",
     "userInterfaceStyle": "automatic",
-    "version": "8.12.33",
+    "version": "8.12.34",
     "web": {
       "bundler": "metro",
       "favicon": "./assets/images/favicon.png",

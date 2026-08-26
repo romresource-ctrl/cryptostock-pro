@@ -28,6 +28,7 @@ import {
 import LoginModal from "@/src/components/LoginModal";
 import ChatSheet from "@/src/components/ChatSheet";
 import FlashPrice from "@/src/components/FlashPrice";
+import MarketSkeleton from "@/src/components/MarketSkeleton";
 import Sparkline from "@/src/components/Sparkline";
 import {
   STABLECOIN_SYMBOLS,
@@ -607,6 +608,17 @@ export default function Dashboard() {
           <Text style={[styles.appSub, { color: colors.textMuted }]} numberOfLines={1}>
             {`${t("ver_label")} ${APP_VERSION}`}
           </Text>
+          {/* v8.12.34 — SEO-friendly tagline surfaces our high-value
+              keywords (Crypto Signal / Stock Signal / Trading
+              Predictions) in the About area of the header. Stays on a
+              single line at phone width. */}
+          <Text
+            style={[styles.appTagline, { color: colors.textMuted }]}
+            numberOfLines={1}
+            testID="app-tagline"
+          >
+            {t("app_tagline")}
+          </Text>
         </View>
         <View style={styles.headerActions}>
           <TouchableOpacity
@@ -1147,11 +1159,12 @@ function SearchResults({
 
   if (merged.length === 0) {
     return (
-      <View style={{ flex: 1, paddingTop: 60, alignItems: "center", gap: 8 }}>
+      <View style={{ flex: 1, paddingTop: 20 }}>
         {searching ? (
-          <ActivityIndicator color={colors.accentBlue} />
+          // v8.12.34 — Themed skeleton for search-loading state
+          <MarketSkeleton rows={4} showLabel />
         ) : (
-          <>
+          <View style={{ alignItems: "center", gap: 8, paddingTop: 40 }}>
             <Ionicons name="search" size={28} color={colors.textMuted} />
             <Text style={{ color: colors.textMuted, fontSize: 13, fontWeight: "600" }}>
               {`No matches for "${query}"`}
@@ -1159,7 +1172,7 @@ function SearchResults({
             <Text style={{ color: colors.textMuted, fontSize: 11 }}>
               Try a different symbol, e.g. BTC, AAPL, SIDO
             </Text>
-          </>
+          </View>
         )}
       </View>
     );
@@ -1173,7 +1186,14 @@ function SearchResults({
     >
       {searching && (
         <View style={{ paddingBottom: 8, alignItems: "center" }}>
-          <ActivityIndicator size="small" color={colors.accentBlue} />
+          {/* v8.12.34 — Small dot + text instead of spinner. Matches
+              the theme and doesn't scream "loading" in blue. */}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.accentBlue }} />
+            <Text style={{ color: colors.textMuted, fontSize: 11, fontWeight: "600" }}>
+              {t("syncing_market")}
+            </Text>
+          </View>
         </View>
       )}
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
@@ -1273,9 +1293,11 @@ function ListColumn({
         ) : null}
       </View>
       {loading && data.length === 0 ? (
-        <View style={{ paddingVertical: 40, alignItems: "center" }}>
-          <ActivityIndicator color={colors.accentBlue} />
-        </View>
+        // v8.12.34 — Themed skeleton instead of raw blue ActivityIndicator
+        // so the initial cold-start (before the first WebSocket handshake
+        // completes) still looks like a fully-designed app. Uses the same
+        // dark theme surface + border tokens as real cards below.
+        <MarketSkeleton rows={5} showLabel />
       ) : (
         <FlatList
           data={data}
@@ -1346,6 +1368,8 @@ const styles = StyleSheet.create({
   appTitle: { fontSize: 15, fontWeight: "800", letterSpacing: 0.2, lineHeight: 18, textAlign: "left" },
   headerTitleWrap: { flex: 1, paddingRight: 8 },
   appSub: { fontSize: 11, marginTop: 2 },
+  // v8.12.34 — Keyword tagline sits below the version label
+  appTagline: { fontSize: 9, fontWeight: "600", letterSpacing: 0.3, marginTop: 1, opacity: 0.75 },
   headerActions: { flexDirection: "row", gap: 8, alignItems: "center", flexShrink: 0 },
   iconBtn: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center", borderWidth: 1 },
   loginBtn: {

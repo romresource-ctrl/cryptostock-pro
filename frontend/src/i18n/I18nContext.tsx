@@ -12,6 +12,18 @@ export const LANG_LABEL: Record<Lang, string> = { id: "ID", en: "EN", ru: "RU", 
 const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }> = {
   app_title: { id: "AI Crypto\nStock Pro", en: "AI Crypto\nStock Pro", ru: "AI Crypto\nStock Pro", cn: "AI Crypto\nStock Pro" },
   app_sub_loading: { id: "memuat…", en: "loading…", ru: "загрузка…", cn: "加载中…" },
+  app_tagline: {
+    id: "Crypto Signal • Stock Signal • Trading Predictions",
+    en: "Crypto Signal • Stock Signal • Trading Predictions",
+    ru: "Crypto Signal • Stock Signal • Trading Predictions",
+    cn: "加密信号 • 股票信号 • 交易预测",
+  },
+  syncing_market: {
+    id: "Menyinkronkan data pasar…",
+    en: "Syncing Market Data…",
+    ru: "Синхронизация рыночных данных…",
+    cn: "正在同步市场数据…",
+  },
   ver_label: { id: "Ver", en: "Ver", ru: "Вер", cn: "版本" },
   premium: { id: "PREMIUM", en: "PREMIUM", ru: "ПРЕМИУМ", cn: "高级" },
   premium_label: { id: "PREMIUM", en: "PREMIUM", ru: "ПРЕМИУМ", cn: "高级" },
