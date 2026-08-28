@@ -1,0 +1,24 @@
+{
+  "summary": "Frontend-only regression test for v8.12.35 search-crash hotfix. Result: PASS. Typing 'T', 'TRUMP', 'BTC', 'AAPL', 'SIDO', 'X', and 'ZZZZZZ' into the dashboard search input never crashed the app and never produced a red-box / ReferenceError. Search results render correctly (T=87 cards, TRUMP=1 crypto card, BTC=6 incl. crypto-BTC, AAPL=2 incl. stock_us-AAPL, SIDO=1 stock_id-SIDO, X=42, ZZZZZZ shows 'No matches for ZZZZZZ' empty state). Dashboard regression check: 255 asset cards render on initial load, consensus strip visible (24/16/45/38 etc.), version label 'Ver 8.12.35' present. Tapping BTC search hit navigates cleanly to /asset/crypto/BTC and detail page renders (price 79,342.47, LIVE badge, candlestick chart, Technical Signal HOLD 40%, Track Record).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "index.tsx SearchResults now correctly calls useI18n() at its own scope (line ~1106). Fix confirmed working.",
+    "Non-fatal MediaError observed on asset detail page ('The element has no supported sources.') — likely an <audio>/<video> element with unset src. Cosmetic only; page renders fully and does NOT crash. Consider gating audio/video mount until src is available.",
+    "Search testID scheme: search hits render as generic 'asset-card-{market}-{symbol}' (not 'search-hit-*'). This is fine but if a distinct testID for search results is desired, expose one on SearchHitCard."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Search bar hotfix verified on preview URL. Version 8.12.35 shipped and working. On the asset detail page a MediaError ('no supported sources') is thrown by an audio/video element — it does not break UI but shows up as pageerror. If you plan to strengthen crash telemetry, make sure to handle that too.",
+  "rca_of_issue": "Original crash: ReferenceError: t is not defined thrown from module-scope SearchResults component because it referenced t('syncing_market') without destructuring useI18n() locally. Fix in /app/frontend/app/index.tsx adds `const { t } = useI18n()` inside SearchResults (~line 1106) and hardens AssetCard/SearchHitCard/merge logic with null-safety on symbol/action/label/confidence/track_record/spark/market. Verified: no ReferenceError, no red-screen, no page crash across 7 diverse queries typed character-by-character."
+}

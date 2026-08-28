@@ -150,18 +150,28 @@ const AssetCard = React.memo(function AssetCard({
   asset, onPress, market, locked,
 }: { asset: AssetSignal; onPress: () => void; market: Market; locked: boolean }) {
   const { colors } = useTheme();
-  const sig = signalColors(colors, asset.action);
-  const change = asset.change_pct_24h ?? 0;
+  // v8.12.35 — Defensive null-safety. Search results from the full-universe
+  // endpoint can occasionally return partial payloads for very small tokens
+  // (missing spark, confidence, label, action). Any bare `.toUpperCase()`
+  // or arithmetic on `undefined` would fatally crash the whole app. Normalise
+  // every field we consume below so this component NEVER throws.
+  const safeSymbol = (asset?.symbol ?? "").toString();
+  const safeAction = (asset?.action ?? "HOLD").toString().toUpperCase();
+  const safeLabel = (asset?.label ?? safeAction).toString();
+  const safeConfidence = typeof asset?.confidence === "number" ? asset.confidence : 0;
+  const sig = signalColors(colors, safeAction);
+  const change = typeof asset?.change_pct_24h === "number" ? asset.change_pct_24h : 0;
   const changeColor = change >= 0 ? colors.accentUp : colors.accentDown;
-  const wr = asset.track_record?.wr_30d ?? null;
+  const wr = asset?.track_record?.wr_30d ?? null;
+  const wrN = asset?.track_record?.n_30d ?? 0;
   const wrCol = wrColor(colors, wr);
-  const premium = asset.is_premium;
+  const premium = !!asset?.is_premium;
   const premiumGold = "#F0B90B";
   // v8.5.3 — Watchlist star button.  Tap ⭐ to add/remove this asset from
   // the user's favorites (persisted in AsyncStorage).  A small yellow
   // filled star means "in watchlist", grey outline means "not saved".
   const watch = useWatchlist();
-  const starred = watch.has(market, asset.symbol);
+  const starred = safeSymbol ? watch.has(market, safeSymbol) : false;
 
   // v8.4.0 — For USD-pegged stablecoins, render the price in the user's
   // LOCAL currency (Rp / ¥ / € / …) instead of "$1.00". Users trading in
@@ -170,10 +180,10 @@ const AssetCard = React.memo(function AssetCard({
   // locales or when the FX API is unreachable, so USD users still see
   // the original price.
   const localFx = useUsdtLocalRate();
-  const isStable = market === "crypto" && STABLECOIN_SYMBOLS.has(asset.symbol.toUpperCase());
+  const isStable = market === "crypto" && !!safeSymbol && STABLECOIN_SYMBOLS.has(safeSymbol.toUpperCase());
   const priceDisplay =
-    (isStable && asset.price != null && formatStablecoinLocal(asset.price, localFx)) ||
-    formatPrice(asset.price, market);
+    (isStable && asset?.price != null && formatStablecoinLocal(asset.price, localFx)) ||
+    formatPrice(asset?.price, market);
 
   return (
     <TouchableOpacity
@@ -194,7 +204,7 @@ const AssetCard = React.memo(function AssetCard({
       ]}
     >
       {premium && (
-        <View style={[styles.premiumRibbon, { backgroundColor: premiumGold }]} testID={`premium-badge-${market}-${asset.symbol}`}>
+        <View style={[styles.premiumRibbon, { backgroundColor: premiumGold }]} testID={`premium-badge-${market}-${safeSymbol}`}>
           <Ionicons name="star" size={9} color="#0B0E11" />
           <Text style={styles.premiumRibbonText}>PREMIUM</Text>
         </View>
@@ -206,13 +216,13 @@ const AssetCard = React.memo(function AssetCard({
       )}
       <View style={styles.cardTop}>
         <Text style={[styles.ticker, { color: colors.textPrimary }]} numberOfLines={1}>
-          {asset.symbol}
+          {safeSymbol}
         </Text>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
           <TouchableOpacity
-            onPress={() => watch.toggle(market, asset.symbol)}
+            onPress={() => safeSymbol && watch.toggle(market, safeSymbol)}
             hitSlop={8}
-            testID={`watchlist-star-${market}-${asset.symbol}`}
+            testID={`watchlist-star-${market}-${safeSymbol}`}
             style={styles.starBtn}
           >
             <Ionicons
@@ -222,7 +232,7 @@ const AssetCard = React.memo(function AssetCard({
             />
           </TouchableOpacity>
           <View style={[styles.signalPill, { backgroundColor: sig.bg }]}>
-            <Text style={[styles.signalText, { color: sig.fg }]}>{asset.label}</Text>
+            <Text style={[styles.signalText, { color: sig.fg }]}>{safeLabel}</Text>
           </View>
         </View>
       </View>
@@ -231,31 +241,31 @@ const AssetCard = React.memo(function AssetCard({
             the numeric value moves. Users get an unmistakable "this
             just ticked" cue every ~20s (dashboard poll interval). */}
         <FlashPrice
-          value={asset.price}
+          value={asset?.price}
           formatted={priceDisplay}
           style={[styles.price, { color: colors.textPrimary }]}
         />
         <Text style={[styles.change, { color: changeColor }]} numberOfLines={1}>
-          {formatPct(asset.change_pct_24h)}
+          {formatPct(asset?.change_pct_24h)}
         </Text>
       </View>
       <View style={styles.cardBottom}>
-        <Sparkline data={asset.spark} color={sig.fg} width={64} height={22} />
+        <Sparkline data={Array.isArray(asset?.spark) ? asset.spark : []} color={sig.fg} width={64} height={22} />
         <View style={{ alignItems: "flex-end" }}>
           <Text style={[styles.confidenceLabel, { color: colors.textMuted }]}>AI</Text>
-          <Text style={[styles.confidenceVal, { color: sig.fg }]}>{asset.confidence}%</Text>
+          <Text style={[styles.confidenceVal, { color: sig.fg }]}>{safeConfidence}%</Text>
         </View>
       </View>
       {wr !== null ? (
-        <View style={[styles.wrRow, { borderTopColor: colors.border }]} testID={`wr-badge-${market}-${asset.symbol}`}>
+        <View style={[styles.wrRow, { borderTopColor: colors.border }]} testID={`wr-badge-${market}-${safeSymbol}`}>
           <Text style={[styles.wrLabel, { color: colors.textMuted }]}>WR 30d</Text>
           <Text style={[styles.wrVal, { color: wrCol }]}>
             {wr.toFixed(0)}%
-            <Text style={[styles.wrSub, { color: colors.textMuted }]}> · {asset.track_record.n_30d}</Text>
+            <Text style={[styles.wrSub, { color: colors.textMuted }]}> · {wrN}</Text>
           </Text>
         </View>
       ) : (
-        <View style={[styles.wrRow, { borderTopColor: colors.border }]} testID={`wr-empty-${market}-${asset.symbol}`}>
+        <View style={[styles.wrRow, { borderTopColor: colors.border }]} testID={`wr-empty-${market}-${safeSymbol}`}>
           <Text style={[styles.wrLabel, { color: colors.textMuted }]}>WR 30d</Text>
           <Text style={[styles.wrVal, { color: colors.textMuted }]}>—</Text>
         </View>
@@ -267,15 +277,15 @@ const AssetCard = React.memo(function AssetCard({
   // metric numbers; deep-compare those and ignore closure identity.
   prev.market === next.market &&
   prev.locked === next.locked &&
-  prev.asset.symbol === next.asset.symbol &&
-  prev.asset.price === next.asset.price &&
-  prev.asset.action === next.asset.action &&
-  prev.asset.label === next.asset.label &&
-  prev.asset.confidence === next.asset.confidence &&
-  prev.asset.change_pct_24h === next.asset.change_pct_24h &&
-  prev.asset.is_premium === next.asset.is_premium &&
-  (prev.asset.track_record?.wr_30d ?? null) === (next.asset.track_record?.wr_30d ?? null) &&
-  (prev.asset.track_record?.n_30d ?? 0) === (next.asset.track_record?.n_30d ?? 0)
+  prev.asset?.symbol === next.asset?.symbol &&
+  prev.asset?.price === next.asset?.price &&
+  prev.asset?.action === next.asset?.action &&
+  prev.asset?.label === next.asset?.label &&
+  prev.asset?.confidence === next.asset?.confidence &&
+  prev.asset?.change_pct_24h === next.asset?.change_pct_24h &&
+  prev.asset?.is_premium === next.asset?.is_premium &&
+  (prev.asset?.track_record?.wr_30d ?? null) === (next.asset?.track_record?.wr_30d ?? null) &&
+  (prev.asset?.track_record?.n_30d ?? 0) === (next.asset?.track_record?.n_30d ?? 0)
 ));
 
 export default function Dashboard() {
@@ -1086,6 +1096,14 @@ function SearchResults({
   locked: boolean;
 }) {
   const { colors } = useTheme();
+  // v8.12.35 — HOTFIX: `SearchResults` is defined at module scope, NOT
+  // nested inside `Dashboard`, so `t` from the outer `useI18n()` call
+  // is NOT in closure. The v8.12.34 skeleton polish accidentally used
+  // `{t("syncing_market")}` here, triggering a fatal
+  // `ReferenceError: t is not defined` the moment the search overlay
+  // paints. That is what caused the "app crashes the instant I type
+  // in the search box" bug reported on production. Grab our own hook.
+  const { t } = useI18n();
   const { width: screenW } = useWindowDimensions();
   const q = query.toUpperCase();
 
@@ -1130,6 +1148,7 @@ function SearchResults({
   const rank = (sym: string) => (sym === q ? 0 : sym.startsWith(q) ? 1 : sym.includes(q) ? 2 : 3);
   categories.forEach((k) => {
     (data[k] || []).forEach((a) => {
+      if (!a || !a.symbol) return;
       const sym = (a.symbol || "").toUpperCase();
       const r = rank(sym);
       if (r < 3) {
@@ -1142,6 +1161,7 @@ function SearchResults({
     });
   });
   remoteHits.forEach((h) => {
+    if (!h || !h.asset || !h.asset.symbol) return;
     const key = `${h.market}-${h.asset.symbol}`;
     if (!seen.has(key)) {
       seen.add(key);
@@ -1238,6 +1258,12 @@ function SearchHitCard({
     commodity: "#FF7043",
     forex: "#00BFA5",
   };
+  // v8.12.35 — Fall back to a neutral badge colour + short label so an
+  // unexpected market string coming from the backend can never crash
+  // string concatenation ("undefined" + "E6") or dereference undefined
+  // when rendering the market pill.
+  const badgeColor = marketBadgeColor[market] || "#64748B";
+  const badgeText = marketLabel[market] || (typeof market === "string" ? market.toUpperCase().slice(0, 4) : "—");
 
   return (
     <View style={{ position: "relative" }}>
@@ -1253,13 +1279,13 @@ function SearchHitCard({
         style={[
           styles.searchHitBadgeOverlay,
           {
-            backgroundColor: marketBadgeColor[market] + "E6",
-            borderColor: marketBadgeColor[market],
+            backgroundColor: badgeColor + "E6",
+            borderColor: badgeColor,
           },
         ]}
         pointerEvents="none"
       >
-        <Text style={styles.searchHitBadgeOverlayText}>{marketLabel[market]}</Text>
+        <Text style={styles.searchHitBadgeOverlayText}>{badgeText}</Text>
       </View>
     </View>
   );
