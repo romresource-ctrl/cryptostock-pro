@@ -340,6 +340,12 @@ export default function Dashboard() {
   // v8.12.38.1 — When the search input is focused AND empty AND we have
   // recent hits, we drop down a small suggestion list right underneath.
   const [searchFocused, setSearchFocused] = useState(false);
+  // v8.12.38.2 — Ref so tapping a recent-chip can programmatically
+  // re-focus the search input. Without this, tapping any
+  // TouchableOpacity outside the input on native dismisses the keyboard,
+  // which the user hates because they cannot continue typing to refine
+  // the picked symbol (e.g. tap "BTC" then type "USD" to get "BTCUSD").
+  const searchInputRef = useRef<TextInput | null>(null);
 
   // All 7 categories are always loaded in parallel so user can swipe horizontally
   // between them on phone, or see multiple columns at once on tablet.
@@ -891,6 +897,7 @@ export default function Dashboard() {
           <Ionicons name="search" size={16} color={colors.textMuted} style={{ marginLeft: 10 }} />
           <TextInput
             testID="asset-search-input"
+            ref={searchInputRef}
             value={searchQuery}
             onChangeText={setSearchQuery}
             onFocus={() => setSearchFocused(true)}
@@ -900,6 +907,10 @@ export default function Dashboard() {
             style={[styles.searchInput, { color: colors.textPrimary }]}
             autoCapitalize="characters"
             autoCorrect={false}
+            // v8.12.38.2 — Keep the keyboard alive across submits so the
+            // user can immediately continue typing after picking a chip.
+            blurOnSubmit={false}
+            returnKeyType="search"
           />
           {searchQuery ? (
             <TouchableOpacity onPress={() => setSearchQuery("")} hitSlop={8} style={{ paddingHorizontal: 10 }}>
@@ -997,7 +1008,22 @@ export default function Dashboard() {
           {searchHistory.history.map((sym) => (
             <TouchableOpacity
               key={sym}
-              onPress={() => setSearchQuery(sym)}
+              // v8.12.38.2 — Fire on press-IN so we set the value BEFORE
+              // the native tap system routes focus away from the TextInput
+              // (which would blur it and dismiss the keyboard). Then we
+              // reassert focus so the keyboard stays visible and the user
+              // can edit / append immediately.
+              onPress={() => {
+                setSearchQuery(sym);
+                // Small microtask so state has flushed before we re-focus.
+                requestAnimationFrame(() => {
+                  try {
+                    searchInputRef.current?.focus();
+                  } catch {
+                    /* ignore */
+                  }
+                });
+              }}
               style={[styles.recentDropdownRow, { borderTopColor: colors.border }]}
               testID={`recent-chip-${sym}`}
               activeOpacity={0.7}
