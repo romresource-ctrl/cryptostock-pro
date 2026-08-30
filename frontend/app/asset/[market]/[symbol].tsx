@@ -837,20 +837,26 @@ export default function AssetDetail() {
                   stopLoss={sig.stop_loss}
                   takeProfit={sig.take_profit}
                 />
-                {/* v8.3.9 — Position Size Calculator. Detail page is already
-                    gated to Premium (see usePremiumAccess above) so any user
-                    reaching this render is entitled. Pre-fills Entry & SL.
-                    v8.4.0: also pass TP so users see projected profit at TP. */}
-                <PositionSizeCalculator
-                  entryPrice={sig.entry}
-                  stopLoss={sig.stop_loss}
-                  takeProfit={sig.take_profit}
-                  symbol={String(symbol)}
-                  action={sig.action}
-                  quoteLabel={getQuoteLabel(market, lang)}
-                />
               </View>
             ) : null}
+            {/* v8.12.40 — Position Size Calculator ALWAYS visible.
+                Previously nested inside the `sig.entry ? ...` guard which
+                hid it for every HOLD signal (Anti-FOMO returns entry=null),
+                so users lost access to the calculator on ~40% of assets.
+                The component already renders a "no signal yet" hint via its
+                own `missingSignal` check, so surfacing it unconditionally
+                is safe and matches the pre-Anti-FOMO behaviour. Detail
+                page is already Premium-gated (usePremiumAccess above). */}
+            <View style={{ marginTop: 12 }}>
+              <PositionSizeCalculator
+                entryPrice={sig.entry}
+                stopLoss={sig.stop_loss}
+                takeProfit={sig.take_profit}
+                symbol={String(symbol)}
+                action={sig.action}
+                quoteLabel={getQuoteLabel(market, lang)}
+              />
+            </View>
           </View>
         )}
 
