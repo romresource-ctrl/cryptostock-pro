@@ -30,6 +30,8 @@ import ChatSheet from "@/src/components/ChatSheet";
 import FlashPrice from "@/src/components/FlashPrice";
 import MarketSkeleton from "@/src/components/MarketSkeleton";
 import Sparkline from "@/src/components/Sparkline";
+import TrendingColumn from "@/src/components/TrendingColumn";
+import VoiceSearchButton from "@/src/components/VoiceSearchButton";
 import {
   STABLECOIN_SYMBOLS,
   formatStablecoinLocal,
@@ -46,6 +48,7 @@ import {
   formatPrice,
 } from "@/src/lib/api";
 import { useSubscription } from "@/src/lib/subscriptionContext";
+import { useChatPresence } from "@/src/lib/useChatPresence";
 import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
 import { APP_VERSION } from "@/src/lib/version";
 import { useWatchlist } from "@/src/lib/watchlist";
@@ -327,6 +330,10 @@ export default function Dashboard() {
   const [loginOpen, setLoginOpen] = useState(false);
   const [vipOpen, setVipOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  // v8.12.36 — Live online count for the Chatroom badge on the dashboard.
+  // Heartbeat only when the user actually has access so we don't inflate
+  // the count with anonymous browsers.
+  const chatOnline = useChatPresence({ heartbeat: hasAccess });
 
   // All 7 categories are always loaded in parallel so user can swipe horizontally
   // between them on phone, or see multiple columns at once on tablet.
@@ -885,7 +892,16 @@ export default function Dashboard() {
             <TouchableOpacity onPress={() => setSearchQuery("")} hitSlop={8} style={{ paddingHorizontal: 10 }}>
               <Ionicons name="close-circle" size={16} color={colors.textMuted} />
             </TouchableOpacity>
-          ) : null}
+          ) : (
+            // v8.12.36 — Voice search mic. Only shown when the box is
+            // empty so it never fights the "clear" X for tap area. Tap
+            // → dictate a ticker → search fires automatically.
+            <VoiceSearchButton
+              onTranscript={(t) => setSearchQuery(t)}
+              size={16}
+              lang={lang === "id" ? "id-ID" : lang === "cn" ? "zh-CN" : lang === "ru" ? "ru-RU" : "en-US"}
+            />
+          )}
         </View>
         {/* CHATROOM button (moved from header row → next to search).
             Premium/unlocked: gold clickable → open Chatroom.
@@ -927,6 +943,18 @@ export default function Dashboard() {
           >
             CHATROOM
           </Text>
+          {/* v8.12.36 — Live "N online" badge. Green pill on top-right of
+              the chatroom button whenever someone is inside the room, so
+              users know the chat is active without opening it. */}
+          {chatOnline > 0 ? (
+            <View
+              style={[styles.chatOnlineBadge, { pointerEvents: "none" as any }]}
+              testID="chatroom-online-badge"
+            >
+              <View style={styles.chatOnlineDot} />
+              <Text style={styles.chatOnlineText}>{chatOnline}</Text>
+            </View>
+          ) : null}
         </TouchableOpacity>
       </View>
 
@@ -1020,6 +1048,33 @@ export default function Dashboard() {
               />
             </View>
           ) : null}
+          {/* v8.12.36 — Trending Tickers column. Renders right after the
+              Watchlist (or first, if the user has no favourites yet). Uses
+              the same AssetCard so premium ribbons + sparklines stay
+              consistent with the rest of the dashboard. */}
+          <View
+            key="__trending__"
+            style={[{ width: COL_WIDTH, marginRight: 8 }, webSnapChild]}
+          >
+            <TrendingColumn
+              title={t("trending_title") || "🔥 Trending"}
+              data={data}
+              categories={ALL_CATEGORIES}
+              onPress={handleAssetPress}
+              locked={!hasAccess}
+              colWidth={COL_WIDTH}
+              emptyHint={t("trending_loading") || "Analysing market moves…"}
+              limit={12}
+              renderCard={(hit) => (
+                <AssetCard
+                  asset={hit.asset}
+                  market={hit.market}
+                  locked={!hasAccess}
+                  onPress={() => handleAssetPress(hit.asset, hit.market)}
+                />
+              )}
+            />
+          </View>
           {orderedCategories.map((k) => {
             const catLabel = t(`category_${k}`).toUpperCase();
             const pan = makeColumnPan(k);
@@ -1429,6 +1484,35 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   searchChatBtnText: { fontSize: 11, fontWeight: "800", letterSpacing: 0.4 },
+  // v8.12.36 — Chatroom online-count badge (pill in the CHATROOM button).
+  chatOnlineBadge: {
+    position: "absolute",
+    top: -6,
+    right: -6,
+    minWidth: 20,
+    height: 18,
+    paddingHorizontal: 5,
+    borderRadius: 9,
+    backgroundColor: "#22C55E",
+    borderWidth: 1.5,
+    borderColor: "#0B0E11",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 3,
+  },
+  chatOnlineDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: "#fff",
+  },
+  chatOnlineText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.2,
+  },
   reorderRow: {
     flexDirection: "row",
     alignItems: "center",

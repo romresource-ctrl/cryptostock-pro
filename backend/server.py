@@ -2144,6 +2144,38 @@ async def chat_get_messages(
     return {"messages": rows, "server_time": _now_iso(), "online": online}
 
 
+@api.get("/chat/online")
+async def chat_online(device_id: str | None = None) -> dict[str, Any]:
+    """v8.12.36 — Lightweight presence-only endpoint for the dashboard
+    Chatroom badge. Returns the number of distinct devices seen within
+    the last PRESENCE_WINDOW_SEC seconds, WITHOUT loading any messages.
+
+    Also acts as a presence heartbeat when `device_id` is supplied so the
+    caller stays "online" while the badge polls. Cheap: single index
+    count + one upsert.
+    """
+    from datetime import timedelta
+
+    online = 0
+    try:
+        now = datetime.now(timezone.utc)
+        if device_id:
+            did = device_id.strip()[:80]
+            if did:
+                await db.chat_presence.update_one(
+                    {"device_id": did},
+                    {"$set": {"device_id": did, "last_seen": now}},
+                    upsert=True,
+                )
+        window_start = now - timedelta(seconds=PRESENCE_WINDOW_SEC)
+        online = await db.chat_presence.count_documents({"last_seen": {"$gte": window_start}})
+    except Exception:
+        pass
+    return {"online": online, "server_time": _now_iso()}
+
+
+
+
 # ------------------------- Push notifications -------------------------
 # v8.3.0 — Frontend calls POST /api/register-push after the user grants
 # notification permission. We forward the {user_id, platform, token} to the

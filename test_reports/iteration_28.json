@@ -1,0 +1,36 @@
+{
+  "summary": "v8.12.36 review PASS. Backend: 8/8 pytest cases pass — /api/chat/online returns {online:int, server_time:iso}; with device_id it upserts presence and count >=1; two-device stress (unique device_ids) yielded online>=2 with non-decreasing sequence; empty device_id handled gracefully. Regression /api/search 200s for TRUMP, BTC, AAPL and gibberish. Frontend (mobile viewport 390x844 on preview URL): version label 'Ver 8.12.36' rendered; voice-search-button visible when input empty, tappable without crash (fires Alert on sandbox as expected — no red screen); 🔥 Trending column mounted right after Watchlist showing 12 top-mover AssetCards with %change + WR 30d row (TEAM +93.62% 95%, MDIA +83.21% 40%, INET +54.55% 78%, SGRO +46.77% 84% visible in screenshot); chatroom-online-badge rendered '4' when polling result >0; mic reappears after clearing search; search regression clean (TRUMP=1 card, BTC=6 cards, no red screen).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "VoiceSearchButton", "issue": "Console warning: 'Animated: useNativeDriver is not supported because the native animated module is missing.' — pulse animation runs on JS driver on web preview. Cosmetic on web; will use native driver on real device build. Reference: /app/frontend/src/components/VoiceSearchButton.tsx:88,94"},
+      {"component": "chatroom-online-badge", "issue": "props.pointerEvents is deprecated on web — should use style.pointerEvents. Reference: /app/frontend/app/index.tsx:953"},
+      {"component": "global", "issue": "'shadow*' style props are deprecated on web — migrate to boxShadow (recurring warning across app, not new to v8.12.36)."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter28_v81236_chat_online_and_voice.py",
+    "/app/test_reports/pytest/iter28.xml"
+  ],
+  "action_items": [
+    "(Optional) Migrate `pointerEvents=\"none\"` on the chatroom-online-badge View to `style={{ pointerEvents: 'none' }}` to silence RN Web deprecation warning.",
+    "(Optional) Consider `useNativeDriver: false` for VoiceSearchButton pulse on web, or gate by Platform.OS to eliminate the JS-driver warning.",
+    "(Optional, app-wide) Migrate remaining `shadow*` props to `boxShadow` for RN Web 0.75+."
+  ],
+  "critical_code_review_comments": [
+    "/api/chat/online implementation is clean: single-index count + one upsert, exception-swallowing keeps badge alive on Mongo hiccups. Presence window respected via PRESENCE_WINDOW_SEC.",
+    "TrendingColumn is pure-client aggregation across ALL_CATEGORIES, sorted by |change_pct_24h|. Cost-free, updates as dashboard polls. Guards against missing symbol / non-number change_pct_24h.",
+    "VoiceSearchButton uses lazy dynamic import for expo-speech-recognition — correctly avoids Expo Go crash; falls back to Web Speech API on web preview; contextual permission flow + settings deeplink covered.",
+    "useChatPresence(20s poll) + AppState 'active' refresh + heartbeat gated to premium is a reasonable presence contract; setState skipped when unmounted (cancelledRef).",
+    "Minor: /api/chat/online silences all exceptions to `pass` — consider logging with logger.warning so future prod monitoring can trace Mongo failures. Not blocking."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (8/8)", "frontend": "100%"},
+  "seed_data_creation": "Registered two synthetic device_ids (TEST_iter28_A_<ts>, TEST_iter28_B_<ts>) via presence heartbeat; naturally TTL out of the presence window after PRESENCE_WINDOW_SEC. No manual cleanup needed.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "v8.12.36 (Voice Search + Chatroom Online Badge + Trending Tickers column) verified end-to-end on the preview URL. Live chatroom-online-badge poll returned 4 during test — badge only mounts when >0, so absence in a future run may just mean nobody is online. Backend endpoint /api/chat/online supports no-param read + device_id upsert; the newer /api/search endpoint is stable across TRUMP/BTC/AAPL/gibberish. Voice search dictation cannot be exercised in the sandbox browser (no mic permission grant) — mic button tap-through was confirmed instead."
+}

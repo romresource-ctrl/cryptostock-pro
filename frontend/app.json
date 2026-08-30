@@ -40,7 +40,8 @@
       "bundleIdentifier": "com.cryptostockapps.aicryptostockpro",
       "supportsTablet": true,
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "Record voice notes in the chatroom."
+        "NSMicrophoneUsageDescription": "Speak a ticker to search the market.",
+        "NSSpeechRecognitionUsageDescription": "Speak a ticker to search the market."
       }
     },
     "name": "AI Crypstock Pro",
@@ -90,12 +91,19 @@
       ],
       "expo-asset",
       "./plugins/withRemoveMediaPlaybackPermission",
-      "expo-localization"
+      "expo-localization",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Speak a ticker to search the market.",
+          "speechRecognitionPermission": "Speak a ticker to search the market."
+        }
+      ]
     ],
     "scheme": "aicryptostockpro",
     "slug": "ai-crypto-stock-pro",
     "userInterfaceStyle": "automatic",
-    "version": "8.12.35",
+    "version": "8.12.37",
     "web": {
       "bundler": "metro",
       "favicon": "./assets/images/favicon.png",

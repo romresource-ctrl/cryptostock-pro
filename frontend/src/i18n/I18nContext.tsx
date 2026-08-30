@@ -58,6 +58,15 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     cn: "正在加载自选…",
   },
 
+  // v8.12.36 — Trending column
+  trending_title: { id: "🔥 Trending", en: "🔥 Trending", ru: "🔥 Тренды", cn: "🔥 热门" },
+  trending_loading: {
+    id: "Menganalisis pergerakan pasar…",
+    en: "Analysing market moves…",
+    ru: "Анализ движений рынка…",
+    cn: "分析市场动向…",
+  },
+
   // v8.6.3 — Price Alerts feature removed. i18n keys deleted with it.
 
   // v8.5.0 — Category reorder sheet
