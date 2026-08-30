@@ -50,6 +50,7 @@ import {
 import { useSubscription } from "@/src/lib/subscriptionContext";
 import { useChatPresence } from "@/src/lib/useChatPresence";
 import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
+import { useSearchHistory } from "@/src/lib/useSearchHistory";
 import { APP_VERSION } from "@/src/lib/version";
 import { useWatchlist } from "@/src/lib/watchlist";
 import { useTheme } from "@/src/theme/ThemeContext";
@@ -334,6 +335,11 @@ export default function Dashboard() {
   // Heartbeat only when the user actually has access so we don't inflate
   // the count with anonymous browsers.
   const chatOnline = useChatPresence({ heartbeat: hasAccess });
+  // v8.12.38 — Recent search history (up to 5 symbols, persisted).
+  const searchHistory = useSearchHistory();
+  // v8.12.38.1 — When the search input is focused AND empty AND we have
+  // recent hits, we drop down a small suggestion list right underneath.
+  const [searchFocused, setSearchFocused] = useState(false);
 
   // All 7 categories are always loaded in parallel so user can swipe horizontally
   // between them on phone, or see multiple columns at once on tablet.
@@ -591,6 +597,11 @@ export default function Dashboard() {
     if (!hasAccess) {
       setVipOpen(true);
       return;
+    }
+    // v8.12.38 — If the user is currently searching, remember the picked
+    // symbol so we can offer it as a Recent chip next time.
+    if (searchQuery.trim() && a?.symbol) {
+      searchHistory.push(a.symbol);
     }
     const m = marketOverride ?? a.market ?? "crypto";
     // Forex / gold-silver symbols contain "/" (EUR/USD, XAU/USD) which
@@ -882,6 +893,8 @@ export default function Dashboard() {
             testID="asset-search-input"
             value={searchQuery}
             onChangeText={setSearchQuery}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setTimeout(() => setSearchFocused(false), 180)}
             placeholder={t("search_placeholder")}
             placeholderTextColor={colors.textMuted}
             style={[styles.searchInput, { color: colors.textPrimary }]}
@@ -957,6 +970,48 @@ export default function Dashboard() {
           ) : null}
         </TouchableOpacity>
       </View>
+
+      {/* v8.12.38.1 — Recent-search DROP-DOWN. Appears only when the input
+          is focused AND empty AND we have persisted history. Tapping a row
+          fills the search bar so the user does not need to retype. */}
+      {searchFocused && !searchQuery.trim() && searchHistory.history.length > 0 ? (
+        <View
+          style={[
+            styles.recentDropdown,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+          testID="recent-search-dropdown"
+        >
+          <View style={styles.recentDropdownHeader}>
+            <Ionicons name="time-outline" size={12} color={colors.textMuted} />
+            <Text style={[styles.recentDropdownLabel, { color: colors.textMuted }]}>
+              {t("recent_label") || "Recent"}
+            </Text>
+            <View style={{ flex: 1 }} />
+            <TouchableOpacity onPress={searchHistory.clear} hitSlop={6}>
+              <Text style={[styles.recentDropdownClear, { color: colors.accentBlue }]}>
+                {t("recent_clear") || "Clear"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          {searchHistory.history.map((sym) => (
+            <TouchableOpacity
+              key={sym}
+              onPress={() => setSearchQuery(sym)}
+              style={[styles.recentDropdownRow, { borderTopColor: colors.border }]}
+              testID={`recent-chip-${sym}`}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="search" size={13} color={colors.textMuted} />
+              <Text style={[styles.recentDropdownRowText, { color: colors.textPrimary }]}>
+                {sym}
+              </Text>
+              <View style={{ flex: 1 }} />
+              <Ionicons name="arrow-up-outline" size={13} color={colors.textMuted} />
+            </TouchableOpacity>
+          ))}
+        </View>
+      ) : null}
 
       {/* v8.5.0 — Reorder button. Compact pill just under the search bar so
           it's discoverable without crowding the header row. Tapping opens
@@ -1065,6 +1120,11 @@ export default function Dashboard() {
               colWidth={COL_WIDTH}
               emptyHint={t("trending_loading") || "Analysing market moves…"}
               limit={12}
+              modeLabels={{
+                gainers: t("trending_gainers") || "Top Gainers",
+                losers: t("trending_losers") || "Top Losers",
+                volume: t("trending_volume") || "High Volume",
+              }}
               renderCard={(hit) => (
                 <AssetCard
                   asset={hit.asset}
@@ -1512,6 +1572,52 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "800",
     letterSpacing: 0.2,
+  },
+  // v8.12.38.1 — Recent search dropdown (drop-down below search bar).
+  recentDropdown: {
+    marginHorizontal: 12,
+    marginTop: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: "hidden",
+    // Subtle elevation so it feels layered above the columns beneath.
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+    zIndex: 10,
+  },
+  recentDropdownHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  recentDropdownLabel: {
+    fontSize: 10.5,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+  },
+  recentDropdownClear: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.3,
+  },
+  recentDropdownRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderTopWidth: 0.5,
+  },
+  recentDropdownRowText: {
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: 0.4,
   },
   reorderRow: {
     flexDirection: "row",

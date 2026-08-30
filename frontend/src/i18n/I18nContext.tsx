@@ -66,6 +66,13 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     ru: "Анализ движений рынка…",
     cn: "分析市场动向…",
   },
+  // v8.12.38 — Trending mode labels (tap header to cycle).
+  trending_gainers: { id: "Top Gainers", en: "Top Gainers", ru: "Топ Роста", cn: "涨幅榜" },
+  trending_losers: { id: "Top Losers", en: "Top Losers", ru: "Топ Падения", cn: "跌幅榜" },
+  trending_volume: { id: "High Volume", en: "High Volume", ru: "Высокий Объём", cn: "高成交量" },
+  // v8.12.38 — Recent search chips.
+  recent_label: { id: "Terakhir dicari", en: "Recent", ru: "Недавние", cn: "最近" },
+  recent_clear: { id: "Hapus", en: "Clear", ru: "Очистить", cn: "清空" },
 
   // v8.6.3 — Price Alerts feature removed. i18n keys deleted with it.
 
