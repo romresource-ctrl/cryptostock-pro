@@ -29,6 +29,7 @@ import LoginModal from "@/src/components/LoginModal";
 import ChatSheet from "@/src/components/ChatSheet";
 import FlashPrice from "@/src/components/FlashPrice";
 import MarketSkeleton from "@/src/components/MarketSkeleton";
+import PrivacyNoticePopup from "@/src/components/PrivacyNoticePopup";
 import Sparkline from "@/src/components/Sparkline";
 import TrendingColumn from "@/src/components/TrendingColumn";
 import VoiceSearchButton from "@/src/components/VoiceSearchButton";
@@ -1219,6 +1220,10 @@ export default function Dashboard() {
           the dashboard interactable so premium users can chat while
           still scrolling through asset columns / candles above. */}
       <ChatSheet visible={chatOpen} onClose={() => setChatOpen(false)} />
+      {/* v8.12.41 — Post-subscribe Privacy Notice. Fires exactly once
+          after the user completes their first successful subscription
+          (edge-triggered via `isSubscribed` flip false → true). */}
+      <PrivacyNoticePopup isSubscribed={hasAccess} />
     </SafeAreaView>
   );
 }

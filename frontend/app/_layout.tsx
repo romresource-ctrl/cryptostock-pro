@@ -10,6 +10,7 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AuthProvider } from "@/src/auth/AuthContext";
+import DisclaimerModal from "@/src/components/DisclaimerModal";
 import { PushRegistrar } from "@/src/components/PushRegistrar";
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { I18nProvider } from "@/src/i18n/I18nContext";
@@ -139,6 +140,11 @@ export default function RootLayout() {
                   <PushRegistrar />
                   <PushTapListener />
                   <RootStack />
+                  {/* v8.12.41 — Blocking first-launch disclaimer. Renders
+                      over EVERYTHING until the user ticks the agreement
+                      checkbox. Guard is versioned so we can re-prompt on
+                      any future policy change (bump DISCLAIMER_VERSION). */}
+                  <DisclaimerModal />
                 </SubscriptionProvider>
               </AuthProvider>
             </I18nProvider>

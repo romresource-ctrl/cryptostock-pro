@@ -74,6 +74,102 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   recent_label: { id: "Terakhir dicari", en: "Recent", ru: "Недавние", cn: "最近" },
   recent_clear: { id: "Hapus", en: "Clear", ru: "Очистить", cn: "清空" },
 
+  // v8.12.41 — First-launch Disclaimer Modal.
+  disclaimer_first_title: {
+    id: "Peringatan Penting",
+    en: "Important Disclaimer",
+    ru: "Важное предупреждение",
+    cn: "重要免责声明",
+  },
+  disclaimer_first_body: {
+    id: "AI Crypto Stock Pro menyediakan sinyal trading dan analisis pasar HANYA untuk tujuan EDUKASI. Ini BUKAN nasihat keuangan. Trading melibatkan risiko besar termasuk kemungkinan kehilangan seluruh modal. Kinerja masa lalu tidak menjamin hasil di masa depan. Anda sepenuhnya bertanggung jawab atas keputusan investasi Anda.",
+    en: "AI Crypto Stock Pro provides trading signals and market analytics for EDUCATIONAL purposes only. It is NOT financial advice. Trading involves substantial risk, including possible loss of all invested capital. Past performance does not guarantee future results. You are solely responsible for your investment decisions.",
+    ru: "AI Crypto Stock Pro предоставляет торговые сигналы и рыночную аналитику ТОЛЬКО в образовательных целях. Это НЕ финансовый совет. Торговля связана со значительным риском, включая возможную потерю всего инвестированного капитала.",
+    cn: "AI Crypto Stock Pro 仅出于教育目的提供交易信号和市场分析。这不是财务建议。交易涉及重大风险,包括可能损失所有投资资金。",
+  },
+  disclaimer_bullet_1: {
+    id: "Bukan nasihat keuangan — hanya untuk edukasi",
+    en: "Not financial advice — for education only",
+    ru: "Не финансовый совет — только для обучения",
+    cn: "非财务建议 — 仅供教育",
+  },
+  disclaimer_bullet_2: {
+    id: "Trading berisiko kehilangan modal Anda",
+    en: "Trading carries risk of losing your capital",
+    ru: "Торговля несёт риск потери капитала",
+    cn: "交易有损失资本的风险",
+  },
+  disclaimer_bullet_3: {
+    id: "Sinyal AI bisa salah — selalu DYOR (riset sendiri)",
+    en: "AI signals may be wrong — always DYOR",
+    ru: "Сигналы ИИ могут быть ошибочными — всегда проводите собственное исследование",
+    cn: "AI 信号可能出错 — 请自行研究",
+  },
+  disclaimer_bullet_4: {
+    id: "Kami bukan penasihat investasi terdaftar",
+    en: "We are not registered investment advisors",
+    ru: "Мы не являемся зарегистрированными инвестиционными консультантами",
+    cn: "我们不是注册投资顾问",
+  },
+  disclaimer_checkbox: {
+    id: "Saya sudah membaca dan mengerti — ini bukan nasihat keuangan",
+    en: "I have read and understood — this is not financial advice",
+    ru: "Я прочитал(а) и понял(а) — это не финансовый совет",
+    cn: "我已阅读并理解 — 这不是财务建议",
+  },
+  disclaimer_agree: { id: "Saya Setuju", en: "I Agree", ru: "Согласен", cn: "我同意" },
+  disclaimer_decline: { id: "Tolak", en: "Decline", ru: "Отклонить", cn: "拒绝" },
+
+  // v8.12.41 — Post-Subscribe Privacy Notice Popup.
+  privacy_notice_title: {
+    id: "Privasi Anda",
+    en: "Your Privacy",
+    ru: "Ваша конфиденциальность",
+    cn: "您的隐私",
+  },
+  privacy_notice_subtitle: {
+    id: "Catatan singkat tentang data yang kami gunakan selama berlangganan.",
+    en: "A quick note about the data we use while you're subscribed.",
+    ru: "Краткая заметка о данных, которые мы используем во время подписки.",
+    cn: "关于订阅期间我们使用的数据的简要说明。",
+  },
+  privacy_notice_1: {
+    id: "Kami menyimpan status langganan + ID perangkat untuk memvalidasi akses Premium.",
+    en: "We store your subscription state + device ID so we can validate premium access.",
+    ru: "Мы храним статус подписки + идентификатор устройства для проверки доступа Premium.",
+    cn: "我们存储订阅状态 + 设备 ID 以验证高级访问权限。",
+  },
+  privacy_notice_2: {
+    id: "Pesan Chatroom terlihat oleh pengguna lain. ID perangkat digunakan untuk indikator online.",
+    en: "Chatroom messages are visible to other users. Your device ID is used for the presence dot.",
+    ru: "Сообщения в чате видны другим пользователям. Идентификатор устройства используется для индикатора онлайн.",
+    cn: "聊天室消息对其他用户可见。您的设备 ID 用于显示在线状态。",
+  },
+  privacy_notice_3: {
+    id: "Watchlist dan preferensi disimpan HANYA di perangkat ini — tidak di server kami.",
+    en: "Watchlist and preferences stay on THIS device only — not on our servers.",
+    ru: "Список наблюдения и настройки хранятся ТОЛЬКО на этом устройстве.",
+    cn: "关注列表和偏好设置仅保存在此设备上,不在我们的服务器上。",
+  },
+  privacy_notice_4: {
+    id: "Kami TIDAK PERNAH mengumpulkan wallet address, private key, atau kredensial broker.",
+    en: "We NEVER collect wallet addresses, private keys, or brokerage credentials.",
+    ru: "Мы НИКОГДА не собираем адреса кошельков, закрытые ключи или учётные данные брокеров.",
+    cn: "我们绝不会收集钱包地址、私钥或经纪账户凭据。",
+  },
+  privacy_notice_read_full: {
+    id: "Baca Kebijakan Privasi lengkap",
+    en: "Read the full Privacy Policy",
+    ru: "Читать полную Политику Конфиденциальности",
+    cn: "阅读完整的隐私政策",
+  },
+  privacy_notice_ok: {
+    id: "Mengerti",
+    en: "Got it",
+    ru: "Понятно",
+    cn: "明白了",
+  },
+
   // v8.6.3 — Price Alerts feature removed. i18n keys deleted with it.
 
   // v8.5.0 — Category reorder sheet
