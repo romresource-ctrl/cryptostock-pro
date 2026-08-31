@@ -33,6 +33,7 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { useI18n } from "@/src/i18n/I18nContext";
+import { waitForAppReady } from "@/src/lib/appReady";
 import { useTheme } from "@/src/theme/ThemeContext";
 
 const STORAGE_KEY = "@ai-crypto-stock-pro:disclaimer-accepted";
@@ -47,12 +48,11 @@ export default function DisclaimerModal() {
   const [visible, setVisible] = useState(false);
   const [agreed, setAgreed] = useState(false);
 
-  // v8.12.42 — Delay the modal by ~3.5s on first launch. This gives
-  // page-snapshot services (e.g. Emergent's contest gallery capture)
-  // enough time to grab the actual dashboard behind before the modal
-  // takes over the screen. Real users barely notice the delay — the
-  // dashboard is fully interactive underneath while the modal fades in.
-  const SNAPSHOT_GRACE_MS = 3500;
+  // v8.12.43 — Extra grace window AFTER the dashboard signals it is
+  // ready. Snapshot services get 2s of clean dashboard time BEFORE the
+  // modal appears. If the dashboard fails to load in 8s, we show the
+  // modal anyway so nobody is stuck in a legal-blank-screen loop.
+  const SNAPSHOT_GRACE_MS = 2000;
 
   // Check acceptance on mount.
   useEffect(() => {
@@ -62,18 +62,20 @@ export default function DisclaimerModal() {
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
         const acceptedVersion = raw ? parseInt(raw, 10) : 0;
         if (acceptedVersion < DISCLAIMER_VERSION) {
-          // Wait a short grace window so any first-frame snapshot
-          // service captures the underlying dashboard instead of the
-          // modal. If the user has already accepted, we skip the wait.
+          // Wait for the dashboard to publish its first data batch (or
+          // give up after 8s), then hold for another SNAPSHOT_GRACE_MS
+          // so any first-frame snapshot service still captures the
+          // populated dashboard.
+          await waitForAppReady(8000);
+          if (cancelled) return;
           setTimeout(() => {
             if (!cancelled) setVisible(true);
           }, SNAPSHOT_GRACE_MS);
         }
       } catch {
-        // If storage is broken, err on the side of showing the modal.
         setTimeout(() => {
           if (!cancelled) setVisible(true);
-        }, SNAPSHOT_GRACE_MS);
+        }, 4000);
       } finally {
         setReady(true);
       }

@@ -52,6 +52,7 @@ import { useSubscription } from "@/src/lib/subscriptionContext";
 import { useChatPresence } from "@/src/lib/useChatPresence";
 import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
 import { useSearchHistory } from "@/src/lib/useSearchHistory";
+import { markAppReady } from "@/src/lib/appReady";
 import { APP_VERSION } from "@/src/lib/version";
 import { useWatchlist } from "@/src/lib/watchlist";
 import { useTheme } from "@/src/theme/ThemeContext";
@@ -536,6 +537,12 @@ export default function Dashboard() {
       });
       setPremiumCount(pCount);
       setLastUpdate(new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+      // v8.12.43 — Signal the global "app ready" flag once the first
+      // real data payload has landed. The blocking Disclaimer + Privacy
+      // popups wait for this event (plus an extra grace delay) so that
+      // snapshot / gallery capture services take a picture of the
+      // populated dashboard, not the loading skeleton or the modal.
+      markAppReady();
     } finally {
       setLoadingMap((prev) => {
         const next = { ...prev };

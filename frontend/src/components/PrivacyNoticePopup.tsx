@@ -25,6 +25,7 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { useI18n } from "@/src/i18n/I18nContext";
+import { waitForAppReady } from "@/src/lib/appReady";
 import { useTheme } from "@/src/theme/ThemeContext";
 
 const STORAGE_KEY = "@ai-crypto-stock-pro:privacy-notice-seen";
@@ -43,9 +44,9 @@ export default function PrivacyNoticePopup({ isSubscribed }: Props) {
   const [visible, setVisible] = useState(false);
 
   // Watch for the "just subscribed" edge. Show the popup only when we've
-  // never shown this version to this user. v8.12.42 — delay the popup
-  // by ~3.5s so contest snapshot services capture the dashboard behind
-  // instead of the modal.
+  // never shown this version to this user. v8.12.43 — wait for the
+  // dashboard "ready" signal (first data payload) + 2s of grace so
+  // snapshot services grab the populated dashboard, not the popup.
   useEffect(() => {
     if (!isSubscribed) return;
     let cancelled = false;
@@ -53,11 +54,12 @@ export default function PrivacyNoticePopup({ isSubscribed }: Props) {
       try {
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
         const seenVersion = raw ? parseInt(raw, 10) : 0;
-        if (!cancelled && seenVersion < PRIVACY_NOTICE_VERSION) {
-          setTimeout(() => {
-            if (!cancelled) setVisible(true);
-          }, 3500);
-        }
+        if (cancelled || seenVersion >= PRIVACY_NOTICE_VERSION) return;
+        await waitForAppReady(8000);
+        if (cancelled) return;
+        setTimeout(() => {
+          if (!cancelled) setVisible(true);
+        }, 2000);
       } catch {
         /* ignore */
       }
