@@ -247,6 +247,27 @@ export default function AssetDetail() {
     }
   }, [market, symbol, timeframe, lang]);
 
+  // v8.13.2 — Reset the chart immediately when the ASSET itself changes
+  // (not just the timeframe) so the previous coin's stale candles never
+  // flash on screen while the new coin's chart is loading. Timeframe-only
+  // switches on the same asset intentionally skip this, so the v8.13.1
+  // non-blanking loader still keeps the chart visible during those.
+  //
+  // v8.13.3 — Also reset `growingCandles` here, in lockstep with `chart`.
+  // `growingCandles` only re-seeds from `chart.candles` in a separate
+  // effect (see "(a) Re-seed" below) that fires AFTER this one commits,
+  // so for one paint `chart` could hold the new asset's real data while
+  // `growingCandles` still held the PREVIOUS asset's bars (or a handful
+  // of stale ones) — `patchCandlesWithLive` on that mismatched array is
+  // what rendered as one giant malformed candle for a frame before the
+  // re-seed effect caught up. Resetting both together means that gap
+  // frame renders with an empty candles array (graceful blank box)
+  // instead of a mismatched one (malformed candle).
+  useEffect(() => {
+    setChart(null);
+    setGrowingCandles([]);
+  }, [market, symbol]);
+
   useEffect(() => {
     void loadChart(timeframe);
     setAnalysis(null);
@@ -408,11 +429,26 @@ export default function AssetDetail() {
   // timeframe or symbol). We prefer the REST array wholesale because
   // it already contains historical bars we don't want to lose. Any
   // subsequent CLOSED WS candle is appended on top.
-  React.useEffect(() => {
-    if (chart?.candles && chart.candles.length > 0) {
+  //
+  // v8.13.4 — Re-seed DURING RENDER instead of in a useEffect. Debug
+  // logging confirmed the effect version left a real, committed/painted
+  // render where `chart` already held the new candles but `growingCandles`
+  // (and therefore `liveCandles`, fed straight into <CandlestickChart>)
+  // was still the OLD value for one frame — an effect only runs AFTER
+  // the render that changed `chart` commits, one tick too late. Adjusting
+  // state during render (React's documented pattern for exactly this —
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes)
+  // lets us compute the CORRECT value for THIS render immediately, so no
+  // mismatched chart/growingCandles pair is ever painted.
+  const seededFromRef = React.useRef(chart?.candles);
+  let effectiveGrowingCandles = growingCandles;
+  if (chart?.candles && chart.candles !== seededFromRef.current) {
+    seededFromRef.current = chart.candles;
+    if (chart.candles.length > 0) {
+      effectiveGrowingCandles = chart.candles;
       setGrowingCandles(chart.candles);
     }
-  }, [chart?.candles]);
+  }
 
   // (b) Append CLOSED WS candles that are strictly newer than the
   // tail. Compares `t` after normalizing to seconds — REST candles
@@ -441,8 +477,8 @@ export default function AssetDetail() {
   }, [liveKline]);
 
   const liveCandles = React.useMemo(
-    () => patchCandlesWithLive(growingCandles ?? [], liveKline),
-    [growingCandles, liveKline],
+    () => patchCandlesWithLive(effectiveGrowingCandles ?? [], liveKline),
+    [effectiveGrowingCandles, liveKline],
   );
   const displayPrice = rt.connected && Number.isFinite(rt.price)
     ? rt.price
@@ -720,10 +756,12 @@ export default function AssetDetail() {
             </TouchableOpacity>
             </View>
           </View>
-          {/* v8.12.1 — Chart wrapper no longer needs relative-positioning
-              since the LadderAlertBadge moved out to the toggle row. */}
-          <View>
-          {loadingChart ? (
+          {/* v8.13.1 — Wrapper is relative again so the loading spinner
+              can overlay the existing chart on a timeframe switch instead
+              of unmounting it (was causing a blank/spinner flicker on
+              every timeframe tab tap). */}
+          <View style={{ position: "relative" }}>
+          {loadingChart && !chart ? (
             <View style={styles.chartLoader}>
               <ActivityIndicator color={colors.accentBlue} />
             </View>
@@ -761,6 +799,14 @@ export default function AssetDetail() {
           ) : (
             <PriceChart candles={liveCandles as never} width={screenW - 24} height={180} />
           )}
+          {/* v8.13.1 — Subsequent-load overlay: only shown once a chart is
+              already on screen, so a timeframe switch dims/spins in place
+              instead of blanking the whole chart. */}
+          {loadingChart && chart ? (
+            <View style={styles.chartLoaderOverlay} pointerEvents="none">
+              <ActivityIndicator color={colors.accentBlue} />
+            </View>
+          ) : null}
           </View>
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
@@ -1464,6 +1510,16 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   chartLoader: { height: 180, alignItems: "center", justifyContent: "center" },
+  chartLoaderOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.15)",
+  },
   chartToggleRow: {
     flexDirection: "row",
     gap: 6,

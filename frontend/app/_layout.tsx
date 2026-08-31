@@ -3,6 +3,7 @@ import * as Notifications from "expo-notifications";
 import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
+import * as SystemUI from "expo-system-ui";
 import { useEffect } from "react";
 import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -54,6 +55,19 @@ if (Platform.OS === "android") {
 
 function RootStack() {
   const { mode, colors } = useTheme();
+
+  // v8.13.2 — The Stack's `contentStyle` only colors the RN-rendered
+  // content; it does NOT change the native Android window background.
+  // Without this, the OS window's default white background is what
+  // briefly shows through during a screen transition (most visible on
+  // the back-navigation pop), even though app.json's splash screen is
+  // black. Keep the native window background in sync with the theme.
+  useEffect(() => {
+    SystemUI.setBackgroundColorAsync(colors.background).catch(() => {
+      /* best-effort — not available on web */
+    });
+  }, [colors.background]);
+
   return (
     <>
       <StatusBar style={mode === "dark" ? "light" : "dark"} />
@@ -130,7 +144,13 @@ export default function RootLayout() {
   if (!loaded && !error) return null;
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    // v8.13.3 — Explicit dark backdrop on the outermost container. This is
+    // a plain RN View with no background of its own, so any moment where
+    // no themed screen content has painted over it yet (e.g. mid native-
+    // stack transition) let the raw white native window show through.
+    // Static color (not theme-reactive) is intentional — this is only a
+    // backstop for that gap frame, and the app always boots dark.
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#0B0E11" }}>
       <SafeAreaProvider>
         <KeyboardProvider>
           <ThemeProvider>
