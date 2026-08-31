@@ -47,22 +47,40 @@ export default function DisclaimerModal() {
   const [visible, setVisible] = useState(false);
   const [agreed, setAgreed] = useState(false);
 
+  // v8.12.42 — Delay the modal by ~3.5s on first launch. This gives
+  // page-snapshot services (e.g. Emergent's contest gallery capture)
+  // enough time to grab the actual dashboard behind before the modal
+  // takes over the screen. Real users barely notice the delay — the
+  // dashboard is fully interactive underneath while the modal fades in.
+  const SNAPSHOT_GRACE_MS = 3500;
+
   // Check acceptance on mount.
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
         const acceptedVersion = raw ? parseInt(raw, 10) : 0;
         if (acceptedVersion < DISCLAIMER_VERSION) {
-          setVisible(true);
+          // Wait a short grace window so any first-frame snapshot
+          // service captures the underlying dashboard instead of the
+          // modal. If the user has already accepted, we skip the wait.
+          setTimeout(() => {
+            if (!cancelled) setVisible(true);
+          }, SNAPSHOT_GRACE_MS);
         }
       } catch {
         // If storage is broken, err on the side of showing the modal.
-        setVisible(true);
+        setTimeout(() => {
+          if (!cancelled) setVisible(true);
+        }, SNAPSHOT_GRACE_MS);
       } finally {
         setReady(true);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const onAgree = async () => {

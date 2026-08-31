@@ -43,7 +43,9 @@ export default function PrivacyNoticePopup({ isSubscribed }: Props) {
   const [visible, setVisible] = useState(false);
 
   // Watch for the "just subscribed" edge. Show the popup only when we've
-  // never shown this version to this user.
+  // never shown this version to this user. v8.12.42 — delay the popup
+  // by ~3.5s so contest snapshot services capture the dashboard behind
+  // instead of the modal.
   useEffect(() => {
     if (!isSubscribed) return;
     let cancelled = false;
@@ -52,7 +54,9 @@ export default function PrivacyNoticePopup({ isSubscribed }: Props) {
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
         const seenVersion = raw ? parseInt(raw, 10) : 0;
         if (!cancelled && seenVersion < PRIVACY_NOTICE_VERSION) {
-          setVisible(true);
+          setTimeout(() => {
+            if (!cancelled) setVisible(true);
+          }, 3500);
         }
       } catch {
         /* ignore */
