@@ -66,32 +66,36 @@ export default function Root({ children }: PropsWithChildren) {
                 to { opacity: 0; visibility: hidden; }
               }
               #ai-splash .logo {
-                width: 72px;
-                height: 72px;
-                border-radius: 20px;
-                background: linear-gradient(135deg, #F0B90B 0%, #F97316 100%);
+                width: 160px;
+                height: 160px;
+                border-radius: 24px;
+                background: transparent;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                font-size: 34px;
-                font-weight: 900;
-                color: #0B0E11;
-                letter-spacing: -1.5px;
-                box-shadow: 0 12px 28px rgba(240,185,11,0.28);
+                overflow: hidden;
+                filter: drop-shadow(0 12px 32px rgba(34,197,94,0.35));
+              }
+              #ai-splash .logo img {
+                width: 100%;
+                height: 100%;
+                object-fit: contain;
+                display: block;
               }
               #ai-splash h1 {
                 margin: 0;
-                font-size: 22px;
+                font-size: 20px;
                 font-weight: 900;
                 letter-spacing: 0.4px;
                 color: #F5F7FA;
+                display: none;
               }
-              #ai-splash h1 .accent { color: #F0B90B; }
+              #ai-splash h1 .accent { color: #22C55E; }
               #ai-splash .tagline {
-                margin: 0;
+                margin: 4px 0 0 0;
                 font-size: 12px;
                 color: #94A3B8;
-                letter-spacing: 0.4px;
+                letter-spacing: 0.6px;
                 text-transform: uppercase;
                 font-weight: 700;
               }
@@ -114,12 +118,12 @@ export default function Root({ children }: PropsWithChildren) {
                 font-weight: 700;
               }
               #ai-splash .spinner {
-                margin-top: 4px;
+                margin-top: 6px;
                 width: 24px;
                 height: 24px;
                 border-radius: 50%;
-                border: 3px solid rgba(240,185,11,0.18);
-                border-top-color: #F0B90B;
+                border: 3px solid rgba(34,197,94,0.18);
+                border-top-color: #22C55E;
                 animation: aiSpin 0.9s linear infinite;
               }
               @keyframes aiSpin { to { transform: rotate(360deg); } }
@@ -143,7 +147,9 @@ export default function Root({ children }: PropsWithChildren) {
              3.5s (see @keyframes aiSplashFade), well after the React
              tree has mounted. */}
         <div id="ai-splash" aria-hidden="true">
-          <div className="logo">A₿</div>
+          <div className="logo">
+            <img src="/splash-logo.png" alt="AI Crypto Stock Pro" />
+          </div>
           <h1>AI <span className="accent">Crypto Stock</span> Pro</h1>
           <p className="tagline">AI Trading Signals · Live Win-Rate</p>
           <div className="chips">
