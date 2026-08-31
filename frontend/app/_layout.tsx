@@ -140,11 +140,11 @@ export default function RootLayout() {
                   <PushRegistrar />
                   <PushTapListener />
                   <RootStack />
-                  {/* v8.12.41 — Blocking first-launch disclaimer. Renders
-                      over EVERYTHING until the user ticks the agreement
-                      checkbox. Guard is versioned so we can re-prompt on
-                      any future policy change (bump DISCLAIMER_VERSION). */}
-                  <DisclaimerModal />
+                  {/* v8.12.44 — Disclaimer temporarily DISABLED per user
+                      request so the dashboard is visible immediately on
+                      launch (contest snapshot capture). Uncomment the
+                      line below to re-enable the blocking legal modal. */}
+                  {/* <DisclaimerModal /> */}
                 </SubscriptionProvider>
               </AuthProvider>
             </I18nProvider>

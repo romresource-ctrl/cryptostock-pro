@@ -1227,10 +1227,10 @@ export default function Dashboard() {
           the dashboard interactable so premium users can chat while
           still scrolling through asset columns / candles above. */}
       <ChatSheet visible={chatOpen} onClose={() => setChatOpen(false)} />
-      {/* v8.12.41 — Post-subscribe Privacy Notice. Fires exactly once
-          after the user completes their first successful subscription
-          (edge-triggered via `isSubscribed` flip false → true). */}
-      <PrivacyNoticePopup isSubscribed={hasAccess} />
+      {/* v8.12.44 — Privacy Notice temporarily DISABLED per user request
+          for the contest snapshot. Uncomment to re-enable post-subscribe
+          popup. */}
+      {/* <PrivacyNoticePopup isSubscribed={hasAccess} /> */}
     </SafeAreaView>
   );
 }
