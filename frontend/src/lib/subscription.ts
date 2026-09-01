@@ -31,6 +31,15 @@ export type SubscriptionTier = {
 
 export const SUBSCRIPTION_TIERS: SubscriptionTier[] = [
   {
+    // v8.12.41 — New starter tier: 7-day auto-renewing plan.
+    // Play Console Base Plan ID: pro-1w (Weekly, USD 4.79).
+    basePlanId: "pro-1w",
+    months: 0.25, // ~1 week = 0.25 mo (display-only field, not used for logic)
+    priceUSD: 4.79,
+    label: "1 Week",
+    perMonth: "$4.79/wk",
+  },
+  {
     basePlanId: "pro-1m",
     months: 1,
     priceUSD: 20,

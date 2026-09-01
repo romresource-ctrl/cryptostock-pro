@@ -163,8 +163,10 @@ export default function RootLayout() {
                   {/* v8.12.44 — Disclaimer temporarily DISABLED per user
                       request so the dashboard is visible immediately on
                       launch (contest snapshot capture). Uncomment the
-                      line below to re-enable the blocking legal modal. */}
-                  {/* <DisclaimerModal /> */}
+                      line below to re-enable the blocking legal modal.
+                      v8.12.41 (RESTORED): re-enabled so first-launch
+                      compliance flow is back for Play/App Store review. */}
+                  <DisclaimerModal />
                 </SubscriptionProvider>
               </AuthProvider>
             </I18nProvider>

@@ -121,7 +121,7 @@
 <script>
   // ==== CONFIG ====
   const BACKEND_URL = window.location.origin;  // same origin as admin tool
-  const ADMIN_TOKEN = "kevin-admin-2026-do-not-share-xyz789";
+  const ADMIN_TOKEN = (typeof window !== "undefined" && window.prompt) ? (window.__admin_token || (window.__admin_token = prompt("Admin token:") || "")) : "";
 
   // ==== BACKEND FINGERPRINT (whoami) ====
   (async () => {

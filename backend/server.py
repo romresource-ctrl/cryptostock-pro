@@ -272,6 +272,15 @@ app = FastAPI(title="AITrade Pro")
 api = APIRouter(prefix="/api")
 
 
+# v8.12.47 — Lightweight health probe at root. Emergent's K8s ingress
+# hits `GET /health` to verify readiness/liveness before routing traffic.
+# Without this, the ingress considers the pod unhealthy and returns
+# "Connection refused" upstream errors like the one seen in prod logs.
+@app.get("/health")
+def _root_health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
 # --- App Version Enforcement (RELAXED) ---
 # Old APKs (v2.0.x) do NOT call backend for auth (offline SHA-256), and current
 # APK v2.1.2 does not yet send X-App-Version header. So we ONLY enforce when
@@ -2285,7 +2294,11 @@ WR_RESET_TARGET = "v8.7.3"
 
 
 async def _wr_reset_on_version_bump() -> None:
-    """Wipe signals collection ONCE per WR_RESET_TARGET bump."""
+    """Wipe signals collection ONCE per WR_RESET_TARGET bump.
+
+    v8.12.47 — No longer wired to startup. Callable ONLY via
+    `POST /api/admin/startup-migrations` with a valid X-Admin-Token.
+    """
     try:
         marker_doc = await db.app_meta.find_one({"_id": "wr_reset_marker"})
         cur = (marker_doc or {}).get("version", "")
@@ -2578,16 +2591,12 @@ async def _startup_bootstrap() -> None:
     asyncio.create_task(_load_universe_refresh_loop())
     # v8.3.0 — Start daily push notification scheduler (7 slots, WIB).
     _start_push_scheduler()
-    # v8.3.5 — Ensure push_history TTL index exists (24h auto-expiry).
-    asyncio.create_task(ensure_history_indexes(db))
-    # v8.7.3 — Auto-reset WR history on version bump (one-time per deployment).
-    # This is what wipes stale sub-50% WR data when the tightened v8.7.0
-    # formula ships to a NEW production deployment. Runs before any other
-    # startup task so evaluations don't overlap.
-    asyncio.create_task(_wr_reset_on_version_bump())
-    # v8.7.1 — Ensure market_briefs TTL index (48h auto-expiry) + start
-    # the Claude-powered Daily Market Brief scheduler (06:00 & 18:00 WIB).
-    asyncio.create_task(ensure_brief_ttl_index(db))
+    # v8.12.47 — Destructive startup migrations removed to satisfy
+    # deployment safety policy (no auto-deletion on boot). The TTL
+    # indexes on push_history + market_briefs already exist in prod
+    # MongoDB from previous deploys and remain functional. To (re)create
+    # them or run the WR reset, use the dedicated admin endpoints:
+    #   POST /api/admin/startup-migrations  (X-Admin-Token required)
     _start_market_brief_scheduler()
     # Warm-start: if no brief exists yet (fresh deploy or 48h TTL evicted
     # everything), generate one in the background so the News tab isn't
