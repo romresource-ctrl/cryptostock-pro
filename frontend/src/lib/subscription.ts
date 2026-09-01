@@ -103,13 +103,12 @@ export function isTrialEligibleBasePlan(basePlanId: string | null | undefined): 
 
 // Legacy exports (kept for backward compatibility) — points to the default 1-month tier
 export const SUBSCRIPTION_BASE_PLAN_ID = "pro-1m";
-// v8.12.52 — Aligned with the new Play Console offer ID "freetrial-14d"
-// (previously "freetrial-3days"). This constant is only used as a
-// FALLBACK when the app cannot detect the free-trial phase via the
-// `isFreeTrial` flag; the primary matching logic in pickOfferAndroid()
-// probes pricingPhases first, so renaming the offer in Play Console
-// alone would already work. Keeping this in sync is just tidier.
-export const SUBSCRIPTION_OFFER_ID = "freetrial-14d";
+// v8.12.52 — Aligned with Play Console offer ID "14d-free" which is
+// Active on all long-term base plans (pro-1m, pro-3m, pro-6m, pro-1y).
+// This constant is only a FALLBACK when the app cannot detect the
+// free-trial phase via the `isFreeTrial` flag; the primary matching
+// logic in pickOfferAndroid() probes pricingPhases first.
+export const SUBSCRIPTION_OFFER_ID = "14d-free";
 export const SUBSCRIPTION_PRICE = "$20.00";
 export const SUBSCRIPTION_TRIAL_DAYS = 14;
 
