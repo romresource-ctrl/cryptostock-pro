@@ -31,6 +31,11 @@ export type SubscriptionTier = {
   // sits opposite the BEST ribbon. Rendered as a small pill on
   // the top-left of the tier card.
   starter?: boolean;
+  // v8.12.50 — Free-trial eligibility. Defaults to true. Set to
+  // FALSE for cheap short tiers (e.g. the 1-Week plan) so buyers
+  // cannot loop-abuse the trial with rapid weekly upgrades. Only
+  // 1-Month and longer plans get the free trial.
+  trialEligible?: boolean;
 };
 
 export const SUBSCRIPTION_TIERS: SubscriptionTier[] = [
@@ -43,6 +48,7 @@ export const SUBSCRIPTION_TIERS: SubscriptionTier[] = [
     label: "1 Week",
     perMonth: "$4.79/wk",
     starter: true, // v8.12.49 — spotlight for newcomers
+    trialEligible: false, // v8.12.50 — no free trial on the weekly plan
   },
   {
     basePlanId: "pro-1m",
@@ -50,6 +56,7 @@ export const SUBSCRIPTION_TIERS: SubscriptionTier[] = [
     priceUSD: 20,
     label: "1 Month",
     perMonth: "$20/mo",
+    trialEligible: true,
   },
   {
     basePlanId: "pro-3m",
@@ -58,6 +65,7 @@ export const SUBSCRIPTION_TIERS: SubscriptionTier[] = [
     label: "3 Months",
     perMonth: "$16.67/mo",
     saveBadge: "Save 17%",
+    trialEligible: true,
   },
   {
     basePlanId: "pro-6m",
@@ -67,6 +75,7 @@ export const SUBSCRIPTION_TIERS: SubscriptionTier[] = [
     perMonth: "$16.67/mo",
     saveBadge: "Save 17%",
     popular: true,
+    trialEligible: true,
   },
   {
     basePlanId: "pro-1y",
@@ -75,8 +84,22 @@ export const SUBSCRIPTION_TIERS: SubscriptionTier[] = [
     label: "12 Months",
     perMonth: "$15/mo",
     saveBadge: "Save 25%",
+    trialEligible: true,
   },
 ];
+
+/**
+ * v8.12.50 — Helper to look up whether a base plan is eligible for the
+ * free trial. Used by both the paywall UI (hides the trial subtitle)
+ * and the purchase flow (skips the isFreeTrial offer for pro-1w).
+ */
+export function isTrialEligibleBasePlan(basePlanId: string | null | undefined): boolean {
+  if (!basePlanId) return false;
+  const t = SUBSCRIPTION_TIERS.find((x) => x.basePlanId === basePlanId);
+  // Default to true when the flag is not set (backward compat with older
+  // tier records that predate this field).
+  return t ? t.trialEligible !== false : true;
+}
 
 // Legacy exports (kept for backward compatibility) — points to the default 1-month tier
 export const SUBSCRIPTION_BASE_PLAN_ID = "pro-1m";
@@ -332,11 +355,21 @@ export async function purchaseSubscription(basePlanId?: string): Promise<void> {
   // Pick target offer
   let offerToken: string | null = null;
   if (basePlanId) {
-    const freeMatch = product.allOffers.find(
-      (o) => o.basePlanId === basePlanId && o.isFreeTrial,
+    // v8.12.50 — Only apply the free-trial offer when this base plan is
+    // eligible (see isTrialEligibleBasePlan). The 1-Week plan intentionally
+    // skips the trial so buyers cannot cycle it repeatedly for near-free
+    // access.
+    const trialAllowed = isTrialEligibleBasePlan(basePlanId);
+    const freeMatch = trialAllowed
+      ? product.allOffers.find(
+          (o) => o.basePlanId === basePlanId && o.isFreeTrial,
+        )
+      : undefined;
+    const paidMatch = product.allOffers.find(
+      (o) => o.basePlanId === basePlanId && !o.isFreeTrial,
     );
     const anyMatch = product.allOffers.find((o) => o.basePlanId === basePlanId);
-    offerToken = (freeMatch ?? anyMatch)?.offerToken ?? null;
+    offerToken = (freeMatch ?? paidMatch ?? anyMatch)?.offerToken ?? null;
   } else {
     offerToken = product.offerToken;
   }

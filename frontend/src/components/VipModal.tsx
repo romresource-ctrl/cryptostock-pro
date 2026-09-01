@@ -232,7 +232,12 @@ export default function VipModal({ visible, onClose, onLogin }: Props) {
           </TouchableOpacity>
 
           <Text style={[styles.trialHint, { color: colors.textMuted }]}>
-            {SUBSCRIPTION_TRIAL_DAYS} days free trial · Cancel anytime via Google Play
+            {/* v8.12.50 — Only mention the free trial when the currently
+                selected tier is eligible (1 Month and longer). The
+                1-Week Starter plan intentionally has no free trial. */}
+            {selectedTier.trialEligible !== false
+              ? `${SUBSCRIPTION_TRIAL_DAYS} days free trial · Cancel anytime via Google Play`
+              : `No free trial on this plan · Cancel anytime via Google Play`}
           </Text>
 
           {/* Restore Purchase */}
