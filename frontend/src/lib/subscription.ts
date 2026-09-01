@@ -105,7 +105,7 @@ export function isTrialEligibleBasePlan(basePlanId: string | null | undefined): 
 export const SUBSCRIPTION_BASE_PLAN_ID = "pro-1m";
 export const SUBSCRIPTION_OFFER_ID = "freetrial-3days";
 export const SUBSCRIPTION_PRICE = "$20.00";
-export const SUBSCRIPTION_TRIAL_DAYS = 3;
+export const SUBSCRIPTION_TRIAL_DAYS = 14;
 
 const ENTITLEMENT_KEY = "aicrypstockpro.entitlement";
 
