@@ -168,6 +168,14 @@ export default function VipModal({ visible, onClose, onLogin }: Props) {
                       <Text style={styles.popularBadgeText}>BEST</Text>
                     </View>
                   ) : null}
+                  {/* v8.12.49 — STARTER ribbon on the 1-Week tier. Sits on
+                      the top-LEFT (mirrors the BEST badge on top-right)
+                      so newcomers see it before scanning prices. */}
+                  {tier.starter ? (
+                    <View style={[styles.starterBadge, { backgroundColor: "#3B82F6" }]}>
+                      <Text style={styles.starterBadgeText}>STARTER</Text>
+                    </View>
+                  ) : null}
                   <Text style={[styles.tierLabel, { color: colors.textPrimary }]}>
                     {tier.label}
                   </Text>
@@ -360,6 +368,21 @@ const styles = StyleSheet.create({
   popularBadgeText: {
     fontSize: 9,
     color: "#000",
+    fontWeight: "900",
+    letterSpacing: 0.5,
+  },
+  // v8.12.49 — STARTER ribbon (top-left of the 1-Week tier).
+  starterBadge: {
+    position: "absolute",
+    top: -8,
+    left: -6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  starterBadgeText: {
+    fontSize: 9,
+    color: "#fff",
     fontWeight: "900",
     letterSpacing: 0.5,
   },

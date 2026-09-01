@@ -26,7 +26,11 @@ export type SubscriptionTier = {
   label: string;      // Short label shown in the paywall
   perMonth: string;   // Effective per-month cost
   saveBadge?: string; // "Save X%" badge — optional
-  popular?: boolean;  // Recommended tier
+  popular?: boolean;  // Recommended tier (BEST ribbon)
+  // v8.12.49 — Additional promotional ribbon (e.g. STARTER) that
+  // sits opposite the BEST ribbon. Rendered as a small pill on
+  // the top-left of the tier card.
+  starter?: boolean;
 };
 
 export const SUBSCRIPTION_TIERS: SubscriptionTier[] = [
@@ -38,6 +42,7 @@ export const SUBSCRIPTION_TIERS: SubscriptionTier[] = [
     priceUSD: 4.79,
     label: "1 Week",
     perMonth: "$4.79/wk",
+    starter: true, // v8.12.49 — spotlight for newcomers
   },
   {
     basePlanId: "pro-1m",
