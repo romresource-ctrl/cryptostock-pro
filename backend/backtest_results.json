@@ -1,0 +1,84 @@
+{
+  "candles": 2000,
+  "results": [
+    {
+      "formula": "v1",
+      "trades": 92,
+      "wins": 33,
+      "losses": 59,
+      "win_rate": 35.9,
+      "total_pnl_pct": 1.16,
+      "avg_win_pct": 1.57,
+      "avg_loss_pct": -0.85,
+      "max_drawdown_pct": 9.85,
+      "profit_factor": 1.04
+    },
+    {
+      "formula": "v2",
+      "trades": 108,
+      "wins": 32,
+      "losses": 76,
+      "win_rate": 29.6,
+      "total_pnl_pct": -12.98,
+      "avg_win_pct": 1.45,
+      "avg_loss_pct": -0.78,
+      "max_drawdown_pct": 16.2,
+      "profit_factor": 0.78
+    },
+    {
+      "formula": "v3-scalper",
+      "trades": 95,
+      "wins": 58,
+      "losses": 37,
+      "win_rate": 61.1,
+      "total_pnl_pct": 30.58,
+      "avg_win_pct": 1.13,
+      "avg_loss_pct": -1.04,
+      "max_drawdown_pct": 7.03,
+      "profit_factor": 1.71
+    },
+    {
+      "formula": "v3-day",
+      "trades": 99,
+      "wins": 55,
+      "losses": 44,
+      "win_rate": 55.6,
+      "total_pnl_pct": 14.76,
+      "avg_win_pct": 1.07,
+      "avg_loss_pct": -1.01,
+      "max_drawdown_pct": 10.41,
+      "profit_factor": 1.32
+    },
+    {
+      "formula": "v3-swing",
+      "trades": 79,
+      "wins": 46,
+      "losses": 33,
+      "win_rate": 58.2,
+      "total_pnl_pct": 12.13,
+      "avg_win_pct": 1.01,
+      "avg_loss_pct": -1.05,
+      "max_drawdown_pct": 6.58,
+      "profit_factor": 1.35
+    },
+    {
+      "formula": "v3-longterm",
+      "trades": 86,
+      "wins": 47,
+      "losses": 39,
+      "win_rate": 54.7,
+      "total_pnl_pct": 15.42,
+      "avg_win_pct": 1.03,
+      "avg_loss_pct": -0.86,
+      "max_drawdown_pct": 4.53,
+      "profit_factor": 1.44
+    }
+  ],
+  "buy_hold": {
+    "formula": "buy_hold",
+    "total_pnl_pct": 22.47,
+    "trades": 1,
+    "wins": 1,
+    "losses": 0
+  }
+}

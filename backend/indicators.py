@@ -713,6 +713,24 @@ def compute_signal(
         label = "HOLD"
         confidence = max(40, min(70, confidence))
 
+    # v8.12.57 — BTC Trading Formula v3: Trader-Profile confidence gate.
+    # After the primary BUY/SELL/HOLD decision, downgrade to HOLD if the
+    # confidence falls below the trader-profile threshold. This enforces
+    # the "signal frequency" personality per profile:
+    #   Scalper (55%)  → sees more signals, small wins
+    #   Day (65%)      → balanced
+    #   Swing (75%)    → fewer but stronger signals
+    #   Long-term (80%) → rare, high-conviction only
+    # Only applied to eligible markets (crypto / forex / gold_silver).
+    if market in PROFILE_APPLICABLE_MARKETS and action in ("BUY", "SELL"):
+        if confidence < _min_conf_gate:
+            reasons.append(
+                f"Downgraded to HOLD — confidence {confidence}% below "
+                f"{profile or 'day'} profile threshold {_min_conf_gate}%."
+            )
+            action = "HOLD"
+            label = "HOLD"
+
     # Compute simple ATR for SL/TP
     if len(highs) >= 14:
         trs = []

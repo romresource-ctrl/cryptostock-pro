@@ -24,6 +24,7 @@ import LadderAlertBadge from "@/src/components/LadderAlertBadge";
 import DipTopPopup from "@/src/components/DipTopPopup";
 import { usePriceZoneAlert } from "@/src/hooks/usePriceZoneAlert";
 import { useDipTopAlert } from "@/src/hooks/useDipTopAlert";
+import { useTraderProfile } from "@/src/lib/useTraderProfile";
 import {
   STABLECOIN_SYMBOLS,
   formatStablecoinLocal,
@@ -141,6 +142,9 @@ export default function AssetDetail() {
   ) as Timeframe;
 
   const [timeframe, setTimeframe] = useState<Timeframe>(initialTf);
+  // v8.12.57 — Send the current Trader Profile to the backend so v3
+  // formula tunes EMA / RSI / confidence gate per user preference.
+  const { profile: traderProfile } = useTraderProfile();
   const [chart, setChart] = useState<ChartResponse | null>(null);
   const [analysis, setAnalysis] = useState<AnalyzeResponse | null>(null);
   const [trackRecord, setTrackRecord] = useState<TrackRecordResponse | null>(null);
@@ -210,7 +214,7 @@ export default function AssetDetail() {
       let lastErr: unknown = null;
       for (let attempt = 0; attempt < 3; attempt += 1) {
         try {
-          const c = await api.chart(market, symbol, tf);
+          const c = await api.chart(market, symbol, tf, traderProfile);
           setChart(c);
           setError("");
           setLoadingChart(false);
@@ -231,14 +235,14 @@ export default function AssetDetail() {
       setError(lastErr instanceof Error ? lastErr.message : String(lastErr));
       setLoadingChart(false);
     },
-    [market, symbol],
+    [market, symbol, traderProfile],
   );
 
   const runAnalysis = useCallback(async () => {
     setAnalyzing(true);
     setError("");
     try {
-      const a = await api.analyze(market, symbol, timeframe, lang);
+      const a = await api.analyze(market, symbol, timeframe, lang, traderProfile);
       setAnalysis(a);
     } catch (e) {
       setError((e as Error).message);

@@ -1024,6 +1024,7 @@ async def asset_chart(
     market: Literal["crypto", "stock", "etf", "stock_id", "stock_us", "world_stocks", "gold_silver", "commodity", "forex"],
     symbol: str,
     timeframe: str = "1h",
+    profile: str | None = None,
 ) -> ChartResponse:
     if timeframe not in TIMEFRAME_MAP:
         raise HTTPException(400, "Invalid timeframe")
@@ -1043,7 +1044,9 @@ async def asset_chart(
     )
     if not snap:
         raise HTTPException(404, "Symbol not found or upstream data unavailable")
-    sig = compute_signal(snap.get("candles", []), eff_market)
+    # v8.12.57 — Pass trader profile so v3 formula tunes EMA / RSI /
+    # confidence gate per user preference (crypto / forex / gold only).
+    sig = compute_signal(snap.get("candles", []), eff_market, profile=profile)
     # v8.2.2 — Enrich raw signal with risk/reward metrics so the detail
     # page header renders the Risk badge. `compute_signal` returns a
     # plain dict and doesn't go through `_build_signal`, so we compute
@@ -1083,6 +1086,7 @@ async def asset_analyze(
     symbol: str,
     timeframe: str = "1h",
     lang: Literal["id", "en", "ru", "cn"] = "en",
+    profile: str | None = None,
 ) -> AnalyzeResponse:
     if timeframe not in TIMEFRAME_MAP:
         raise HTTPException(400, "Invalid timeframe")
@@ -1105,7 +1109,7 @@ async def asset_analyze(
     candles = snap.get("candles", [])
     ticker = snap.get("ticker", {}) or {}
     price = ticker.get("price") or (candles[-1]["close"] if candles else None)
-    technical = compute_signal(candles, eff_market)
+    technical = compute_signal(candles, eff_market, profile=profile)
     if price is None:
         raise HTTPException(503, "Price unavailable")
     news = await get_news_for_symbol(symbol, eff_market, limit=8)

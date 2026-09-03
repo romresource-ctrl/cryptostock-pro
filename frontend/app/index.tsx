@@ -52,6 +52,8 @@ import { useSubscription } from "@/src/lib/subscriptionContext";
 import { useChatPresence } from "@/src/lib/useChatPresence";
 import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
 import { useSearchHistory } from "@/src/lib/useSearchHistory";
+import { PROFILE_META, useTraderProfile } from "@/src/lib/useTraderProfile";
+import TraderProfileModal from "@/src/components/TraderProfileModal";
 import { markAppReady } from "@/src/lib/appReady";
 import { APP_VERSION } from "@/src/lib/version";
 import { useWatchlist } from "@/src/lib/watchlist";
@@ -339,6 +341,9 @@ export default function Dashboard() {
   const chatOnline = useChatPresence({ heartbeat: hasAccess });
   // v8.12.38 — Recent search history (up to 5 symbols, persisted).
   const searchHistory = useSearchHistory();
+  // v8.12.57 — Trader Profile state + modal open state.
+  const { profile: traderProfile } = useTraderProfile();
+  const [traderProfileOpen, setTraderProfileOpen] = useState(false);
   // v8.12.38.1 — When the search input is focused AND empty AND we have
   // recent hits, we drop down a small suggestion list right underneath.
   const [searchFocused, setSearchFocused] = useState(false);
@@ -669,6 +674,25 @@ export default function Dashboard() {
             style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
           >
             <Ionicons name="newspaper-outline" size={18} color={colors.textPrimary} />
+          </TouchableOpacity>
+          {/* v8.12.57 — Trader Profile picker button. Sits immediately
+              next to the Live News icon (per user request). Shows the
+              currently-active preset emoji so users always see which
+              horizon they're tuned to at a glance. */}
+          <TouchableOpacity
+            onPress={() => setTraderProfileOpen(true)}
+            testID="trader-profile-button"
+            style={[
+              styles.iconBtn,
+              {
+                backgroundColor: colors.surface,
+                borderColor: PROFILE_META[traderProfile].color,
+                borderWidth: 1.5,
+              },
+            ]}
+            accessibilityLabel={`Trader Profile: ${PROFILE_META[traderProfile].label}`}
+          >
+            <Text style={{ fontSize: 15 }}>{PROFILE_META[traderProfile].emoji}</Text>
           </TouchableOpacity>
           {/* v8.6.3 — Alerts feature removed entirely (bell in header +
               🔔 on detail page + AlertModal + engine hook + i18n keys). */}
@@ -1227,6 +1251,11 @@ export default function Dashboard() {
           the dashboard interactable so premium users can chat while
           still scrolling through asset columns / candles above. */}
       <ChatSheet visible={chatOpen} onClose={() => setChatOpen(false)} />
+      {/* v8.12.57 — Trader Profile picker (v3 BTC formula tuning). */}
+      <TraderProfileModal
+        visible={traderProfileOpen}
+        onClose={() => setTraderProfileOpen(false)}
+      />
       {/* v8.12.44 — Privacy Notice temporarily DISABLED per user request
           for the contest snapshot. Uncomment to re-enable post-subscribe
           popup. */}

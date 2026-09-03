@@ -301,10 +301,15 @@ export const api = {
   deleteProfile: (id: string) => send<{ ok: boolean }>(`/profiles/${id}`, "DELETE"),
   activateProfile: (id: string) => send<{ ok: boolean; active_id: string }>(`/profiles/${id}/activate`, "POST"),
 
-  chart: (market: Market, symbol: string, timeframe: Timeframe) =>
-    get<ChartResponse>(`/asset/${market}/${symbol}/chart?timeframe=${timeframe}`),
-  analyze: (market: Market, symbol: string, timeframe: Timeframe, lang: "id" | "en" | "ru" | "cn" = "en") =>
-    send<AnalyzeResponse>(`/asset/${market}/${symbol}/analyze?timeframe=${timeframe}&lang=${lang}`, "POST"),
+  chart: (market: Market, symbol: string, timeframe: Timeframe, profile?: string) =>
+    get<ChartResponse>(
+      `/asset/${market}/${symbol}/chart?timeframe=${timeframe}${profile ? `&profile=${encodeURIComponent(profile)}` : ""}`,
+    ),
+  analyze: (market: Market, symbol: string, timeframe: Timeframe, lang: "id" | "en" | "ru" | "cn" = "en", profile?: string) =>
+    send<AnalyzeResponse>(
+      `/asset/${market}/${symbol}/analyze?timeframe=${timeframe}&lang=${lang}${profile ? `&profile=${encodeURIComponent(profile)}` : ""}`,
+      "POST",
+    ),
   trackRecord: (market: Market, symbol: string) =>
     get<TrackRecordResponse>(`/asset/${market}/${symbol}/track-record`),
 
