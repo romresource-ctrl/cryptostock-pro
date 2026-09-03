@@ -345,9 +345,21 @@ async def get_track_record_summary(
             "symbol": 1,
             "created_at": 1,
             "hit": "$evaluation.hit",
+            # v8.12.61 — Also project outcome so we can exclude Break-Even
+            # from the denominator (same rule as get_track_record()). This
+            # keeps dashboard WR = detail-page WR = "wins / (wins + losses)".
+            "outcome": "$evaluation.outcome",
         }},
     ]
-    by_symbol: dict[str, dict[str, list[int]]] = {s: {"d7": [], "d30": []} for s in syms}
+    # v8.12.61 — Accumulate per bucket both a "wins" list and a "losses"
+    # list, then compute WR = wins / (wins + losses). This matches the
+    # detail page formula and removes the mismatch users noticed
+    # (dashboard 34% vs detail 75% for ETH, dashboard 7% vs detail 56%
+    # for BTC).
+    by_symbol: dict[str, dict[str, dict[str, int]]] = {
+        s: {"d7": {"wins": 0, "losses": 0, "be": 0}, "d30": {"wins": 0, "losses": 0, "be": 0}}
+        for s in syms
+    }
     async for d in db.signals.aggregate(pipeline):
         s = d["symbol"]
         if s not in by_symbol:
@@ -355,20 +367,35 @@ async def get_track_record_summary(
         created = d.get("created_at")
         if isinstance(created, datetime):
             created = created.replace(tzinfo=timezone.utc) if created.tzinfo is None else created
-            hit_int = 1 if d.get("hit") else 0
+            outcome = d.get("outcome")
+            if outcome not in ("WIN", "LOSS", "BE"):
+                outcome = "WIN" if d.get("hit") else "LOSS"
+            key = "wins" if outcome == "WIN" else ("losses" if outcome == "LOSS" else "be")
             if created >= cutoff_7d:
-                by_symbol[s]["d7"].append(hit_int)
+                by_symbol[s]["d7"][key] += 1
             if created >= cutoff_30d:
-                by_symbol[s]["d30"].append(hit_int)
+                by_symbol[s]["d30"][key] += 1
+
+    def _wr_pct(bucket: dict[str, int]) -> tuple[float | None, int]:
+        wins = bucket["wins"]
+        losses = bucket["losses"]
+        be = bucket["be"]
+        decisive = wins + losses
+        total = wins + losses + be
+        if decisive > 0:
+            return round(wins / decisive * 100.0, 1), total
+        if be > 0:
+            return 50.0, total  # every trade broke even → neutral
+        return None, total
 
     out: dict[str, dict[str, Any]] = {}
     for s, buckets in by_symbol.items():
-        d7 = buckets["d7"]
-        d30 = buckets["d30"]
+        wr7, n7 = _wr_pct(buckets["d7"])
+        wr30, n30 = _wr_pct(buckets["d30"])
         out[s] = {
-            "wr_7d": round(sum(d7) / len(d7) * 100.0, 1) if d7 else None,
-            "n_7d": len(d7),
-            "wr_30d": round(sum(d30) / len(d30) * 100.0, 1) if d30 else None,
-            "n_30d": len(d30),
+            "wr_7d": wr7,
+            "n_7d": n7,
+            "wr_30d": wr30,
+            "n_30d": n30,
         }
     return out
