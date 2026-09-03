@@ -1570,24 +1570,27 @@ function WatchlistColumn({
 const styles = StyleSheet.create({
   root: { flex: 1 },
   header: {
-    flexDirection: "row", alignItems: "center", paddingHorizontal: 16,
-    paddingTop: 8, paddingBottom: 10,
+    flexDirection: "row", alignItems: "center", paddingHorizontal: 12,
+    paddingTop: 8, paddingBottom: 10, gap: 6,
   },
-  appTitle: { fontSize: 15, fontWeight: "800", letterSpacing: 0.2, lineHeight: 18, textAlign: "left" },
-  headerTitleWrap: { flex: 1, paddingRight: 8 },
-  appSub: { fontSize: 11, marginTop: 2 },
+  // v8.12.58 — Slightly tighter title so the full brand "AI Crypto Stock Pro"
+  // + "Ver 8.12.xx" always fits on a phone width when 5 header buttons are
+  // rendered (News · TraderProfile · Theme · Lang · Login).
+  appTitle: { fontSize: 13, fontWeight: "800", letterSpacing: 0.1, lineHeight: 16, textAlign: "left" },
+  headerTitleWrap: { flex: 1, minWidth: 0, paddingRight: 4 },
+  appSub: { fontSize: 10, marginTop: 2 },
   // v8.12.34 — Keyword tagline sits below the version label
   appTagline: { fontSize: 9, fontWeight: "600", letterSpacing: 0.3, marginTop: 1, opacity: 0.75 },
-  headerActions: { flexDirection: "row", gap: 8, alignItems: "center", flexShrink: 0 },
-  iconBtn: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center", borderWidth: 1 },
+  headerActions: { flexDirection: "row", gap: 6, alignItems: "center", flexShrink: 0 },
+  iconBtn: { width: 32, height: 32, borderRadius: 9, alignItems: "center", justifyContent: "center", borderWidth: 1 },
   loginBtn: {
-    height: 36, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1,
-    flexDirection: "row", alignItems: "center", gap: 5,
+    height: 32, paddingHorizontal: 10, borderRadius: 9, borderWidth: 1,
+    flexDirection: "row", alignItems: "center", gap: 4,
   },
-  loginBtnText: { color: "#fff", fontSize: 12, fontWeight: "700", letterSpacing: 0.6 },
+  loginBtnText: { color: "#fff", fontSize: 11, fontWeight: "700", letterSpacing: 0.5 },
   unlockedBtn: {
-    height: 36, paddingHorizontal: 10, borderRadius: 10, borderWidth: 1,
-    flexDirection: "row", alignItems: "center", gap: 5, maxWidth: 140,
+    height: 32, paddingHorizontal: 8, borderRadius: 9, borderWidth: 1,
+    flexDirection: "row", alignItems: "center", gap: 4, maxWidth: 130,
   },
   unlockedText: { fontSize: 11, fontWeight: "700", maxWidth: 90 },
   chatBtn: {
