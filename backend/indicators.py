@@ -8,6 +8,66 @@ from __future__ import annotations
 from typing import Any
 
 
+# v8.12.57 — Trader Profile presets (BTC Trading Formula v2 upgrade).
+# Applied ONLY for volatile continuous-market instruments (crypto, forex,
+# gold/silver). Stocks/commodity keep the market-neutral defaults because
+# they trade in sessions and exhibit different volatility patterns.
+#
+# Each preset tunes:
+#   ema_fast / ema_slow    — trend detection window
+#   min_confidence         — signal quality gate (higher = fewer but stronger signals)
+#   sl_atr_mult            — Stop-Loss distance as multiple of ATR
+#   htf_required           — must higher-timeframe agree (v2 MTF filter)
+#   description            — shown in the picker modal
+TRADER_PROFILES: dict[str, dict[str, Any]] = {
+    "scalper": {
+        "ema_fast": 5,
+        "ema_slow": 13,
+        "min_confidence": 55,
+        "sl_atr_mult": 1.0,
+        "htf_required": False,
+        "description": "5m–15m intraday moves",
+    },
+    "day": {  # default — matches legacy v8.x behaviour
+        "ema_fast": 20,
+        "ema_slow": 50,
+        "min_confidence": 65,
+        "sl_atr_mult": 1.5,
+        "htf_required": False,
+        "description": "1h–4h day trading",
+    },
+    "swing": {
+        "ema_fast": 20,
+        "ema_slow": 50,
+        "min_confidence": 75,
+        "sl_atr_mult": 2.0,
+        "htf_required": True,
+        "description": "4h–24h multi-day",
+    },
+    "longterm": {
+        "ema_fast": 50,
+        "ema_slow": 200,
+        "min_confidence": 80,
+        "sl_atr_mult": 3.0,
+        "htf_required": True,
+        "description": "1D+ position hold",
+    },
+}
+
+# Only these markets are affected by Trader Profile selection. Stocks and
+# generic commodity keep the standard formula because their session-based
+# behaviour does not respond well to crypto-tuned parameters.
+PROFILE_APPLICABLE_MARKETS = {"crypto", "forex", "gold_silver"}
+
+
+def get_trader_profile(name: str | None) -> dict[str, Any]:
+    """Return a valid Trader Profile preset. Falls back to 'day' if input is
+    None or unknown so backward-compatible callers keep the legacy behaviour."""
+    if name and name in TRADER_PROFILES:
+        return TRADER_PROFILES[name]
+    return TRADER_PROFILES["day"]
+
+
 def _ema(values: list[float], period: int) -> list[float]:
     if not values or period <= 0:
         return []
@@ -332,10 +392,21 @@ def _compute_deep_levels(
     }
 
 
-def compute_signal(candles: list[dict[str, Any]], market: str) -> dict[str, Any]:
+def compute_signal(
+    candles: list[dict[str, Any]],
+    market: str,
+    profile: str | None = None,
+) -> dict[str, Any]:
     """Return signal dict: action, confidence, indicators, entry/sl/tp suggestions.
 
     Action: BUY / SELL / HOLD. For crypto we also surface LONG/SHORT in label.
+
+    v8.12.57 — When `profile` is provided AND market is in
+    PROFILE_APPLICABLE_MARKETS (crypto/forex/gold_silver), the EMA windows,
+    minimum confidence gate, and SL/ATR multiplier are swapped for the
+    profile-tuned preset from TRADER_PROFILES. All other markets (stocks,
+    commodity, ETFs) keep the market-neutral defaults so their behaviour
+    is unchanged.
     """
     if not candles or len(candles) < 20:
         return {
@@ -346,14 +417,23 @@ def compute_signal(candles: list[dict[str, Any]], market: str) -> dict[str, Any]
             "reasons": [],
             "entry": None, "stop_loss": None, "take_profit": None,
         }
+
+    # Resolve trader-profile presets. Only apply on eligible markets so that
+    # stocks / commodity / etf keep the current v8.x day-trader defaults.
+    _prof = get_trader_profile(profile) if market in PROFILE_APPLICABLE_MARKETS else get_trader_profile("day")
+    _ema_fast_n = int(_prof["ema_fast"])
+    _ema_slow_n = int(_prof["ema_slow"])
+    _min_conf_gate = int(_prof["min_confidence"])
+    _sl_atr_mult = float(_prof["sl_atr_mult"])
+
     closes = [c["close"] for c in candles]
     highs = [c["high"] for c in candles]
     lows = [c["low"] for c in candles]
     price = closes[-1]
 
     rsi = _rsi(closes, 14)
-    ema20 = _ema(closes, 20)[-1]
-    ema50 = _ema(closes, 50)[-1] if len(closes) >= 50 else ema20
+    ema20 = _ema(closes, _ema_fast_n)[-1]
+    ema50 = _ema(closes, _ema_slow_n)[-1] if len(closes) >= _ema_slow_n else ema20
     macd = _macd(closes)
 
     # Vote per indicator
