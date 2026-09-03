@@ -575,11 +575,22 @@ export default function AssetDetail() {
               </View>
             </View>
             <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
-              {/* v8.2.2 — Risk/Reward badge di kiri Target Profit.
-                  Low = hijau, Medium = kuning, High = merah. */}
-              {sig?.risk_level ? (() => {
-                const rl = sig.risk_level;
-                const rColor = rl === "Low" ? colors.accentUp : rl === "High" ? colors.accentDown : "#F0B90B";
+              {/* v8.12.55 — Risk/Reward badge ALWAYS visible.
+                  For BUY/SELL signals we colour by risk level & show the
+                  computed % risk. For HOLD signals (no entry / stop yet)
+                  we still render the pill in a muted state with a "—"
+                  placeholder so the header shape stays consistent across
+                  all assets (previously the pill disappeared for HOLD,
+                  making the header look empty on BTC / SAND / etc.). */}
+              {(() => {
+                const rl = sig?.risk_level ?? null;
+                const rColor = rl === "Low"
+                  ? colors.accentUp
+                  : rl === "High"
+                    ? colors.accentDown
+                    : rl === "Medium"
+                      ? "#F0B90B"
+                      : colors.textMuted; // no-signal state
                 return (
                   <View
                     style={{
@@ -598,44 +609,46 @@ export default function AssetDetail() {
                       Risk
                     </Text>
                     <Text style={{ fontSize: 9, color: rColor, letterSpacing: 0.6, fontWeight: "700", lineHeight: 11 }}>
-                      {rl === "Low" ? "Low" : rl === "High" ? "High" : "Medium"}
+                      {rl ?? "—"}
                     </Text>
                     <Text style={{ fontSize: 15, color: rColor, fontWeight: "900", fontVariant: ["tabular-nums"], marginTop: 2 }}>
-                      {sig.risk_pct != null ? `-${sig.risk_pct.toFixed(1)}%` : "-"}
+                      {sig?.risk_pct != null ? `-${sig.risk_pct.toFixed(1)}%` : "—"}
                     </Text>
                   </View>
                 );
-              })() : null}
-              {tpPct !== null ? (() => {
-                // v8.2.2 — Target Profit selalu warna BIRU supaya visual
-                // distinct dari Risk badge yang variasi hijau/kuning/merah.
-                const tpBoxColor = colors.accentBlue;
+              })()}
+              {(() => {
+                // v8.12.55 — Target Profit box ALWAYS visible. Blue when
+                // computed, muted grey with "—" when no signal is
+                // available (matches Risk pill behaviour above).
+                const hasTp = tpPct !== null && tpPct !== undefined;
+                const tpBoxColor = hasTp ? colors.accentBlue : colors.textMuted;
                 return (
-                <View
-                  style={{
-                    paddingHorizontal: 10,
-                    paddingVertical: 6,
-                    borderRadius: 8,
-                    backgroundColor: tpBoxColor + "22",
-                    borderWidth: 1.5,
-                    borderColor: tpBoxColor,
-                    alignItems: "center",
-                    minWidth: 76,
-                  }}
-                  testID="header-target-profit"
-                >
-                  <Text style={{ fontSize: 9, color: tpBoxColor, letterSpacing: 0.6, fontWeight: "700", lineHeight: 11 }}>
-                    Target
-                  </Text>
-                  <Text style={{ fontSize: 9, color: tpBoxColor, letterSpacing: 0.6, fontWeight: "700", lineHeight: 11 }}>
-                    Profit
-                  </Text>
-                  <Text style={{ fontSize: 15, color: tpBoxColor, fontWeight: "900", fontVariant: ["tabular-nums"], marginTop: 2 }}>
-                    +{tpPct.toFixed(2)}%
-                  </Text>
-                </View>
+                  <View
+                    style={{
+                      paddingHorizontal: 10,
+                      paddingVertical: 6,
+                      borderRadius: 8,
+                      backgroundColor: tpBoxColor + "22",
+                      borderWidth: 1.5,
+                      borderColor: tpBoxColor,
+                      alignItems: "center",
+                      minWidth: 76,
+                    }}
+                    testID="header-target-profit"
+                  >
+                    <Text style={{ fontSize: 9, color: tpBoxColor, letterSpacing: 0.6, fontWeight: "700", lineHeight: 11 }}>
+                      Target
+                    </Text>
+                    <Text style={{ fontSize: 9, color: tpBoxColor, letterSpacing: 0.6, fontWeight: "700", lineHeight: 11 }}>
+                      Profit
+                    </Text>
+                    <Text style={{ fontSize: 15, color: tpBoxColor, fontWeight: "900", fontVariant: ["tabular-nums"], marginTop: 2 }}>
+                      {hasTp ? `+${tpPct!.toFixed(2)}%` : "—"}
+                    </Text>
+                  </View>
                 );
-              })() : null}
+              })()}
               {/* CHATROOM button removed from asset detail (v7.0.4) — users
                   now open the bottom-sheet chatroom from the dashboard. */}
             </View>
