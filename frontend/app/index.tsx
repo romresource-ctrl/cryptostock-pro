@@ -663,7 +663,7 @@ export default function Dashboard() {
             numberOfLines={1}
             testID="app-tagline"
           >
-            © {new Date().getFullYear()} AI Crypto Stock Pro
+            © {new Date().getFullYear()} Copyright
           </Text>
         </View>
         <View style={styles.headerActions}>
