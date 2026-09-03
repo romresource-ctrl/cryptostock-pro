@@ -336,19 +336,27 @@ export function formatPrice(v: number | null | undefined, market: Market): strin
   if (market === "stock_id") {
     return v.toLocaleString("id-ID", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   }
-  // v8.6.12 — Standardized to EXACTLY 2 decimals for every non-IDR
-  // display (crypto, US stocks, ETF, forex, gold, commodity, world
-  // stocks). Header, chart axis, live labels, and stat cells now all
-  // match — a user can visually compare "1919.96" with "1919.96"
-  // without wondering whether the trailing digit was rounded.
-  // Exception: sub-cent tokens (SHIB/PEPE/etc, v < 0.01) keep extra
-  // precision so they don't collapse to "0.00".
-  if (v >= 0.01 || v <= -0.01) {
-    return v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  }
-  if (v >= 0.0001 || v <= -0.0001) return v.toFixed(6);
-  if (v >= 0.00000001 || v <= -0.00000001) return v.toFixed(8);
-  return v.toFixed(10).replace(/0+$/, "").replace(/\.$/, "");
+  // v8.12.54 — Adaptive precision. The prior v8.6.12 policy of "exactly
+  // 2 decimals" was rounding sub-dollar tokens like SAND (0.03892 → 0.04)
+  // and ARB (0.12272 → 0.12), which then collapsed Entry / SL / TP into
+  // identical values and broke AI consensus rendering. New rule mirrors
+  // Binance:
+  //   v >= 1        → 2 decimals   ("62,543.21", "150.32")
+  //   0.01 ≤ v < 1  → 5 decimals   ("0.12272", "0.03892")
+  //   0.0001 ≤ v    → 6 decimals   ("0.001234")
+  //   0.00000001 ≤  → 8 decimals   ("0.00000123")
+  //   below         → toFixed(10) w/ trailing-zero trim (SHIB-tier)
+  const abs = Math.abs(v);
+  let decimals: number;
+  if (abs >= 1) decimals = 2;
+  else if (abs >= 0.01) decimals = 5;
+  else if (abs >= 0.0001) decimals = 6;
+  else if (abs >= 0.00000001) decimals = 8;
+  else return v.toFixed(10).replace(/0+$/, "").replace(/\.$/, "");
+  return v.toLocaleString("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
 }
 
 export function formatPct(v: number | null | undefined): string {

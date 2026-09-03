@@ -550,23 +550,25 @@ export default function AssetDetail() {
               <View style={{ flexDirection: "row", alignItems: "baseline", flexWrap: "wrap" }}>
                 <FlashPrice
                   value={displayPrice}
-                  formatted={`${fmtPrice(displayPrice)} `}
+                  formatted={`${fmtPrice(displayPrice)}`}
                   style={[styles.priceBig, { color: colors.textPrimary }]}
                   minPctChange={0.0005}
                   throttleMs={1500}
                 />
-                <Text style={{ color: changeColor, fontSize: 14, fontWeight: "600" }}>
+              </View>
+              {/* v8.12.54 — %-change, LIVE indicator, and TICK counter
+                  moved to a SECOND row below the price so long high-
+                  precision prices (e.g. "0.03892") no longer wrap into
+                  the Risk / Target Profit boxes on the right. */}
+              <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", marginTop: 2, gap: 8 }}>
+                <Text style={{ color: changeColor, fontSize: 13, fontWeight: "700" }}>
                   {formatPct(displayChangePct)}
                 </Text>
                 {rt.connected ? (
                   <Text style={{ fontSize: 10, fontWeight: "800", color: colors.accentUp }}>
-                    {"  "}● LIVE
+                    ● LIVE
                   </Text>
                 ) : null}
-                {/* v8.6.12 — TICK counter: increments each time Binance
-                    WS delivers a new kline frame. Undeniable proof to
-                    users that data IS streaming, even when the candle
-                    body itself changes by sub-pixel amounts. */}
                 {market === "crypto" && liveKline ? (
                   <TickCounter updatedAt={liveKline.updatedAt} />
                 ) : null}
