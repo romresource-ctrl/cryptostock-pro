@@ -655,16 +655,15 @@ export default function Dashboard() {
           <Text style={[styles.appSub, { color: colors.textMuted }]} numberOfLines={1}>
             {`${t("ver_label")} ${APP_VERSION}`}
           </Text>
-          {/* v8.12.34 — SEO-friendly tagline surfaces our high-value
-              keywords (Crypto Signal / Stock Signal / Trading
-              Predictions) in the About area of the header. Stays on a
-              single line at phone width. */}
+          {/* v8.12.59 — Replaced marketing tagline with a plain copyright
+              line per user request. Keeps the header brand area minimal
+              and legally clean for App/Play Store listings. */}
           <Text
             style={[styles.appTagline, { color: colors.textMuted }]}
             numberOfLines={1}
             testID="app-tagline"
           >
-            {t("app_tagline")}
+            © {new Date().getFullYear()} AI Crypto Stock Pro
           </Text>
         </View>
         <View style={styles.headerActions}>
