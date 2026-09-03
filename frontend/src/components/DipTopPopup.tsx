@@ -97,10 +97,14 @@ const DipTopPopup: React.FC<Props> = ({ zone, livePrice, symbol }) => {
 };
 
 function formatCompactPrice(p: number): string {
+  // v8.12.54 — Aligned with the global adaptive precision (see
+  // formatPrice in src/lib/api.ts). Sub-dollar tokens now render with
+  // 5 decimals so DipTop pop-ups match the header price exactly.
   const abs = Math.abs(p);
   if (abs >= 1000) return `$${p.toFixed(0)}`;
   if (abs >= 1) return `$${p.toFixed(2)}`;
-  if (abs >= 0.01) return `$${p.toFixed(4)}`;
+  if (abs >= 0.01) return `$${p.toFixed(5)}`;
+  if (abs >= 0.0001) return `$${p.toFixed(6)}`;
   return `$${p.toFixed(8)}`;
 }
 
