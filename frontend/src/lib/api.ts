@@ -341,19 +341,20 @@ export function formatPrice(v: number | null | undefined, market: Market): strin
   if (market === "stock_id") {
     return v.toLocaleString("id-ID", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   }
-  // v8.12.54 — Adaptive precision. The prior v8.6.12 policy of "exactly
-  // 2 decimals" was rounding sub-dollar tokens like SAND (0.03892 → 0.04)
-  // and ARB (0.12272 → 0.12), which then collapsed Entry / SL / TP into
-  // identical values and broke AI consensus rendering. New rule mirrors
-  // Binance:
-  //   v >= 1        → 2 decimals   ("62,543.21", "150.32")
-  //   0.01 ≤ v < 1  → 5 decimals   ("0.12272", "0.03892")
-  //   0.0001 ≤ v    → 6 decimals   ("0.001234")
-  //   0.00000001 ≤  → 8 decimals   ("0.00000123")
-  //   below         → toFixed(10) w/ trailing-zero trim (SHIB-tier)
+  // v8.12.62 — Refined adaptive precision. The previous rule collapsed
+  // 1-100 range to 2 decimals, hiding real precision for coins like
+  // DOT (1.0315 → 1.03), OP (2.1234 → 2.12), ATOM, SOL below $100, etc.
+  // New rule mirrors Binance display exactly:
+  //   v >= 100        → 2 decimals   ("77,868.18", "150.32")
+  //   1 ≤ v < 100     → 4 decimals   ("1.0315", "12.5432", "88.4321")
+  //   0.01 ≤ v < 1    → 5 decimals   ("0.03892", "0.12272")
+  //   0.0001 ≤ v      → 6 decimals   ("0.001234")
+  //   0.00000001 ≤    → 8 decimals   ("0.00000123")
+  //   below           → toFixed(10) trim (SHIB-tier)
   const abs = Math.abs(v);
   let decimals: number;
-  if (abs >= 1) decimals = 2;
+  if (abs >= 100) decimals = 2;
+  else if (abs >= 1) decimals = 4;
   else if (abs >= 0.01) decimals = 5;
   else if (abs >= 0.0001) decimals = 6;
   else if (abs >= 0.00000001) decimals = 8;

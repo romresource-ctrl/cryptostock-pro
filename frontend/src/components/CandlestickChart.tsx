@@ -819,15 +819,15 @@ const styles = StyleSheet.create({
 });
 
 function formatPriceLabel(p: number): string {
-  // v8.12.54 — Adaptive precision aligned with formatPrice():
-  //   ≥ 1        → 2 decimals ("1,919.96")
-  //   0.01 – 1   → 5 decimals ("0.12272")
-  //   0.0001 –   → 6 decimals ("0.001234")
-  //   below      → 8 decimals ("0.00000123")
-  // Ensures chart axis matches header price precisely — user no longer
-  // sees "0.04" on the axis while the header shows "0.03892".
+  // v8.12.62 — Match formatPrice adaptive precision exactly:
+  //   ≥ 100    → 2 decimals
+  //   1–100    → 4 decimals   (DOT 1.0315, SOL 88.4321)
+  //   0.01–1   → 5 decimals   (SAND 0.03892)
+  //   0.0001–  → 6 decimals
+  //   below    → 8 decimals
   const abs = Math.abs(p);
-  if (abs >= 1) return p.toFixed(2);
+  if (abs >= 100) return p.toFixed(2);
+  if (abs >= 1) return p.toFixed(4);
   if (abs >= 0.01) return p.toFixed(5);
   if (abs >= 0.0001) return p.toFixed(6);
   return p.toFixed(8);
