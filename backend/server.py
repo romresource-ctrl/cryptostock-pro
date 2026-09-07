@@ -24,7 +24,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, FastAPI, Header, HTTPException, Query, Request
@@ -194,7 +194,7 @@ db = client[os.environ["DB_NAME"]]
 
 # Default lists — pulled from the full expanded maps in market_data.py so the
 # dashboard "full=true" mode always returns every asset we support.
-from market_data import (  # noqa: E402
+from market_data import (  # noqa: E402,F811
     CRYPTO_BINANCE_MAP,
     STOCK_YAHOO_MAP,
     ETF_YAHOO_MAP,
@@ -289,7 +289,7 @@ def _root_health() -> dict[str, str]:
 # are effectively neutralized because:
 #   1. Their offline SHA-256 codes are absent from unlock_codes DB (migration)
 #   2. Attempts to record login hit removed endpoint → auth stays invalid
-from fastapi import Request  # noqa: E402
+from fastapi import Request  # noqa: E402,F811
 from fastapi.responses import JSONResponse  # noqa: E402
 
 MIN_APP_VERSION = (2, 1, 3)
@@ -1365,7 +1365,13 @@ async def search_assets(
     # crypto/{query} match and let `get_crypto_snapshot` cascade through
     # Binance → Bitget → CoinGecko to actually fetch OHLCV. If none of
     # them have data, this hit is silently dropped from the response.
-    if not had_exact_crypto_before_safety_net and len(query) >= 2 and query.isalnum():
+    # v8.12.64 — Safety-net crypto lookup must NOT outrank an EXACT
+    # match from another market. Previously searching "ABBA" (a real
+    # IDX stock) prepended a random CoinGecko token also tickered ABBA
+    # above the actual stock. Only fire the safety net when there is
+    # no exact ticker match in ANY market.
+    had_exact_match_any_market = any(m[2] == 0 for m in matches)
+    if not had_exact_match_any_market and len(query) >= 2 and query.isalnum():
         # Only meaningful for symbols that look like a ticker
         # (2+ alphanumeric chars). Prepend so it shows above fuzzy matches
         # when successful.

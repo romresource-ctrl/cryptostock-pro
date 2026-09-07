@@ -3,6 +3,12 @@
 ## Product Summary
 AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs, gold/silver, commodity, forex. Bilingual (ID/EN/RU/CN), premium unlock, chatroom, AI Market Brief, WR history.
 
+## v8.12.64 — Full-Board IDX (983 ticker) + Search Ranking Fix
+- STOCK_YAHOO_MAP 594 → **983 ticker** (full board BEI, dari daftar resmi IDX 957 emiten + suplemen). Sumber: Draw-lh/idx-bei + Pulse-CLI tickers.json.
+- FIX ranking search: safety-net crypto (CoinGecko) tidak lagi mendahului exact match pasar lain. Contoh: "ABBA" sebelumnya menampilkan token crypto acak; sekarang menampilkan saham IDX ABBA. TRUMP tetap crypto.
+- Lint F601/F811/F821 dibersihkan (Any import, noqa F811).
+- Verified: ABBA/AGRO/PACK/KICI/BBCA → stock_id; TRUMP → crypto.
+
 ## v8.12.63 — IDX Medium/Low-Cap Search Expansion
 - STOCK_YAHOO_MAP expanded ~150 → 594 tickers (banks kecil, konsumer, teknologi, properti, manufaktur, kesehatan, media, logistik, tambang, perkebunan, infra, jasa). Termasuk PACK, KICI, BTPN, FILM, WIFI, dst.
 - Ticker invalid/delisted otomatis ter-drop dari hasil search (snapshot Yahoo None) — aman.
