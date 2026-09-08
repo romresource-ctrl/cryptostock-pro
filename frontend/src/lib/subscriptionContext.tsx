@@ -170,14 +170,24 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
         e?.code === "E_SERVICE_ERROR";
 
       if (isGooglePlayGenericError) {
+        // v8.12.66 — Surface the RAW Play error code/message in the dialog.
+        // Promo offers with eligibility rules (e.g. "Never had any
+        // subscription") fail with this same generic error on accounts
+        // that are INELIGIBLE (any past purchase — including license-
+        // tester purchases — counts as "had a subscription"). Without
+        // the raw detail there is no way to tell propagation delay from
+        // ineligibility.
+        const detail = raw ? `\n\nDetail: ${raw.slice(0, 180)}` : "";
         Alert.alert(
           "Google Play Issue",
           "Google Play could not process this request right now.\n\n" +
             "This is usually caused by:\n" +
             "• Play Store cache — clear it in Settings → Apps → Google Play Store → Storage → Clear cache.\n" +
             "• A previous test subscription still active — open Play Store → Payments & subscriptions → Subscriptions and cancel any AI Crypto Stock Pro entry.\n" +
-            "• Recent Play Console change still propagating — wait 15–60 min and retry.\n\n" +
-            "Real (production) users will not see this issue.",
+            "• Recent Play Console change still propagating — wait 15–60 min and retry.\n" +
+            "• LIMITED promo eligibility — the 2-Months promo is only for accounts that have NEVER had any subscription (past test purchases count). Test it with a fresh Google account.\n\n" +
+            "Real (production) users will not see this issue." +
+            detail,
           [{ text: "OK" }],
         );
       } else if (

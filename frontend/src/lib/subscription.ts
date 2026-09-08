@@ -412,6 +412,12 @@ export async function purchaseSubscription(
       (o) => o.basePlanId === basePlanId && o.offerId === offerId,
     );
     offerToken = promoMatch?.offerToken ?? null;
+    // v8.12.66 — Diagnostic trail: if Play later rejects the purchase,
+    // the log shows exactly which offers the device could see.
+    console.warn(
+      `[IAP] promo purchase ${basePlanId}/${offerId} → token ${offerToken ? "OK" : "MISSING"}; ` +
+        `visible offers: ${product.allOffers.map((o) => `${o.basePlanId}:${o.offerId}`).join(", ")}`,
+    );
     if (!offerToken) {
       throw new Error(
         `The promo offer "${offerId}" is not active in Play Console yet. Please try again in a few minutes.`,
