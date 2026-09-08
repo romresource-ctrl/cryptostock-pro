@@ -3,6 +3,12 @@
 ## Product Summary
 AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs, gold/silver, commodity, forex. Bilingual (ID/EN/RU/CN), premium unlock, chatroom, AI Market Brief, WR history.
 
+## v8.12.72 — 1 Week & 2 Months Saling Eksklusif (First-Subscriber Plans)
+- Aturan baru: pernah beli **pro-1w** → kartu **prepaid-2m** terkunci ("NOT AVAILABLE"); pernah beli **prepaid-2m** → kartu **pro-1w** terkunci. Hanya subscriber benar-benar baru yang bisa memilih salah satu.
+- prepaid-2m yang sudah pernah diklaim tetap tampil "ALREADY CLAIMED".
+- pro-1w sendiri tetap auto-renewing & bisa diperpanjang normal (hanya terkunci oleh klaim prepaid-2m).
+- Cek klaim: prepaid-2m + legacy pro-2m + pro-1w via `/api/subscription/promo-claimed` (server-side, tahan reinstall).
+
 ## v8.12.71 — Migrasi Promo ke Prepaid `prepaid-2m`
 - Base Plan ID untuk promo 2 Months diganti menjadi `prepaid-2m` (Prepaid, 2 Months, USD 19.99 / Rp 359.000).
 - Tidak auto-renewing: langganan otomatis selesai setelah 2 bulan tanpa perpanjangan.

@@ -44,29 +44,39 @@ export default function VipModal({ visible, onClose, onLogin }: Props) {
     () => SUBSCRIPTION_TIERS.find((x) => x.id === "pro-3m") ?? SUBSCRIPTION_TIERS[0],
   );
 
-  // v8.12.69 — One-time promo enforcement: the LIMITED 2-Months plan
-  // (pro-2m) may only ever be claimed ONCE per device. The record lives
-  // on the backend, so reinstalling the app does NOT unlock it again.
-  const [promoClaimed, setPromoClaimed] = useState(false);
+  // v8.12.69/72 — One-time "new subscriber" plan enforcement.
+  // The 1-Week (pro-1w) and the LIMITED 2-Months (prepaid-2m) plans are
+  // MUTUALLY EXCLUSIVE first-subscriber offers:
+  //   • Ever bought 1 Week      → 2-Months promo locks forever.
+  //   • Ever bought 2-Months    → 1-Week plan locks forever.
+  // Records live on the backend (per device), so reinstalling the app
+  // does NOT unlock them again. Truly new subscribers may pick ONE.
+  const [promo2mClaimed, setPromo2mClaimed] = useState(false);
+  const [week1Claimed, setWeek1Claimed] = useState(false);
   useEffect(() => {
     if (!visible) return;
     let alive = true;
     (async () => {
       const id = await getDeviceId().catch(() => "");
-      // v8.12.71 — Check both prepaid-2m and legacy pro-2m
-      const claimed = id
+      // v8.12.71 — Check prepaid-2m + legacy pro-2m; v8.12.72 — and pro-1w.
+      const c2m = id
         ? (await checkPromoClaimed(id, "prepaid-2m")) ||
           (await checkPromoClaimed(id, "pro-2m"))
         : false;
+      const c1w = id ? await checkPromoClaimed(id, "pro-1w") : false;
       if (!alive) return;
-      setPromoClaimed(claimed);
-      if (claimed) {
-        // If the locked promo card was selected, fall back to 3 Months.
-        setSelectedTier((cur) =>
-          cur.id === "prepaid-2m" || cur.id === "pro-2m"
+      setPromo2mClaimed(c2m);
+      setWeek1Claimed(c1w);
+      if (c2m || c1w) {
+        // If the currently-selected card just got locked, fall back to 3 Months.
+        setSelectedTier((cur) => {
+          const nowLocked =
+            (cur.id === "prepaid-2m" && (c2m || c1w)) ||
+            (cur.id === "pro-1w" && c2m);
+          return nowLocked
             ? SUBSCRIPTION_TIERS.find((x) => x.id === "pro-3m") ?? cur
-            : cur,
-        );
+            : cur;
+        });
       }
     })();
     return () => {
@@ -188,10 +198,14 @@ export default function VipModal({ visible, onClose, onLogin }: Props) {
           <View style={styles.tierGrid}>
             {SUBSCRIPTION_TIERS.map((tier) => {
               const isSel = selectedTier.id === tier.id;
-              // v8.12.69/71 — Once the 2-Months promo has been claimed on
-              // this device, its card locks: dimmed, not tappable, and
-              // the foot note switches to "ALREADY CLAIMED".
-              const locked = (tier.id === "prepaid-2m" || tier.id === "pro-2m") && promoClaimed;
+              // v8.12.72 — Lock rules for the two first-subscriber plans:
+              //   • 2-Months promo locks after EITHER plan was ever used.
+              //   • 1-Week locks only after the 2-Months promo was used
+              //     (it stays re-subscribable on its own as the
+              //     auto-renewing starter plan).
+              const locked =
+                (tier.id === "prepaid-2m" && (promo2mClaimed || week1Claimed)) ||
+                (tier.id === "pro-1w" && promo2mClaimed);
               return (
                 <TouchableOpacity
                   key={tier.id}
@@ -262,7 +276,11 @@ export default function VipModal({ visible, onClose, onLogin }: Props) {
                         { color: colors.textMuted },
                       ]}
                     >
-                      {locked ? "ALREADY CLAIMED" : tier.footNote}
+                      {locked
+                        ? tier.id === "prepaid-2m" && promo2mClaimed
+                          ? "ALREADY CLAIMED"
+                          : "NOT AVAILABLE"
+                        : tier.footNote}
                     </Text>
                   ) : null}
                 </TouchableOpacity>
