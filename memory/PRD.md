@@ -3,6 +3,11 @@
 ## Product Summary
 AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs, gold/silver, commodity, forex. Bilingual (ID/EN/RU/CN), premium unlock, chatroom, AI Market Brief, WR history.
 
+## v8.12.68 — Migrasi 2 Months LIMITED ke Dedicated Base Plan `pro-2m`
+- Kartu 2 Months LIMITED dimigrasikan dari nested offer `september-promo-2for1` (yang rentan gagal eligibilitas / parsing offer token) menjadi dedicated Base Plan ID `pro-2m` (Every 2 Months, USD 19.99 / Rp 359.000).
+- Alur purchase sekarang memanggil `purchaseSubscription("pro-2m")` standar sama persis seperti `pro-1w`, `pro-1m`, `pro-3m`, `pro-6m`, `pro-1y` yang sudah terbukti 100% stabil.
+- Begitu user membuat dan mengaktifkan base plan `pro-2m` di Play Console, pembelian 2 Months akan langsung sukses tanpa error.
+
 ## v8.12.67 — Fix: Error Promo Tertelan Handler Generik
 - Root cause kandidat: pesan error "promo offer not active" milik app mengandung "try again" → tertangkap detector error generik Play, sehingga penyebab asli (offer tidak terlihat device) tersembunyi.
 - Error promo kini pakai code APP_PROMO_NOT_FOUND → dialog khusus "Promo Not Available" berisi checklist Play Console (offer ID persis, ACTIVE di base plan pro-1m, tunggu propagasi).

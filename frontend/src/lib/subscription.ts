@@ -110,21 +110,19 @@ export const SUBSCRIPTION_TIERS: SubscriptionTier[] = [
     trialEligible: true,
   },
   {
-    // v8.12.65 — SEPTEMBER PROMO: Play Console offer
-    // "september-promo-2for1" on the pro-1m base plan. Eligibility:
-    // "Never had any subscription". 50% off for 2 months → user pays
-    // $10/month for the first 2 months ($19.99 total), then renews at
-    // the regular $20/month. Shown as a LIMITED 2-Months card.
-    id: "promo-2m-sept",
-    basePlanId: "pro-1m",
-    offerId: "september-promo-2for1",
+    // v8.12.68 — 2-Months LIMITED promo plan.
+    // Play Console Base Plan ID: pro-2m (Every 2 Months, USD 19.99 / Rp 359.000).
+    // Uses its own dedicated base plan instead of a nested offer for 100%
+    // reliable purchase flows without eligibility / propagation edge-cases.
+    id: "pro-2m",
+    basePlanId: "pro-2m",
     months: 2,
     priceUSD: 19.99,
     label: "2 Months",
     perMonth: "$10/month",
     limited: true,
     footNote: "Limited Time Offer",
-    trialEligible: false, // promo replaces the free trial
+    trialEligible: false, // promo plan has no free trial
   },
 ];
 
