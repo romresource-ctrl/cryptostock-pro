@@ -53,13 +53,17 @@ export default function VipModal({ visible, onClose, onLogin }: Props) {
     let alive = true;
     (async () => {
       const id = await getDeviceId().catch(() => "");
-      const claimed = id ? await checkPromoClaimed(id, "pro-2m") : false;
+      // v8.12.71 — Check both prepaid-2m and legacy pro-2m
+      const claimed = id
+        ? (await checkPromoClaimed(id, "prepaid-2m")) ||
+          (await checkPromoClaimed(id, "pro-2m"))
+        : false;
       if (!alive) return;
       setPromoClaimed(claimed);
       if (claimed) {
         // If the locked promo card was selected, fall back to 3 Months.
         setSelectedTier((cur) =>
-          cur.id === "pro-2m"
+          cur.id === "prepaid-2m" || cur.id === "pro-2m"
             ? SUBSCRIPTION_TIERS.find((x) => x.id === "pro-3m") ?? cur
             : cur,
         );
@@ -184,10 +188,10 @@ export default function VipModal({ visible, onClose, onLogin }: Props) {
           <View style={styles.tierGrid}>
             {SUBSCRIPTION_TIERS.map((tier) => {
               const isSel = selectedTier.id === tier.id;
-              // v8.12.69 — Once the 2-Months promo has been claimed on
+              // v8.12.69/71 — Once the 2-Months promo has been claimed on
               // this device, its card locks: dimmed, not tappable, and
               // the foot note switches to "ALREADY CLAIMED".
-              const locked = tier.id === "pro-2m" && promoClaimed;
+              const locked = (tier.id === "prepaid-2m" || tier.id === "pro-2m") && promoClaimed;
               return (
                 <TouchableOpacity
                   key={tier.id}

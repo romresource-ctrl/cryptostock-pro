@@ -110,12 +110,11 @@ export const SUBSCRIPTION_TIERS: SubscriptionTier[] = [
     trialEligible: true,
   },
   {
-    // v8.12.68 — 2-Months LIMITED promo plan.
-    // Play Console Base Plan ID: pro-2m (Every 2 Months, USD 19.99 / Rp 359.000).
-    // Uses its own dedicated base plan instead of a nested offer for 100%
-    // reliable purchase flows without eligibility / propagation edge-cases.
-    id: "pro-2m",
-    basePlanId: "pro-2m",
+    // v8.12.71 — 2-Months LIMITED promo plan (Prepaid).
+    // Play Console Base Plan ID: prepaid-2m (Prepaid, 2 Months, USD 19.99 / Rp 359.000).
+    // Does NOT auto-renew — user gets 2 months access and it naturally expires.
+    id: "prepaid-2m",
+    basePlanId: "prepaid-2m",
     months: 2,
     priceUSD: 19.99,
     label: "2 Months",

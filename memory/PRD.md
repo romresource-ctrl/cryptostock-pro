@@ -3,6 +3,12 @@
 ## Product Summary
 AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs, gold/silver, commodity, forex. Bilingual (ID/EN/RU/CN), premium unlock, chatroom, AI Market Brief, WR history.
 
+## v8.12.71 — Migrasi Promo ke Prepaid `prepaid-2m`
+- Base Plan ID untuk promo 2 Months diganti menjadi `prepaid-2m` (Prepaid, 2 Months, USD 19.99 / Rp 359.000).
+- Tidak auto-renewing: langganan otomatis selesai setelah 2 bulan tanpa perpanjangan.
+- Teks footnote: "Limited One Time Offer".
+- Pemeriksaan satu kali klaim (`checkPromoClaimed`) mendukung `prepaid-2m` dan `pro-2m`.
+
 ## v8.12.69 — Promo Sekali Pakai + Update Popup
 - **Promo 2 Months hanya 1× per device**: verify subscription kini mencatat `base_plan_id` di Mongo; endpoint baru `GET /api/subscription/promo-claimed?device_id&base_plan_id`; kartu pro-2m terkunci (dimmed, "ALREADY CLAIMED") setelah pernah dibeli — tahan reinstall.
 - **Update prompt**: endpoint `GET /api/app-version` (APP_LATEST_VERSION di server.py — WAJIB bump tiap release); komponen `UpdatePrompt.tsx` di dashboard membandingkan APP_VERSION vs latest, popup "Update Available" → tombol buka Play Store (market:// + fallback https). Dismiss "Later", muncul lagi di cold start berikutnya.
