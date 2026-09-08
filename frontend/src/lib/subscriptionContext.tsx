@@ -190,6 +190,20 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
             detail,
           [{ text: "OK" }],
         );
+      // v8.12.67 — Our OWN tagged errors get a SPECIFIC dialog so the
+      // real cause (promo offer not visible / wrong ID / wrong base
+      // plan in Play Console) is never hidden behind a generic message.
+      } else if (e?.code === "APP_PROMO_NOT_FOUND") {
+        Alert.alert(
+          "Promo Not Available",
+          "The LIMITED promo offer could not be found on this device.\n\n" +
+            "Please check in Play Console:\n" +
+            "1. Offer ID is exactly \"september-promo-2for1\".\n" +
+            "2. The offer is ACTIVE on base plan \"pro-1m\" (1 Month).\n" +
+            "3. Wait 15–60 min after activation for Google to sync.\n\n" +
+            "If all of the above is correct, the account may not meet the promo eligibility rules.",
+          [{ text: "OK" }],
+        );
       } else if (
         // v8.0.3: only show "Already Subscribed" when our own local guard
         // fired (marker code above). Native Play errors that happen to

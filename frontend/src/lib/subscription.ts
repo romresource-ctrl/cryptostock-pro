@@ -419,9 +419,15 @@ export async function purchaseSubscription(
         `visible offers: ${product.allOffers.map((o) => `${o.basePlanId}:${o.offerId}`).join(", ")}`,
     );
     if (!offerToken) {
-      throw new Error(
-        `The promo offer "${offerId}" is not active in Play Console yet. Please try again in a few minutes.`,
+      // v8.12.67 — Tag with a machine-readable code so the context shows
+      // the SPECIFIC promo dialog instead of the generic Play error
+      // (the old message contained "try again" and was swallowed by the
+      // generic-error detector).
+      const err: any = new Error(
+        `Promo offer "${offerId}" (base plan "${basePlanId}") is not visible on this device.`,
       );
+      err.code = "APP_PROMO_NOT_FOUND";
+      throw err;
     }
   } else if (basePlanId) {
     // v8.12.50 — Only apply the free-trial offer when this base plan is
