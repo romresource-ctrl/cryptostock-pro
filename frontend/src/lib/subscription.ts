@@ -20,7 +20,15 @@ export const SUBSCRIPTION_SKU = "ai_cryptostockpro_monthly";
 // Tier catalog — 4 subscription options (durations & prices).
 // Each maps to a Base Plan ID in Play Console.
 export type SubscriptionTier = {
+  // v8.12.65 — Unique key for React lists & selection. Tiers may SHARE
+  // a basePlanId (e.g. a promo offer on the 1-Month base plan), so
+  // basePlanId alone is no longer unique.
+  id: string;
   basePlanId: string;
+  // v8.12.65 — Specific Play Console offer to purchase (e.g. the
+  // "september-promo-2for1" 50%-off-for-2-months offer). When set, the
+  // purchase flow picks THIS offer instead of the free-trial offer.
+  offerId?: string;
   months: number;
   priceUSD: number;
   label: string;      // Short label shown in the paywall
@@ -31,6 +39,11 @@ export type SubscriptionTier = {
   // sits opposite the BEST ribbon. Rendered as a small pill on
   // the top-left of the tier card.
   starter?: boolean;
+  // v8.12.65 — LIMITED ribbon (red) for time-boxed promos.
+  limited?: boolean;
+  // v8.12.65 — Foot line inside the card, e.g. "NO FREE TRIAL",
+  // "14-D FREE TRIAL", "Limited Time Offer".
+  footNote?: string;
   // v8.12.50 — Free-trial eligibility. Defaults to true. Set to
   // FALSE for cheap short tiers (e.g. the 1-Week plan) so buyers
   // cannot loop-abuse the trial with rapid weekly upgrades. Only
@@ -42,32 +55,39 @@ export const SUBSCRIPTION_TIERS: SubscriptionTier[] = [
   {
     // v8.12.41 — New starter tier: 7-day auto-renewing plan.
     // Play Console Base Plan ID: pro-1w (Weekly, USD 4.79).
+    id: "pro-1w",
     basePlanId: "pro-1w",
     months: 0.25, // ~1 week = 0.25 mo (display-only field, not used for logic)
     priceUSD: 4.79,
     label: "1 Week",
-    perMonth: "$4.79/wk",
+    perMonth: "$4.79/week",
     starter: true, // v8.12.49 — spotlight for newcomers
+    footNote: "NO FREE TRIAL",
     trialEligible: false, // v8.12.50 — no free trial on the weekly plan
   },
   {
+    id: "pro-1m",
     basePlanId: "pro-1m",
     months: 1,
     priceUSD: 20,
     label: "1 Month",
-    perMonth: "$20/mo",
+    perMonth: "$20/month",
+    footNote: "14-D FREE TRIAL",
     trialEligible: true,
   },
   {
+    id: "pro-3m",
     basePlanId: "pro-3m",
     months: 3,
     priceUSD: 50,
     label: "3 Months",
     perMonth: "$16.67/mo",
     saveBadge: "Save 17%",
+    footNote: "14-D FREE TRIAL",
     trialEligible: true,
   },
   {
+    id: "pro-6m",
     basePlanId: "pro-6m",
     months: 6,
     priceUSD: 100,
@@ -75,16 +95,36 @@ export const SUBSCRIPTION_TIERS: SubscriptionTier[] = [
     perMonth: "$16.67/mo",
     saveBadge: "Save 17%",
     popular: true,
+    footNote: "14-D FREE TRIAL",
     trialEligible: true,
   },
   {
+    id: "pro-1y",
     basePlanId: "pro-1y",
     months: 12,
     priceUSD: 180,
     label: "12 Months",
     perMonth: "$15/mo",
     saveBadge: "Save 25%",
+    footNote: "14-D FREE TRIAL",
     trialEligible: true,
+  },
+  {
+    // v8.12.65 — SEPTEMBER PROMO: Play Console offer
+    // "september-promo-2for1" on the pro-1m base plan. Eligibility:
+    // "Never had any subscription". 50% off for 2 months → user pays
+    // $10/month for the first 2 months ($19.99 total), then renews at
+    // the regular $20/month. Shown as a LIMITED 2-Months card.
+    id: "promo-2m-sept",
+    basePlanId: "pro-1m",
+    offerId: "september-promo-2for1",
+    months: 2,
+    priceUSD: 19.99,
+    label: "2 Months",
+    perMonth: "$10/month",
+    limited: true,
+    footNote: "Limited Time Offer",
+    trialEligible: false, // promo replaces the free trial
   },
 ];
 
@@ -343,7 +383,10 @@ export async function fetchSubscription(): Promise<SubProduct | null> {
 }
 
 // ---- Purchase ----
-export async function purchaseSubscription(basePlanId?: string): Promise<void> {
+export async function purchaseSubscription(
+  basePlanId?: string,
+  offerId?: string,
+): Promise<void> {
   const iap = await initIap();
   if (!iap) throw new Error("Google Play Billing is not available on this device.");
 
@@ -359,7 +402,22 @@ export async function purchaseSubscription(basePlanId?: string): Promise<void> {
 
   // Pick target offer
   let offerToken: string | null = null;
-  if (basePlanId) {
+  if (offerId) {
+    // v8.12.65 — Explicit promo offer (e.g. "september-promo-2for1").
+    // Must match BOTH base plan and offer id so we never accidentally
+    // sell the regular free-trial offer when the user tapped the promo
+    // card. Eligibility ("Never had any subscription") is enforced by
+    // Google Play itself.
+    const promoMatch = product.allOffers.find(
+      (o) => o.basePlanId === basePlanId && o.offerId === offerId,
+    );
+    offerToken = promoMatch?.offerToken ?? null;
+    if (!offerToken) {
+      throw new Error(
+        `The promo offer "${offerId}" is not active in Play Console yet. Please try again in a few minutes.`,
+      );
+    }
+  } else if (basePlanId) {
     // v8.12.50 — Only apply the free-trial offer when this base plan is
     // eligible (see isTrialEligibleBasePlan). The 1-Week plan intentionally
     // skips the trial so buyers cannot cycle it repeatedly for near-free

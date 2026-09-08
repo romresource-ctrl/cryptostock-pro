@@ -34,7 +34,7 @@ type SubscriptionState = {
   product: SubProduct | null;
   loading: boolean;
   connected: boolean;
-  subscribe: (basePlanId?: string) => Promise<void>;
+  subscribe: (basePlanId?: string, offerId?: string) => Promise<void>;
   restore: () => Promise<void>;
   refresh: () => Promise<void>;
 };
@@ -141,7 +141,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     };
   }, []);
 
-  const subscribe = useCallback(async (basePlanId?: string) => {
+  const subscribe = useCallback(async (basePlanId?: string, offerId?: string) => {
     if (Platform.OS !== "android") {
       Alert.alert(
         "Android Only",
@@ -151,7 +151,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     }
     setLoading(true);
     try {
-      await purchaseSubscription(basePlanId);
+      await purchaseSubscription(basePlanId, offerId);
       // Success is handled by the global purchaseUpdatedListener
     } catch (e: any) {
       const raw = String(e?.message ?? e ?? "");

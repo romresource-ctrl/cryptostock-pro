@@ -3,6 +3,13 @@
 ## Product Summary
 AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs, gold/silver, commodity, forex. Bilingual (ID/EN/RU/CN), premium unlock, chatroom, AI Market Brief, WR history.
 
+## v8.12.65 — September Promo "2 Months LIMITED" di Paywall
+- Tier baru "2 Months" (LIMITED badge merah, bingkai emas): offer Play Console `september-promo-2for1` pada base plan `pro-1m` — $10/bulan × 2 bulan ($19.99), eligibilitas "Never had any subscription" (ditegakkan Google Play).
+- SubscriptionTier sekarang punya `id` unik + `offerId` opsional (promo share basePlanId pro-1m dengan tier 1 Month); purchase flow memilih offer persis by offerId.
+- Teks kartu diselaraskan dengan desain user: "$4.79/week", "$20/month", "$10/month", footNote "NO FREE TRIAL" / "14-D FREE TRIAL" / "Limited Time Offer", Save badge sebaris dengan per-month.
+- Screenshot-verified: 6 kartu 3 baris, CTA "SUBSCRIBE 2 MONTHS" + hint promo saat kartu LIMITED dipilih.
+- CATATAN: harga Rp lokal baru muncul dari Play Billing di APK; web preview menampilkan fallback USD.
+
 ## v8.12.64 — Full-Board IDX (983 ticker) + Search Ranking Fix
 - STOCK_YAHOO_MAP 594 → **983 ticker** (full board BEI, dari daftar resmi IDX 957 emiten + suplemen). Sumber: Draw-lh/idx-bei + Pulse-CLI tickers.json.
 - FIX ranking search: safety-net crypto (CoinGecko) tidak lagi mendahului exact match pasar lain. Contoh: "ABBA" sebelumnya menampilkan token crypto acak; sekarang menampilkan saham IDX ABBA. TRUMP tetap crypto.

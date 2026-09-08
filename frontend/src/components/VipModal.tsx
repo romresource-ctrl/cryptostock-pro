@@ -76,7 +76,14 @@ export default function VipModal({ visible, onClose, onLogin }: Props) {
 
   // Use Play-provided localized price when available, else the fallback USD.
   const priceForTier = (tier: SubscriptionTier): string => {
-    const offer = product?.allOffers.find((o) => o.basePlanId === tier.basePlanId);
+    // v8.12.65 — Promo tiers (e.g. september-promo-2for1) must match
+    // BOTH basePlanId + offerId, otherwise the 1-Month offer would be
+    // picked for the 2-Months promo card (they share base plan pro-1m).
+    const offer = product?.allOffers.find((o) =>
+      tier.offerId
+        ? o.basePlanId === tier.basePlanId && o.offerId === tier.offerId
+        : o.basePlanId === tier.basePlanId,
+    );
     return offer?.localizedPrice ?? `$${tier.priceUSD}`;
   };
 
@@ -143,23 +150,27 @@ export default function VipModal({ visible, onClose, onLogin }: Props) {
             </Text>
           ) : null}
 
-          {/* Tier selector — 2 columns × 2 rows */}
+          {/* Tier selector — 2 columns × 3 rows (incl. LIMITED promo) */}
           <View style={styles.tierGrid}>
             {SUBSCRIPTION_TIERS.map((tier) => {
-              const isSel = selectedTier.basePlanId === tier.basePlanId;
+              const isSel = selectedTier.id === tier.id;
               return (
                 <TouchableOpacity
-                  key={tier.basePlanId}
+                  key={tier.id}
                   onPress={() => setSelectedTier(tier)}
                   disabled={isPremium || loading}
                   activeOpacity={0.85}
-                  testID={`vip-tier-${tier.basePlanId}`}
+                  testID={`vip-tier-${tier.id}`}
                   style={[
                     styles.tierCard,
                     {
                       backgroundColor: isSel ? GOLD + "22" : colors.surfaceAlt,
-                      borderColor: isSel ? GOLD : colors.border,
-                      borderWidth: isSel ? 1.5 : 1,
+                      // v8.12.65 — LIMITED promo card keeps a gold frame
+                      // even when not selected, so the eye is drawn to
+                      // the time-boxed offer (matches the approved
+                      // paywall design).
+                      borderColor: isSel || tier.limited ? GOLD : colors.border,
+                      borderWidth: isSel || tier.limited ? 1.5 : 1,
                     },
                   ]}
                 >
@@ -176,21 +187,44 @@ export default function VipModal({ visible, onClose, onLogin }: Props) {
                       <Text style={styles.starterBadgeText}>STARTER</Text>
                     </View>
                   ) : null}
+                  {/* v8.12.65 — LIMITED ribbon (red) for time-boxed
+                      promos like the September 2-for-1 offer. */}
+                  {tier.limited ? (
+                    <View style={[styles.starterBadge, { backgroundColor: "#EF4444" }]}>
+                      <Text style={styles.starterBadgeText}>LIMITED</Text>
+                    </View>
+                  ) : null}
                   <Text style={[styles.tierLabel, { color: colors.textPrimary }]}>
                     {tier.label}
                   </Text>
                   <Text style={[styles.tierPrice, { color: isSel ? GOLD : colors.textPrimary }]}>
                     {priceForTier(tier)}
                   </Text>
-                  <Text style={[styles.tierPerMonth, { color: colors.textMuted }]}>
-                    {tier.perMonth}
-                  </Text>
-                  {tier.saveBadge ? (
-                    <View style={[styles.saveBadge, { backgroundColor: "#10b98130", borderColor: "#10b981" }]}>
-                      <Text style={[styles.saveBadgeText, { color: "#10b981" }]}>
-                        {tier.saveBadge}
-                      </Text>
-                    </View>
+                  {/* v8.12.65 — Per-month row and Save badge sit on the
+                      SAME line (per the approved paywall design): the
+                      italic per-month note is directly followed by the
+                      green Save pill. */}
+                  <View style={styles.perMonthRow}>
+                    <Text style={[styles.tierPerMonth, { color: colors.textMuted }]}>
+                      {tier.perMonth}
+                    </Text>
+                    {tier.saveBadge ? (
+                      <View style={[styles.saveBadge, { backgroundColor: "#10b98130", borderColor: "#10b981" }]}>
+                        <Text style={[styles.saveBadgeText, { color: "#10b981" }]}>
+                          {tier.saveBadge}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  {tier.footNote ? (
+                    <Text
+                      style={[
+                        styles.footNote,
+                        { color: tier.limited ? colors.textMuted : colors.textMuted },
+                      ]}
+                    >
+                      {tier.footNote}
+                    </Text>
                   ) : null}
                 </TouchableOpacity>
               );
@@ -199,7 +233,7 @@ export default function VipModal({ visible, onClose, onLogin }: Props) {
 
           {/* Primary CTA — Subscribe */}
           <TouchableOpacity
-            onPress={() => subscribe(selectedTier.basePlanId)}
+            onPress={() => subscribe(selectedTier.basePlanId, selectedTier.offerId)}
             disabled={loading || isPremium}
             style={[
               styles.subscribeBtn,
@@ -234,10 +268,14 @@ export default function VipModal({ visible, onClose, onLogin }: Props) {
           <Text style={[styles.trialHint, { color: colors.textMuted }]}>
             {/* v8.12.50 — Only mention the free trial when the currently
                 selected tier is eligible (1 Month and longer). The
-                1-Week Starter plan intentionally has no free trial. */}
-            {selectedTier.trialEligible !== false
-              ? `${SUBSCRIPTION_TRIAL_DAYS} days free trial · Cancel anytime via Google Play`
-              : `No free trial on this plan · Cancel anytime via Google Play`}
+                1-Week Starter plan intentionally has no free trial.
+                v8.12.65 — LIMITED promo tiers get their own hint: the
+                discounted months replace the free trial. */}
+            {selectedTier.limited
+              ? `Limited time offer · ${selectedTier.perMonth} for the first 2 months · Cancel anytime via Google Play`
+              : selectedTier.trialEligible !== false
+                ? `${SUBSCRIPTION_TRIAL_DAYS} days free trial. Cancel anytime via Google Play`
+                : `No free trial on this plan · Cancel anytime via Google Play`}
           </Text>
 
           {/* Restore Purchase */}
@@ -400,11 +438,24 @@ const styles = StyleSheet.create({
   },
   tierPerMonth: {
     fontSize: 9,
-    marginTop: 2,
     fontStyle: "italic",
   },
+  // v8.12.65 — Per-month note + Save badge on one line (approved design).
+  perMonthRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 2,
+  },
+  // v8.12.65 — Foot line inside the card: "NO FREE TRIAL" /
+  // "14-D FREE TRIAL" / "Limited Time Offer".
+  footNote: {
+    fontSize: 9,
+    fontWeight: "700",
+    letterSpacing: 0.3,
+    marginTop: 4,
+  },
   saveBadge: {
-    marginTop: 6,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
