@@ -121,7 +121,7 @@ export const SUBSCRIPTION_TIERS: SubscriptionTier[] = [
     label: "2 Months",
     perMonth: "$10/month",
     limited: true,
-    footNote: "Limited Time Offer",
+    footNote: "Limited One Time Offer",
     trialEligible: false, // promo plan has no free trial
   },
 ];
