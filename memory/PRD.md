@@ -3,6 +3,10 @@
 ## Product Summary
 AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs, gold/silver, commodity, forex. Bilingual (ID/EN/RU/CN), premium unlock, chatroom, AI Market Brief, WR history.
 
+## v8.12.73 — 1 Week Juga Sekali Pakai
+- Pernah beli **pro-1w** → kartu 1 Week terkunci "ALREADY CLAIMED" (tidak bisa resubscribe, harus lanjut 1m/3m/6m/12m) DAN kartu prepaid-2m terkunci "NOT AVAILABLE".
+- Kedua first-subscriber plan kini strictly one-time per device.
+
 ## v8.12.72 — 1 Week & 2 Months Saling Eksklusif (First-Subscriber Plans)
 - Aturan baru: pernah beli **pro-1w** → kartu **prepaid-2m** terkunci ("NOT AVAILABLE"); pernah beli **prepaid-2m** → kartu **pro-1w** terkunci. Hanya subscriber benar-benar baru yang bisa memilih salah satu.
 - prepaid-2m yang sudah pernah diklaim tetap tampil "ALREADY CLAIMED".

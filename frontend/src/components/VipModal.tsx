@@ -72,7 +72,7 @@ export default function VipModal({ visible, onClose, onLogin }: Props) {
         setSelectedTier((cur) => {
           const nowLocked =
             (cur.id === "prepaid-2m" && (c2m || c1w)) ||
-            (cur.id === "pro-1w" && c2m);
+            (cur.id === "pro-1w" && (c1w || c2m));
           return nowLocked
             ? SUBSCRIPTION_TIERS.find((x) => x.id === "pro-3m") ?? cur
             : cur;
@@ -198,14 +198,15 @@ export default function VipModal({ visible, onClose, onLogin }: Props) {
           <View style={styles.tierGrid}>
             {SUBSCRIPTION_TIERS.map((tier) => {
               const isSel = selectedTier.id === tier.id;
-              // v8.12.72 — Lock rules for the two first-subscriber plans:
+              // v8.12.72/73 — Lock rules for the two first-subscriber
+              // plans (both are strictly ONE-TIME per device):
               //   • 2-Months promo locks after EITHER plan was ever used.
-              //   • 1-Week locks only after the 2-Months promo was used
-              //     (it stays re-subscribable on its own as the
-              //     auto-renewing starter plan).
+              //   • 1-Week locks after it was used itself, OR after the
+              //     2-Months promo was used. Past 1-Week subscribers must
+              //     continue with 1m/3m/6m/12m — no 1-Week re-subscribe.
               const locked =
                 (tier.id === "prepaid-2m" && (promo2mClaimed || week1Claimed)) ||
-                (tier.id === "pro-1w" && promo2mClaimed);
+                (tier.id === "pro-1w" && (week1Claimed || promo2mClaimed));
               return (
                 <TouchableOpacity
                   key={tier.id}
@@ -277,7 +278,8 @@ export default function VipModal({ visible, onClose, onLogin }: Props) {
                       ]}
                     >
                       {locked
-                        ? tier.id === "prepaid-2m" && promo2mClaimed
+                        ? (tier.id === "prepaid-2m" && promo2mClaimed) ||
+                          (tier.id === "pro-1w" && week1Claimed)
                           ? "ALREADY CLAIMED"
                           : "NOT AVAILABLE"
                         : tier.footNote}
