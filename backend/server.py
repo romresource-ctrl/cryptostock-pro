@@ -1442,6 +1442,26 @@ async def search_assets(
 
 
 
+# v8.12.69 — Latest published Android build. The /app-version endpoint
+# serves this so outdated installs get an update prompt. Bump together
+# with frontend APP_VERSION / app.json version on every release.
+APP_LATEST_VERSION = "8.12.69"
+
+
+@api.get("/app-version")
+async def app_version() -> dict[str, Any]:
+    """v8.12.69 — Latest published app version + Play Store link.
+
+    The Android client compares this against its own build version on
+    every cold start and nags the user to update when outdated. Bump
+    APP_LATEST_VERSION here whenever a new APK/AAB is released.
+    """
+    return {
+        "latest_version": APP_LATEST_VERSION,
+        "play_store_url": "https://play.google.com/store/apps/details?id=com.cryptostockapps.aicryptostockpro",
+    }
+
+
 @api.get("/news", response_model=NewsResponse)
 async def news_global(
     market: Literal["crypto", "stock", "etf", "stock_id", "stock_us", "world_stocks", "gold_silver", "commodity", "forex", "all"] = Query("all"),
@@ -1724,6 +1744,11 @@ class SubscriptionVerifyPayload(BaseModel):
     product_id: str
     package_name: str | None = None
     device_id: str | None = None
+    # v8.12.69 — The Play Console base plan the user purchased (e.g.
+    # "pro-2m"). Recorded so one-time promos can be enforced
+    # server-side (a promo plan may only ever be claimed ONCE per
+    # device — reinstalling the app does NOT reset it).
+    base_plan_id: str | None = None
 
 
 class SubscriptionStatusResponse(BaseModel):
@@ -1746,6 +1771,7 @@ async def _upsert_entitlement(
     expiry_dt: datetime | None,
     source: str,
     debug: str | None = None,
+    base_plan_id: str | None = None,
 ) -> None:
     now = datetime.now(timezone.utc).isoformat()
     doc = {
@@ -1759,6 +1785,7 @@ async def _upsert_entitlement(
         "source": source,
         "updated_at": now,
         "debug": debug,
+        "base_plan_id": base_plan_id,
     }
     await db.subscriptions.update_one(
         {"purchase_token": purchase_token, "package_name": package_name},
@@ -1830,6 +1857,7 @@ async def subscription_verify(payload: SubscriptionVerifyPayload) -> Subscriptio
         expiry_dt=expiry_dt,
         source=source,
         debug=result.get("debug"),
+        base_plan_id=payload.base_plan_id,
     )
 
     return SubscriptionStatusResponse(
@@ -1880,6 +1908,23 @@ async def subscription_status(device_id: str | None = None) -> SubscriptionStatu
         product_id=row.get("product_id"),
         source=row.get("source", "cached"),
     )
+
+
+@api.get("/subscription/promo-claimed")
+async def subscription_promo_claimed(device_id: str, base_plan_id: str) -> dict[str, Any]:
+    """v8.12.69 — Has this device EVER claimed the given base plan?
+
+    Used to enforce one-time promo plans (e.g. the LIMITED 2-Months
+    offer): once any subscription row exists for (device, base plan),
+    the promo card is locked in the paywall — even after expiry,
+    cancellation, or an app reinstall.
+    """
+    if not device_id or not base_plan_id:
+        return {"claimed": False}
+    row = await db.subscriptions.find_one(
+        {"device_id": device_id, "base_plan_id": base_plan_id},
+    )
+    return {"claimed": bool(row)}
 
 
 @api.get("/subscription/health")

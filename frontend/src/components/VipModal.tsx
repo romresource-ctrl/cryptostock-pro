@@ -12,10 +12,12 @@ import {
 } from "react-native";
 
 import { useI18n } from "@/src/i18n/I18nContext";
+import { getDeviceId } from "@/src/lib/deviceId";
 import {
   SUBSCRIPTION_TIERS,
   SubscriptionTier,
   SUBSCRIPTION_TRIAL_DAYS,
+  checkPromoClaimed,
 } from "@/src/lib/subscription";
 import { useSubscription } from "@/src/lib/subscriptionContext";
 import { useTheme } from "@/src/theme/ThemeContext";
@@ -35,10 +37,38 @@ export default function VipModal({ visible, onClose, onLogin }: Props) {
   const { subscribe, restore, loading, isPremium, entitlement, product } =
     useSubscription();
 
-  // Selected tier — defaults to the popular 6-month plan.
+  // Selected tier — v8.12.69: defaults to the 3-Months plan to match
+  // the approved paywall design (3 Months highlighted with gold frame
+  // and the CTA reading "SUBSCRIBE 3 MONTHS" on first open).
   const [selectedTier, setSelectedTier] = useState<SubscriptionTier>(
-    () => SUBSCRIPTION_TIERS.find((x) => x.popular) ?? SUBSCRIPTION_TIERS[0],
+    () => SUBSCRIPTION_TIERS.find((x) => x.id === "pro-3m") ?? SUBSCRIPTION_TIERS[0],
   );
+
+  // v8.12.69 — One-time promo enforcement: the LIMITED 2-Months plan
+  // (pro-2m) may only ever be claimed ONCE per device. The record lives
+  // on the backend, so reinstalling the app does NOT unlock it again.
+  const [promoClaimed, setPromoClaimed] = useState(false);
+  useEffect(() => {
+    if (!visible) return;
+    let alive = true;
+    (async () => {
+      const id = await getDeviceId().catch(() => "");
+      const claimed = id ? await checkPromoClaimed(id, "pro-2m") : false;
+      if (!alive) return;
+      setPromoClaimed(claimed);
+      if (claimed) {
+        // If the locked promo card was selected, fall back to 3 Months.
+        setSelectedTier((cur) =>
+          cur.id === "pro-2m"
+            ? SUBSCRIPTION_TIERS.find((x) => x.id === "pro-3m") ?? cur
+            : cur,
+        );
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [visible]);
 
   // Auto-close modal when entitlement becomes active.
   // v8.1.1 — Simpler + more robust logic: whenever the modal is visible
@@ -154,11 +184,15 @@ export default function VipModal({ visible, onClose, onLogin }: Props) {
           <View style={styles.tierGrid}>
             {SUBSCRIPTION_TIERS.map((tier) => {
               const isSel = selectedTier.id === tier.id;
+              // v8.12.69 — Once the 2-Months promo has been claimed on
+              // this device, its card locks: dimmed, not tappable, and
+              // the foot note switches to "ALREADY CLAIMED".
+              const locked = tier.id === "pro-2m" && promoClaimed;
               return (
                 <TouchableOpacity
                   key={tier.id}
-                  onPress={() => setSelectedTier(tier)}
-                  disabled={isPremium || loading}
+                  onPress={() => !locked && setSelectedTier(tier)}
+                  disabled={isPremium || loading || locked}
                   activeOpacity={0.85}
                   testID={`vip-tier-${tier.id}`}
                   style={[
@@ -168,9 +202,10 @@ export default function VipModal({ visible, onClose, onLogin }: Props) {
                       // v8.12.65 — LIMITED promo card keeps a gold frame
                       // even when not selected, so the eye is drawn to
                       // the time-boxed offer (matches the approved
-                      // paywall design).
-                      borderColor: isSel || tier.limited ? GOLD : colors.border,
-                      borderWidth: isSel || tier.limited ? 1.5 : 1,
+                      // paywall design). Locked (claimed) cards lose it.
+                      borderColor: !locked && (isSel || tier.limited) ? GOLD : colors.border,
+                      borderWidth: !locked && (isSel || tier.limited) ? 1.5 : 1,
+                      opacity: locked ? 0.5 : 1,
                     },
                   ]}
                 >
@@ -220,10 +255,10 @@ export default function VipModal({ visible, onClose, onLogin }: Props) {
                     <Text
                       style={[
                         styles.footNote,
-                        { color: tier.limited ? colors.textMuted : colors.textMuted },
+                        { color: colors.textMuted },
                       ]}
                     >
-                      {tier.footNote}
+                      {locked ? "ALREADY CLAIMED" : tier.footNote}
                     </Text>
                   ) : null}
                 </TouchableOpacity>

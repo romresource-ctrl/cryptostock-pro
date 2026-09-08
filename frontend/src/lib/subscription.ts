@@ -528,6 +528,11 @@ export async function purchaseSubscription(
     throw err;
   }
 
+  // v8.12.69 — Remember which base plan this purchase is for so the
+  // global purchase listener can record it server-side (used by the
+  // one-time promo claim check).
+  _pendingBasePlanId = basePlanId ?? null;
+
   // Build request that matches `RequestSubscriptionAndroidProps` in
   // react-native-iap v15 (Nitro). Only whitelisted fields are allowed.
   const androidReq: any = {
@@ -556,11 +561,17 @@ export async function purchaseSubscription(
 }
 
 // ---- Backend verify ----
+// v8.12.69 — Base plan of the most recent purchase request, consumed by
+// the global purchase listener so the backend can record WHICH plan was
+// bought (one-time promo enforcement).
+let _pendingBasePlanId: string | null = null;
+
 async function _postVerify(
   purchaseToken: string,
   productId: string,
   deviceId: string,
   packageName: string,
+  basePlanId: string | null = null,
 ): Promise<Entitlement> {
   const res = await fetch(`${backendBase()}/subscription/verify`, {
     method: "POST",
@@ -570,6 +581,7 @@ async function _postVerify(
       product_id: productId,
       device_id: deviceId,
       package_name: packageName,
+      base_plan_id: basePlanId,
     }),
   });
   if (!res.ok) throw new Error(`verify failed: HTTP ${res.status}`);
@@ -679,7 +691,11 @@ export function setupPurchaseListener(handlers: PurchaseHandlers): () => void {
             String(productId),
             handlers.deviceId,
             handlers.packageName,
+            _pendingBasePlanId,
           );
+          // v8.12.69 — Consumed: clear so a future restore flow does not
+          // misattribute a plan to an unrelated token.
+          _pendingBasePlanId = null;
           try {
             if (typeof iap.finishTransaction === "function") {
               await iap.finishTransaction({
@@ -730,6 +746,30 @@ export function setupPurchaseListener(handlers: PurchaseHandlers): () => void {
 // ---- Entitlement storage ----
 export async function loadEntitlement(): Promise<Entitlement | null> {
   return await storage.getItem<Entitlement | null>(ENTITLEMENT_KEY, null);
+}
+
+/**
+ * v8.12.69 — One-time promo claim check. Returns TRUE when this device
+ * has EVER purchased the given base plan (any status: active, expired,
+ * canceled). Used to lock the LIMITED 2-Months card after its first
+ * claim — reinstalling the app does NOT reset the lock because the
+ * record lives server-side.
+ */
+export async function checkPromoClaimed(
+  deviceId: string,
+  basePlanId: string,
+): Promise<boolean> {
+  if (!deviceId || !basePlanId) return false;
+  try {
+    const res = await fetch(
+      `${backendBase()}/subscription/promo-claimed?device_id=${encodeURIComponent(deviceId)}&base_plan_id=${encodeURIComponent(basePlanId)}`,
+    );
+    if (!res.ok) return false;
+    const data = await res.json();
+    return Boolean(data?.claimed);
+  } catch {
+    return false;
+  }
 }
 
 export async function clearEntitlement(): Promise<void> {

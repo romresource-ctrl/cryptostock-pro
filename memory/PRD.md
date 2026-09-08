@@ -3,6 +3,11 @@
 ## Product Summary
 AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs, gold/silver, commodity, forex. Bilingual (ID/EN/RU/CN), premium unlock, chatroom, AI Market Brief, WR history.
 
+## v8.12.69 — Promo Sekali Pakai + Update Popup
+- **Promo 2 Months hanya 1× per device**: verify subscription kini mencatat `base_plan_id` di Mongo; endpoint baru `GET /api/subscription/promo-claimed?device_id&base_plan_id`; kartu pro-2m terkunci (dimmed, "ALREADY CLAIMED") setelah pernah dibeli — tahan reinstall.
+- **Update prompt**: endpoint `GET /api/app-version` (APP_LATEST_VERSION di server.py — WAJIB bump tiap release); komponen `UpdatePrompt.tsx` di dashboard membandingkan APP_VERSION vs latest, popup "Update Available" → tombol buka Play Store (market:// + fallback https). Dismiss "Later", muncul lagi di cold start berikutnya.
+- Default paywall selection = 3 Months (sesuai desain user).
+
 ## v8.12.68 — Migrasi 2 Months LIMITED ke Dedicated Base Plan `pro-2m`
 - Kartu 2 Months LIMITED dimigrasikan dari nested offer `september-promo-2for1` (yang rentan gagal eligibilitas / parsing offer token) menjadi dedicated Base Plan ID `pro-2m` (Every 2 Months, USD 19.99 / Rp 359.000).
 - Alur purchase sekarang memanggil `purchaseSubscription("pro-2m")` standar sama persis seperti `pro-1w`, `pro-1m`, `pro-3m`, `pro-6m`, `pro-1y` yang sudah terbukti 100% stabil.

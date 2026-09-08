@@ -54,6 +54,7 @@ import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
 import { useSearchHistory } from "@/src/lib/useSearchHistory";
 import { PROFILE_META, useTraderProfile } from "@/src/lib/useTraderProfile";
 import TraderProfileModal from "@/src/components/TraderProfileModal";
+import UpdatePrompt from "@/src/components/UpdatePrompt";
 import { markAppReady } from "@/src/lib/appReady";
 import { APP_VERSION } from "@/src/lib/version";
 import { useWatchlist } from "@/src/lib/watchlist";
@@ -1250,6 +1251,9 @@ export default function Dashboard() {
           the dashboard interactable so premium users can chat while
           still scrolling through asset columns / candles above. */}
       <ChatSheet visible={chatOpen} onClose={() => setChatOpen(false)} />
+      {/* v8.12.69 — Update nag: pops up on cold start when the
+          installed build is older than the latest published version. */}
+      <UpdatePrompt />
       {/* v8.12.57 — Trader Profile picker (v3 BTC formula tuning). */}
       <TraderProfileModal
         visible={traderProfileOpen}
