@@ -9,13 +9,61 @@
  *
  * Default: "day" (matches the legacy v8.x behaviour so any pre-v3
  * install keeps their existing signals until they explicitly switch).
+ *
+ * v8.12.74 — CRITICAL FIX: the hook used to keep a PRIVATE useState
+ * per call site. The dashboard header and the picker modal each owned
+ * a separate copy, so picking a profile in the modal never updated the
+ * header icon (it stayed ⚡ "day" until the next app restart). The
+ * state is now a single MODULE-LEVEL store shared by every component
+ * via useSyncExternalStore — any change propagates instantly.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export type TraderProfile = "scalper" | "day" | "swing" | "longterm";
 
 const STORAGE_KEY = "@ai-crypto-stock-pro:trader-profile:v1";
+
+// ---- Shared module-level store (single source of truth) ----
+let _profile: TraderProfile = "day";
+let _loaded = false;
+let _initStarted = false;
+const _listeners = new Set<() => void>();
+
+function _notify() {
+  _listeners.forEach((l) => l());
+}
+
+function _subscribe(listener: () => void): () => void {
+  _listeners.add(listener);
+  return () => {
+    _listeners.delete(listener);
+  };
+}
+
+function _getProfile(): TraderProfile {
+  return _profile;
+}
+
+function _getLoaded(): boolean {
+  return _loaded;
+}
+
+async function _ensureInit(): Promise<void> {
+  if (_initStarted) return;
+  _initStarted = true;
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEY);
+    if (raw && (PROFILE_ORDER as string[]).includes(raw)) {
+      _profile = raw as TraderProfile;
+    }
+  } catch {
+    /* ignore */
+  } finally {
+    _loaded = true;
+    _notify();
+  }
+}
 
 export const PROFILE_META: Record<
   TraderProfile,
@@ -64,30 +112,21 @@ export function useTraderProfile(): {
   setProfile: (p: TraderProfile) => void;
   loaded: boolean;
 } {
-  const [profile, setProfileState] = useState<TraderProfile>("day");
-  const [loaded, setLoaded] = useState(false);
-
+  // One shared store — every component re-renders together on change.
   useEffect(() => {
-    (async () => {
-      try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
-        if (raw && (PROFILE_ORDER as string[]).includes(raw)) {
-          setProfileState(raw as TraderProfile);
-        }
-      } catch {
-        /* ignore */
-      } finally {
-        setLoaded(true);
-      }
-    })();
+    _ensureInit();
   }, []);
+  const profile = useSyncExternalStore(_subscribe, _getProfile, _getProfile);
+  const loaded = useSyncExternalStore(_subscribe, _getLoaded, _getLoaded);
 
-  const setProfile = useCallback((p: TraderProfile) => {
-    setProfileState(p);
+  const setProfile = (p: TraderProfile) => {
+    if (p === _profile) return;
+    _profile = p;
+    _notify();
     AsyncStorage.setItem(STORAGE_KEY, p).catch(() => {
       /* ignore */
     });
-  }, []);
+  };
 
   return { profile, setProfile, loaded };
 }

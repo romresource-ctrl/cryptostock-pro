@@ -3,6 +3,12 @@
 ## Product Summary
 AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs, gold/silver, commodity, forex. Bilingual (ID/EN/RU/CN), premium unlock, chatroom, AI Market Brief, WR history.
 
+## v8.12.74 — Fix: Ikon Trader Profile Tidak Berubah
+- Root cause: `useTraderProfile` menyimpan useState PRIVAT per komponen — modal picker dan header dashboard punya state terpisah, jadi memilih profil di modal tidak pernah meng-update ikon header (tetap ⚡ sampai restart app).
+- Fix: hook diubah menjadi shared module-level store via `useSyncExternalStore` — semua komponen sinkron instan.
+- Verified via automation: pilih scalper/day/swing/longterm → header aria-label berubah sesuai ("Trader Profile: Scalper" dst) dan emoji ikon berubah (🏃⚡📈🐢).
+- Catatan: request chart/analyze di halaman detail SUDAH membawa profil yang dipilih (membaca AsyncStorage saat screen mount), jadi sinyal tidak selalu Day Trader — hanya ikon header yang stale.
+
 ## v8.12.73 — 1 Week Juga Sekali Pakai
 - Pernah beli **pro-1w** → kartu 1 Week terkunci "ALREADY CLAIMED" (tidak bisa resubscribe, harus lanjut 1m/3m/6m/12m) DAN kartu prepaid-2m terkunci "NOT AVAILABLE".
 - Kedua first-subscriber plan kini strictly one-time per device.
