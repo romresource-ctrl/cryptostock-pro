@@ -7,6 +7,7 @@ import {
   Platform,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -25,17 +26,33 @@ import { useTheme } from "@/src/theme/ThemeContext";
 type Props = {
   visible: boolean;
   onClose: () => void;
-  onLogin?: () => void;
 };
 
 const CONTACT_EMAIL = "cryptostockapps@gmail.com";
 const GOLD = "#F0B90B";
 
-export default function VipModal({ visible, onClose, onLogin }: Props) {
+export default function VipModal({ visible, onClose }: Props) {
   const { colors } = useTheme();
   const { t } = useI18n();
   const { subscribe, restore, loading, isPremium, entitlement, product } =
     useSubscription();
+
+  // v8.12.75 — Promo code sheet state. Redeeming a Google Play promo
+  // code happens on the Play Store side; we only need the code text.
+  const [promoOpen, setPromoOpen] = useState(false);
+  const [promoCode, setPromoCode] = useState("");
+
+  const redeemPromo = () => {
+    const code = promoCode.trim();
+    if (!code) return;
+    // Play Store redemption page with the code pre-filled. On Android
+    // this opens the Play Store app directly on the redeem screen.
+    Linking.openURL(
+      `https://play.google.com/store/redeem?code=${encodeURIComponent(code)}`,
+    ).catch(() => {});
+    setPromoOpen(false);
+    setPromoCode("");
+  };
 
   // Selected tier — v8.12.69: defaults to the 3-Months plan to match
   // the approved paywall design (3 Months highlighted with gold frame
@@ -350,22 +367,23 @@ export default function VipModal({ visible, onClose, onLogin }: Props) {
             </Text>
           </TouchableOpacity>
 
-          {/* Admin Login — same size/style as Restore Purchase. Used by
-              admins holding an unlock code from the generator; hidden for
-              users who are already premium via subscription (no need). */}
-          {onLogin && !isPremium ? (
-            <TouchableOpacity
-              onPress={onLogin}
-              disabled={loading}
-              style={[styles.restoreBtn, { borderColor: colors.border }]}
-              testID="vip-admin-login-button"
-            >
-              <Ionicons name="key-outline" size={14} color={colors.textMuted} />
-              <Text style={[styles.restoreText, { color: colors.textMuted }]}>
-                Login Admin
-              </Text>
-            </TouchableOpacity>
-          ) : null}
+          {/* v8.12.75 — PROMO CODE button (replaces Login Admin — the
+              key icon on the dashboard header already covers admin
+              login). Opens a small input sheet; Redeem deep-links to
+              the Play Store redeem page with the code pre-filled so
+              Google Play applies the promo (campaign "promo-3m": 7-day
+              free trial, one-time codes, 9 Sep – 31 Dec 2026). */}
+          <TouchableOpacity
+            onPress={() => setPromoOpen(true)}
+            disabled={loading}
+            style={[styles.restoreBtn, { borderColor: GOLD }]}
+            testID="vip-promo-code-button"
+          >
+            <Ionicons name="pricetag-outline" size={14} color={GOLD} />
+            <Text style={[styles.restoreText, { color: GOLD }]}>
+              INPUT PROMO CODE
+            </Text>
+          </TouchableOpacity>
 
           {/* Contact */}
           <TouchableOpacity
@@ -391,6 +409,76 @@ export default function VipModal({ visible, onClose, onLogin }: Props) {
             </Text>
           ) : null}
         </View>
+
+        {/* v8.12.75 — Promo code input sheet. Campaign "promo-2026"
+            (Play Console: 7-day free trial, CUSTOM codes, 9 Sep –
+            31 Dec 2026). The user types/pastes the code here, then we
+            deep-link to the Play Store redeem page with the code
+            pre-filled — Google Play applies the free trial itself. */}
+        <Modal
+          visible={promoOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setPromoOpen(false)}
+        >
+          <View style={[styles.overlay, { backgroundColor: colors.overlay }]}>
+            <View
+              style={[
+                styles.promoBox,
+                { backgroundColor: colors.surface, borderColor: GOLD },
+              ]}
+            >
+              <Text style={[styles.promoTitle, { color: GOLD }]}>
+                Promo Code
+              </Text>
+              <Text style={[styles.promoHint, { color: colors.textMuted }]}>
+                Enter your code, then confirm on the Google Play redeem page to activate your free trial.
+              </Text>
+              <TextInput
+                value={promoCode}
+                onChangeText={setPromoCode}
+                placeholder="Enter your promo code"
+                placeholderTextColor={colors.textMuted}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                autoFocus
+                testID="promo-code-input"
+                style={[
+                  styles.promoInput,
+                  {
+                    backgroundColor: colors.surfaceAlt,
+                    borderColor: colors.border,
+                    color: colors.textPrimary,
+                  },
+                ]}
+              />
+              <TouchableOpacity
+                onPress={redeemPromo}
+                disabled={!promoCode.trim()}
+                style={[
+                  styles.promoRedeemBtn,
+                  { backgroundColor: GOLD, opacity: promoCode.trim() ? 1 : 0.5 },
+                ]}
+                testID="promo-redeem-button"
+              >
+                <Ionicons name="logo-google-playstore" size={15} color="#000" />
+                <Text style={styles.promoRedeemText}>REDEEM ON PLAY STORE</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  setPromoOpen(false);
+                  setPromoCode("");
+                }}
+                style={styles.promoCancelBtn}
+                testID="promo-cancel-button"
+              >
+                <Text style={[styles.promoCancelText, { color: colors.textMuted }]}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       </View>
     </Modal>
   );
@@ -569,6 +657,47 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   contactText: { fontSize: 11, fontWeight: "600" },
+  // v8.12.75 — Promo code sheet
+  promoBox: {
+    width: "100%",
+    maxWidth: 320,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    padding: 18,
+    alignItems: "center",
+  },
+  promoTitle: { fontSize: 15, fontWeight: "900", letterSpacing: 0.4 },
+  promoHint: {
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: "center",
+    marginTop: 6,
+    marginBottom: 12,
+  },
+  promoInput: {
+    width: "100%",
+    height: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    fontSize: 14,
+    fontWeight: "700",
+    letterSpacing: 1,
+    textAlign: "center",
+  },
+  promoRedeemBtn: {
+    marginTop: 12,
+    width: "100%",
+    height: 42,
+    borderRadius: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  promoRedeemText: { color: "#000", fontSize: 12, fontWeight: "900", letterSpacing: 0.5 },
+  promoCancelBtn: { marginTop: 10, paddingVertical: 4 },
+  promoCancelText: { fontSize: 12, fontWeight: "700" },
   androidOnly: {
     fontSize: 10,
     textAlign: "center",

@@ -3,6 +3,12 @@
 ## Product Summary
 AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs, gold/silver, commodity, forex. Bilingual (ID/EN/RU/CN), premium unlock, chatroom, AI Market Brief, WR history.
 
+## v8.12.75 — Tombol Promo Code di Paywall
+- Tombol **INPUT PROMO CODE** (gold outline) di bawah Restore Purchase, MENGGANTIKAN tombol Login Admin (admin tetap bisa login lewat ikon kunci 🔑 di header dashboard).
+- Membuka sheet input kode → tombol "REDEEM ON PLAY STORE" deep-link ke `https://play.google.com/store/redeem?code=...` (kode terisi otomatis).
+- Kampanye Play Console: **promo-2026**, Subscription AI Crypto Stock Pro Monthly, Free Trial 7 hari, **Custom codes** (`CRYPTOSTOCK-7D`, disimpan user-side — TIDAK di-hardcode di app), 9 Sep 2026 14:00 → 31 Dec 2026 00:00.
+- Screenshot-verified: tombol tampil sesuai desain user + sheet promo terbuka.
+
 ## v8.12.74 — Fix: Ikon Trader Profile Tidak Berubah
 - Root cause: `useTraderProfile` menyimpan useState PRIVAT per komponen — modal picker dan header dashboard punya state terpisah, jadi memilih profil di modal tidak pernah meng-update ikon header (tetap ⚡ sampai restart app).
 - Fix: hook diubah menjadi shared module-level store via `useSyncExternalStore` — semua komponen sinkron instan.

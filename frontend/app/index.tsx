@@ -1240,12 +1240,6 @@ export default function Dashboard() {
       <VipModal
         visible={vipOpen}
         onClose={() => setVipOpen(false)}
-        onLogin={() => {
-          // Close paywall first, then open admin unlock modal on next tick
-          // to avoid overlapping-modal race on Android.
-          setVipOpen(false);
-          setTimeout(() => setLoginOpen(true), 250);
-        }}
       />
       {/* Bottom-sheet chatroom (55% screen height) — leaves top half of
           the dashboard interactable so premium users can chat while
