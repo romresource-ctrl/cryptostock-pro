@@ -3,6 +3,11 @@
 ## Product Summary
 AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs, gold/silver, commodity, forex. Bilingual (ID/EN/RU/CN), premium unlock, chatroom, AI Market Brief, WR history.
 
+## v8.12.78 — Tombol Website "Get Promo Code & Redeem Guide"
+- Tombol baru (ikon globe) tepat di bawah baris email di paywall → membuka website resmi `https://cryptostock-pro.emergent.host` tempat user mendapatkan promo code + panduan redeem.
+- Sheet Promo Code kini berisi instruksi redeem 7-day trial langkah-demi-langkah (ambil kode → ketik persis → REDEEM ON PLAY STORE → konfirmasi).
+- Screenshot-verified: tombol tampil rapi di bawah email.
+
 ## v8.12.76 — Promo Code 1× per Device (Anti Re-apply)
 - Endpoint baru: `GET /api/promo/redeemed?device_id` + `POST /api/promo/redeem` (idempotent, first-wins) — koleksi Mongo `promo_redemptions`.
 - Sheet Promo Code mengecek status redeem saat dibuka: jika device sudah pernah redeem → input diganti pesan "already redeemed on this device" (tombol redeem hilang).

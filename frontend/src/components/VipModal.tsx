@@ -32,6 +32,9 @@ type Props = {
 
 const CONTACT_EMAIL = "cryptostockapps@gmail.com";
 const GOLD = "#F0B90B";
+// v8.12.78 — Official website. Users land here to GET the promo code
+// and read the step-by-step redeem guide for the 7-day free trial.
+const WEBSITE_URL = "https://cryptostock-pro.emergent.host";
 
 export default function VipModal({ visible, onClose }: Props) {
   const { colors } = useTheme();
@@ -165,6 +168,9 @@ export default function VipModal({ visible, onClose }: Props) {
 
   const openEmail = () =>
     Linking.openURL(`mailto:${CONTACT_EMAIL}`).catch(() => {});
+
+  // v8.12.78 — Open the official website (promo code + redeem guide).
+  const openWebsite = () => Linking.openURL(WEBSITE_URL).catch(() => {});
 
   // Use Play-provided localized price when available, else the fallback USD.
   const priceForTier = (tier: SubscriptionTier): string => {
@@ -434,6 +440,27 @@ export default function VipModal({ visible, onClose }: Props) {
             </Text>
           </TouchableOpacity>
 
+          {/* v8.12.78 — Website link: users go here to GET a promo code
+              and read the step-by-step guide on how to redeem it for
+              the 7-day free trial. Sits directly under the email row. */}
+          <TouchableOpacity
+            onPress={openWebsite}
+            style={[
+              styles.contactRow,
+              { backgroundColor: colors.surfaceAlt, borderColor: colors.border },
+            ]}
+            testID="vip-website-button"
+          >
+            <Ionicons name="globe-outline" size={14} color="#10b981" />
+            <Text
+              style={[styles.contactText, { color: colors.textPrimary }]}
+              numberOfLines={1}
+            >
+              Get Promo Code & Redeem Guide
+            </Text>
+            <Ionicons name="open-outline" size={12} color={colors.textMuted} />
+          </TouchableOpacity>
+
           {Platform.OS !== "android" ? (
             <Text style={[styles.androidOnly, { color: colors.textMuted }]}>
               Subscription is only available in the Android app on Google Play.
@@ -477,7 +504,11 @@ export default function VipModal({ visible, onClose }: Props) {
               ) : (
                 <>
                   <Text style={[styles.promoHint, { color: colors.textMuted }]}>
-                    Enter your code, then confirm on the Google Play redeem page to activate your free trial. One code per device.
+                    How to redeem your 7-day free trial:{"\n"}
+                    1. Get the promo code from our website (link below).{"\n"}
+                    2. Enter the code here exactly as shown.{"\n"}
+                    3. Tap REDEEM ON PLAY STORE and confirm.{"\n"}
+                    One code per device · trial starts right after redeem.
                   </Text>
                   <TextInput
                     value={promoCode}
