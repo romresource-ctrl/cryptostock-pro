@@ -1445,7 +1445,7 @@ async def search_assets(
 # v8.12.69 — Latest published Android build. The /app-version endpoint
 # serves this so outdated installs get an update prompt. Bump together
 # with frontend APP_VERSION / app.json version on every release.
-APP_LATEST_VERSION = "8.12.75"
+APP_LATEST_VERSION = "8.12.76"
 
 
 @api.get("/app-version")
@@ -1925,6 +1925,55 @@ async def subscription_promo_claimed(device_id: str, base_plan_id: str) -> dict[
         {"device_id": device_id, "base_plan_id": base_plan_id},
     )
     return {"claimed": bool(row)}
+
+
+# ---- Promo code redemption (one per device) ----
+# v8.12.76 — Custom promo codes (Play Console campaign "promo-2026")
+# may only be redeemed ONCE per device. Google Play additionally
+# restricts each Play account to a single redemption of the custom
+# code, so the two layers stack. Reinstalling the app does NOT reset
+# the device lock because the record lives server-side.
+
+
+@api.get("/promo/redeemed")
+async def promo_redeemed(device_id: str) -> dict[str, Any]:
+    """Has this device already redeemed a promo code?"""
+    if not device_id:
+        return {"redeemed": False}
+    row = await db.promo_redemptions.find_one({"device_id": device_id})
+    return {
+        "redeemed": bool(row),
+        "redeemed_at": row.get("redeemed_at") if row else None,
+    }
+
+
+class PromoRedeemPayload(BaseModel):
+    device_id: str
+    code: str
+
+
+@api.post("/promo/redeem")
+async def promo_redeem(payload: PromoRedeemPayload) -> dict[str, Any]:
+    """Record a promo-code redemption for a device. Idempotent — the
+    first record wins; later attempts just report already-redeemed."""
+    device_id = (payload.device_id or "").strip()
+    code = (payload.code or "").strip().upper()
+    if not device_id or not code:
+        raise HTTPException(400, "device_id and code are required")
+    existing = await db.promo_redemptions.find_one({"device_id": device_id})
+    if existing:
+        return {
+            "ok": True,
+            "already": True,
+            "redeemed_at": existing.get("redeemed_at"),
+        }
+    now = datetime.now(timezone.utc).isoformat()
+    await db.promo_redemptions.update_one(
+        {"device_id": device_id},
+        {"$setOnInsert": {"device_id": device_id, "code": code, "redeemed_at": now}},
+        upsert=True,
+    )
+    return {"ok": True, "already": False, "redeemed_at": now}
 
 
 @api.get("/subscription/health")

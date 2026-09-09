@@ -3,6 +3,12 @@
 ## Product Summary
 AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs, gold/silver, commodity, forex. Bilingual (ID/EN/RU/CN), premium unlock, chatroom, AI Market Brief, WR history.
 
+## v8.12.76 — Promo Code 1× per Device (Anti Re-apply)
+- Endpoint baru: `GET /api/promo/redeemed?device_id` + `POST /api/promo/redeem` (idempotent, first-wins) — koleksi Mongo `promo_redemptions`.
+- Sheet Promo Code mengecek status redeem saat dibuka: jika device sudah pernah redeem → input diganti pesan "already redeemed on this device" (tombol redeem hilang).
+- Pencatatan dilakukan TEPAT SEBELUM deep-link ke Play Store redeem page. Google Play juga membatasi custom code 1× per akun → proteksi ganda.
+- Backend curl-verified: redeem ke-2 pada device yang sama mengembalikan `already: true`.
+
 ## v8.12.75 — Tombol Promo Code di Paywall
 - Tombol **INPUT PROMO CODE** (gold outline) di bawah Restore Purchase, MENGGANTIKAN tombol Login Admin (admin tetap bisa login lewat ikon kunci 🔑 di header dashboard).
 - Membuka sheet input kode → tombol "REDEEM ON PLAY STORE" deep-link ke `https://play.google.com/store/redeem?code=...` (kode terisi otomatis).

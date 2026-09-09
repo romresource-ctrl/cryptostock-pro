@@ -771,6 +771,43 @@ export async function checkPromoClaimed(
   }
 }
 
+/**
+ * v8.12.76 — Promo CODE redemption lock (campaign promo-2026).
+ * One redemption per device, recorded server-side. checkPromoRedeemed
+ * runs when the promo sheet opens; markPromoRedeemed runs right before
+ * we hand the user over to the Play Store redeem page.
+ */
+export async function checkPromoRedeemed(deviceId: string): Promise<boolean> {
+  if (!deviceId) return false;
+  try {
+    const res = await fetch(
+      `${backendBase()}/promo/redeemed?device_id=${encodeURIComponent(deviceId)}`,
+    );
+    if (!res.ok) return false;
+    const data = await res.json();
+    return Boolean(data?.redeemed);
+  } catch {
+    return false;
+  }
+}
+
+export async function markPromoRedeemed(
+  deviceId: string,
+  code: string,
+): Promise<boolean> {
+  if (!deviceId || !code) return false;
+  try {
+    const res = await fetch(`${backendBase()}/promo/redeem`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ device_id: deviceId, code }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function clearEntitlement(): Promise<void> {
   await storage.removeItem(ENTITLEMENT_KEY);
 }

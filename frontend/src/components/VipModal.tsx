@@ -19,6 +19,8 @@ import {
   SubscriptionTier,
   SUBSCRIPTION_TRIAL_DAYS,
   checkPromoClaimed,
+  checkPromoRedeemed,
+  markPromoRedeemed,
 } from "@/src/lib/subscription";
 import { useSubscription } from "@/src/lib/subscriptionContext";
 import { useTheme } from "@/src/theme/ThemeContext";
@@ -41,10 +43,39 @@ export default function VipModal({ visible, onClose }: Props) {
   // code happens on the Play Store side; we only need the code text.
   const [promoOpen, setPromoOpen] = useState(false);
   const [promoCode, setPromoCode] = useState("");
+  // v8.12.76 — One redemption per device (server-side record). When
+  // TRUE, the promo sheet shows the already-redeemed notice instead of
+  // the input, so the code cannot be re-applied on this device.
+  const [promoRedeemed, setPromoRedeemed] = useState(false);
+  const deviceIdRef = useRef<string>("");
 
-  const redeemPromo = () => {
+  useEffect(() => {
+    if (!promoOpen) return;
+    let alive = true;
+    (async () => {
+      const id = deviceIdRef.current || (await getDeviceId().catch(() => ""));
+      deviceIdRef.current = id;
+      const redeemed = id ? await checkPromoRedeemed(id) : false;
+      if (alive) setPromoRedeemed(redeemed);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [promoOpen]);
+
+  const redeemPromo = async () => {
     const code = promoCode.trim();
-    if (!code) return;
+    if (!code || promoRedeemed) return;
+    // v8.12.76 — Record the redemption FIRST so the device lock is in
+    // place before we hand the user to the Play Store redeem page.
+    // Google Play itself also limits the custom code to one redemption
+    // per Play account, so both layers stack.
+    const id = deviceIdRef.current || (await getDeviceId().catch(() => ""));
+    if (id) {
+      deviceIdRef.current = id;
+      await markPromoRedeemed(id, code);
+      setPromoRedeemed(true);
+    }
     // Play Store redemption page with the code pre-filled. On Android
     // this opens the Play Store app directly on the redeem screen.
     Linking.openURL(
@@ -431,39 +462,55 @@ export default function VipModal({ visible, onClose }: Props) {
               <Text style={[styles.promoTitle, { color: GOLD }]}>
                 Promo Code
               </Text>
-              <Text style={[styles.promoHint, { color: colors.textMuted }]}>
-                Enter your code, then confirm on the Google Play redeem page to activate your free trial.
-              </Text>
-              <TextInput
-                value={promoCode}
-                onChangeText={setPromoCode}
-                placeholder="Enter your promo code"
-                placeholderTextColor={colors.textMuted}
-                autoCapitalize="characters"
-                autoCorrect={false}
-                autoFocus
-                testID="promo-code-input"
-                style={[
-                  styles.promoInput,
-                  {
-                    backgroundColor: colors.surfaceAlt,
-                    borderColor: colors.border,
-                    color: colors.textPrimary,
-                  },
-                ]}
-              />
-              <TouchableOpacity
-                onPress={redeemPromo}
-                disabled={!promoCode.trim()}
-                style={[
-                  styles.promoRedeemBtn,
-                  { backgroundColor: GOLD, opacity: promoCode.trim() ? 1 : 0.5 },
-                ]}
-                testID="promo-redeem-button"
-              >
-                <Ionicons name="logo-google-playstore" size={15} color="#000" />
-                <Text style={styles.promoRedeemText}>REDEEM ON PLAY STORE</Text>
-              </TouchableOpacity>
+              {promoRedeemed ? (
+                /* v8.12.76 — Device already redeemed a promo code. One
+                    redemption per device; cannot re-apply. */
+                <View style={{ alignItems: "center" }}>
+                  <Ionicons name="checkmark-circle" size={30} color="#10b981" />
+                  <Text
+                    style={[styles.promoHint, { color: colors.textPrimary, marginTop: 8 }]}
+                  >
+                    A promo code has already been redeemed on this device. Each
+                    code can only be used once per device.
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  <Text style={[styles.promoHint, { color: colors.textMuted }]}>
+                    Enter your code, then confirm on the Google Play redeem page to activate your free trial. One code per device.
+                  </Text>
+                  <TextInput
+                    value={promoCode}
+                    onChangeText={setPromoCode}
+                    placeholder="Enter your promo code"
+                    placeholderTextColor={colors.textMuted}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    autoFocus
+                    testID="promo-code-input"
+                    style={[
+                      styles.promoInput,
+                      {
+                        backgroundColor: colors.surfaceAlt,
+                        borderColor: colors.border,
+                        color: colors.textPrimary,
+                      },
+                    ]}
+                  />
+                  <TouchableOpacity
+                    onPress={redeemPromo}
+                    disabled={!promoCode.trim()}
+                    style={[
+                      styles.promoRedeemBtn,
+                      { backgroundColor: GOLD, opacity: promoCode.trim() ? 1 : 0.5 },
+                    ]}
+                    testID="promo-redeem-button"
+                  >
+                    <Ionicons name="logo-google-playstore" size={15} color="#000" />
+                    <Text style={styles.promoRedeemText}>REDEEM ON PLAY STORE</Text>
+                  </TouchableOpacity>
+                </>
+              )}
               <TouchableOpacity
                 onPress={() => {
                   setPromoOpen(false);
