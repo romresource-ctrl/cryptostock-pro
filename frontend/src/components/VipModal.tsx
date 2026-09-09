@@ -484,7 +484,10 @@ export default function VipModal({ visible, onClose }: Props) {
                     onChangeText={setPromoCode}
                     placeholder="Enter your promo code"
                     placeholderTextColor={colors.textMuted}
-                    autoCapitalize="characters"
+                    // v8.12.77 — Google Play custom codes are
+                    // CASE-SENSITIVE (e.g. "CryptoStock-7D" must keep
+                    // its exact case). Do NOT force uppercase.
+                    autoCapitalize="none"
                     autoCorrect={false}
                     autoFocus
                     testID="promo-code-input"
