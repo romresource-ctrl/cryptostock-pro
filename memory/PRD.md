@@ -3,6 +3,14 @@
 ## Product Summary
 AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs, gold/silver, commodity, forex. Bilingual (ID/EN/RU/CN), premium unlock, chatroom, AI Market Brief, WR history.
 
+## v8.12.82 — Hapus Fitur Promo Code
+- Tombol INPUT PROMO CODE + sheet panduan DIHAPUS dari paywall (keputusan user: trial promo 7D kalah menarik dari trial bawaan 14D pada plan 1m/3m/6m/12m, sehingga promo code tidak bernilai).
+- Tombol website di bawah email tetap ada, label dinetralkan menjadi "Visit Our Website" → https://cryptostockpro.my.canva.site.
+- Susunan paywall kini: Subscribe CTA → Restore Purchase → Email → Website.
+- Endpoint backend /promo/redeem & /promo/redeemed dibiarkan (tidak dipakai frontend).
+- Kampanye Play Console promo-2026 bisa user nonaktifkan sendiri di Play Console.
+- Screenshot-verified.
+
 ## v8.12.81 — Fix Promo Code: Custom Codes HANYA Bisa In-App
 - Root cause (dari dok resmi Google): **custom codes tidak bisa diredeem di play.google.com/redeem** (halaman itu hanya untuk gift card/one-time codes). Redeem custom code WAJIB lewat purchase sheet in-app: pilih plan → SUBSCRIBE → di payment sheet tap panah metode pembayaran → "Redeem code".
 - Sheet Promo Code dirombak menjadi panduan 5 langkah + tombol "USE PROMO NOW" (otomatis memilih plan 1 Month agar user tinggal tap SUBSCRIBE).

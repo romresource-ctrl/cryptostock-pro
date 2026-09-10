@@ -39,25 +39,6 @@ export default function VipModal({ visible, onClose }: Props) {
   const { subscribe, restore, loading, isPremium, entitlement, product } =
     useSubscription();
 
-  // v8.12.81 — Promo code sheet. Per Google's official docs, CUSTOM
-  // codes (campaign "promo-2026", code CryptoStock7D) can ONLY be
-  // redeemed INSIDE the app's own purchase flow: the user picks the
-  // 1-Month plan, taps SUBSCRIBE, then on the Google Play payment
-  // sheet taps the payment-method arrow → "Redeem code". The old
-  // deep-link to play.google.com/redeem is rejected by Google for
-  // custom codes ("That code didn't work" — that page is only for
-  // gift cards / one-time codes).
-  const [promoOpen, setPromoOpen] = useState(false);
-
-  // After reading the promo guide, jump the selection to the 1-Month
-  // plan so the user just needs to tap the big SUBSCRIBE button.
-  const goToMonthlyWithPromo = () => {
-    setSelectedTier(
-      SUBSCRIPTION_TIERS.find((x) => x.id === "pro-1m") ?? SUBSCRIPTION_TIERS[0],
-    );
-    setPromoOpen(false);
-  };
-
   // Selected tier — v8.12.69: defaults to the 3-Months plan to match
   // the approved paywall design (3 Months highlighted with gold frame
   // and the CTA reading "SUBSCRIBE 3 MONTHS" on first open).
@@ -374,24 +355,6 @@ export default function VipModal({ visible, onClose }: Props) {
             </Text>
           </TouchableOpacity>
 
-          {/* v8.12.75 — PROMO CODE button (replaces Login Admin — the
-              key icon on the dashboard header already covers admin
-              login). Opens a small input sheet; Redeem deep-links to
-              the Play Store redeem page with the code pre-filled so
-              Google Play applies the promo (campaign "promo-3m": 7-day
-              free trial, one-time codes, 9 Sep – 31 Dec 2026). */}
-          <TouchableOpacity
-            onPress={() => setPromoOpen(true)}
-            disabled={loading}
-            style={[styles.restoreBtn, { borderColor: GOLD }]}
-            testID="vip-promo-code-button"
-          >
-            <Ionicons name="pricetag-outline" size={14} color={GOLD} />
-            <Text style={[styles.restoreText, { color: GOLD }]}>
-              INPUT PROMO CODE
-            </Text>
-          </TouchableOpacity>
-
           {/* Contact */}
           <TouchableOpacity
             onPress={openEmail}
@@ -410,9 +373,8 @@ export default function VipModal({ visible, onClose }: Props) {
             </Text>
           </TouchableOpacity>
 
-          {/* v8.12.78 — Website link: users go here to GET a promo code
-              and read the step-by-step guide on how to redeem it for
-              the 7-day free trial. Sits directly under the email row. */}
+          {/* v8.12.78/82 — Official website link (landing page Canva).
+              Sits directly under the email row. */}
           <TouchableOpacity
             onPress={openWebsite}
             style={[
@@ -426,7 +388,7 @@ export default function VipModal({ visible, onClose }: Props) {
               style={[styles.contactText, { color: colors.textPrimary }]}
               numberOfLines={1}
             >
-              Get Promo Code & Redeem Guide
+              Visit Our Website
             </Text>
             <Ionicons name="open-outline" size={12} color={colors.textMuted} />
           </TouchableOpacity>
@@ -437,59 +399,6 @@ export default function VipModal({ visible, onClose }: Props) {
             </Text>
           ) : null}
         </View>
-
-        {/* v8.12.81 — Promo code guide sheet. Campaign "promo-2026"
-            (custom code, 7-day free trial, 9 Sep – 31 Dec 2026).
-            Custom codes can ONLY be redeemed inside the in-app
-            purchase flow (Google rule), so this sheet is a pure
-            step-by-step guide + a shortcut that selects the 1-Month
-            plan. Google Play enforces one redemption per account and
-            new-subscribers-only, so no extra in-app lock is needed. */}
-        <Modal
-          visible={promoOpen}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setPromoOpen(false)}
-        >
-          <View style={[styles.overlay, { backgroundColor: colors.overlay }]}>
-            <View
-              style={[
-                styles.promoBox,
-                { backgroundColor: colors.surface, borderColor: GOLD },
-              ]}
-            >
-              <Text style={[styles.promoTitle, { color: GOLD }]}>
-                Promo Code · 7-Day Free Trial
-              </Text>
-              <Text style={[styles.promoHint, { color: colors.textMuted }]}>
-                How to redeem:{"\n\n"}
-                1. Get the promo code from our website (button below).{"\n"}
-                2. Tap USE PROMO NOW — the 1 Month plan is selected for you.{"\n"}
-                3. Tap SUBSCRIBE 1 MONTH.{"\n"}
-                4. On the Google Play payment sheet, tap the arrow next to your payment method.{"\n"}
-                5. Choose Redeem code, enter the code exactly, and confirm.{"\n\n"}
-                Valid once per Google account · for new subscribers only.
-              </Text>
-              <TouchableOpacity
-                onPress={goToMonthlyWithPromo}
-                style={[styles.promoRedeemBtn, { backgroundColor: GOLD }]}
-                testID="promo-use-now-button"
-              >
-                <Ionicons name="pricetag" size={15} color="#000" />
-                <Text style={styles.promoRedeemText}>USE PROMO NOW</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => setPromoOpen(false)}
-                style={styles.promoCancelBtn}
-                testID="promo-cancel-button"
-              >
-                <Text style={[styles.promoCancelText, { color: colors.textMuted }]}>
-                  Cancel
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
       </View>
     </Modal>
   );
@@ -668,47 +577,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   contactText: { fontSize: 11, fontWeight: "600" },
-  // v8.12.75 — Promo code sheet
-  promoBox: {
-    width: "100%",
-    maxWidth: 320,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    padding: 18,
-    alignItems: "center",
-  },
-  promoTitle: { fontSize: 15, fontWeight: "900", letterSpacing: 0.4 },
-  promoHint: {
-    fontSize: 11,
-    lineHeight: 16,
-    textAlign: "center",
-    marginTop: 6,
-    marginBottom: 12,
-  },
-  promoInput: {
-    width: "100%",
-    height: 44,
-    borderRadius: 10,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    fontSize: 14,
-    fontWeight: "700",
-    letterSpacing: 1,
-    textAlign: "center",
-  },
-  promoRedeemBtn: {
-    marginTop: 12,
-    width: "100%",
-    height: 42,
-    borderRadius: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-  promoRedeemText: { color: "#000", fontSize: 12, fontWeight: "900", letterSpacing: 0.5 },
-  promoCancelBtn: { marginTop: 10, paddingVertical: 4 },
-  promoCancelText: { fontSize: 12, fontWeight: "700" },
   androidOnly: {
     fontSize: 10,
     textAlign: "center",
