@@ -7,7 +7,6 @@ import {
   Platform,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -19,8 +18,6 @@ import {
   SubscriptionTier,
   SUBSCRIPTION_TRIAL_DAYS,
   checkPromoClaimed,
-  checkPromoRedeemed,
-  markPromoRedeemed,
 } from "@/src/lib/subscription";
 import { useSubscription } from "@/src/lib/subscriptionContext";
 import { useTheme } from "@/src/theme/ThemeContext";
@@ -42,55 +39,23 @@ export default function VipModal({ visible, onClose }: Props) {
   const { subscribe, restore, loading, isPremium, entitlement, product } =
     useSubscription();
 
-  // v8.12.75 — Promo code sheet state. Redeeming a Google Play promo
-  // code happens on the Play Store side; we only need the code text.
+  // v8.12.81 — Promo code sheet. Per Google's official docs, CUSTOM
+  // codes (campaign "promo-2026", code CryptoStock7D) can ONLY be
+  // redeemed INSIDE the app's own purchase flow: the user picks the
+  // 1-Month plan, taps SUBSCRIBE, then on the Google Play payment
+  // sheet taps the payment-method arrow → "Redeem code". The old
+  // deep-link to play.google.com/redeem is rejected by Google for
+  // custom codes ("That code didn't work" — that page is only for
+  // gift cards / one-time codes).
   const [promoOpen, setPromoOpen] = useState(false);
-  const [promoCode, setPromoCode] = useState("");
-  // v8.12.76 — One redemption per device (server-side record). When
-  // TRUE, the promo sheet shows the already-redeemed notice instead of
-  // the input, so the code cannot be re-applied on this device.
-  const [promoRedeemed, setPromoRedeemed] = useState(false);
-  const deviceIdRef = useRef<string>("");
 
-  useEffect(() => {
-    if (!promoOpen) return;
-    let alive = true;
-    (async () => {
-      const id = deviceIdRef.current || (await getDeviceId().catch(() => ""));
-      deviceIdRef.current = id;
-      const attempted = id ? await checkPromoRedeemed(id) : false;
-      if (!alive) return;
-      // v8.12.80 — Lock ONLY when the redeem actually SUCCEEDED, proven
-      // by an active premium entitlement on this device. A mere attempt
-      // (user tapped REDEEM but the Play page failed / 404 / cancelled)
-      // must NOT lock them out — they can simply try again.
-      setPromoRedeemed(attempted && isPremium);
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [promoOpen, isPremium]);
-
-  const redeemPromo = async () => {
-    const code = promoCode.trim();
-    if (!code || promoRedeemed) return;
-    const id = deviceIdRef.current || (await getDeviceId().catch(() => ""));
-    if (id) {
-      deviceIdRef.current = id;
-      // v8.12.80 — Record an ATTEMPT (not a success). The lock engages
-      // only once the trial is confirmed active (see effect above).
-      // Google Play additionally limits the custom code to one
-      // redemption per Play account, so abuse is still impossible.
-      await markPromoRedeemed(id, code);
-    }
-    // v8.12.80 — OFFICIAL Google Play redeem URL (the previous
-    // /store/redeem path returned 404). Opens the Play Store app's
-    // redemption screen with the code pre-filled.
-    Linking.openURL(
-      `https://play.google.com/redeem?code=${encodeURIComponent(code)}`,
-    ).catch(() => {});
+  // After reading the promo guide, jump the selection to the 1-Month
+  // plan so the user just needs to tap the big SUBSCRIBE button.
+  const goToMonthlyWithPromo = () => {
+    setSelectedTier(
+      SUBSCRIPTION_TIERS.find((x) => x.id === "pro-1m") ?? SUBSCRIPTION_TIERS[0],
+    );
     setPromoOpen(false);
-    setPromoCode("");
   };
 
   // Selected tier — v8.12.69: defaults to the 3-Months plan to match
@@ -473,11 +438,13 @@ export default function VipModal({ visible, onClose }: Props) {
           ) : null}
         </View>
 
-        {/* v8.12.75 — Promo code input sheet. Campaign "promo-2026"
-            (Play Console: 7-day free trial, CUSTOM codes, 9 Sep –
-            31 Dec 2026). The user types/pastes the code here, then we
-            deep-link to the Play Store redeem page with the code
-            pre-filled — Google Play applies the free trial itself. */}
+        {/* v8.12.81 — Promo code guide sheet. Campaign "promo-2026"
+            (custom code, 7-day free trial, 9 Sep – 31 Dec 2026).
+            Custom codes can ONLY be redeemed inside the in-app
+            purchase flow (Google rule), so this sheet is a pure
+            step-by-step guide + a shortcut that selects the 1-Month
+            plan. Google Play enforces one redemption per account and
+            new-subscribers-only, so no extra in-app lock is needed. */}
         <Modal
           visible={promoOpen}
           transparent
@@ -492,71 +459,27 @@ export default function VipModal({ visible, onClose }: Props) {
               ]}
             >
               <Text style={[styles.promoTitle, { color: GOLD }]}>
-                Promo Code
+                Promo Code · 7-Day Free Trial
               </Text>
-              {promoRedeemed ? (
-                /* v8.12.76 — Device already redeemed a promo code. One
-                    redemption per device; cannot re-apply. */
-                <View style={{ alignItems: "center" }}>
-                  <Ionicons name="checkmark-circle" size={30} color="#10b981" />
-                  <Text
-                    style={[styles.promoHint, { color: colors.textPrimary, marginTop: 8 }]}
-                  >
-                    A promo code has already been redeemed on this device and
-                    your free trial is active. Each code can only be used once
-                    per device.
-                  </Text>
-                </View>
-              ) : (
-                <>
-                  <Text style={[styles.promoHint, { color: colors.textMuted }]}>
-                    How to redeem your 7-day free trial:{"\n"}
-                    1. Get the promo code from our website (link below).{"\n"}
-                    2. Enter the code here exactly as shown.{"\n"}
-                    3. Tap REDEEM ON PLAY STORE and confirm.{"\n"}
-                    One code per device · trial starts right after redeem.{"\n"}
-                    If the redeem page fails, just come back and try again.
-                  </Text>
-                  <TextInput
-                    value={promoCode}
-                    onChangeText={setPromoCode}
-                    placeholder="Enter your promo code"
-                    placeholderTextColor={colors.textMuted}
-                    // v8.12.77 — Google Play custom codes are
-                    // CASE-SENSITIVE (e.g. "CryptoStock-7D" must keep
-                    // its exact case). Do NOT force uppercase.
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    autoFocus
-                    testID="promo-code-input"
-                    style={[
-                      styles.promoInput,
-                      {
-                        backgroundColor: colors.surfaceAlt,
-                        borderColor: colors.border,
-                        color: colors.textPrimary,
-                      },
-                    ]}
-                  />
-                  <TouchableOpacity
-                    onPress={redeemPromo}
-                    disabled={!promoCode.trim()}
-                    style={[
-                      styles.promoRedeemBtn,
-                      { backgroundColor: GOLD, opacity: promoCode.trim() ? 1 : 0.5 },
-                    ]}
-                    testID="promo-redeem-button"
-                  >
-                    <Ionicons name="logo-google-playstore" size={15} color="#000" />
-                    <Text style={styles.promoRedeemText}>REDEEM ON PLAY STORE</Text>
-                  </TouchableOpacity>
-                </>
-              )}
+              <Text style={[styles.promoHint, { color: colors.textMuted }]}>
+                How to redeem:{"\n\n"}
+                1. Get the promo code from our website (button below).{"\n"}
+                2. Tap USE PROMO NOW — the 1 Month plan is selected for you.{"\n"}
+                3. Tap SUBSCRIBE 1 MONTH.{"\n"}
+                4. On the Google Play payment sheet, tap the arrow next to your payment method.{"\n"}
+                5. Choose Redeem code, enter the code exactly, and confirm.{"\n\n"}
+                Valid once per Google account · for new subscribers only.
+              </Text>
               <TouchableOpacity
-                onPress={() => {
-                  setPromoOpen(false);
-                  setPromoCode("");
-                }}
+                onPress={goToMonthlyWithPromo}
+                style={[styles.promoRedeemBtn, { backgroundColor: GOLD }]}
+                testID="promo-use-now-button"
+              >
+                <Ionicons name="pricetag" size={15} color="#000" />
+                <Text style={styles.promoRedeemText}>USE PROMO NOW</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setPromoOpen(false)}
                 style={styles.promoCancelBtn}
                 testID="promo-cancel-button"
               >

@@ -3,6 +3,12 @@
 ## Product Summary
 AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs, gold/silver, commodity, forex. Bilingual (ID/EN/RU/CN), premium unlock, chatroom, AI Market Brief, WR history.
 
+## v8.12.81 — Fix Promo Code: Custom Codes HANYA Bisa In-App
+- Root cause (dari dok resmi Google): **custom codes tidak bisa diredeem di play.google.com/redeem** (halaman itu hanya untuk gift card/one-time codes). Redeem custom code WAJIB lewat purchase sheet in-app: pilih plan → SUBSCRIBE → di payment sheet tap panah metode pembayaran → "Redeem code".
+- Sheet Promo Code dirombak menjadi panduan 5 langkah + tombol "USE PROMO NOW" (otomatis memilih plan 1 Month agar user tinggal tap SUBSCRIBE).
+- Deep-link redeem & pencatatan attempt per device DIHAPUS dari flow (Google sendiri menegakkan: 1× per akun + hanya untuk yang belum pernah subscribe).
+- Screenshot-verified: panduan tampil, USE PROMO NOW memilih 1 Month.
+
 ## v8.12.80 — Fix Kritis Promo Code (404 + Premature Lock)
 - FIX URL: redeem diarahkan ke URL resmi `https://play.google.com/redeem?code=...` (sebelumnya `/store/redeem` → 404 di device user).
 - FIX lock logic: pencatatan server kini diperlakukan sebagai ATTEMPT; sheet hanya terkunci bila attempt ADA **dan** entitlement premium AKTIF (isPremium) — bukti trial benar-benar jalan. Redeem gagal/batal → user bisa coba lagi.
