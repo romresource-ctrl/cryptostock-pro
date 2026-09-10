@@ -3,6 +3,11 @@
 ## Product Summary
 AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs, gold/silver, commodity, forex. Bilingual (ID/EN/RU/CN), premium unlock, chatroom, AI Market Brief, WR history.
 
+## v8.12.80 — Fix Kritis Promo Code (404 + Premature Lock)
+- FIX URL: redeem diarahkan ke URL resmi `https://play.google.com/redeem?code=...` (sebelumnya `/store/redeem` → 404 di device user).
+- FIX lock logic: pencatatan server kini diperlakukan sebagai ATTEMPT; sheet hanya terkunci bila attempt ADA **dan** entitlement premium AKTIF (isPremium) — bukti trial benar-benar jalan. Redeem gagal/batal → user bisa coba lagi.
+- Pesan sheet diperbarui: lock = "trial is active"; hint ditambah "If the redeem page fails, just come back and try again."
+
 ## v8.12.78 — Tombol Website "Get Promo Code & Redeem Guide"
 - Tombol baru (ikon globe) tepat di bawah baris email di paywall → membuka website resmi `https://cryptostock-pro.emergent.host` tempat user mendapatkan promo code + panduan redeem.
 - Sheet Promo Code kini berisi instruksi redeem 7-day trial langkah-demi-langkah (ambil kode → ketik persis → REDEEM ON PLAY STORE → konfirmasi).

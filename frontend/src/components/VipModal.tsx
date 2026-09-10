@@ -58,31 +58,36 @@ export default function VipModal({ visible, onClose }: Props) {
     (async () => {
       const id = deviceIdRef.current || (await getDeviceId().catch(() => ""));
       deviceIdRef.current = id;
-      const redeemed = id ? await checkPromoRedeemed(id) : false;
-      if (alive) setPromoRedeemed(redeemed);
+      const attempted = id ? await checkPromoRedeemed(id) : false;
+      if (!alive) return;
+      // v8.12.80 — Lock ONLY when the redeem actually SUCCEEDED, proven
+      // by an active premium entitlement on this device. A mere attempt
+      // (user tapped REDEEM but the Play page failed / 404 / cancelled)
+      // must NOT lock them out — they can simply try again.
+      setPromoRedeemed(attempted && isPremium);
     })();
     return () => {
       alive = false;
     };
-  }, [promoOpen]);
+  }, [promoOpen, isPremium]);
 
   const redeemPromo = async () => {
     const code = promoCode.trim();
     if (!code || promoRedeemed) return;
-    // v8.12.76 — Record the redemption FIRST so the device lock is in
-    // place before we hand the user to the Play Store redeem page.
-    // Google Play itself also limits the custom code to one redemption
-    // per Play account, so both layers stack.
     const id = deviceIdRef.current || (await getDeviceId().catch(() => ""));
     if (id) {
       deviceIdRef.current = id;
+      // v8.12.80 — Record an ATTEMPT (not a success). The lock engages
+      // only once the trial is confirmed active (see effect above).
+      // Google Play additionally limits the custom code to one
+      // redemption per Play account, so abuse is still impossible.
       await markPromoRedeemed(id, code);
-      setPromoRedeemed(true);
     }
-    // Play Store redemption page with the code pre-filled. On Android
-    // this opens the Play Store app directly on the redeem screen.
+    // v8.12.80 — OFFICIAL Google Play redeem URL (the previous
+    // /store/redeem path returned 404). Opens the Play Store app's
+    // redemption screen with the code pre-filled.
     Linking.openURL(
-      `https://play.google.com/store/redeem?code=${encodeURIComponent(code)}`,
+      `https://play.google.com/redeem?code=${encodeURIComponent(code)}`,
     ).catch(() => {});
     setPromoOpen(false);
     setPromoCode("");
@@ -497,8 +502,9 @@ export default function VipModal({ visible, onClose }: Props) {
                   <Text
                     style={[styles.promoHint, { color: colors.textPrimary, marginTop: 8 }]}
                   >
-                    A promo code has already been redeemed on this device. Each
-                    code can only be used once per device.
+                    A promo code has already been redeemed on this device and
+                    your free trial is active. Each code can only be used once
+                    per device.
                   </Text>
                 </View>
               ) : (
@@ -508,7 +514,8 @@ export default function VipModal({ visible, onClose }: Props) {
                     1. Get the promo code from our website (link below).{"\n"}
                     2. Enter the code here exactly as shown.{"\n"}
                     3. Tap REDEEM ON PLAY STORE and confirm.{"\n"}
-                    One code per device · trial starts right after redeem.
+                    One code per device · trial starts right after redeem.{"\n"}
+                    If the redeem page fails, just come back and try again.
                   </Text>
                   <TextInput
                     value={promoCode}
