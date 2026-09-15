@@ -29,9 +29,8 @@ type Props = {
 
 const CONTACT_EMAIL = "cryptostockapps@gmail.com";
 const GOLD = "#F0B90B";
-// v8.12.78 — Official website. Users land here to GET the promo code
-// and read the step-by-step redeem guide for the 7-day free trial.
-const WEBSITE_URL = "https://cryptostockpro.my.canva.site";
+// v8.12.83 — Official website (new ASO/SEO-optimized landing page).
+const WEBSITE_URL = "https://aicryptostockpro.my.canva.site";
 
 export default function VipModal({ visible, onClose }: Props) {
   const { colors } = useTheme();

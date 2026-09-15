@@ -3,6 +3,9 @@
 ## Product Summary
 AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs, gold/silver, commodity, forex. Bilingual (ID/EN/RU/CN), premium unlock, chatroom, AI Market Brief, WR history.
 
+## v8.12.83 — Website Landing Page Baru (ASO/SEO)
+- Tombol "Visit Our Website" di paywall kini mengarah ke landing page baru **https://aicryptostockpro.my.canva.site** (menggantikan cryptostockpro.my.canva.site). URL terverifikasi aktif (HTTP 200).
+
 ## v8.12.82 — Hapus Fitur Promo Code
 - Tombol INPUT PROMO CODE + sheet panduan DIHAPUS dari paywall (keputusan user: trial promo 7D kalah menarik dari trial bawaan 14D pada plan 1m/3m/6m/12m, sehingga promo code tidak bernilai).
 - Tombol website di bawah email tetap ada, label dinetralkan menjadi "Visit Our Website" → https://cryptostockpro.my.canva.site.
