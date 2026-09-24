@@ -569,7 +569,8 @@ def _build_signal(snapshot: dict, tr: dict | None = None, *, min_conf: int = 85,
     ticker = snapshot.get("ticker", {}) or {}
     # v9.0.0 — Pass the caller's trader profile so the dashboard computes
     # the SAME signal the detail page shows (single source of truth).
-    sig = compute_signal(candles, market, profile=profile)
+    # v9.1.4 — Anchor level ke harga live ticker (arah tetap candle tutup).
+    sig = compute_signal(candles, market, profile=profile, live_price=ticker.get("price"))
     spark = [c["close"] for c in candles[-30:]] if candles else []
     tr_mini = TrackRecordMini(**(tr or {}))
     wr = tr_mini.wr_30d
@@ -1061,7 +1062,10 @@ async def asset_chart(
         raise HTTPException(404, "Symbol not found or upstream data unavailable")
     # v8.12.57 — Pass trader profile so v3 formula tunes EMA / RSI /
     # confidence gate per user preference (crypto / forex / gold only).
-    sig = compute_signal(snap.get("candles", []), eff_market, profile=profile)
+    sig = compute_signal(
+        snap.get("candles", []), eff_market, profile=profile,
+        live_price=(snap.get("ticker", {}) or {}).get("price"),
+    )
     # v8.2.2 — Enrich raw signal with risk/reward metrics so the detail
     # page header renders the Risk badge. `compute_signal` returns a
     # plain dict and doesn't go through `_build_signal`, so we compute
@@ -1124,7 +1128,7 @@ async def asset_analyze(
     candles = snap.get("candles", [])
     ticker = snap.get("ticker", {}) or {}
     price = ticker.get("price") or (candles[-1]["close"] if candles else None)
-    technical = compute_signal(candles, eff_market, profile=profile)
+    technical = compute_signal(candles, eff_market, profile=profile, live_price=price)
     if price is None:
         raise HTTPException(503, "Price unavailable")
     news = await get_news_for_symbol(symbol, eff_market, limit=8)

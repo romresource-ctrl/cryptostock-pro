@@ -938,3 +938,53 @@ metadata:
   version: "9.1.2"
   test_sequence: 30
   run_ui: false
+
+# ============================================================
+# v9.1.4 — Fix indikator "ngawur" (EMA — / MACD 0.0000) di mesin VWAP
+# ============================================================
+backend:
+  - task: "Panel indikator lengkap di mesin VWAP + level anchor live"
+    implemented: true
+    working: true
+    file: "/app/backend/indicators.py, /app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          User murka: "indikator ngawur". Dua bug:
+          1. Mesin VWAP tidak mengirim ema20/ema50/macd_hist → panel
+             Sinyal Teknikal menampilkan "—" dan "0.0000". FIX: hitung
+             EMA (window profil) + MACD hist di jalur VWAP. VERIFIED:
+             LINK scalper → EMA20 13.289 / EMA50 13.173 / MACD 0.0055.
+          2. Level entry/SL/TP dihitung dari candle TUTUP → saat harga
+             bergerak cepat, semua TP berada di sisi salah vs harga live
+             (LINK: TP 13.39-13.45 vs live 13.31 untuk SHORT). FIX:
+             compute_signal terima live_price (ticker) → level di-anchor
+             ke harga realtime (guard ±8 ATR). Arah sinyal tetap dari
+             candle tutup (stabilitas terjaga).
+frontend:
+  - task: "TargetProfit pakai ladder backend TP1/TP2/TP3 apa adanya"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/TargetProfit.tsx, /app/frontend/app/asset/[market]/[symbol].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Kartu Target Profit menginterpolasi TP1/TP2 sendiri (40%/70%
+          dari backend TP yang dianggap TP3) → angka berbeda dengan kartu
+          Sinyal Teknikal & garis chart. FIX: props takeProfit2/3 baru;
+          bila ladder backend valid & berurutan → tampilkan apa adanya;
+          R:R kini terhadap TP1. Fallback interpolasi tetap untuk kartu
+          AI consensus.
+metadata:
+  created_by: "main_agent"
+  version: "9.1.3"
+  test_sequence: 31
+  run_ui: false

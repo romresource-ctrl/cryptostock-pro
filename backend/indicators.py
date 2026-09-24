@@ -461,6 +461,7 @@ def _compute_vwap_signal(
     engine: str,
     profile: str,
     dev_threshold_pct: float = 1.5,
+    live_price: float | None = None,
 ) -> dict[str, Any] | None:
     """Mesin sinyal VWAP sesuai formula user (SCALPER / INTRADAY / SWING).
 
@@ -623,11 +624,23 @@ def _compute_vwap_signal(
     sl_mult = float(prof["sl_atr_mult"])
     tp_ladder = tuple(prof.get("tp_ladder", (1.0, 2.0, 3.0)))
     peaks, valleys = _find_swings(highs, lows, window=10)
-    levels = _compute_vwap_levels(action, price, atr, peaks, valleys, market, sl_mult, tp_ladder)
-    buy_levels = _compute_vwap_levels("BUY", price, atr, peaks, valleys, market, sl_mult, tp_ladder)
-    sell_levels = _compute_vwap_levels("SELL", price, atr, peaks, valleys, market, sl_mult, tp_ladder)
+    # v9.1.4 — Anchor level ke harga LIVE (trigger tetap dari candle tutup).
+    _anchor = price
+    if live_price and live_price > 0 and atr > 0 and abs(live_price - price) <= atr * 8:
+        _anchor = float(live_price)
+    levels = _compute_vwap_levels(action, _anchor, atr, peaks, valleys, market, sl_mult, tp_ladder)
+    buy_levels = _compute_vwap_levels("BUY", _anchor, atr, peaks, valleys, market, sl_mult, tp_ladder)
+    sell_levels = _compute_vwap_levels("SELL", _anchor, atr, peaks, valleys, market, sl_mult, tp_ladder)
 
     rsi = _rsi(closes, 14)
+    # v9.1.4 — Panel indikator detail page membaca ema20/ema50/macd_hist.
+    # Mesin VWAP sebelumnya TIDAK mengirim kunci ini → tampil "—" dan
+    # "0.0000" di aplikasi (terlihat ngawur bagi user). Hitung dengan
+    # window sesuai profil agar konsisten dengan mesin Confluence.
+    _pf = get_trader_profile(profile)
+    _ef = _ema(closes, int(_pf["ema_fast"]))
+    _es = _ema(closes, int(_pf["ema_slow"]))
+    _h = _macd_hist_recent(closes, 3)
     regime_info = _detect_regime(closes, highs, lows) if market == "crypto" else {"regime": "UNKNOWN"}
 
     return {
@@ -636,6 +649,9 @@ def _compute_vwap_signal(
         "confidence": int(confidence),
         "indicators": {
             "rsi": round(rsi, 2) if rsi is not None else None,
+            "ema20": round(_ef[-1], 6) if _ef else None,
+            "ema50": round(_es[-1], 6) if _es else None,
+            "macd_hist": round(_h[-1], 6) if _h else None,
             "price": round(price, 8),
             "atr": round(atr, 6),
             "vwap": round(vwap, 8),
@@ -799,6 +815,7 @@ def compute_signal(
     candles: list[dict[str, Any]],
     market: str,
     profile: str | None = None,
+    live_price: float | None = None,
     min_score: int = 4,
     htf_gate: bool = False,
     zone_cap: float = 1.5,
@@ -845,7 +862,8 @@ def compute_signal(
     # Longterm memang tidak ada di _PROFILE_TO_VWAP (selalu Confluence).
     if profile in _PROFILE_TO_VWAP:
         _vsig = _compute_vwap_signal(
-            candles, market, _PROFILE_TO_VWAP[profile], profile
+            candles, market, _PROFILE_TO_VWAP[profile], profile,
+            live_price=live_price,
         )
         if _vsig is not None:
             return _vsig
@@ -1116,6 +1134,16 @@ def compute_signal(
         )
         confidence = 45
 
+    # v9.1.4 — LEVEL ANCHORING ke harga LIVE. Arah sinyal tetap diputuskan
+    # dari candle TUTUP (stabilitas), tetapi entry/SL/TP dihitung dari
+    # harga realtime agar sinkron dengan yang user lihat di layar.
+    # Tanpa ini, saat harga bergerak cepat (mis. LINK pump +8%), seluruh
+    # ladder TP bisa berada di SISI YANG SALAH dari harga live.
+    # Guard: abaikan live_price yang tidak masuk akal (>8 ATR dari close).
+    _anchor = price
+    if live_price and live_price > 0 and atr > 0 and abs(live_price - price) <= atr * 8:
+        _anchor = float(live_price)
+
     # Swing metrics for display + level anchoring.
     peaks, valleys = _find_swings(highs, lows, window=10)
     # Regime detector kept as DISPLAY context only (crypto) — it no longer
@@ -1123,7 +1151,7 @@ def compute_signal(
     regime_info = _detect_regime(closes, highs, lows) if market == "crypto" else {"regime": "UNKNOWN"}
     regime = regime_info.get("regime", "UNKNOWN")
     levels = _compute_deep_levels(
-        action, price, atr, peaks, valleys,
+        action, _anchor, atr, peaks, valleys,
         market=market, regime=regime,
         sl_mult=_sl_atr_mult, tp_ladder=_tp_ladder,
     )
@@ -1134,12 +1162,12 @@ def compute_signal(
     # Pre-compute levels for both BUY and SELL sides so the AI ensemble
     # can pick either direction with the same deterministic formula.
     buy_levels = _compute_deep_levels(
-        "BUY", price, atr, peaks, valleys,
+        "BUY", _anchor, atr, peaks, valleys,
         market=market, regime=regime,
         sl_mult=_sl_atr_mult, tp_ladder=_tp_ladder,
     )
     sell_levels = _compute_deep_levels(
-        "SELL", price, atr, peaks, valleys,
+        "SELL", _anchor, atr, peaks, valleys,
         market=market, regime=regime,
         sl_mult=_sl_atr_mult, tp_ladder=_tp_ladder,
     )

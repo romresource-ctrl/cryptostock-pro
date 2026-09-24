@@ -22,6 +22,11 @@ type Props = {
   // formula.
   stopLoss?: number | null;
   takeProfit?: number | null;
+  // v9.1.4 — Ladder TP lengkap dari backend (1R / 2R / 3R). Bila tersedia,
+  // kartu menampilkan nilai backend APA ADANYA (tidak interpolasi lagi)
+  // agar Target 1/2/3 persis sama dengan kartu Sinyal Teknikal & chart.
+  takeProfit2?: number | null;
+  takeProfit3?: number | null;
   translations?: {
     title?: string;
     entry?: string;
@@ -70,6 +75,8 @@ export default function TargetProfit({
   label,
   stopLoss,
   takeProfit,
+  takeProfit2,
+  takeProfit3,
   translations,
 }: Props) {
   const { colors } = useTheme();
@@ -113,25 +120,42 @@ export default function TargetProfit({
       backendTp != null &&
       ((isBuy && backendTp > entryPrice) || (isSell && backendTp < entryPrice));
 
-    const tp3 = validBackendTp
-      ? (backendTp as number)
-      : entryPrice + dir * atr * 4.0;
+    // v9.1.4 — Jika backend mengirim ladder lengkap (TP1/TP2/TP3) dan
+    // urutannya benar di sisi yang benar dari entry, pakai APA ADANYA.
+    const t1b = takeProfit != null && Number.isFinite(takeProfit) ? takeProfit : null;
+    const t2b = takeProfit2 != null && Number.isFinite(takeProfit2) ? takeProfit2 : null;
+    const t3b = takeProfit3 != null && Number.isFinite(takeProfit3) ? takeProfit3 : null;
+    const ladderValid =
+      t1b != null && t2b != null && t3b != null &&
+      (isBuy
+        ? t1b > entryPrice && t2b > t1b && t3b > t2b
+        : t1b < entryPrice && t2b < t1b && t3b < t2b);
 
-    // Interpolate TP1 / TP2 as fractions of the full move to TP3, so
-    // TP1 < TP2 < TP3 always holds and all three sit on the correct
-    // side of entry.
-    const tpMove = tp3 - entryPrice;
-    const tp1 = entryPrice + tpMove * 0.4;
-    const tp2 = entryPrice + tpMove * 0.7;
+    let tp1: number, tp2: number, tp3: number;
+    if (ladderValid) {
+      tp1 = t1b as number;
+      tp2 = t2b as number;
+      tp3 = t3b as number;
+    } else {
+      // Legacy fallback: backend TP dianggap TP3, interpolasi 40%/70%.
+      const tp3f = validBackendTp
+        ? (backendTp as number)
+        : entryPrice + dir * atr * 4.0;
+      const tpMove = tp3f - entryPrice;
+      tp1 = entryPrice + tpMove * 0.4;
+      tp2 = entryPrice + tpMove * 0.7;
+      tp3 = tp3f;
+    }
 
     // SL: prefer backend, else 1× ATR the opposite way.
     const sl = backendSl != null ? backendSl : entryPrice - dir * atr;
 
     const riskPerUnit = Math.abs(entryPrice - sl) || 1;
-    const rewardPerUnit = Math.abs(tp2 - entryPrice);
+    // R:R ditampilkan terhadap TP1 (target pertama yang paling realistis).
+    const rewardPerUnit = Math.abs(tp1 - entryPrice);
     const rr = rewardPerUnit / riskPerUnit;
     return { atr, sl, tp1, tp2, tp3, rr, isBuy };
-  }, [action, entryPrice, candles, stopLoss, takeProfit]);
+  }, [action, entryPrice, candles, stopLoss, takeProfit, takeProfit2, takeProfit3]);
 
   if (!levels) {
     return (

@@ -904,6 +904,8 @@ export default function AssetDetail() {
                   label={sig.label}
                   stopLoss={sig.stop_loss}
                   takeProfit={sig.take_profit}
+                  takeProfit2={(sig as any).take_profit_2 ?? null}
+                  takeProfit3={(sig as any).take_profit_3 ?? null}
                 />
               </View>
             ) : null}
