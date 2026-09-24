@@ -8,48 +8,57 @@ from __future__ import annotations
 from typing import Any
 
 
-# v8.12.57 — Trader Profile presets (BTC Trading Formula v2 upgrade).
+# v9.0.0 — Trader Profile presets ("Confluence" total overhaul).
 # Applied ONLY for volatile continuous-market instruments (crypto, forex,
 # gold/silver). Stocks/commodity keep the market-neutral defaults because
 # they trade in sessions and exhibit different volatility patterns.
 #
-# Each preset tunes:
-#   ema_fast / ema_slow    — trend detection window
-#   min_confidence         — signal quality gate (higher = fewer but stronger signals)
-#   sl_atr_mult            — Stop-Loss distance as multiple of ATR
-#   htf_required           — must higher-timeframe agree (v2 MTF filter)
-#   description            — shown in the picker modal
+# A profile ONLY tunes the trading-horizon parameters:
+#   ema_fast / ema_slow  — trend-structure windows
+#   require_ema200       — demand EMA200 alignment too (swing/longterm)
+#   sl_atr_mult          — Stop-Loss distance as multiple of ATR
+#   tp_ladder            — TP1/TP2/TP3 as multiples of risk (R).
+#                          v9.0.0 backtest (30d, 9 aset, 302 trade):
+#                          TP1=1.0R → WR 57.1%, +0.136R/trade (TERBAIK)
+#                          TP1=1.5R → WR 42.1%, +0.048R/trade
+#                          → ladder (1.0, 2.0, 3.0): TP1 bank cepat,
+#                            TP2/TP3 untuk runner.
+#   description          — shown in the picker modal
+#
+# It NEVER forces or vetoes a signal direction. The v3 confidence gate
+# that downgraded valid signals to HOLD was the root cause of the
+# "dashboard BUY vs detail SIDEWAYS" desync and is permanently removed.
 TRADER_PROFILES: dict[str, dict[str, Any]] = {
     "scalper": {
-        "ema_fast": 5,
-        "ema_slow": 13,
-        "min_confidence": 55,
+        "ema_fast": 9,
+        "ema_slow": 21,
+        "require_ema200": False,
         "sl_atr_mult": 1.0,
-        "htf_required": False,
+        "tp_ladder": (1.0, 2.0, 3.0),
         "description": "5m–15m intraday moves",
     },
-    "day": {  # default — matches legacy v8.x behaviour
+    "day": {  # default — balanced horizon
         "ema_fast": 20,
         "ema_slow": 50,
-        "min_confidence": 65,
+        "require_ema200": False,
         "sl_atr_mult": 1.5,
-        "htf_required": False,
+        "tp_ladder": (1.0, 2.0, 3.0),
         "description": "1h–4h day trading",
     },
     "swing": {
         "ema_fast": 20,
         "ema_slow": 50,
-        "min_confidence": 75,
+        "require_ema200": True,
         "sl_atr_mult": 2.0,
-        "htf_required": True,
+        "tp_ladder": (1.0, 2.0, 3.0),
         "description": "4h–24h multi-day",
     },
     "longterm": {
         "ema_fast": 50,
-        "ema_slow": 200,
-        "min_confidence": 80,
-        "sl_atr_mult": 3.0,
-        "htf_required": True,
+        "ema_slow": 100,
+        "require_ema200": True,
+        "sl_atr_mult": 2.5,
+        "tp_ladder": (1.0, 2.0, 3.0),
         "description": "1D+ position hold",
     },
 }
@@ -118,6 +127,36 @@ def _macd(closes: list[float]) -> tuple[float, float, float] | None:
     sig = signal_line[-1]
     hist = macd - sig
     return macd, sig, hist
+
+
+def _macd_hist_recent(closes: list[float], n: int = 3) -> list[float] | None:
+    """v9.0.0 — Return the last `n` MACD histogram values (oldest → newest)
+    so the confluence engine can detect both the SIGN and the DIRECTION of
+    momentum (rising vs falling histogram)."""
+    if len(closes) < 35:
+        return None
+    ema12 = _ema(closes, 12)
+    ema26 = _ema(closes, 26)
+    macd_line = [a - b for a, b in zip(ema12, ema26)]
+    signal_line = _ema(macd_line[-30:], 9)
+    if len(signal_line) < n or len(macd_line) < n:
+        return None
+    return [m - s for m, s in zip(macd_line[-n:], signal_line[-n:])]
+
+
+def _atr14(highs: list[float], lows: list[float], closes: list[float], period: int = 14) -> float | None:
+    """v9.0.0 — Simple ATR over the last `period` true ranges."""
+    if len(closes) < period + 1:
+        return None
+    trs: list[float] = []
+    for i in range(len(closes) - period, len(closes)):
+        tr = max(
+            highs[i] - lows[i],
+            abs(highs[i] - closes[i - 1]),
+            abs(lows[i] - closes[i - 1]),
+        )
+        trs.append(tr)
+    return sum(trs) / len(trs) if trs else None
 
 
 # v8.1.6 — Swing-based deep entry / take profit / stop loss.
@@ -218,19 +257,6 @@ def _detect_regime(closes: list[float], highs: list[float], lows: list[float],
     return {"regime": regime, "atr_pct_now": pct_now, "atr_pct_avg": avg, "high_vol": high_vol}
 
 
-# v8.7.23 — Regime → parameter preset (buffer × ATR for entry band,
-# SL multiplier × ATR for stop distance). BEAR gets tighter entry (avoid
-# chasing lower highs) and wider SL (survive volatility). BEAR_CAPITULATION
-# is even more defensive.
-REGIME_PRESETS: dict[str, dict[str, float]] = {
-    "BULL":              {"entry_buffer_mult": 0.25, "sl_atr_mult": 1.5},
-    "SIDEWAYS":          {"entry_buffer_mult": 0.25, "sl_atr_mult": 1.5},
-    "BEAR":              {"entry_buffer_mult": 0.20, "sl_atr_mult": 2.0},
-    "BEAR_CAPITULATION": {"entry_buffer_mult": 0.15, "sl_atr_mult": 2.5},
-    "UNKNOWN":           {"entry_buffer_mult": 0.25, "sl_atr_mult": 1.5},
-}
-
-
 def _compute_deep_levels(
     action: str,
     price: float,
@@ -239,16 +265,26 @@ def _compute_deep_levels(
     valleys: list[float],
     market: str = "crypto",
     regime: str = "UNKNOWN",
-) -> dict[str, float]:
-    """Return entry/SL/TP using tier-based deep-entry formula.
+    sl_mult: float = 1.5,
+    tp_ladder: tuple[float, float, float] = (1.0, 2.0, 3.0),
+) -> dict[str, Any]:
+    """v9.0.0 — ATR-laddered entries with minimum R:R 1:1.5.
 
-    v8.2.1 — Split formula per market class:
-      - Crypto: swing-based deep entry (unchanged)
-      - Non-crypto (stock/ETF/gold/commodity/forex): percentage-based
-        because these markets are much less volatile than crypto and
-        entries should be close to current price.
-        For BUY: entry range 0.1%-0.5% below price; TP +3%; SL -2%
-        For SELL: entry range 0.1%-0.5% above price; TP -3%; SL +2%
+    Entry tiers (BUY; SELL is the exact mirror):
+      aggressive = price − 0.2×ATR   (almost market price)
+      moderate   = price − 0.5×ATR
+      deep       = price − 1.0×ATR   (default card, safest)
+    SL  = entry − sl_mult×ATR        (per trader profile)
+    TPn = entry + ladder[n] × risk   (default ladder 1R / 2R / 3R)
+
+    Stock-like markets keep a tighter percentage variant because their
+    session-based volatility is a fraction of crypto's: entries sit
+    0.1/0.3/0.5% from price, risk = 1.5% of entry, TP ladder identical.
+
+    HOLD returns None for every level (no fake ladders — v8.12.28 lesson:
+    informational zones on HOLD looked like trade suggestions).
+    `regime` is accepted for caller compatibility but no longer alters the
+    levels — the profile's sl_mult / tp_ladder own that job now.
     """
     recent_peaks = peaks[-5:] if len(peaks) >= 5 else peaks
     recent_valleys = valleys[-5:] if len(valleys) >= 5 else valleys
@@ -260,34 +296,34 @@ def _compute_deep_levels(
 
     avg_peak = _safe_avg(last3_peaks, price * 1.05)
     avg_valley = _safe_avg(last3_valleys, price * 0.95)
-    lowest_valley = min(recent_valleys) if recent_valleys else price * 0.93
-    highest_peak = max(recent_peaks) if recent_peaks else price * 1.07
 
-    # v8.2.1 — Non-crypto markets use percentage formula (stocks are
-    # much less volatile than crypto, so swing-based entries would be
-    # unrealistically far from current price).
     is_stocklike = market in ("stock_id", "stock_us", "world_stocks", "etf",
                               "gold_silver", "commodity", "forex")
     if is_stocklike and action in ("BUY", "SELL"):
-        # R:R = 1:1.5 per user spec — 2% risk, 3% reward.
+        # R:R 1:1.5 minimum — 1.5% risk of entry, TP ladder from profile.
+        risk_pct = 0.015
         if action == "BUY":
             entry_deep = price * 0.995        # 0.5% below (safest wait)
             entry_moderate = price * 0.997    # 0.3% below (balanced)
             entry_aggressive = price * 0.999  # 0.1% below (aggressive)
-            take_profit = price * 1.030       # +3%
-            stop_loss = entry_deep * 0.980    # -2% from entry
-            sl_deep = entry_deep * 0.980
-            sl_moderate = entry_moderate * 0.980
-            sl_aggressive = entry_aggressive * 0.980
+            risk = entry_deep * risk_pct
+            sl_deep = entry_deep - risk
+            sl_moderate = entry_moderate - entry_moderate * risk_pct
+            sl_aggressive = entry_aggressive - entry_aggressive * risk_pct
+            take_profit = entry_deep + risk * tp_ladder[0]
+            take_profit_2 = entry_deep + risk * tp_ladder[1]
+            take_profit_3 = entry_deep + risk * tp_ladder[2]
         else:  # SELL
             entry_deep = price * 1.005        # 0.5% above
             entry_moderate = price * 1.003
             entry_aggressive = price * 1.001
-            take_profit = price * 0.970       # -3%
-            stop_loss = entry_deep * 1.020    # +2% from entry
-            sl_deep = entry_deep * 1.020
-            sl_moderate = entry_moderate * 1.020
-            sl_aggressive = entry_aggressive * 1.020
+            risk = entry_deep * risk_pct
+            sl_deep = entry_deep + risk
+            sl_moderate = entry_moderate + entry_moderate * risk_pct
+            sl_aggressive = entry_aggressive + entry_aggressive * risk_pct
+            take_profit = entry_deep - risk * tp_ladder[0]
+            take_profit_2 = entry_deep - risk * tp_ladder[1]
+            take_profit_3 = entry_deep - risk * tp_ladder[2]
         band = price * 0.002                  # ±0.2% zone for stock ranges
         return {
             "entry": entry_deep,
@@ -299,73 +335,54 @@ def _compute_deep_levels(
             "entry_moderate_high": entry_moderate + band,
             "entry_aggressive_low": entry_aggressive - band,
             "entry_aggressive_high": entry_aggressive + band,
-            "stop_loss": stop_loss,
+            "stop_loss": sl_deep,
             "stop_loss_moderate": sl_moderate,
             "stop_loss_aggressive": sl_aggressive,
             "take_profit": take_profit,
-            # v8.7.23 — stocklike doesn't use the regime R:R ladder; frontend
-            # falls back to its own derived tp2/tp3 when these are None.
-            "take_profit_2": None,
-            "take_profit_3": None,
+            "take_profit_2": take_profit_2,
+            "take_profit_3": take_profit_3,
             "avg_peak": avg_peak,
             "avg_valley": avg_valley,
         }
 
     if action == "BUY":
-        # v8.7.23 — Regime-aware crypto BUY (per user's btc_trading_formula).
-        # entry_deep = price − buffer×ATR, SL = entry − sl_mult×ATR,
-        # risk = entry − SL, TP1/2/3 = 1×/2×/3× risk (R:R 1:1, 1:2, 1:3).
-        # Preset buffer/sl_mult varies by regime (BEAR gets tighter buffer
-        # + wider SL). Falls back to swing anchors if ATR is degenerate.
-        preset = REGIME_PRESETS.get(regime, REGIME_PRESETS["UNKNOWN"])
-        buf = atr * preset["entry_buffer_mult"]
-        sl_dist = atr * preset["sl_atr_mult"]
-        entry_deep = price - buf
-        entry_moderate = price
-        entry_aggressive = price + buf * 0.5
-        band = buf
-        stop_loss = entry_deep - sl_dist
-        risk = max(entry_deep - stop_loss, price * 0.005)
-        take_profit = entry_deep + risk * 1.0    # TP-1 = 1R
-        take_profit_2 = entry_deep + risk * 2.0  # TP-2 = 2R
-        take_profit_3 = entry_deep + risk * 3.0  # TP-3 = 3R
-        sl_deep = stop_loss
-        sl_moderate = entry_moderate - sl_dist
-        sl_aggressive = entry_aggressive - sl_dist
+        # v9.0.0 — Deep-entry ladder anchored on ATR. Entry sits BELOW
+        # current price so users buy the pullback, not the top.
+        entry_deep = price - atr * 1.0
+        entry_moderate = price - atr * 0.5
+        entry_aggressive = price - atr * 0.2
+        band = atr * 0.25
+        sl_deep = entry_deep - atr * sl_mult
+        sl_moderate = entry_moderate - atr * sl_mult
+        sl_aggressive = entry_aggressive - atr * sl_mult
+        risk = max(entry_deep - sl_deep, price * 0.005)
+        take_profit = entry_deep + risk * tp_ladder[0]     # TP-1 = 1.5R
+        take_profit_2 = entry_deep + risk * tp_ladder[1]   # TP-2 = 2.5R
+        take_profit_3 = entry_deep + risk * tp_ladder[2]   # TP-3 = 3.5R
     elif action == "SELL":
-        # v8.7.23 — Regime-aware crypto SELL (mirror of BUY).
-        preset = REGIME_PRESETS.get(regime, REGIME_PRESETS["UNKNOWN"])
-        buf = atr * preset["entry_buffer_mult"]
-        sl_dist = atr * preset["sl_atr_mult"]
-        entry_deep = price + buf
-        entry_moderate = price
-        entry_aggressive = price - buf * 0.5
-        band = buf
-        stop_loss = entry_deep + sl_dist
-        risk = max(stop_loss - entry_deep, price * 0.005)
-        take_profit = entry_deep - risk * 1.0
-        take_profit_2 = entry_deep - risk * 2.0
-        take_profit_3 = entry_deep - risk * 3.0
-        sl_deep = stop_loss
-        sl_moderate = entry_moderate + sl_dist
-        sl_aggressive = entry_aggressive + sl_dist
+        # v9.0.0 — Mirror of BUY: entry sits ABOVE current price.
+        entry_deep = price + atr * 1.0
+        entry_moderate = price + atr * 0.5
+        entry_aggressive = price + atr * 0.2
+        band = atr * 0.25
+        sl_deep = entry_deep + atr * sl_mult
+        sl_moderate = entry_moderate + atr * sl_mult
+        sl_aggressive = entry_aggressive + atr * sl_mult
+        risk = max(sl_deep - entry_deep, price * 0.005)
+        take_profit = entry_deep - risk * tp_ladder[0]
+        take_profit_2 = entry_deep - risk * tp_ladder[1]
+        take_profit_3 = entry_deep - risk * tp_ladder[2]
     else:  # HOLD
-        # v8.12.28 — HOLD signals no longer emit entry/SL/TP levels.
-        # Reason: users reported that the previous "informational dip-buy
-        # zone" (entry below price + TP above + SL below entry) LOOKED
-        # exactly like a BUY LONG suggestion — so they placed the trade
-        # anyway. Now HOLD returns null for every level and the frontend
-        # can render a clean "No entry — market indecisive, tunggu
-        # konfirmasi" state instead of a fake ladder.
+        # v8.12.28 — HOLD signals emit NO entry/SL/TP levels so the UI can
+        # render a clean "no trade" state instead of a fake ladder.
         entry_deep = None
         entry_moderate = None
         entry_aggressive = None
         band = 0.0
+        sl_deep = sl_moderate = sl_aggressive = None
         take_profit = None
         take_profit_2 = None
         take_profit_3 = None
-        stop_loss = None
-        sl_deep = sl_moderate = sl_aggressive = None
 
     # Helper to safely apply an offset when the base value may be None (HOLD).
     def _off(base, delta):
@@ -381,7 +398,7 @@ def _compute_deep_levels(
         "entry_moderate_high": _off(entry_moderate, band),
         "entry_aggressive_low": _off(entry_aggressive, -band),
         "entry_aggressive_high": _off(entry_aggressive, band),
-        "stop_loss": stop_loss,
+        "stop_loss": sl_deep,
         "stop_loss_moderate": sl_moderate,
         "stop_loss_aggressive": sl_aggressive,
         "take_profit": take_profit,
@@ -392,23 +409,384 @@ def _compute_deep_levels(
     }
 
 
+
+# ============================================================
+# v9.1.0 — VWAP Session Engine (formula dari user untuk profile selector)
+# ============================================================
+# Dipakai saat user memilih profile scalper / day(=intraday) / swing.
+# Profile "longterm" tetap memakai mesin Confluence v9.0 (EMA200-based)
+# karena VWAP session tidak relevan untuk position trading.
+_PROFILE_TO_VWAP = {"scalper": "SCALPER", "day": "INTRADAY", "swing": "SWING"}
+
+_VWAP_BOX_LEN = {"SCALPER": 10, "INTRADAY": 20, "SWING": 50}
+
+
+def _vwap_session_series(candles: list[dict[str, Any]]) -> list[float]:
+    """Anchored VWAP dengan reset otomatis setiap sesi baru.
+
+    Sesi baru terdeteksi saat tanggal UTC berganti (crypto 24/7) — untuk
+    pasar saham, sesi trading (mis. NYSE 13:30-20:00 UTC) tetap berada
+    dalam satu tanggal UTC sehingga reset harian UTC valid sebagai proxy.
+    """
+    import datetime as _dt
+
+    vwaps: list[float] = []
+    cum_pv = 0.0
+    cum_vol = 0.0
+    prev_day = None
+    for c in candles:
+        t = c.get("t") or c.get("time")
+        day = None
+        if t:
+            ts = float(t) / 1000.0 if float(t) > 1e12 else float(t)
+            try:
+                day = _dt.datetime.utcfromtimestamp(ts).date()
+            except Exception:
+                day = None
+        if prev_day is not None and day is not None and day != prev_day:
+            cum_pv, cum_vol = 0.0, 0.0
+        if day is not None:
+            prev_day = day
+        tp = (c["high"] + c["low"] + c["close"]) / 3.0
+        vol = float(c.get("volume") or 0.0)
+        cum_pv += tp * vol
+        cum_vol += vol
+        vwaps.append(cum_pv / cum_vol if cum_vol > 0 else c["close"])
+    return vwaps
+
+
+def _compute_vwap_signal(
+    candles: list[dict[str, Any]],
+    market: str,
+    engine: str,
+    profile: str,
+    dev_threshold_pct: float = 1.5,
+) -> dict[str, Any] | None:
+    """Mesin sinyal VWAP sesuai formula user (SCALPER / INTRADAY / SWING).
+
+    Mengembalikan response dict dengan schema identik compute_signal,
+    atau None jika data volume tidak tersedia (fallback ke Confluence).
+
+    Perbedaan dengan Confluence: formula ini adalah PEMICU ENTRY
+    (breakout box / reversal di VWAP), sehingga tier entry lebih rapat
+    ke harga saat ini (0 / 0.3 / 0.6 ATR) — sinyal sudah terkonfirmasi
+    oleh pola candle, bukan menunggu pullback jauh.
+    """
+    n = len(candles)
+    if n < 3:
+        return None
+    # VWAP butuh volume nyata — tanpa volume, VWAP tidak bermakna.
+    if not any((c.get("volume") or 0) > 0 for c in candles[-10:]):
+        return None
+
+    dev_thresh = dev_threshold_pct / 100.0
+    box_len = _VWAP_BOX_LEN[engine]
+
+    vwaps = _vwap_session_series(candles)
+    i = n - 1
+    row = candles[i]
+    prev = candles[i - 1]
+    vwap = vwaps[i]
+    price = row["close"]
+    price_dev = (price - vwap) / vwap if vwap else 0.0
+
+    # --- Candlestick patterns (v9.2.0 — Master 15-Video Formula) ---
+    candle_range = row["high"] - row["low"]
+
+    # A. John Wick — wick rejection >= 60% dari total range candle.
+    upper_wick = row["high"] - max(row["open"], row["close"])
+    lower_wick = min(row["open"], row["close"]) - row["low"]
+    john_wick_bear = candle_range > 0 and (upper_wick / candle_range) >= 0.60
+    john_wick_bull = candle_range > 0 and (lower_wick / candle_range) >= 0.60
+
+    # B. Power of Tower — candle impulsif (body > 80% range) diikuti
+    #    retracement 50% pada candle berikutnya.
+    prev_range = prev["high"] - prev["low"]
+    is_impulsive_green = (prev["close"] - prev["open"]) > (prev_range * 0.8) and prev["close"] > prev["open"]
+    power_of_tower_bear = is_impulsive_green and (row["close"] <= (prev["open"] + (prev["close"] - prev["open"]) * 0.5))
+    is_impulsive_red = (prev["open"] - prev["close"]) > (prev_range * 0.8) and prev["close"] < prev["open"]
+    power_of_tower_bull = is_impulsive_red and (row["close"] >= (prev["close"] + (prev["open"] - prev["close"]) * 0.5))
+
+    # C. Standard engulfing-style reversal.
+    std_bull = (row["close"] > row["open"]) and (prev["close"] < prev["open"]) and (row["close"] > prev["open"])
+    std_bear = (row["close"] < row["open"]) and (prev["close"] > prev["open"]) and (row["close"] < prev["open"])
+
+    # Gabungan: reversal = standard ATAU John Wick ATAU Power of Tower.
+    bull_rev = std_bull or john_wick_bull or power_of_tower_bull
+    bear_rev = std_bear or john_wick_bear or power_of_tower_bear
+
+    def _bull_patterns() -> list[str]:
+        out = []
+        if std_bull: out.append("bullish reversal")
+        if john_wick_bull: out.append("John Wick (lower wick ≥60%)")
+        if power_of_tower_bull: out.append("Power of Tower bull")
+        return out
+
+    def _bear_patterns() -> list[str]:
+        out = []
+        if std_bear: out.append("bearish reversal")
+        if john_wick_bear: out.append("John Wick (upper wick ≥60%)")
+        if power_of_tower_bear: out.append("Power of Tower bear")
+        return out
+
+    # --- Box breakout (persis formula user) ---
+    if i >= box_len:
+        box_high = max(c["high"] for c in candles[i - box_len:i])
+        box_low = min(c["low"] for c in candles[i - box_len:i])
+    else:
+        box_high, box_low = row["high"], row["low"]
+    box_break_long = row["close"] > box_high and prev["close"] <= box_high
+    box_break_short = row["close"] < box_low and prev["close"] >= box_low
+
+    # --- Aturan sinyal per engine (persis formula user) ---
+    action = "HOLD"
+    triggers: list[str] = []
+    if engine == "SCALPER":
+        if price_dev <= -dev_thresh and bull_rev:
+            action = "BUY"
+            triggers.append(f"deviasi {price_dev*100:+.2f}% di bawah VWAP + " + "/".join(_bull_patterns()))
+        elif box_break_long and price > vwap:
+            action = "BUY"
+            triggers.append(f"breakout box-{box_len} di atas VWAP")
+        elif price_dev >= dev_thresh and bear_rev:
+            action = "SELL"
+            triggers.append(f"deviasi {price_dev*100:+.2f}% di atas VWAP + " + "/".join(_bear_patterns()))
+        elif box_break_short and price < vwap:
+            action = "SELL"
+            triggers.append(f"breakdown box-{box_len} di bawah VWAP")
+    elif engine == "INTRADAY":
+        reclaim = ((row["low"] <= vwap and price > vwap and bull_rev)
+                   or (prev["close"] <= vwap and price > vwap))
+        rejection = ((row["high"] >= vwap and price < vwap and bear_rev)
+                     or (prev["close"] >= vwap and price < vwap))
+        if reclaim and price_dev < dev_thresh:
+            action = "BUY"
+            triggers.append("KISS pivot reclaim VWAP" + ((" + " + "/".join(_bull_patterns())) if bull_rev else ""))
+        elif rejection and price_dev > -dev_thresh:
+            action = "SELL"
+            triggers.append("KISS pivot rejection VWAP" + ((" + " + "/".join(_bear_patterns())) if bear_rev else ""))
+    else:  # SWING
+        if price > vwap and box_break_long and bull_rev:
+            action = "BUY"
+            triggers.append(f"breakout box-{box_len} di atas VWAP + " + "/".join(_bull_patterns()))
+        elif price < vwap and box_break_short and bear_rev:
+            action = "SELL"
+            triggers.append(f"breakdown box-{box_len} di bawah VWAP + " + "/".join(_bear_patterns()))
+
+    label = "HOLD"
+    if action == "BUY":
+        label = "LONG" if market == "crypto" else "BUY"
+    elif action == "SELL":
+        label = "SHORT" if market == "crypto" else "SELL"
+
+    # --- Confidence jujur dari komponen yang benar-benar menyala ---
+    if action == "HOLD":
+        side = "atas" if price_dev >= 0 else "bawah"
+        reasons = [
+            f"[{engine}] Harga {abs(price_dev)*100:.2f}% di {side} VWAP — "
+            f"belum ada trigger (box-{box_len} breakout / reversal). Tunggu setup."
+        ]
+        confidence = 45
+    else:
+        confidence = 55
+        reasons = [f"[{engine}] " + t for t in triggers]
+        if bull_rev or bear_rev:
+            confidence += 8
+        # Pola premium dari materi video: rejection wick / momentum tower.
+        if john_wick_bull or john_wick_bear:
+            confidence += 6
+        if power_of_tower_bull or power_of_tower_bear:
+            confidence += 6
+        if (action == "BUY" and box_break_long) or (action == "SELL" and box_break_short):
+            confidence += 12
+        if (action == "BUY" and price > vwap) or (action == "SELL" and price < vwap):
+            confidence += 10
+        if abs(price_dev) >= dev_thresh:
+            confidence += 6
+        confidence = min(95, confidence)
+
+    # --- Levels: tier rapat karena sinyal = pemicu, bukan limit jauh ---
+    highs = [c["high"] for c in candles]
+    lows = [c["low"] for c in candles]
+    closes = [c["close"] for c in candles]
+    atr = _atr14(highs, lows, closes) or (price * 0.02)
+    prof = get_trader_profile(profile)
+    sl_mult = float(prof["sl_atr_mult"])
+    tp_ladder = tuple(prof.get("tp_ladder", (1.0, 2.0, 3.0)))
+    peaks, valleys = _find_swings(highs, lows, window=10)
+    levels = _compute_vwap_levels(action, price, atr, peaks, valleys, market, sl_mult, tp_ladder)
+    buy_levels = _compute_vwap_levels("BUY", price, atr, peaks, valleys, market, sl_mult, tp_ladder)
+    sell_levels = _compute_vwap_levels("SELL", price, atr, peaks, valleys, market, sl_mult, tp_ladder)
+
+    rsi = _rsi(closes, 14)
+    regime_info = _detect_regime(closes, highs, lows) if market == "crypto" else {"regime": "UNKNOWN"}
+
+    return {
+        "action": action,
+        "label": label,
+        "confidence": int(confidence),
+        "indicators": {
+            "rsi": round(rsi, 2) if rsi is not None else None,
+            "price": round(price, 8),
+            "atr": round(atr, 6),
+            "vwap": round(vwap, 8),
+            "price_dev_pct": round(price_dev * 100.0, 3),
+            "box_high": round(box_high, 8),
+            "box_low": round(box_low, 8),
+            "vwap_engine": engine,
+            "bull_reversal": bull_rev,
+            "bear_reversal": bear_rev,
+            "john_wick": bool(john_wick_bull or john_wick_bear),
+            "john_wick_bull": bool(john_wick_bull),
+            "john_wick_bear": bool(john_wick_bear),
+            "power_of_tower": bool(power_of_tower_bull or power_of_tower_bear),
+            "power_of_tower_bull": bool(power_of_tower_bull),
+            "power_of_tower_bear": bool(power_of_tower_bear),
+            "box_break_long": box_break_long,
+            "box_break_short": box_break_short,
+            "avg_peak": round(levels["avg_peak"], 8),
+            "avg_valley": round(levels["avg_valley"], 8),
+            "peaks_found": len(peaks),
+            "valleys_found": len(valleys),
+            "structure": "VWAP-" + engine,
+        },
+        "reasons": reasons,
+        "entry": (round(levels["entry"], 8) if levels.get("entry") is not None else None),
+        "entry_low": (round(levels["entry_low"], 8) if levels.get("entry_low") is not None else None),
+        "entry_high": (round(levels["entry_high"], 8) if levels.get("entry_high") is not None else None),
+        "entry_moderate": (round(levels["entry_moderate"], 8) if levels.get("entry_moderate") is not None else None),
+        "entry_aggressive": (round(levels["entry_aggressive"], 8) if levels.get("entry_aggressive") is not None else None),
+        "entry_moderate_low": (round(levels["entry_moderate_low"], 8) if levels.get("entry_moderate_low") is not None else None),
+        "entry_moderate_high": (round(levels["entry_moderate_high"], 8) if levels.get("entry_moderate_high") is not None else None),
+        "entry_aggressive_low": (round(levels["entry_aggressive_low"], 8) if levels.get("entry_aggressive_low") is not None else None),
+        "entry_aggressive_high": (round(levels["entry_aggressive_high"], 8) if levels.get("entry_aggressive_high") is not None else None),
+        "stop_loss": (round(levels["stop_loss"], 8) if levels.get("stop_loss") is not None else None),
+        "take_profit": (round(levels["take_profit"], 8) if levels.get("take_profit") is not None else None),
+        "take_profit_2": (round(levels["take_profit_2"], 8) if levels.get("take_profit_2") is not None else None),
+        "take_profit_3": (round(levels["take_profit_3"], 8) if levels.get("take_profit_3") is not None else None),
+        "regime": regime_info.get("regime", "UNKNOWN"),
+        "_all_levels": {
+            "BUY":  {k: (round(v, 8) if v is not None else None) for k, v in buy_levels.items()},
+            "SELL": {k: (round(v, 8) if v is not None else None) for k, v in sell_levels.items()},
+        },
+    }
+
+
+def _compute_vwap_levels(
+    action: str,
+    price: float,
+    atr: float,
+    peaks: list[float],
+    valleys: list[float],
+    market: str,
+    sl_mult: float,
+    tp_ladder: tuple[float, float, float],
+) -> dict[str, Any]:
+    """Level untuk mesin VWAP — tier entry rapat ke harga (sinyal adalah
+    pemicu, bukan limit order jauh):
+      aggressive = harga saat ini (market entry)
+      moderate   = 0.3 ATR pullback
+      deep       = 0.6 ATR pullback (default card)
+    SL = entry ∓ sl_mult×ATR; TP ladder 1R/2R/3R (warisan backtest v9.0).
+    Pasar stocklike tetap memakai varian persentase dari _compute_deep_levels.
+    """
+    is_stocklike = market in ("stock_id", "stock_us", "world_stocks", "etf",
+                              "gold_silver", "commodity", "forex")
+    if is_stocklike:
+        return _compute_deep_levels(action, price, atr, peaks, valleys,
+                                    market=market, sl_mult=sl_mult, tp_ladder=tp_ladder)
+    if action == "BUY":
+        entry_aggressive = price
+        entry_moderate = price - atr * 0.3
+        entry_deep = price - atr * 0.6
+        band = atr * 0.15
+        sl_deep = entry_deep - atr * sl_mult
+        sl_moderate = entry_moderate - atr * sl_mult
+        sl_aggressive = entry_aggressive - atr * sl_mult
+        risk = max(entry_deep - sl_deep, price * 0.005)
+        tp1 = entry_deep + risk * tp_ladder[0]
+        tp2 = entry_deep + risk * tp_ladder[1]
+        tp3 = entry_deep + risk * tp_ladder[2]
+    elif action == "SELL":
+        entry_aggressive = price
+        entry_moderate = price + atr * 0.3
+        entry_deep = price + atr * 0.6
+        band = atr * 0.15
+        sl_deep = entry_deep + atr * sl_mult
+        sl_moderate = entry_moderate + atr * sl_mult
+        sl_aggressive = entry_aggressive + atr * sl_mult
+        risk = max(sl_deep - entry_deep, price * 0.005)
+        tp1 = entry_deep - risk * tp_ladder[0]
+        tp2 = entry_deep - risk * tp_ladder[1]
+        tp3 = entry_deep - risk * tp_ladder[2]
+    else:
+        entry_deep = entry_moderate = entry_aggressive = None
+        band = 0.0
+        sl_deep = sl_moderate = sl_aggressive = None
+        tp1 = tp2 = tp3 = None
+
+    recent_peaks = peaks[-5:] if len(peaks) >= 5 else peaks
+    recent_valleys = valleys[-5:] if len(valleys) >= 5 else valleys
+    last3_peaks = recent_peaks[-3:] if len(recent_peaks) >= 3 else recent_peaks
+    last3_valleys = recent_valleys[-3:] if len(recent_valleys) >= 3 else recent_valleys
+    avg_peak = (sum(last3_peaks) / len(last3_peaks)) if last3_peaks else price * 1.05
+    avg_valley = (sum(last3_valleys) / len(last3_valleys)) if last3_valleys else price * 0.95
+
+    def _off(base, delta):
+        return None if base is None else (base + delta)
+
+    return {
+        "entry": entry_deep,
+        "entry_moderate": entry_moderate,
+        "entry_aggressive": entry_aggressive,
+        "entry_low": _off(entry_deep, -band),
+        "entry_high": _off(entry_deep, band),
+        "entry_moderate_low": _off(entry_moderate, -band),
+        "entry_moderate_high": _off(entry_moderate, band),
+        "entry_aggressive_low": _off(entry_aggressive, -band),
+        "entry_aggressive_high": _off(entry_aggressive, band),
+        "stop_loss": sl_deep,
+        "stop_loss_moderate": sl_moderate,
+        "stop_loss_aggressive": sl_aggressive,
+        "take_profit": tp1,
+        "take_profit_2": tp2,
+        "take_profit_3": tp3,
+        "avg_peak": avg_peak,
+        "avg_valley": avg_valley,
+    }
+
 def compute_signal(
     candles: list[dict[str, Any]],
     market: str,
     profile: str | None = None,
+    min_score: int = 4,
+    htf_gate: bool = False,
+    zone_cap: float = 1.5,
+    macd_required: bool = False,
+    rsi_momentum: bool = False,
+    vol_required: bool = False,
+    hlhh_required: bool = False,
 ) -> dict[str, Any]:
-    """Return signal dict: action, confidence, indicators, entry/sl/tp suggestions.
+    """v9.0.0 "Confluence" — total formula overhaul.
 
-    Action: BUY / SELL / HOLD. For crypto we also surface LONG/SHORT in label.
-
-    v8.12.57 — When `profile` is provided AND market is in
-    PROFILE_APPLICABLE_MARKETS (crypto/forex/gold_silver), the EMA windows,
-    minimum confidence gate, and SL/ATR multiplier are swapped for the
-    profile-tuned preset from TRADER_PROFILES. All other markets (stocks,
-    commodity, ETFs) keep the market-neutral defaults so their behaviour
-    is unchanged.
+    Design goals (post-mortem of the v3 accuracy regression):
+      1. ONE deterministic direction engine shared by dashboard, search,
+         chart and analyze. The caller's trader profile only tunes the
+         horizon (EMA windows / SL distance / TP ladder); it NEVER vetoes
+         a signal. This kills the "dashboard BUY vs detail SIDEWAYS" desync.
+      2. Trend-following with pullback entries. We only BUY inside a BULL
+         structure when price pulls back into the EMA zone, and only SELL
+         inside a BEAR structure on a rally into the EMA zone.
+      3. The v8.12.24 "FLIP" inversion (uptrend + overbought → SELL/TP)
+         is REMOVED — it shorted users into bull runs. Overextension now
+         produces HOLD ("wait for pullback"), never a counter-trend trade.
+      4. Honest confidence: additive weighted score (50–95), no artificial
+         baseline or boosts.
+      5. TP ladder 1R / 2R / 3R — dipilih dari backtest 30 hari
+         (302 trade, 9 aset): TP1=1R memberi WR 57.1% & expectancy
+         +0.136R/trade, jauh di atas varian 1.5R (42.1%, +0.048R).
     """
-    if not candles or len(candles) < 20:
+    if not candles or len(candles) < 35:
         return {
             "action": "HOLD",
             "label": "HOLD",
@@ -418,358 +796,311 @@ def compute_signal(
             "entry": None, "stop_loss": None, "take_profit": None,
         }
 
+    # v9.1.0 — Routing mesin VWAP Session (formula user): profile
+    # scalper/day(=intraday)/swing memakai mesin VWAP di SEMUA market
+    # (VWAP memang konsep pasar sesi). Profile longterm & data tanpa
+    # volume tetap memakai mesin Confluence v9.0 di bawah.
+    _engine_profile = profile if profile in TRADER_PROFILES else "day"
+    if _engine_profile in _PROFILE_TO_VWAP:
+        _vsig = _compute_vwap_signal(
+            candles, market, _PROFILE_TO_VWAP[_engine_profile], _engine_profile
+        )
+        if _vsig is not None:
+            return _vsig
+        # volume kosong → lanjut ke Confluence sebagai fallback
+
     # Resolve trader-profile presets. Only apply on eligible markets so that
-    # stocks / commodity / etf keep the current v8.x day-trader defaults.
+    # stocks / commodity / etf keep the market-neutral day defaults.
     _prof = get_trader_profile(profile) if market in PROFILE_APPLICABLE_MARKETS else get_trader_profile("day")
     _ema_fast_n = int(_prof["ema_fast"])
     _ema_slow_n = int(_prof["ema_slow"])
-    _min_conf_gate = int(_prof["min_confidence"])
+    _require_ema200 = bool(_prof.get("require_ema200"))
     _sl_atr_mult = float(_prof["sl_atr_mult"])
+    _tp_ladder = tuple(_prof.get("tp_ladder", (1.0, 2.0, 3.0)))
 
     closes = [c["close"] for c in candles]
     highs = [c["high"] for c in candles]
     lows = [c["low"] for c in candles]
+    volumes: list[float] = [c.get("volume", 0) or 0 for c in candles]
     price = closes[-1]
 
+    if len(closes) < max(_ema_slow_n, 35):
+        return {
+            "action": "HOLD", "label": "HOLD", "confidence": 0,
+            "indicators": {},
+            "reasons": ["Data candle tidak cukup untuk membaca struktur tren"],
+            "entry": None, "stop_loss": None, "take_profit": None,
+        }
+
     rsi = _rsi(closes, 14)
-    ema20 = _ema(closes, _ema_fast_n)[-1]
-    ema50 = _ema(closes, _ema_slow_n)[-1] if len(closes) >= _ema_slow_n else ema20
-    macd = _macd(closes)
+    # v9.0.0 — Pegged/stablecoin guard: ATR di bawah 0.1% dari harga berarti
+    # tidak ada volatilitas yang bisa ditradingkan (USDT, USDC, DAI...).
+    # Tanpa guard ini risk-floor price*0.005 menghasilkan R:R semu (≈31R).
+    # v9.2.0 — Guard HANYA untuk crypto: forex 1h memang bervolatilitas
+    # ~0.05% per candle (normal dalam pip), jangan salah flag sebagai pegged.
+    atr_probe = _atr14(highs, lows, closes)
+    if market == "crypto" and atr_probe is not None and price > 0 and (atr_probe / price) < 0.001:
+        return {
+            "action": "HOLD", "label": "HOLD", "confidence": 40,
+            "indicators": {"price": round(price, 8), "atr": round(atr_probe, 8)},
+            "reasons": ["Volatilitas terlalu rendah (aset pegged/stablecoin) — tidak ada edge untuk ditradingkan."],
+            "entry": None, "stop_loss": None, "take_profit": None,
+        }
+    ema_fast = _ema(closes, _ema_fast_n)[-1]
+    ema_slow = _ema(closes, _ema_slow_n)[-1]
+    ema200 = _ema(closes, 200)[-1] if len(closes) >= 200 else None
+    hists = _macd_hist_recent(closes, 3)
+    atr = _atr14(highs, lows, closes) or (price * 0.02)
 
-    # Vote per indicator
-    votes: list[int] = []  # +1 bullish, -1 bearish, 0 neutral
-    reasons: list[str] = []
+    # ---- 1. Market structure — the spine of the whole formula ----
+    # BULL: fast EMA above slow EMA AND price above slow EMA.
+    # BEAR: mirror. Anything else is SIDEWAYS (no trade).
+    # Swing/longterm profiles additionally demand EMA200 alignment.
+    bull = ema_fast > ema_slow and price > ema_slow
+    bear = ema_fast < ema_slow and price < ema_slow
+    ema200_bull = ema200 is not None and price > ema200
+    ema200_bear = ema200 is not None and price < ema200
+    if _require_ema200 and ema200 is not None:
+        bull = bull and ema200_bull
+        bear = bear and ema200_bear
+    structure = "BULL" if bull else ("BEAR" if bear else "SIDEWAYS")
 
-    def _vote(v: int, reason: str) -> None:
-        votes.append(v)
-        reasons.append(reason)
+    # ---- 2. Location — distance from EMAs measured in ATR units ----
+    # Entry zone = pullback territory: harga di ATAU DI BAWAH fast EMA
+    # (BUY), tidak lebih dari +zone_cap ATR di atasnya (no chasing).
+    # Overextension = lebih dari 3 ATR dari slow EMA.
+    dist_fast = (price - ema_fast) / atr if atr > 0 else 0.0
+    dist_slow = (price - ema_slow) / atr if atr > 0 else 0.0
+    in_buy_zone = -1.5 <= dist_fast <= zone_cap
+    in_sell_zone = -zone_cap <= dist_fast <= 1.5
+    overextended_up = dist_slow > 3.0
+    overextended_dn = dist_slow < -3.0
 
-    # v8.7.0 — Restored strict v1.0.x-style scoring (target Win Rate >70%).
-    # Rationale: The old v8.x formula (baseline 55, score>=2) let mediocre
-    # 2-of-5 signals into the Premium bucket → WR degraded to ~50%. We now
-    # require STRONG multi-indicator confirmation (score>=3, RSI-directional
-    # confirmation, MACD alignment) and drop the confidence baseline.
+    # ---- 2b. Higher-trend gate (proxy MTF via EMA200 di base TF) ----
+    # BUY hanya jika harga di atas EMA200, SELL hanya jika di bawah.
+    # Jika data EMA200 tidak cukup → gate netral (tidak memblokir).
+    htf_buy_ok = (ema200 is None) or ema200_bull if htf_gate else True
+    htf_sell_ok = (ema200 is None) or ema200_bear if htf_gate else True
 
-    # --- Trend strength (used to weight EMA vs mean-reversion RSI) ---
-    ema_spread_pct = abs(ema20 - ema50) / ema50 * 100 if ema50 else 0
-    strong_trend = ema_spread_pct > 0.5  # trend is dominant → suppress mean-rev RSI
+    # ---- 3. RSI health bands ----
+    # Pullback-buy wants RSI cooled off into 35–68; rally-sell 32–65.
+    # RSI ≥ 72 (overbought) or ≤ 28 (oversold) vetoes chasing entirely.
+    rsi_overbought = rsi is not None and rsi >= 72
+    rsi_oversold = rsi is not None and rsi <= 28
+    rsi_buy_ok = rsi is None or (35.0 <= rsi <= 68.0)
+    rsi_sell_ok = rsi is None or (32.0 <= rsi <= 65.0)
 
-    # --- RSI (14) --- mean-reversion vote, but SUPPRESSED in strong trends.
-    #     In choppy/ranging market: RSI < 30 = BUY, > 70 = SELL.
-    #     In strong trend: extreme RSI is a momentum signal, not a reversal —
-    #     so we vote WITH the trend (softer weight) instead of against.
-    #     v8.12.22 — But cap the "momentum continuation" vote at RSI 78
-    #     for uptrend and RSI 22 for downtrend so we don't help users
-    #     enter parabolic tops / capitulation bottoms.
-    if rsi is not None:
-        if strong_trend:
-            trend_sign_ema = 1 if ema20 > ema50 else -1
-            if trend_sign_ema > 0 and 55 < rsi < 78:
-                _vote(1, f"RSI {rsi:.1f} momentum-up (strong trend)")
-            elif trend_sign_ema < 0 and 22 < rsi < 45:
-                _vote(-1, f"RSI {rsi:.1f} momentum-down (strong trend)")
-            elif trend_sign_ema > 0 and rsi >= 78:
-                # Uptrend but RSI extreme — DO NOT vote BUY; flag caution.
-                _vote(0, f"RSI {rsi:.1f} extreme — avoid FOMO")
-            elif trend_sign_ema < 0 and rsi <= 22:
-                # Downtrend but RSI extreme — DO NOT vote SELL; flag caution.
-                _vote(0, f"RSI {rsi:.1f} extreme — avoid panic sell")
-            else:
-                _vote(0, f"RSI {rsi:.1f} (trend-suppressed)")
-        else:
-            if rsi < 30:
-                _vote(1, f"RSI {rsi:.1f} strong oversold")
-            elif rsi < 40:
-                _vote(1, f"RSI {rsi:.1f} oversold")
-            elif rsi > 70:
-                _vote(-1, f"RSI {rsi:.1f} strong overbought")
-            elif rsi > 60:
-                _vote(-1, f"RSI {rsi:.1f} overbought")
-            else:
-                _vote(0, f"RSI {rsi:.1f} netral")
+    # ---- 4. MACD histogram — sign AND direction of change ----
+    macd_vote = 0
+    macd_note = "MACD netral"
+    if hists and len(hists) >= 2:
+        h_now, h_prev = hists[-1], hists[-2]
+        if h_now > 0 and h_now >= h_prev:
+            macd_vote, macd_note = 2, "MACD hist positif & menguat"
+        elif h_now > 0:
+            macd_vote, macd_note = 1, "MACD hist positif"
+        elif h_now < 0 and h_now <= h_prev:
+            macd_vote, macd_note = -2, "MACD hist negatif & melemah"
+        elif h_now < 0:
+            macd_vote, macd_note = -1, "MACD hist negatif"
 
-    # --- EMA crossover / trend (weighted 2x when spread > 0.3%) ---
-    if ema20 > ema50:
-        v = 2 if ema_spread_pct > 0.3 else 1
-        _vote(v, f"EMA20>EMA50 (uptrend, spread {ema_spread_pct:.2f}%)")
-    elif ema20 < ema50:
-        v = -2 if ema_spread_pct > 0.3 else -1
-        _vote(v, f"EMA20<EMA50 (downtrend, spread {ema_spread_pct:.2f}%)")
-
-    # --- Price vs EMA20 (tighter band 0.3% instead of 0.2%) ---
-    if price > ema20 * 1.003:
-        _vote(1, "Price above EMA20 (+0.3%)")
-    elif price < ema20 * 0.997:
-        _vote(-1, "Price below EMA20 (-0.3%)")
-
-    # --- MACD histogram + direction ---
-    if macd:
-        _m, _s, hist = macd
-        # Require histogram to be meaningful — tiny hist near zero = noise.
-        hist_abs = abs(hist)
-        threshold = max(price * 0.0005, 1e-9)  # 0.05% of price as noise floor
-        if hist > threshold:
-            _vote(1, "MACD histogram positif")
-        elif hist < -threshold:
-            _vote(-1, "MACD histogram negatif")
-
-    # --- Momentum: last 5 candles (raised bar to 2% for stronger conviction) ---
-    if len(closes) >= 6:
-        mom = (closes[-1] - closes[-6]) / closes[-6] * 100
-        if mom > 2.0:
-            _vote(1, f"Momentum 5-bar +{mom:.2f}%")
-        elif mom < -2.0:
-            _vote(-1, f"Momentum 5-bar {mom:.2f}%")
-
-    # --- Volume expansion: last 3 candles avg > previous 10 avg by 20% ---
-    volumes: list[float] = [c.get("volume", 0) or 0 for c in candles]
+    # ---- 5. Volume expansion & 5-bar momentum ----
+    vol_ratio: float | None = None
     if len(volumes) >= 13:
         recent_vol = sum(volumes[-3:]) / 3
         prior_vol = sum(volumes[-13:-3]) / 10
-        if prior_vol > 0 and recent_vol / prior_vol > 1.2:
-            # Volume expansion confirms direction — add vote in trend direction
-            trend_sign = 1 if (ema20 > ema50 and price > ema20) else (-1 if (ema20 < ema50 and price < ema20) else 0)
-            if trend_sign != 0:
-                _vote(trend_sign, f"Volume expansion x{recent_vol/prior_vol:.2f}")
+        if prior_vol > 0:
+            vol_ratio = recent_vol / prior_vol
+    mom5 = ((closes[-1] - closes[-6]) / closes[-6] * 100.0) if len(closes) >= 6 else 0.0
 
-    score = sum(votes)
-    total = len(votes) or 1
-    # v8.7.0 — Real confidence: |score|/total * scale, NO artificial baseline.
-    # Requires broad + strong agreement to hit Premium threshold (85+).
-    max_possible = sum(abs(v) for v in votes) or 1
-    agreement = abs(score) / max_possible * 100.0
-    # Strong-agreement bonus (score>=4 or score>=5)
-    boost = 0
-    if abs(score) >= 5:
-        boost = 12
-    elif abs(score) >= 4:
-        boost = 8
-    elif abs(score) >= 3:
-        boost = 4
-    confidence = round(min(98.0, max(35.0, agreement * 0.80 + boost)))
+    # ---- 6. Swing structure (higher-low / lower-high confirmation) ----
+    _pk, _vl = _find_swings(highs, lows, window=5)
+    higher_low = len(_vl) >= 2 and _vl[-1] > _vl[-2]
+    lower_high = len(_pk) >= 2 and _pk[-1] < _pk[-2]
 
-    # v8.7.0 — Directional confirmation gate:
-    # Only issue BUY/SELL when:
-    #   • score >= 3 (was 2) → at least 3-net-indicator agreement
-    #   • Price vs EMA20 aligns with signal side (trend confirmation)
-    ema_align_buy = price > ema20 * 0.997
-    ema_align_sell = price < ema20 * 1.003
+    # ---- Confluence scoring ----
+    # Every component votes WITH the dominant structure only. There is no
+    # mean-reversion flip: an overextended trend earns a HOLD ("wait for
+    # pullback"), never a counter-trend entry.
+    def _score(side: int) -> tuple[int, list[str]]:
+        pts = 2  # structure alignment (the backbone of every trade)
+        rs = [f"Struktur {structure} (EMA{_ema_fast_n} vs EMA{_ema_slow_n} + harga)"]
+        pts += 1
+        rs.append(f"Harga di zona entry (±1.5 ATR dari EMA{_ema_fast_n})")
+        if macd_vote * side > 0:
+            pts += min(2, abs(macd_vote))
+            rs.append(macd_note)
+        elif macd_vote * side < 0:
+            pts -= 1
+            rs.append(f"{macd_note} (melawan arah)")
+        if rsi is not None:
+            if side > 0 and 45.0 <= rsi <= 62.0:
+                pts += 1
+                rs.append(f"RSI {rsi:.1f} sehat untuk pullback-buy")
+            elif side < 0 and 38.0 <= rsi <= 55.0:
+                pts += 1
+                rs.append(f"RSI {rsi:.1f} sehat untuk rally-sell")
+            else:
+                rs.append(f"RSI {rsi:.1f} netral")
+        if vol_ratio is not None and vol_ratio > 1.2:
+            pts += 1
+            rs.append(f"Volume expansion x{vol_ratio:.2f}")
+        if (side > 0 and mom5 > 0.3) or (side < 0 and mom5 < -0.3):
+            pts += 1
+            rs.append(f"Momentum 5-bar {mom5:+.2f}% searah")
+        if (side > 0 and ema200_bull) or (side < 0 and ema200_bear):
+            pts += 1
+            rs.append("Harga di sisi benar EMA200")
+        return pts, rs
 
-    # v8.12.22 — Anti-FOMO / anti-panic overextension guard.
-    # v8.12.23 — Tightened + added "near recent high/low" veto.
-    # v8.12.24 — Per-market threshold tuning.
-    # v8.12.26 — Multi-timeframe extreme detection + rally-exhaustion:
-    #             DSSA rallied +28.8 % from its 120-day low but the 30-day
-    #             window said "not near a high" so the old guard missed it.
-    #             Now check 30 / 60 / 120-candle horizons AND a
-    #             "rally-exhaustion" trigger that fires when price has
-    #             surged >20 % from the multi-week low with elevated RSI.
-    #
-    # v8.12.27 — Tightened for crypto blue-chips (BTC/ETH) which move
-    # in smaller % than small-caps. The old crypto ext_cap 12% and
-    # rally-exhaustion 30% never fired for ETH pumping 3-5% into a
-    # local top → user still saw LONG at the peak and got stopped out.
-    # New crypto row: ext 6% (was 12), RSI near 62 (was 68), rally
-    # exhaustion 12% (was 30). Same-day intraday spike also handled.
-    _GUARDS: dict[str, tuple[float, float, float, float, float]] = {
-        "crypto":       (0.06, 78.0, 22.0, 62.0, 38.0),
-        "stock_id":     (0.05, 76.0, 24.0, 60.0, 40.0),
-        "stock_us":     (0.05, 76.0, 24.0, 60.0, 40.0),
-        "world_stocks": (0.05, 76.0, 24.0, 60.0, 40.0),
-        "etf":          (0.04, 74.0, 26.0, 58.0, 42.0),
-        "gold_silver":  (0.05, 76.0, 24.0, 60.0, 40.0),
-        "commodity":    (0.06, 76.0, 24.0, 60.0, 40.0),
-        "forex":        (0.03, 72.0, 28.0, 58.0, 42.0),
-    }
-    ext_cap, rsi_hi_x, rsi_lo_x, rsi_hi_near, rsi_lo_near = _GUARDS.get(
-        market, (0.05, 76.0, 24.0, 60.0, 40.0)
-    )
-    extension = ((price - ema50) / ema50) if ema50 else 0.0
-    overextended_up = extension > ext_cap
-    overextended_dn = extension < -ext_cap
-    rsi_extreme_up = rsi is not None and rsi >= rsi_hi_x
-    rsi_extreme_dn = rsi is not None and rsi <= rsi_lo_x
+    action = "HOLD"
+    label = "HOLD"
+    reasons: list[str] = []
+    confidence = 50
 
-    # Multi-timeframe recent-extreme veto: check 30 / 60 / 120-candle
-    # horizons. Wider horizons catch multi-week rallies (like DSSA
-    # rallying +28 % from a 4-month low).
-    def _near_extreme(window_size: int) -> tuple[bool, bool]:
-        w = closes[-window_size:] if len(closes) >= window_size else closes
-        if not w:
-            return False, False
-        hi = max(w)
-        lo = min(w)
-        at_top_local = (price / hi) >= 0.98 if hi else False
-        at_bot_local = (price / lo) <= 1.02 if lo else False
-        return at_top_local, at_bot_local
-
-    at_top_30, at_bot_30 = _near_extreme(30)
-    at_top_60, at_bot_60 = _near_extreme(60)
-    at_top_120, at_bot_120 = _near_extreme(120)
-    at_any_top = at_top_30 or at_top_60 or at_top_120
-    at_any_bot = at_bot_30 or at_bot_60 or at_bot_120
-
-    near_top_hot = at_any_top and rsi is not None and rsi >= rsi_hi_near
-    near_bot_cold = at_any_bot and rsi is not None and rsi <= rsi_lo_near
-
-    # Rally / capitulation exhaustion: how far did the asset move from
-    # its longer-term extreme? A +20 % surge from the 60/120-day low is
-    # a classic euphoria zone even if the 4-hour RSI looks calm.
-    rally_pct_60 = ((price / min(closes[-60:])) - 1.0) * 100 if len(closes) >= 60 else 0.0
-    rally_pct_120 = ((price / min(closes[-120:])) - 1.0) * 100 if len(closes) >= 120 else 0.0
-    max_rally = max(rally_pct_60, rally_pct_120)
-    drop_pct_60 = (1.0 - (price / max(closes[-60:]))) * 100 if len(closes) >= 60 else 0.0
-    drop_pct_120 = (1.0 - (price / max(closes[-120:]))) * 100 if len(closes) >= 120 else 0.0
-    max_drop = max(drop_pct_60, drop_pct_120)
-
-    # Rally exhaustion trigger — different threshold per market.
-    # v8.12.27 — crypto lowered 30 % → 12 % because BTC/ETH pump into
-    # tops in smaller percentages than small-cap alts, so a 30 % rally
-    # from a 60-day low was near-never triggered on blue-chips.
-    exhaust_up_pct = 12.0 if market == "crypto" else 20.0
-    exhaust_dn_pct = 12.0 if market == "crypto" else 20.0
-    rally_exhausted = (
-        max_rally >= exhaust_up_pct
-        and at_any_top
-        and rsi is not None and rsi >= (rsi_hi_near - 5)  # e.g. 55+ for stocks
-    )
-    capitulation_exhausted = (
-        max_drop >= exhaust_dn_pct
-        and at_any_bot
-        and rsi is not None and rsi <= (rsi_lo_near + 5)
-    )
-
-    veto_buy = (
-        overextended_up or rsi_extreme_up or near_top_hot or rally_exhausted
-    )
-    veto_sell = (
-        overextended_dn or rsi_extreme_dn or near_bot_cold or capitulation_exhausted
-    )
-
-    # v8.12.27 — Short-term pump/dump veto. Catches ETH-style intraday
-    # spikes (2-5 % move in the last few candles into a local top) that
-    # the longer-window checks above miss. Threshold scaled per market.
-    short_pump_pct = 3.5 if market == "crypto" else 2.5
-    short_dump_pct = 3.5 if market == "crypto" else 2.5
-    if len(closes) >= 6:
-        mom5 = (closes[-1] - closes[-6]) / closes[-6] * 100
-        if mom5 >= short_pump_pct and rsi is not None and rsi >= (rsi_hi_near - 3):
-            veto_buy = True
-            # Attach descriptive reason if flip happens.
-            if score >= 3:
-                reasons.append(f"Short-term pump +{mom5:.1f}% dalam 5-bar — jangan chase.")
-        elif mom5 <= -short_dump_pct and rsi is not None and rsi <= (rsi_lo_near + 3):
-            veto_sell = True
-            if score <= -3:
-                reasons.append(f"Short-term dump {mom5:.1f}% dalam 5-bar — tunggu stabil.")
-
-    # v8.12.24 — FLIP to mean-reversion action instead of demoting to HOLD.
-    if score >= 3 and ema_align_buy and not veto_buy:
-        action = "BUY"
-        label = "LONG" if market == "crypto" else "BUY"
-    elif score <= -3 and ema_align_sell and not veto_sell:
-        action = "SELL"
-        label = "SHORT" if market == "crypto" else "SELL"
-    elif score >= 3 and veto_buy:
-        # Trend-up + veto → take profit
-        action = "SELL"
-        label = "TP" if market == "crypto" else "SELL"
-        parts = []
-        if overextended_up:
-            parts.append(f"harga {extension * 100:+.1f}% dari EMA50")
-        if rsi_extreme_up:
-            parts.append(f"RSI {rsi:.0f} sangat overbought")
-        if near_top_hot:
-            horizon = "30d" if at_top_30 else ("60d" if at_top_60 else "120d")
-            parts.append(f"harga di puncak {horizon}")
-        if rally_exhausted:
-            parts.append(f"rally +{max_rally:.0f}% dari low — sudah kepanjangan")
-        reasons.append(
-            "TAKE PROFIT — " + ", ".join(parts) + ". Jangan kejar harga."
-        )
-        tp_boost = (18 if overextended_up else 0) + (12 if rsi_extreme_up else 0) + (8 if near_top_hot else 0) + (15 if rally_exhausted else 0)
-        confidence = min(95, max(70, 60 + tp_boost))
-    elif score <= -3 and veto_sell:
-        # Trend-down + veto → buy the dip
-        action = "BUY"
-        label = "DIP" if market == "crypto" else "BUY"
-        parts = []
-        if overextended_dn:
-            parts.append(f"harga {extension * 100:+.1f}% dari EMA50")
-        if rsi_extreme_dn:
-            parts.append(f"RSI {rsi:.0f} sangat oversold")
-        if near_bot_cold:
-            horizon = "30d" if at_bot_30 else ("60d" if at_bot_60 else "120d")
-            parts.append(f"harga di dasar {horizon}")
-        if capitulation_exhausted:
-            parts.append(f"turun {max_drop:.0f}% dari high — capitulasi")
-        reasons.append(
-            "BUY THE DIP — " + ", ".join(parts) + ". Accumulate bertahap."
-        )
-        dip_boost = (18 if overextended_dn else 0) + (12 if rsi_extreme_dn else 0) + (8 if near_bot_cold else 0) + (15 if capitulation_exhausted else 0)
-        confidence = min(95, max(70, 60 + dip_boost))
-    else:
-        action = "HOLD"
-        label = "HOLD"
-        confidence = max(40, min(70, confidence))
-
-    # v8.12.57 — BTC Trading Formula v3: Trader-Profile confidence gate.
-    # v8.12.84 — DISABLED. Root cause laporan user "banyak loss / arah
-    # tertukar / dashboard TP tapi detail SIDEWAYS":
-    #   Dashboard memakai default profile ("day") saat menghitung sinyal
-    #   → confidence lolos gate 65% → BUY/SELL tampil.
-    #   Detail memakai profile aktual user (mis. Swing 75%) → confidence
-    #   di bawah 75% → di-downgrade jadi HOLD → SIDEWAYS.
-    # Gate ini juga merusak akurasi v2: sinyal valid & tren jelas
-    # sering dipaksa HOLD hanya karena confidence 70% (di bawah Swing/
-    # Long-term). Efek profile tetap dipertahankan lewat EMA/RSI/HTF
-    # preset (lihat TRADER_PROFILES di atas) — TANPA memaksa downgrade.
-    # Rollback ke logika v2: keputusan BUY/SELL/HOLD murni dari analisis
-    # teknikal, tidak digagalkan oleh threshold profile.
-    if False and market in PROFILE_APPLICABLE_MARKETS and action in ("BUY", "SELL"):
-        if confidence < _min_conf_gate:
+    if structure == "BULL":
+        if rsi_overbought or overextended_up:
             reasons.append(
-                f"Downgraded to HOLD — confidence {confidence}% below "
-                f"{profile or 'day'} profile threshold {_min_conf_gate}%."
+                f"Tren BULL tapi overextended (RSI {rsi:.0f}, jarak {dist_slow:+.1f} ATR dari EMA{_ema_slow_n}) — tunggu pullback, jangan kejar harga."
+                if rsi is not None else
+                f"Tren BULL tapi overextended ({dist_slow:+.1f} ATR dari EMA{_ema_slow_n}) — tunggu pullback."
             )
-            action = "HOLD"
-            label = "HOLD"
-
-    # Compute simple ATR for SL/TP
-    if len(highs) >= 14:
-        trs = []
-        for i in range(1, 14):
-            tr = max(
-                highs[-i] - lows[-i],
-                abs(highs[-i] - closes[-i - 1]),
-                abs(lows[-i] - closes[-i - 1]),
+            confidence = 55
+        elif not htf_buy_ok:
+            reasons.append(
+                "Tren BULL jangka pendek tapi harga di BAWAH EMA200 (tren besar masih turun) — counter-trend, HOLD."
             )
-            trs.append(tr)
-        atr = sum(trs) / len(trs)
+            confidence = 50
+        elif rsi_momentum and rsi is not None and rsi < 50.0:
+            reasons.append(f"Tren BULL tapi RSI {rsi:.1f} < 50 — momentum belum berpihak, HOLD.")
+            confidence = 52
+        elif vol_required and vol_ratio is not None and vol_ratio <= 1.2:
+            reasons.append(f"Tren BULL tapi volume belum ekspansi (x{vol_ratio:.2f}) — HOLD.")
+            confidence = 52
+        elif hlhh_required and not higher_low:
+            reasons.append("Tren BULL tapi swing low belum higher-low — struktur mikro belum konfirmasi, HOLD.")
+            confidence = 52
+        elif not in_buy_zone:
+            reasons.append(
+                f"Tren BULL, harga {dist_fast:+.1f} ATR dari EMA{_ema_fast_n} — di luar zona entry, tunggu pullback."
+            )
+            confidence = 55
+        elif not rsi_buy_ok:
+            reasons.append(
+                f"Tren BULL tapi RSI {rsi:.1f} di luar band sehat 35-68 — tunggu konfirmasi."
+            )
+            confidence = 52
+        elif macd_required and macd_vote <= 0:
+            reasons.append(f"Tren BULL + zona entry, tapi {macd_note} — tunggu momentum berbalik.")
+            confidence = 54
+        else:
+            pts, reasons = _score(+1)
+            if pts >= min_score:
+                action = "BUY"
+                label = "LONG" if market == "crypto" else "BUY"
+                # Honest additive confidence: structure + zone are the
+                # backbone; each confirming component adds weight.
+                confidence = 50 + 18 + 10
+                confidence += 10 if (macd_vote >= 2) else (6 if macd_vote > 0 else 0)
+                if rsi is not None and 45.0 <= rsi <= 62.0:
+                    confidence += 7
+                if vol_ratio is not None and vol_ratio > 1.2:
+                    confidence += 6
+                if mom5 > 0.3:
+                    confidence += 5
+                if ema200_bull:
+                    confidence += 5
+                confidence = min(95, confidence)
+            else:
+                reasons.append(f"Konfluens belum cukup kuat (skor {pts}/{min_score}) — HOLD, tunggu setup lebih bersih.")
+                confidence = 58
+    elif structure == "BEAR":
+        if rsi_oversold or overextended_dn:
+            reasons.append(
+                f"Tren BEAR tapi sudah capitulasi (RSI {rsi:.0f}, jarak {dist_slow:+.1f} ATR dari EMA{_ema_slow_n}) — jangan short di dasar, tunggu pantulan."
+                if rsi is not None else
+                f"Tren BEAR tapi sudah capitulasi ({dist_slow:+.1f} ATR dari EMA{_ema_slow_n}) — tunggu pantulan."
+            )
+            confidence = 55
+        elif not htf_sell_ok:
+            reasons.append(
+                "Tren BEAR jangka pendek tapi harga di ATAS EMA200 (tren besar masih naik) — counter-trend, HOLD."
+            )
+            confidence = 50
+        elif rsi_momentum and rsi is not None and rsi > 50.0:
+            reasons.append(f"Tren BEAR tapi RSI {rsi:.1f} > 50 — momentum belum berpihak, HOLD.")
+            confidence = 52
+        elif vol_required and vol_ratio is not None and vol_ratio <= 1.2:
+            reasons.append(f"Tren BEAR tapi volume belum ekspansi (x{vol_ratio:.2f}) — HOLD.")
+            confidence = 52
+        elif hlhh_required and not lower_high:
+            reasons.append("Tren BEAR tapi swing high belum lower-high — struktur mikro belum konfirmasi, HOLD.")
+            confidence = 52
+        elif not in_sell_zone:
+            reasons.append(
+                f"Tren BEAR, harga {dist_fast:+.1f} ATR dari EMA{_ema_fast_n} — di luar zona entry, tunggu rally ke EMA."
+            )
+            confidence = 55
+        elif not rsi_sell_ok:
+            reasons.append(
+                f"Tren BEAR tapi RSI {rsi:.1f} di luar band sehat 32-65 — tunggu konfirmasi."
+            )
+            confidence = 52
+        elif macd_required and macd_vote >= 0:
+            reasons.append(f"Tren BEAR + zona entry, tapi {macd_note} — tunggu momentum berbalik.")
+            confidence = 54
+        else:
+            pts, reasons = _score(-1)
+            if pts >= min_score:
+                action = "SELL"
+                label = "SHORT" if market == "crypto" else "SELL"
+                confidence = 50 + 18 + 10
+                confidence += 10 if (macd_vote <= -2) else (6 if macd_vote < 0 else 0)
+                if rsi is not None and 38.0 <= rsi <= 55.0:
+                    confidence += 7
+                if vol_ratio is not None and vol_ratio > 1.2:
+                    confidence += 6
+                if mom5 < -0.3:
+                    confidence += 5
+                if ema200_bear:
+                    confidence += 5
+                confidence = min(95, confidence)
+            else:
+                reasons.append(f"Konfluens belum cukup kuat (skor {pts}/{min_score}) — HOLD, tunggu setup lebih bersih.")
+                confidence = 58
     else:
-        atr = price * 0.02
+        reasons.append(
+            f"Struktur SIDEWAYS (EMA{_ema_fast_n} vs EMA{_ema_slow_n} tidak searah) — tidak ada edge, tunggu tren jelas."
+        )
+        confidence = 45
 
-    # v8.1.6 — Deep-entry formula (swing-based). Detect peaks/valleys
-    # from the full candle history (window=10 mid-swings) and place
-    # entry BELOW recent structure so users don't buy tops or short
-    # bottoms. Falls back to ATR-based default if not enough swings.
+    # Swing metrics for display + level anchoring.
     peaks, valleys = _find_swings(highs, lows, window=10)
-    # v8.7.23 — Detect market regime (BULL / BEAR / BEAR_CAPITULATION / …)
-    # once per compute so all three level tiers (deep / moderate / aggr)
-    # share the SAME regime preset. Crypto only — other markets ignore it.
+    # Regime detector kept as DISPLAY context only (crypto) — it no longer
+    # alters entries; the trader profile owns SL/TP tuning.
     regime_info = _detect_regime(closes, highs, lows) if market == "crypto" else {"regime": "UNKNOWN"}
     regime = regime_info.get("regime", "UNKNOWN")
-    levels = _compute_deep_levels(action, price, atr, peaks, valleys, market=market, regime=regime)
+    levels = _compute_deep_levels(
+        action, price, atr, peaks, valleys,
+        market=market, regime=regime,
+        sl_mult=_sl_atr_mult, tp_ladder=_tp_ladder,
+    )
     entry = levels["entry"]
     stop_loss = levels["stop_loss"]
     take_profit = levels["take_profit"]
 
-    # v8.1.6 — Also pre-compute levels for both BUY and SELL sides so
-    # the AI ensemble can pick either direction with the same swing
-    # structure — even if the AI action disagrees with the technical
-    # rule vote.
-    buy_levels = _compute_deep_levels("BUY", price, atr, peaks, valleys, market=market, regime=regime)
-    sell_levels = _compute_deep_levels("SELL", price, atr, peaks, valleys, market=market, regime=regime)
+    # Pre-compute levels for both BUY and SELL sides so the AI ensemble
+    # can pick either direction with the same deterministic formula.
+    buy_levels = _compute_deep_levels(
+        "BUY", price, atr, peaks, valleys,
+        market=market, regime=regime,
+        sl_mult=_sl_atr_mult, tp_ladder=_tp_ladder,
+    )
+    sell_levels = _compute_deep_levels(
+        "SELL", price, atr, peaks, valleys,
+        market=market, regime=regime,
+        sl_mult=_sl_atr_mult, tp_ladder=_tp_ladder,
+    )
 
     return {
         "action": action,
@@ -777,17 +1108,22 @@ def compute_signal(
         "confidence": int(confidence),
         "indicators": {
             "rsi": round(rsi, 2) if rsi is not None else None,
-            "ema20": round(ema20, 6),
-            "ema50": round(ema50, 6),
-            "macd_hist": round(macd[2], 6) if macd else None,
+            # Legacy key names kept for frontend compatibility; values
+            # follow the ACTIVE profile's EMA windows.
+            "ema20": round(ema_fast, 6),
+            "ema50": round(ema_slow, 6),
+            "ema200": round(ema200, 6) if ema200 is not None else None,
+            "macd_hist": round(hists[-1], 6) if hists else None,
             "price": round(price, 8),
             "atr": round(atr, 6),
-            # v8.1.6 — swing metrics exposed so the frontend can render
-            # a full "Entry Levels" card (deep / moderate / aggressive).
             "avg_peak": round(levels["avg_peak"], 8),
             "avg_valley": round(levels["avg_valley"], 8),
             "peaks_found": len(peaks),
             "valleys_found": len(valleys),
+            # v9.0.0 — confluence context so the UI can show WHY.
+            "structure": structure,
+            "volume_ratio": round(vol_ratio, 2) if vol_ratio is not None else None,
+            "momentum_5bar_pct": round(mom5, 2),
         },
         "reasons": reasons,
         # v8.12.28 — All entry/SL/TP levels are None for HOLD signals;

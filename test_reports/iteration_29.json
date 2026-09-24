@@ -1,0 +1,34 @@
+{
+  "summary": "v9.0.0 Confluence overhaul verified end-to-end. Backend 17/17 PASSED: chart signal payload shape, R:R ladder (TP1=1R/TP2=2R/TP3=3R exact on BUY/SELL assets ASTER & COMP), HOLD emits all-null levels with 'tunggu pullback/rally' reason (verified live on BTC), all 4 profiles (scalper/day/swing/longterm) return 200, dashboard/batch vs asset chart SYNC identical for action/label/confidence on profile=swing AND profile=day (8 assets each), search returns TSLA & INTC as stock_us hits, DOT crypto hit with full-precision price (1.108), label sanity clean across crypto/stock_us/stock_id (only LONG/SHORT/BUY/SELL/HOLD — zero DIP/TOP), regressions on dashboard stock_id/stock_us, /api/profiles, /api/subscription/health all 200. Frontend smoke PASSED: dashboard loads (Ver 9.0.0, consensus strip 25 PREMIUM/12 BUY-LONG/74 HOLD/13 SELL-SHORT, signal cards with sparklines), search for TSLA renders card with blue US tag. One minor formula edge case found on stablecoins (USDT).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/asset/crypto/USDT/chart (stablecoins)", "issue": "R:R breaks on degenerate-ATR stablecoins: USDT BUY shows SL risk=0.00016 (ATR-based) but TP distances computed with price*0.005 floor → TP1=31R, TP2=62R, TP3=94R vs actual stop distance. Ladder ratio 1:2:3 internally consistent, but effective R:R vs SL is ~31:1, not 1:1. RCA: indicators.py:358/371 `risk = max(entry-sl, price*0.005)` floor dominates when ATR is tiny. Suggest excluding stablecoins from signal generation or clamping SL to the same floor."},
+      {"endpoint": "indicators.py:359-361", "issue": "Stale comment: says 'TP-1 = 1.5R / 2.5R / 3.5R' but actual tp_ladder default is (1.0, 2.0, 3.0) — backtest-selected ladder works correctly, only the comment lies."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_iter29_v900_confluence.py", "/app/test_reports/pytest/iter29.xml"],
+  "action_items": [
+    "Minor: guard stablecoin signals (USDT-type) — either suppress BUY/SELL when ATR% is near-zero or apply the price*0.005 floor to SL too so displayed R:R stays honest",
+    "Minor: fix stale TP ladder comment in indicators.py lines 359-361",
+    "Code health (non-blocking): server.py (2892 lines), index.tsx (1847 lines), indicators.py (780 lines) exceed 700-line guideline — consider splitting in future iterations"
+  ],
+  "critical_code_review_comments": [
+    "No deprecated Expo packages (expo-av/barcode-scanner/background-fetch absent)",
+    "Frontend correctly uses process.env.EXPO_PUBLIC_BACKEND_URL; no hardcoded URLs in api.ts",
+    "HOLD correctly emits null levels (no fake ladders) — matches v8.12.28 lesson documented in code"
+  ],
+  "updated_files": ["/app/backend/tests/test_iter29_v900_confluence.py"],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "100% (smoke: dashboard + search)"},
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "v9.0.0 sync verified via ?profile= param threaded through dashboard/batch/search. Disclaimer modal ('Important Disclaimer') appears on every fresh browser context — dismiss via partial-text selector 'I have read and understood' then 'I Agree' before testing UI; assertions against body inner_text will pass against hidden DOM if modal not dismissed. USDT risk-floor edge case documented in indicators.py:358.",
+  "rca_of_issue": "USDT R:R anomaly: indicators.py:358 `risk = max(entry_deep - sl_deep, price * 0.005)` — the price*0.005 floor is applied to TP distance computation but SL remains at sl_mult*ATR, so on stablecoins (ATR ≈ 0.016% of price) TPs sit 31R+ from entry relative to the actual stop. Reproduction: GET /api/asset/crypto/USDT/chart?timeframe=1h&profile=swing → action=BUY, risk=0.00016, TP1≈31.256R. Mitigation: apply same floor to SL or skip signals for pegged assets."
+}

@@ -124,3 +124,50 @@ Version 8.12.36 tested (backend 8/8 pytest + frontend PASS).
 - DO NOT touch flicker fix in `/app/frontend/app/asset/[market]/[symbol].tsx` (BLOCKED by user).
 - Voice Search on native devices requires a fresh APK/AAB build (Expo Go bundle does NOT include the native module).
 - Preview → Production: user must re-Publish + regenerate build APK/AAB for frontend features to reach their device.
+
+## v9.0.0 — "Confluence" Total Formula Overhaul (Sept 2026)
+
+**Pemicu**: User melaporkan 3 bug kritis — (1) akurasi sinyal anjlok pasca-v3
+(kebanyakan loss, arah tertukar), (2) dashboard (DIP/TOP) tidak sinkron dengan
+detail aset (Sideways vs Long/Short), (3) saham US premium (TSLA/INTC) hilang
+dari search.
+
+**Perubahan**:
+- `backend/indicators.py` — compute_signal() ditulis ulang total:
+  trend-following confluence (struktur EMA + zona pullback ±1.5 ATR + RSI
+  band + MACD hist + volume + momentum + EMA200 bonus). FLIP/DIP/TP
+  inversion DIHAPUS (overextended → HOLD "tunggu pullback", bukan sinyal
+  berlawanan arah). Confidence jujur 50-95. TP ladder (1R/2R/3R) dipilih
+  dari backtest: 30 hari, 9 aset, 302 trade → WR 57.1%, +0.136R/trade
+  (vs formula lama 51.8%, +0.03R). Guard stablecoin (ATR<0.1% → HOLD).
+- `backend/server.py` — ?profile= ditambahkan ke /api/dashboard,
+  /api/dashboard/batch, /api/search → sinyal dashboard IDENTIK dengan
+  detail (diverifikasi 8 aset × 2 profil, 0 mismatch).
+- `frontend` — api.ts + index.tsx mengirim traderProfile ke dashboardBatch
+  & search; reload saat profil berubah. Versi 9.0.0.
+- `backend/backtest_v9.py` — harness backtest walk-forward.
+
+**Testing**: 17/17 PASSED (iter29) — R:R ladder, sync dashboard-detail,
+search TSLA/INTC, presisi harga DOT, label sanity, regresi endpoint.
+
+**Catatan penting**: JANGAN mengembalikan logic FLIP atau confidence gate.
+JANGAN sentuh flicker fix di asset/[market]/[symbol].tsx.
+
+## v9.1.0–v9.2.0 — VWAP Session Engine + Master 15-Video Formula
+
+**User memberikan formula sendiri** (dari 15 video trading) untuk Trader Profile:
+- **VWAP Core**: anchored VWAP dengan reset per sesi (tanggal UTC).
+- **Separator**: mean-reversion saat deviasi harga ≥1.5% dari VWAP.
+- **KISS Pivot**: bounce/rejection tepat di garis VWAP (INTRADAY).
+- **John Wick**: wick ≥60% dari range candle (rejection).
+- **Power of Tower**: candle impulsif (body >80% range) + retrace 50%.
+- **Box Theory**: breakout konsolidasi lookback 10/20/50 per profile.
+
+**Routing** (backend/indicators.py): scalper→SCALPER(box10) · day→INTRADAY(box20)
+· swing→SWING(box50) · longterm→Confluence v9.0 (EMA50/100/200).
+Fallback ke Confluence jika tanpa volume (forex). Level VWAP: tier rapat
+0/0.3/0.6 ATR (sinyal = pemicu), SL per profil, TP 1R/2R/3R.
+Guard stablecoin hanya untuk crypto (forex 1h normal bervolatilitas <0.1%).
+
+**Backtest 30d (9 aset)**: scalper 55.3% WR (+50R) · day 51.4% (+12R) ·
+swing 51.3% (+1R). Testing iter30: 8/8 PASSED.

@@ -563,11 +563,13 @@ def _filter_lists(crypto: list[str], stocks: list[str]) -> tuple[list[str], list
     return c, s
 
 
-def _build_signal(snapshot: dict, tr: dict | None = None, *, min_conf: int = 85, min_wr: float = 70.0) -> AssetSignal:
+def _build_signal(snapshot: dict, tr: dict | None = None, *, min_conf: int = 85, min_wr: float = 70.0, profile: str | None = None) -> AssetSignal:
     market = snapshot["market"]
     candles = snapshot.get("candles", [])
     ticker = snapshot.get("ticker", {}) or {}
-    sig = compute_signal(candles, market)
+    # v9.0.0 — Pass the caller's trader profile so the dashboard computes
+    # the SAME signal the detail page shows (single source of truth).
+    sig = compute_signal(candles, market, profile=profile)
     spark = [c["close"] for c in candles[-30:]] if candles else []
     tr_mini = TrackRecordMini(**(tr or {}))
     wr = tr_mini.wr_30d
@@ -813,6 +815,7 @@ async def dashboard(
     min_wr: float | None = Query(None, ge=0.0, le=100.0, description="Override WR threshold"),
     full: bool = Query(False),
     region: str | None = Query(None, description="Optional region filter for World Stocks"),
+    profile: str | None = Query(None, description="Trader profile (scalper/day/swing/longterm) — keeps dashboard signals identical to the detail page"),
 ) -> DashboardResponse:
     if timeframe not in TIMEFRAME_MAP:
         raise HTTPException(400, f"Invalid timeframe. Use one of {TIMEFRAMES}")
@@ -826,6 +829,7 @@ async def dashboard(
         min_wr=min_wr if min_wr is not None else default_wr,
         full=full,
         region=region,
+        profile=profile,
     )
 
 
@@ -840,6 +844,7 @@ async def _build_dashboard_response(
     full: bool = False,
     region: str | None = None,
     extras: list[str] | None = None,
+    profile: str | None = None,
 ) -> DashboardResponse:
     # Backward-compat: "stock" -> "stock_id", "world_stocks" -> "stock_us" internally
     eff_market = "stock_id" if market == "stock" else market
@@ -914,7 +919,7 @@ async def _build_dashboard_response(
     by_sym = {s["symbol"]: s for s in snapshots}
     ordered = [by_sym[s] for s in symbols if s in by_sym]
     assets = [
-        _build_signal(s, tr_summary.get(s["symbol"]), min_conf=min_confidence, min_wr=min_wr)
+        _build_signal(s, tr_summary.get(s["symbol"]), min_conf=min_confidence, min_wr=min_wr, profile=profile)
         for s in ordered
     ]
 
@@ -955,6 +960,7 @@ async def dashboard_batch(
     min_wr: float | None = Query(None, ge=0.0, le=100.0),
     region: str | None = Query(None, description="Regional filter applied to stock_us only"),
     extras: str | None = Query(None, description="Extra symbols to include, format: market:SYMBOL,market:SYMBOL"),
+    profile: str | None = Query(None, description="Trader profile (scalper/day/swing/longterm) — keeps batch signals identical to the detail page"),
 ) -> dict[str, Any]:
     if timeframe not in TIMEFRAME_MAP:
         raise HTTPException(400, f"Invalid timeframe. Use one of {TIMEFRAMES}")
@@ -1005,6 +1011,8 @@ async def dashboard_batch(
                 # v8.1.3 — Only apply region to stock_us; other markets ignore it.
                 region=region if m in ("stock_us", "world_stocks") else None,
                 extras=extras_by_market.get(eff_m),
+                # v9.0.0 — Trader profile so batch signals match detail page.
+                profile=profile,
             )
         )
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -1263,6 +1271,7 @@ async def search_assets(
     q: str = Query(..., min_length=1, max_length=32),
     limit: int = Query(30, ge=1, le=60),
     timeframe: str = Query("1h"),
+    profile: str | None = Query(None, description="Trader profile — search-hit signals match dashboard/detail"),
 ) -> dict[str, Any]:
     """Cross-market symbol search — v8.1.3 full-universe edition.
 
@@ -1427,7 +1436,7 @@ async def search_assets(
         tr_by_symbol.update(tr)
 
     signals = [
-        _build_signal(h, tr_by_symbol.get(h["symbol"])).model_dump()
+        _build_signal(h, tr_by_symbol.get(h["symbol"]), profile=profile).model_dump()
         for h in hits
     ]
     for sig, h in zip(signals, hits):

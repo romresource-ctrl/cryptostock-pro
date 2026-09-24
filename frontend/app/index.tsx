@@ -526,6 +526,9 @@ export default function Dashboard() {
         // slice so the Watchlist column can render them (e.g. BBCA which
         // sits at stock_id index 51).
         extras: watchlistExtrasRef.current,
+        // v9.0.0 — Send the active trader profile so dashboard signals are
+        // computed with the SAME formula parameters as the detail page.
+        profile: traderProfile,
       });
       setData((prev) => {
         const next = { ...prev };
@@ -556,7 +559,7 @@ export default function Dashboard() {
         return next;
       });
     }
-  }, []);
+  }, [traderProfile]);
 
   useEffect(() => {
     // v8.0.7 — Removed lazy-loading: fetch every category (still ONE
@@ -1283,6 +1286,7 @@ function SearchResults({
   // paints. That is what caused the "app crashes the instant I type
   // in the search box" bug reported on production. Grab our own hook.
   const { t } = useI18n();
+  const { profile: traderProfile } = useTraderProfile();
   const { width: screenW } = useWindowDimensions();
   const q = query.toUpperCase();
 
@@ -1298,7 +1302,9 @@ function SearchResults({
     setSearching(true);
     const timer = setTimeout(async () => {
       try {
-        const res = await api.search(query.trim());
+        // v9.0.0 — Pass trader profile so search-hit signals match the
+        // dashboard/detail formula exactly (single source of truth).
+        const res = await api.search(query.trim(), undefined, traderProfile);
         if (!cancelled) {
           const arr = (res.hits || []).map((a) => ({
             asset: a,
@@ -1316,7 +1322,7 @@ function SearchResults({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query]);
+  }, [query, traderProfile]);
 
   // Merge local (already-loaded dashboard data) + remote (full pool).
   // De-duplicate by market+symbol; local wins because it has fresher

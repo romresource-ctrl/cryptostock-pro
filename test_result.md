@@ -556,3 +556,247 @@ agent_communication:
            return the standard AssetSignal fields (no regression).
       NOT TO TEST via automated agent: live Binance WS streaming,
       real Google Play billing.
+
+# ============================================================
+# v9.0.0 — TOTAL FORMULA OVERHAUL "Confluence" + Dashboard-Detail Sync
+# ============================================================
+backend:
+  - task: "v9.0.0 Confluence formula (indicators.py rewrite)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/indicators.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          TOTAL REWRITE of compute_signal() per user demand (signal accuracy
+          collapsed after v3: "kebanyakan loss, arah tertukar").
+          REMOVED: v8.12.24 FLIP inversion (uptrend+overbought→SELL/TP was
+          shorting users into bull runs), v8.12.27 pump/dump vetoes,
+          multi-horizon near-extreme guards, v3 confidence gate, regime
+          presets in level calc.
+          NEW: structure spine (EMA fast/slow + price, optional EMA200 for
+          swing/longterm), pullback entry zone (±1.5 ATR dari EMA fast),
+          RSI health bands (BUY 35-68 / SELL 32-65; veto chase RSI≥72/≤28),
+          MACD hist sign+direction, volume expansion, momentum, EMA200 bonus.
+          Overextension → HOLD (never counter-trend flip).
+          Confidence jujur 50-95 additive (structure 18 + zone 10 + macd
+          6-10 + rsi 7 + vol 6 + mom 5 + ema200 5).
+          Levels: entry ladder 1.0/0.5/0.2 ATR, SL = sl_mult×ATR per
+          profile, TP ladder (1.0, 2.0, 3.0)R — dipilih dari BACKTEST:
+          30 hari, 9 aset, 302 trade → TP1=1R WR 57.1% exp +0.136R vs
+          TP1=1.5R WR 42.1% exp +0.048R vs formula lama v8 WR 51.8%
+          exp +0.03R. Backtest script: /app/backend/backtest_v9.py.
+          HOLD emits NO levels (v8.12.28 preserved). Response schema
+          unchanged + new indicators.{structure, ema200, volume_ratio,
+          momentum_5bar_pct}.
+  - task: "Dashboard/Search ↔ Detail signal sync (profile param)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Root cause "dashboard DIP/TOP vs detail Sideways": dashboard
+          _build_signal() called compute_signal WITHOUT profile (default
+          day) while /asset chart passed user's profile → different EMA
+          windows → different signals. FIX: ?profile= query param added
+          to /api/dashboard, /api/dashboard/batch, /api/search and
+          threaded through _build_dashboard_response → _build_signal →
+          compute_signal. VERIFIED: 4/4 assets (BTC/ETH/SOL/XRP) identical
+          action/label/confidence between batch & chart with profile=swing.
+frontend:
+  - task: "Frontend passes traderProfile to dashboardBatch + search"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/lib/api.ts, /app/frontend/app/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          api.dashboard/dashboardBatch/search accept opts.profile; index.tsx
+          load() sends traderProfile + reloads on profile change;
+          SearchResults uses useTraderProfile and passes it to api.search.
+          Version bumped 8.12.83 → 9.0.0 (version.ts + app.json).
+metadata:
+  created_by: "main_agent"
+  version: "9.0.0"
+  test_sequence: 25
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "v9.0.0 Confluence formula (indicators.py rewrite)"
+    - "Dashboard/Search ↔ Detail signal sync (profile param)"
+    - "Search returns premium US stocks (TSLA/INTC) — regression check"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: |
+      v9.0.0 — PLEASE TEST BACKEND:
+      1. /api/asset/crypto/{BTC,ETH,SOL}/chart?timeframe=1h (no profile)
+         and with profile=scalper|day|swing|longterm: signal fields
+         complete; for BUY/SELL: entry≠None, R:R TP1 ≈ 1.0
+         (|tp1-entry| ≈ |entry-sl|), TP2≈2R, TP3≈3R; HOLD → all levels null.
+      2. SYNC: /api/dashboard/batch?markets=crypto&profile=X vs
+         /api/asset/crypto/{sym}/chart?profile=X → action/label/confidence
+         MUST be identical per symbol (do for day + swing).
+      3. /api/search?q=TSLA and q=INTC → hits contain stock_us TSLA/INTC
+         (regression for user's "premium world stocks missing" report).
+      4. /api/search?q=DOT → crypto hit, price has full precision.
+      5. No FLIP labels: label set is only LONG/SHORT/BUY/SELL/HOLD —
+         never "DIP"/"TP" anymore.
+      6. Overextended uptrend (e.g. asset at local top) → HOLD with reason
+         "tunggu pullback", NOT SELL.
+      7. Regression: /api/dashboard?market=stock_id, /api/profiles,
+         /api/subscription/health still OK.
+      FRONTEND (light): dashboard loads, search renders hits.
+      NOT TO TEST: Google Play billing, native voice notes.
+
+# ============================================================
+# v9.1.0 — VWAP Session Engine untuk Trader Profile (formula user)
+# ============================================================
+backend:
+  - task: "VWAP Session Engine (SCALPER/INTRADAY/SWING) di indicators.py"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/indicators.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          User memberikan formula VWAP-based (anchored VWAP dengan reset
+          per sesi/UTC-day, box breakout 10/20/50, pola reversal candle,
+          deviasi threshold 1.5%). Diimplementasikan PERSIS:
+            scalper → SCALPER (box 10, deviasi VWAP + reversal / breakout)
+            day     → INTRADAY (box 20, reclaim/rejection VWAP cross)
+            swing   → SWING (box 50, breakout + reversal + sisi VWAP)
+            longterm → TETAP mesin Confluence v9.0 (EMA 50/100/200).
+          Routing di compute_signal: profile scalper/day/swing → mesin
+          VWAP di SEMUA market (VWAP memang konsep pasar sesi); fallback
+          ke Confluence jika candle tidak punya volume.
+          Level untuk mesin VWAP: tier rapat (0 / 0.3 / 0.6 ATR) karena
+          sinyal = pemicu entry; SL sl_mult×ATR per profil; TP 1R/2R/3R.
+          Stocklike tetap varian persentase. Schema response identik +
+          indicators baru: vwap, price_dev_pct, box_high/low, flags.
+          BACKTEST 30 hari (9 aset, 1h): scalper WR 56.0% +0.119R
+          (462 trade, +55R) · day WR 50.9% +0.017R · swing WR 48.6%
+          (40 trade, sampel kecil) · longterm confluence 49.5%.
+          Guard longterm diperbaiki (snapshot 100 candle < EMA100+5
+          membuat longterm selalu HOLD — sekarang cukup >= EMA period).
+frontend:
+  - task: "Trader Profile descriptions untuk mesin VWAP"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/lib/useTraderProfile.ts"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "PROFILE_META descriptions diperbarui (VWAP deviasi/box/reclaim). Version bump 9.1.0."
+metadata:
+  created_by: "main_agent"
+  version: "9.1.0"
+  test_sequence: 26
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "VWAP Session Engine (SCALPER/INTRADAY/SWING) di indicators.py"
+    - "Sync dashboard-detail dengan mesin VWAP per profile"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: |
+      v9.1.0 — PLEASE TEST BACKEND:
+      1. GET /api/asset/crypto/{BTC,ETH,SOL}/chart?timeframe=1h&profile=X
+         untuk X in scalper|day|swing|longterm:
+         - scalper/day/swing → indicators.vwap_engine == SCALPER/INTRADAY/
+           SWING, indicators.vwap non-null, price_dev_pct numerik.
+         - longterm → confluence (tidak ada vwap_engine).
+         - Schema lengkap: action/label/confidence/reasons/entry/levels;
+           HOLD → semua level null; BUY/SELL → level non-null.
+      2. SYNC: /api/dashboard/batch?markets=crypto&profile=scalper vs
+         /api/asset/crypto/{sym}/chart?profile=scalper → action/label/
+         confidence identik per simbol.
+      3. Stock path: /api/asset/stock_id/BBCA/chart?profile=day → 200,
+         engine INTRADAY, level persentase wajar (entry dekat harga).
+      4. Regresi: /api/search?q=TSLA, /api/dashboard?market=stock_us,
+         /api/subscription/health.
+      FRONTEND (light): dashboard load, trader profile modal menampilkan
+      deskripsi baru.
+
+# ============================================================
+# v9.2.0 — Master 15-Video Formula (John Wick + Power of Tower)
+# ============================================================
+backend:
+  - task: "Upgrade mesin VWAP ke Master 15-Video Formula"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/indicators.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          User memberikan Master Engine (gabungan 15 video): VWAP core +
+          Separator (deviasi/mean-reversion) + KISS Pivot (bounce di VWAP)
+          + John Wick (wick >= 60% range) + Power of Tower (impulsive body
+          > 80% range lalu retrace 50%) + Box Theory + profile filters.
+          Diimplementasikan persis versi Python backend:
+            bull_rev = std_bull OR john_wick_bull OR power_of_tower_bull
+            bear_rev = std_bear OR john_wick_bear OR power_of_tower_bear
+          Confidence: +8 reversal, +6 John Wick, +6 Power of Tower.
+          indicators baru: john_wick(_bull/_bear), power_of_tower(_bull/_bear).
+          Trigger reasons menyebut nama pola yang menyala.
+          UNIT TESTED: SCALPER BUY pada deviasi -1.52% + John Wick bull ✓;
+          deteksi PoT bull ✓ (retrace 50% setelah impulsive red).
+          BACKTEST 30d (9 aset): scalper 55.3% WR +50R · day 51.4% +12R
+          · swing 51.3% +1R — semua ≥ v9.1.0.
+metadata:
+  created_by: "main_agent"
+  version: "9.2.0"
+  test_sequence: 27
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Master 15-Video Formula: pola John Wick & Power of Tower aktif di sinyal live"
+    - "Regresi sync dashboard-detail + search"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: |
+      v9.2.0 — quick verification saja (fokus regresi):
+      1. /api/asset/crypto/{BTC,ETH}/chart?profile=scalper|day|swing →
+         200, schema lengkap, indicators.vwap_engine sesuai, indicators
+         punya john_wick & power_of_tower flags.
+      2. Sync batch vs chart untuk profile=day (2-3 simbol cukup).
+      3. Regresi: /api/search?q=TSLA, /api/dashboard?market=stock_id.
+      Frontend: dashboard load normal, Ver 9.2.0 di header.

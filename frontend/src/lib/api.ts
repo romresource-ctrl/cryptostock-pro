@@ -254,12 +254,13 @@ export const api = {
   dashboard: (
     market: Market,
     timeframe: Timeframe,
-    opts: { sort?: DashboardSort; premiumOnly?: boolean; full?: boolean } = {},
+    opts: { sort?: DashboardSort; premiumOnly?: boolean; full?: boolean; profile?: string } = {},
   ) => {
     const params = new URLSearchParams({ market, timeframe });
     if (opts.sort) params.append("sort", opts.sort);
     if (opts.premiumOnly) params.append("premium_only", "true");
     if (opts.full) params.append("full", "true");
+    if (opts.profile) params.append("profile", opts.profile);
     return get<DashboardResponse>(`/dashboard?${params.toString()}`);
   },
   // v8.0.4 — Batch dashboard fetch. Instead of firing N parallel HTTP
@@ -268,7 +269,7 @@ export const api = {
   dashboardBatch: (
     markets: Market[],
     timeframe: Timeframe,
-    opts: { sort?: DashboardSort; full?: boolean; region?: string; extras?: string[] } = {},
+    opts: { sort?: DashboardSort; full?: boolean; region?: string; extras?: string[]; profile?: string } = {},
   ) => {
     const params = new URLSearchParams({
       markets: markets.join(","),
@@ -277,6 +278,8 @@ export const api = {
     if (opts.sort) params.append("sort", opts.sort);
     if (opts.full) params.append("full", "true");
     if (opts.region && opts.region !== "all") params.append("region", opts.region);
+    // v9.0.0 — Trader profile so dashboard signals match the detail page.
+    if (opts.profile) params.append("profile", opts.profile);
     // v8.12.18 — Ship watchlist entries as extras so the backend
     // includes symbols beyond the default top-50 slice (e.g. BBCA at
     // index 51 in stock_id). Format: `market:SYMBOL,market:SYMBOL`.
@@ -324,13 +327,13 @@ export const api = {
   aiModels: () =>
     get<{ models: { name: string; provider: string }[] }>(`/ai/models`),
 
-  search: (q: string, timeframe: string = "1h") =>
+  search: (q: string, timeframe: string = "1h", profile?: string) =>
     get<{
       hits: AssetSignal[];
       query: string;
       disambiguation?: { id: string; symbol: string; name: string; market_cap_rank: number | null; thumb: string | null }[];
     }>(
-      `/search?q=${encodeURIComponent(q)}&timeframe=${encodeURIComponent(timeframe)}`,
+      `/search?q=${encodeURIComponent(q)}&timeframe=${encodeURIComponent(timeframe)}${profile ? `&profile=${encodeURIComponent(profile)}` : ""}`,
     ),
 };
 
