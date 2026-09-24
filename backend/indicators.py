@@ -714,15 +714,19 @@ def compute_signal(
         confidence = max(40, min(70, confidence))
 
     # v8.12.57 — BTC Trading Formula v3: Trader-Profile confidence gate.
-    # After the primary BUY/SELL/HOLD decision, downgrade to HOLD if the
-    # confidence falls below the trader-profile threshold. This enforces
-    # the "signal frequency" personality per profile:
-    #   Scalper (55%)  → sees more signals, small wins
-    #   Day (65%)      → balanced
-    #   Swing (75%)    → fewer but stronger signals
-    #   Long-term (80%) → rare, high-conviction only
-    # Only applied to eligible markets (crypto / forex / gold_silver).
-    if market in PROFILE_APPLICABLE_MARKETS and action in ("BUY", "SELL"):
+    # v8.12.84 — DISABLED. Root cause laporan user "banyak loss / arah
+    # tertukar / dashboard TP tapi detail SIDEWAYS":
+    #   Dashboard memakai default profile ("day") saat menghitung sinyal
+    #   → confidence lolos gate 65% → BUY/SELL tampil.
+    #   Detail memakai profile aktual user (mis. Swing 75%) → confidence
+    #   di bawah 75% → di-downgrade jadi HOLD → SIDEWAYS.
+    # Gate ini juga merusak akurasi v2: sinyal valid & tren jelas
+    # sering dipaksa HOLD hanya karena confidence 70% (di bawah Swing/
+    # Long-term). Efek profile tetap dipertahankan lewat EMA/RSI/HTF
+    # preset (lihat TRADER_PROFILES di atas) — TANPA memaksa downgrade.
+    # Rollback ke logika v2: keputusan BUY/SELL/HOLD murni dari analisis
+    # teknikal, tidak digagalkan oleh threshold profile.
+    if False and market in PROFILE_APPLICABLE_MARKETS and action in ("BUY", "SELL"):
         if confidence < _min_conf_gate:
             reasons.append(
                 f"Downgraded to HOLD — confidence {confidence}% below "
