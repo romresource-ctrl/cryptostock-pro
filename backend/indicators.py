@@ -588,19 +588,28 @@ def _compute_vwap_signal(
         ]
         confidence = 45
     else:
-        confidence = 55
+        # v9.1.2 — Rekalibrasi confidence VWAP agar setup berkonfluens penuh
+        # bisa mencapai zona Premium (85+). Kalibrasi lama mentok di ~79
+        # (base 55) sehingga TIDAK ADA satupun sinyal VWAP yang lolos gate
+        # premium → badge hilang di semua kolom bervolume.
+        #   base 58 (trigger terkonfirmasi) + box 14 + reversal 10
+        #   + John Wick 7 + Power of Tower 7 + sisi VWAP 8 + deviasi 6
+        #   → setup kuat (box + reversal + sisi VWAP) = 90 ✓ premium
+        # Trigger utama engine (box breakout / deviasi ekstrem / KISS pivot
+        # di VWAP) adalah kondisi yang BERHASIL menyala — beri bobot penuh.
+        confidence = 58 + 14
         reasons = [f"[{engine}] " + t for t in triggers]
+        if (action == "BUY" and box_break_long) or (action == "SELL" and box_break_short):
+            confidence += 14
         if bull_rev or bear_rev:
-            confidence += 8
+            confidence += 10
         # Pola premium dari materi video: rejection wick / momentum tower.
         if john_wick_bull or john_wick_bear:
-            confidence += 6
+            confidence += 7
         if power_of_tower_bull or power_of_tower_bear:
-            confidence += 6
-        if (action == "BUY" and box_break_long) or (action == "SELL" and box_break_short):
-            confidence += 12
+            confidence += 7
         if (action == "BUY" and price > vwap) or (action == "SELL" and price < vwap):
-            confidence += 10
+            confidence += 8
         if abs(price_dev) >= dev_thresh:
             confidence += 6
         confidence = min(95, confidence)

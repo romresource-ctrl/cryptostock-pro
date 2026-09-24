@@ -180,3 +180,13 @@ Mesin VWAP (v9.1/9.2) hanya jalan saat scalper/day/swing dipilih eksplisit.
 Backend: routing `profile in _PROFILE_TO_VWAP` (None → Confluence).
 Frontend: `_explicit` state di useTraderProfile; apiProfile=null → param
 ?profile= tidak dikirim ke dashboardBatch/search/chart/analyze.
+
+## v9.1.2 — Fix Premium Badge Hilang
+
+Report: badge premium hanya tampil di kolom forex. Root cause: (1) confidence
+mesin VWAP mentok ~79 (base 55) — tak pernah lolos gate 85+; (2) gate premium
+warisan v8 (WR>=72-75%, bar tanpa-histori +5) mustahil untuk formula v9 yang
+jujur (backtest WR 55-57%). Fix: VWAP trigger utama +14 confidence; threshold
+market → (85, 55); bar tanpa-histori → +3. Hasil: 56 premium (Confluence),
+36 (scalper), 18 (day), 14 (swing). stock_us 0 di mode VWAP = trigger memang
+belum menyala (bukan bug).

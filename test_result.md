@@ -854,3 +854,39 @@ agent_communication:
       v9.3.0 — Trader Profile toggle. Diverifikasi main agent via
       e2e screenshot flow + backend matrix curl. Tidak perlu retest
       kecuali user laporkan masalah.
+
+# ============================================================
+# v9.1.2 — Fix Premium Badge Hilang (rekalibrasi confidence & gate)
+# ============================================================
+backend:
+  - task: "Premium badge kembali muncul di semua kolom"
+    implemented: true
+    working: true
+    file: "/app/backend/indicators.py, /app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          User report: "premium badge hanya ada di kolom forex saja".
+          ROOT CAUSE ganda:
+          1. Mesin VWAP (scalper/day/swing) confidence mentok di ~79
+             (base 55) → tak pernah lolos gate premium 85-90. Forex lolos
+             karena fallback ke Confluence (tanpa volume). FIX: trigger
+             utama engine +14, base 58 → setup kuat mencapai 85-95.
+          2. Gate premium v8: tanpa histori WR butuh conf >= min_conf+5
+             (92-95) DAN min_wr 72-75% — dikalibrasi untuk formula v1,
+             mustahil untuk confidence jujur v9. FIX: threshold →
+             (85, 55) mayoritas market; bar tanpa-histori +3.
+          HASIL (batch 5 market): tanpa profile 56 premium (7 crypto,
+          6 US, 20 IDX, 9 ETF, 14 forex) · scalper 36 (18 crypto) ·
+          day 18 · swing 14. stock_us 0 di mode VWAP = kondisi trigger
+          memang belum menyala sesi ini (dev 1.5%/box-10 jarang tercapai
+          intraday saham) — bukan bug.
+metadata:
+  created_by: "main_agent"
+  version: "9.1.1"
+  test_sequence: 29
+  run_ui: false

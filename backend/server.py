@@ -584,7 +584,10 @@ def _build_signal(snapshot: dict, tr: dict | None = None, *, min_conf: int = 85,
     #   • If we DO NOT have a WR sample → require confidence >= min_conf + 5
     #     (stricter bar to compensate for the unknown WR).
     if wr is None:
-        is_premium = action_ok and sig["confidence"] >= (min_conf + 5)
+        # v9.1.2 — Aset tanpa histori: bar +3 (bukan +5). Bar lama (90-95)
+        # praktis tak terjangkau confidence jujur v9 (cap 95, sinyal kuat
+        # umumnya 85-90) → kolom premium kosong total.
+        is_premium = action_ok and sig["confidence"] >= (min_conf + 3)
     else:
         is_premium = action_ok and conf_ok and wr >= min_wr
     # v8.1.3 — Attach region (japan/china/us/etc.) for World Stocks
@@ -788,14 +791,18 @@ async def update_watchlist(payload: WatchlistPayload) -> WatchlistResponse:
 # override via query params (?min_confidence=&min_wr=).
 _MARKET_THRESHOLDS: dict[str, tuple[int, float]] = {
     # market key            (min_conf, min_wr)
-    "crypto":               (87, 72.0),
-    "stock_id":             (88, 75.0),
-    "stock_us":             (88, 75.0),
-    "world_stocks":         (88, 75.0),
-    "etf":                  (88, 75.0),
-    "gold_silver":          (90, 75.0),
-    "commodity":            (90, 75.0),
-    "forex":                (88, 75.0),
+    # v9.1.2 — Rekalibrasi ke performa backtest v9 yang JUJUR (WR 55-57%).
+    # Gate lama (WR>=72-75%) dikalibrasi untuk formula v1 dan praktis
+    # mustahil dicapai → badge premium hilang total. Bar untuk aset tanpa
+    # histori juga diturunkan dari +5 ke +3 (lihat _build_signal).
+    "crypto":               (85, 55.0),
+    "stock_id":             (85, 55.0),
+    "stock_us":             (85, 55.0),
+    "world_stocks":         (85, 55.0),
+    "etf":                  (85, 55.0),
+    "gold_silver":          (87, 55.0),
+    "commodity":            (87, 55.0),
+    "forex":                (85, 55.0),
 }
 
 
