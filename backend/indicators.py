@@ -651,6 +651,8 @@ def _compute_vwap_signal(
             "rsi": round(rsi, 2) if rsi is not None else None,
             "ema20": round(_ef[-1], 6) if _ef else None,
             "ema50": round(_es[-1], 6) if _es else None,
+            "ema_fast_n": int(_pf["ema_fast"]),
+            "ema_slow_n": int(_pf["ema_slow"]),
             "macd_hist": round(_h[-1], 6) if _h else None,
             "price": round(price, 8),
             "atr": round(atr, 6),
@@ -1182,6 +1184,9 @@ def compute_signal(
             # follow the ACTIVE profile's EMA windows.
             "ema20": round(ema_fast, 6),
             "ema50": round(ema_slow, 6),
+            # v9.1.4 — Periode aktual agar label UI sesuai selector profil.
+            "ema_fast_n": _ema_fast_n,
+            "ema_slow_n": _ema_slow_n,
             "ema200": round(ema200, 6) if ema200 is not None else None,
             "macd_hist": round(hists[-1], 6) if hists else None,
             "price": round(price, 8),

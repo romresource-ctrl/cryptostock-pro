@@ -988,3 +988,40 @@ metadata:
   version: "9.1.3"
   test_sequence: 31
   run_ui: false
+
+# ============================================================
+# v9.1.4 (lanjutan) — Audit menyeluruh semua mode + EMA label dinamis
+# ============================================================
+backend:
+  - task: "Audit 5 mode × 4 aset + longterm crypto fix + label EMA dinamis"
+    implemented: true
+    working: true
+    file: "/app/backend/indicators.py, /app/backend/market_data.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          User: "periksa yang teliti — Entry, SL, TP1/2/3 harus sinkron
+          dengan indikator sesuai selector / non-selector".
+          AUDIT OTOMATIS 20 kombinasi (5 mode × LINK/ETH/BBCA/AAPL):
+          indikator lengkap (RSI/EMA/MACD), ladder berurutan sesuai arah,
+          R:R TP1≈1R, entry dekat harga live, HOLD tanpa level → 0 isu
+          riil. FIX: (1) longterm crypto sebelumnya HOLD kosong karena
+          snapshot 100 candle < EMA100 setelah forming-drop → limit
+          candle dinaikkan 100→250 (TIMEFRAME_MAP) → EMA200 kini aktif,
+          BTC/ETH longterm BUY 95%. (2) indicators mengirim ema_fast_n/
+          ema_slow_n; label UI detail mengikuti (scalper=EMA9/EMA21).
+          VISUAL VERIFIED: scalper LINK LONG 95% — ENTRY 13.0627-13.1328,
+          SL 12.8639, TP 13.3315, Target3 13.7991 (1R/2R/3R persis),
+          badge Risk -1.8%/Target +1.78% konsisten.
+          UpdatePrompt diverifikasi utuh (index.tsx:1258, /api/app-version
+          merespons latest_version 8.12.83 < 9.1.3 → nag tidak tampil
+          untuk build terbaru, sesuai desain).
+metadata:
+  created_by: "main_agent"
+  version: "9.1.3"
+  test_sequence: 32
+  run_ui: false

@@ -861,8 +861,11 @@ export default function AssetDetail() {
             </View>
             <View style={styles.indGrid}>
               <IndicatorCell label="RSI(14)" value={sig.indicators.rsi?.toFixed(1) ?? "—"} colors={colors} />
-              <IndicatorCell label="EMA20" value={fmtPrice(sig.indicators.ema20 as number)} colors={colors} />
-              <IndicatorCell label="EMA50" value={fmtPrice(sig.indicators.ema50 as number)} colors={colors} />
+              {/* v9.1.4 — Label mengikuti periode EMA aktual dari mesin
+                  yang dipilih (scalper=9/21, day=20/50, longterm=50/100)
+                  sehingga indikator selalu sesuai Trader Profile. */}
+              <IndicatorCell label={`EMA${(sig.indicators as any).ema_fast_n ?? 20}`} value={fmtPrice(sig.indicators.ema20 as number)} colors={colors} />
+              <IndicatorCell label={`EMA${(sig.indicators as any).ema_slow_n ?? 50}`} value={fmtPrice(sig.indicators.ema50 as number)} colors={colors} />
               <IndicatorCell label="MACD H" value={(sig.indicators.macd_hist ?? 0).toFixed(4)} colors={colors} />
             </View>
             <View style={styles.entryRow}>

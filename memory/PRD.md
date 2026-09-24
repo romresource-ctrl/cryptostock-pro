@@ -200,3 +200,16 @@ hanya dari candle TUTUP (standar Pine isconfirmed). (2) startup race: app boot
 memakai Confluence lalu beralih ke VWAP setelah AsyncStorage termuat; fix:
 gate profileLoaded di dashboard load() & detail loadChart(). Verified: 4 poll
 beruntun identik (ETH SELL/91), harga sinyal anchor ke candle tutup.
+
+## v9.1.4 — Sinkronisasi Penuh Detail Aset (audit user)
+
+- Level entry/SL/TP di-anchor ke harga LIVE ticker (arah sinyal tetap dari
+  candle tutup). Fix "TP di atas harga realtime".
+- Mesin VWAP kini mengirim ema20/ema50/macd_hist (sebelumnya "—"/0.0000).
+- TargetProfit.tsx menampilkan ladder backend TP1/2/3 apa adanya (tidak
+  interpolasi 40/70% lagi); R:R terhadap TP1.
+- Label indikator dinamis mengikuti periode EMA selector (9/21 scalper,
+  20/50 day-swing, 50/100 longterm).
+- Limit candle snapshot 100→250 → EMA200 aktif; longterm crypto berfungsi.
+- UpdatePrompt (popup update announce) terverifikasi utuh; backend
+  /api/app-version masih latest=8.12.83 (naikkan ke 9.1.3 setelah publish).
