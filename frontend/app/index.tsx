@@ -343,7 +343,7 @@ export default function Dashboard() {
   // v8.12.38 — Recent search history (up to 5 symbols, persisted).
   const searchHistory = useSearchHistory();
   // v8.12.57 — Trader Profile state + modal open state.
-  const { profile: traderProfile, apiProfile } = useTraderProfile();
+  const { profile: traderProfile, apiProfile, loaded: profileLoaded } = useTraderProfile();
   const [traderProfileOpen, setTraderProfileOpen] = useState(false);
   // v8.12.38.1 — When the search input is focused AND empty AND we have
   // recent hits, we drop down a small suggestion list right underneath.
@@ -562,6 +562,11 @@ export default function Dashboard() {
   }, [apiProfile]);
 
   useEffect(() => {
+    // v9.1.3 — Tunggu pilihan Trader Profile termuat dari AsyncStorage
+    // SEBELUM fetch pertama. Tanpa gate ini app boot memakai Confluence
+    // lalu beberapa detik kemudian beralih ke VWAP (atau sebaliknya)
+    // → label sinyal terlihat berkedip HOLD↔SHORT saat startup.
+    if (!profileLoaded) return;
     // v8.0.7 — Removed lazy-loading: fetch every category (still ONE
     // batched HTTP call thanks to /api/dashboard/batch), so users never
     // hit an empty column when swiping between markets. Cache TTL of
@@ -569,7 +574,7 @@ export default function Dashboard() {
     void load(timeframe, ALL_CATEGORIES, regionFilter);
     const id = setInterval(() => void load(timeframe, ALL_CATEGORIES, regionFilter), REFRESH_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [timeframe, ALL_CATEGORIES, load, regionFilter]);
+  }, [timeframe, ALL_CATEGORIES, load, regionFilter, profileLoaded]);
 
   // v8.12.18 — When the user stars or un-stars an asset, trigger a
   // fresh fetch immediately so favourites beyond the default top-50

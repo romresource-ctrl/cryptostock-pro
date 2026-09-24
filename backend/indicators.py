@@ -764,6 +764,37 @@ def _compute_vwap_levels(
         "avg_valley": avg_valley,
     }
 
+
+def _drop_forming_candle(candles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """v9.1.3 — STABILITAS SINYAL: buang candle terakhir jika masih
+    BERJALAN (forming). Kondisi seperti cross VWAP, breakout box, pola
+    wick, dan momentum dievaluasi pada candle live yang berubah tiap
+    detik → label HOLD↔SHORT berkedip di dashboard. Standar industri
+    (Pine barstate.isconfirmed): sinyal hanya dari candle yang SUDAH
+    TUTUP. Candle historis (backtest) tidak terpengaruh karena umurnya
+    selalu lebih tua dari satu bar.
+    """
+    if len(candles) < 3:
+        return candles
+    t1 = candles[-1].get("t") or candles[-1].get("time")
+    t0 = candles[-2].get("t") or candles[-2].get("time")
+    if not t1 or not t0:
+        return candles
+    t1 = float(t1)
+    t0 = float(t0)
+    if t1 > 1e12:
+        t1 /= 1000.0
+    if t0 > 1e12:
+        t0 /= 1000.0
+    spacing = t1 - t0
+    if spacing <= 0:
+        return candles
+    import time as _time
+    # toleransi 2% untuk clock skew server vs exchange
+    if _time.time() < t1 + spacing * 0.98:
+        return candles[:-1]
+    return candles
+
 def compute_signal(
     candles: list[dict[str, Any]],
     market: str,
@@ -804,6 +835,9 @@ def compute_signal(
             "reasons": [],
             "entry": None, "stop_loss": None, "take_profit": None,
         }
+
+    # v9.1.3 — Sinyal hanya dari candle TUTUP (anti-kedip HOLD↔SHORT).
+    candles = _drop_forming_candle(candles)
 
     # v9.3.0 — Mesin VWAP Session HANYA aktif jika user EKSPLISIT memilih
     # profile scalper/day/swing di app (toggle di Trader Profile modal).

@@ -890,3 +890,51 @@ metadata:
   version: "9.1.1"
   test_sequence: 29
   run_ui: false
+
+# ============================================================
+# v9.1.3 — Fix sinyal berkedip HOLD↔SHORT tiap beberapa detik
+# ============================================================
+backend:
+  - task: "Sinyal hanya dari candle TUTUP (drop forming candle)"
+    implemented: true
+    working: true
+    file: "/app/backend/indicators.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          User: "ETH di dashboard HOLD sebentar lalu SHORT lalu HOLD lagi
+          dalam beberapa detik". Root cause: candle terakhir yang masih
+          BERJALAN ikut dihitung — kondisi cross VWAP / box breakout /
+          pola wick / momentum berubah tiap detik mengikuti harga live.
+          FIX: _drop_forming_candle() di awal compute_signal — umur bar
+          terakhir < 1 spacing → dibuang dari perhitungan (standar
+          industri, Pine barstate.isconfirmed). Backtest tidak terpengaruh
+          (candle historis selalu lebih tua dari 1 bar). VERIFIED: 4 poll
+          beruntun ETH → identik SELL/SHORT/91, harga sinyal tetap di
+          candle tutup 2683.58 sementara live ticker bergerak 2691→2692.
+frontend:
+  - task: "Gate fetch pertama hingga Trader Profile termuat"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/index.tsx, /app/frontend/app/asset/[market]/[symbol].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Kedipan kedua saat startup: app boot memakai Confluence (profile
+          belum termuat dari AsyncStorage) lalu beberapa detik kemudian
+          beralih ke VWAP setelah storage terbaca. FIX: dashboard load()
+          dan detail loadChart() di-gate `if (!profileLoaded) return` +
+          profileLoaded masuk deps useEffect.
+metadata:
+  created_by: "main_agent"
+  version: "9.1.2"
+  test_sequence: 30
+  run_ui: false

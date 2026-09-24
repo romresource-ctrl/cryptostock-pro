@@ -190,3 +190,13 @@ jujur (backtest WR 55-57%). Fix: VWAP trigger utama +14 confidence; threshold
 market → (85, 55); bar tanpa-histori → +3. Hasil: 56 premium (Confluence),
 36 (scalper), 18 (day), 14 (swing). stock_us 0 di mode VWAP = trigger memang
 belum menyala (bukan bug).
+
+## v9.1.3 — Fix Sinyal Berkedip (Anti-Flicker)
+
+Report user: ETH di dashboard HOLD→SHORT→HOLD dalam hitungan detik. Dua root
+cause: (1) candle live (forming) ikut dihitung — kondisi cross VWAP/breakout/
+pola berubah tiap detik; fix: _drop_forming_candle() di compute_signal, sinyal
+hanya dari candle TUTUP (standar Pine isconfirmed). (2) startup race: app boot
+memakai Confluence lalu beralih ke VWAP setelah AsyncStorage termuat; fix:
+gate profileLoaded di dashboard load() & detail loadChart(). Verified: 4 poll
+beruntun identik (ETH SELL/91), harga sinyal anchor ke candle tutup.

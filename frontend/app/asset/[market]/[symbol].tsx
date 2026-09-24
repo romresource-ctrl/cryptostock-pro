@@ -144,7 +144,7 @@ export default function AssetDetail() {
   const [timeframe, setTimeframe] = useState<Timeframe>(initialTf);
   // v8.12.57 — Send the current Trader Profile to the backend so v3
   // formula tunes EMA / RSI / confidence gate per user preference.
-  const { apiProfile } = useTraderProfile();
+  const { apiProfile, loaded: profileLoaded } = useTraderProfile();
   const [chart, setChart] = useState<ChartResponse | null>(null);
   const [analysis, setAnalysis] = useState<AnalyzeResponse | null>(null);
   const [trackRecord, setTrackRecord] = useState<TrackRecordResponse | null>(null);
@@ -273,9 +273,12 @@ export default function AssetDetail() {
   }, [market, symbol]);
 
   useEffect(() => {
+    // v9.1.3 — Tunggu Trader Profile termuat dari storage agar fetch
+    // pertama langsung memakai mesin yang benar (anti-kedip sinyal).
+    if (!profileLoaded) return;
     void loadChart(timeframe);
     setAnalysis(null);
-  }, [timeframe, loadChart]);
+  }, [timeframe, loadChart, profileLoaded]);
 
   // Translate technical reasoning bullets when EN selected (cached server-side)
   useEffect(() => {
