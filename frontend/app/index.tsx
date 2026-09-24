@@ -343,7 +343,7 @@ export default function Dashboard() {
   // v8.12.38 — Recent search history (up to 5 symbols, persisted).
   const searchHistory = useSearchHistory();
   // v8.12.57 — Trader Profile state + modal open state.
-  const { profile: traderProfile } = useTraderProfile();
+  const { profile: traderProfile, apiProfile } = useTraderProfile();
   const [traderProfileOpen, setTraderProfileOpen] = useState(false);
   // v8.12.38.1 — When the search input is focused AND empty AND we have
   // recent hits, we drop down a small suggestion list right underneath.
@@ -526,9 +526,9 @@ export default function Dashboard() {
         // slice so the Watchlist column can render them (e.g. BBCA which
         // sits at stock_id index 51).
         extras: watchlistExtrasRef.current,
-        // v9.0.0 — Send the active trader profile so dashboard signals are
-        // computed with the SAME formula parameters as the detail page.
-        profile: traderProfile,
+        // v9.3.0 — Hanya kirim profile jika user EKSPLISIT memilih
+        // (toggle). null → backend memakai mesin Confluence v9.0 default.
+        profile: apiProfile ?? undefined,
       });
       setData((prev) => {
         const next = { ...prev };
@@ -559,7 +559,7 @@ export default function Dashboard() {
         return next;
       });
     }
-  }, [traderProfile]);
+  }, [apiProfile]);
 
   useEffect(() => {
     // v8.0.7 — Removed lazy-loading: fetch every category (still ONE
@@ -689,13 +689,13 @@ export default function Dashboard() {
               styles.iconBtn,
               {
                 backgroundColor: colors.surface,
-                borderColor: PROFILE_META[traderProfile].color,
+                borderColor: apiProfile ? PROFILE_META[traderProfile].color : colors.border,
                 borderWidth: 1.5,
               },
             ]}
-            accessibilityLabel={`Trader Profile: ${PROFILE_META[traderProfile].label}`}
+            accessibilityLabel={apiProfile ? `Trader Profile: ${PROFILE_META[traderProfile].label}` : "Trader Profile: Default (Confluence)"}
           >
-            <Text style={{ fontSize: 15 }}>{PROFILE_META[traderProfile].emoji}</Text>
+            <Text style={{ fontSize: 15 }}>{apiProfile ? PROFILE_META[traderProfile].emoji : "🧠"}</Text>
           </TouchableOpacity>
           {/* v8.6.3 — Alerts feature removed entirely (bell in header +
               🔔 on detail page + AlertModal + engine hook + i18n keys). */}
@@ -1286,7 +1286,7 @@ function SearchResults({
   // paints. That is what caused the "app crashes the instant I type
   // in the search box" bug reported on production. Grab our own hook.
   const { t } = useI18n();
-  const { profile: traderProfile } = useTraderProfile();
+  const { apiProfile } = useTraderProfile();
   const { width: screenW } = useWindowDimensions();
   const q = query.toUpperCase();
 
@@ -1302,9 +1302,9 @@ function SearchResults({
     setSearching(true);
     const timer = setTimeout(async () => {
       try {
-        // v9.0.0 — Pass trader profile so search-hit signals match the
-        // dashboard/detail formula exactly (single source of truth).
-        const res = await api.search(query.trim(), undefined, traderProfile);
+        // v9.3.0 — Pass trader profile hanya jika eksplisit dipilih;
+        // null → Confluence v9.0 (konsisten dengan dashboard/detail).
+        const res = await api.search(query.trim(), undefined, apiProfile ?? undefined);
         if (!cancelled) {
           const arr = (res.hits || []).map((a) => ({
             asset: a,
@@ -1322,7 +1322,7 @@ function SearchResults({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query, traderProfile]);
+  }, [query, apiProfile]);
 
   // Merge local (already-loaded dashboard data) + remote (full pool).
   // De-duplicate by market+symbol; local wins because it has fresher

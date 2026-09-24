@@ -800,3 +800,57 @@ agent_communication:
       2. Sync batch vs chart untuk profile=day (2-3 simbol cukup).
       3. Regresi: /api/search?q=TSLA, /api/dashboard?market=stock_id.
       Frontend: dashboard load normal, Ver 9.2.0 di header.
+
+# ============================================================
+# v9.3.0 — Trader Profile jadi TOGGLE (unselect → Confluence v9.0)
+# ============================================================
+backend:
+  - task: "VWAP engine hanya aktif saat profile eksplisit dipilih"
+    implemented: true
+    working: true
+    file: "/app/backend/indicators.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Permintaan user: tanpa pilihan profile → formula Confluence
+          v9.0.0; hanya scalper/day/swing yang dipilih eksplisit → mesin
+          VWAP. Routing diubah: `if profile in _PROFILE_TO_VWAP` (None
+          tidak lagi di-default ke "day"). VERIFIED: tanpa profile →
+          CONFLUENCE (BTC SELL/95), profile=scalper → SCALPER engine,
+          sync batch vs chart tanpa profile = 0 mismatch.
+frontend:
+  - task: "Toggle unselect di TraderProfileModal + apiProfile null"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/lib/useTraderProfile.ts, /app/frontend/src/components/TraderProfileModal.tsx, /app/frontend/app/index.tsx, /app/frontend/app/asset/[market]/[symbol].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Hook: state _explicit (true hanya jika storage punya nilai /
+          user memilih). setProfile toggle: ketuk profil aktif → unselect
+          (remove AsyncStorage key). apiProfile = null saat tidak eksplisit
+          → semua call API (dashboardBatch, search, chart, analyze) tidak
+          mengirim ?profile=. Header pill: 🧠 + border netral saat default,
+          emoji profil saat aktif. Modal: kartu tidak tercentang saat
+          unselect, modal tetap terbuka, footer hint baru. E2E screenshot
+          flow PASSED: Default→Scalper→unselect→Default. Ver 9.3.0.
+metadata:
+  created_by: "main_agent"
+  version: "9.3.0"
+  test_sequence: 28
+  run_ui: false
+
+agent_communication:
+  - agent: "main"
+    message: |
+      v9.3.0 — Trader Profile toggle. Diverifikasi main agent via
+      e2e screenshot flow + backend matrix curl. Tidak perlu retest
+      kecuali user laporkan masalah.

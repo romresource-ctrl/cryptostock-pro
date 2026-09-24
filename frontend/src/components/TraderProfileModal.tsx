@@ -37,12 +37,18 @@ type Props = {
 
 export default function TraderProfileModal({ visible, onClose }: Props) {
   const { colors } = useTheme();
-  const { profile, setProfile } = useTraderProfile();
+  const { profile, setProfile, explicit } = useTraderProfile();
 
   const pick = (p: TraderProfile) => {
+    // v9.3.0 — Toggle: ketuk kartu yang aktif = lepas pilihan (kembali ke
+    // mesin default Confluence). Modal tetap terbuka agar user melihat
+    // state "tidak ada yang aktif".
+    const wasActive = explicit && profile === p;
     setProfile(p);
-    // Small delay so the "checked" state animates before we close.
-    setTimeout(onClose, 180);
+    if (!wasActive) {
+      // Small delay so the "checked" state animates before we close.
+      setTimeout(onClose, 180);
+    }
   };
 
   return (
@@ -84,7 +90,7 @@ export default function TraderProfileModal({ visible, onClose }: Props) {
             >
               {PROFILE_ORDER.map((p) => {
                 const meta = PROFILE_META[p];
-                const active = profile === p;
+                const active = explicit && profile === p;
                 return (
                   <TouchableOpacity
                     key={p}
@@ -131,7 +137,7 @@ export default function TraderProfileModal({ visible, onClose }: Props) {
               })}
             </ScrollView>
             <Text style={[styles.footer, { color: colors.textMuted }]}>
-              Applies to crypto, forex, and gold/silver only.
+              Tap the active profile again to unselect — default engine: Confluence.
             </Text>
           </SafeAreaView>
         </Pressable>

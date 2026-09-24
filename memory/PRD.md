@@ -171,3 +171,12 @@ Guard stablecoin hanya untuk crypto (forex 1h normal bervolatilitas <0.1%).
 
 **Backtest 30d (9 aset)**: scalper 55.3% WR (+50R) · day 51.4% (+12R) ·
 swing 51.3% (+1R). Testing iter30: 8/8 PASSED.
+
+## v9.3.0 — Trader Profile Toggle (unselect → Confluence)
+
+User request: profile selector jadi opsional/toggle. Tanpa pilihan → mesin
+Confluence v9.0.0 (default, header 🧠). Ketuk profil aktif lagi = lepas.
+Mesin VWAP (v9.1/9.2) hanya jalan saat scalper/day/swing dipilih eksplisit.
+Backend: routing `profile in _PROFILE_TO_VWAP` (None → Confluence).
+Frontend: `_explicit` state di useTraderProfile; apiProfile=null → param
+?profile= tidak dikirim ke dashboardBatch/search/chart/analyze.

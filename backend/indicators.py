@@ -796,14 +796,13 @@ def compute_signal(
             "entry": None, "stop_loss": None, "take_profit": None,
         }
 
-    # v9.1.0 — Routing mesin VWAP Session (formula user): profile
-    # scalper/day(=intraday)/swing memakai mesin VWAP di SEMUA market
-    # (VWAP memang konsep pasar sesi). Profile longterm & data tanpa
-    # volume tetap memakai mesin Confluence v9.0 di bawah.
-    _engine_profile = profile if profile in TRADER_PROFILES else "day"
-    if _engine_profile in _PROFILE_TO_VWAP:
+    # v9.3.0 — Mesin VWAP Session HANYA aktif jika user EKSPLISIT memilih
+    # profile scalper/day/swing di app (toggle di Trader Profile modal).
+    # Tanpa pilihan (profile=None) → mesin Confluence v9.0 di bawah.
+    # Longterm memang tidak ada di _PROFILE_TO_VWAP (selalu Confluence).
+    if profile in _PROFILE_TO_VWAP:
         _vsig = _compute_vwap_signal(
-            candles, market, _PROFILE_TO_VWAP[_engine_profile], _engine_profile
+            candles, market, _PROFILE_TO_VWAP[profile], profile
         )
         if _vsig is not None:
             return _vsig

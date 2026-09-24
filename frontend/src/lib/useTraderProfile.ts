@@ -1,5 +1,9 @@
 /**
  * v8.12.57 — Trader Profile hook.
+ * v9.3.0 — TOGGLE behaviour: tapping the active profile again UNSELECTS
+ * it (explicit=false → apiProfile=null) and the backend falls back to
+ * the default Confluence v9.0 engine. The VWAP Session engines only run
+ * when the user has explicitly chosen scalper / day / swing.
  *
  * Persists the user's Trader Profile choice (scalper / day / swing /
  * longterm) in AsyncStorage. The current profile is passed to every
@@ -26,6 +30,7 @@ const STORAGE_KEY = "@ai-crypto-stock-pro:trader-profile:v1";
 
 // ---- Shared module-level store (single source of truth) ----
 let _profile: TraderProfile = "day";
+let _explicit = false;  // true hanya jika user pernah memilih secara eksplisit
 let _loaded = false;
 let _initStarted = false;
 const _listeners = new Set<() => void>();
@@ -49,6 +54,10 @@ function _getLoaded(): boolean {
   return _loaded;
 }
 
+function _getExplicit(): boolean {
+  return _explicit;
+}
+
 async function _ensureInit(): Promise<void> {
   if (_initStarted) return;
   _initStarted = true;
@@ -56,6 +65,7 @@ async function _ensureInit(): Promise<void> {
     const raw = await AsyncStorage.getItem(STORAGE_KEY);
     if (raw && (PROFILE_ORDER as string[]).includes(raw)) {
       _profile = raw as TraderProfile;
+      _explicit = true;  // tersimpan di storage = user pernah memilih
     }
   } catch {
     /* ignore */
@@ -111,6 +121,8 @@ export function useTraderProfile(): {
   profile: TraderProfile;
   setProfile: (p: TraderProfile) => void;
   loaded: boolean;
+  explicit: boolean;
+  apiProfile: TraderProfile | null;
 } {
   // One shared store — every component re-renders together on change.
   useEffect(() => {
@@ -118,15 +130,33 @@ export function useTraderProfile(): {
   }, []);
   const profile = useSyncExternalStore(_subscribe, _getProfile, _getProfile);
   const loaded = useSyncExternalStore(_subscribe, _getLoaded, _getLoaded);
+  const explicit = useSyncExternalStore(_subscribe, _getExplicit, _getExplicit);
 
   const setProfile = (p: TraderProfile) => {
-    if (p === _profile) return;
+    // v9.3.0 — Toggle: ketuk profil yang sedang aktif = LEPAS pilihan,
+    // sinyal kembali ke mesin Confluence v9.0 (default tanpa profil).
+    if (_explicit && p === _profile) {
+      _explicit = false;
+      _notify();
+      AsyncStorage.removeItem(STORAGE_KEY).catch(() => {
+        /* ignore */
+      });
+      return;
+    }
     _profile = p;
+    _explicit = true;
     _notify();
     AsyncStorage.setItem(STORAGE_KEY, p).catch(() => {
       /* ignore */
     });
   };
 
-  return { profile, setProfile, loaded };
+  return {
+    profile,
+    setProfile,
+    loaded,
+    explicit,
+    // null → jangan kirim ?profile= ke backend (Confluence v9.0 default).
+    apiProfile: explicit ? profile : null,
+  };
 }
