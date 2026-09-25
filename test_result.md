@@ -1025,3 +1025,40 @@ metadata:
   version: "9.1.3"
   test_sequence: 32
   run_ui: false
+
+# ============================================================
+# v9.1.6 — US stock universe lengkap (BNY/GEV/HONA + S&P 500/400/600)
+# ============================================================
+backend:
+  - task: "Search-only US universe dari NASDAQ Trader resmi"
+    implemented: true
+    working: true
+    file: "/app/backend/market_data.py, /app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          User report: "Saham US tidak muncul saat search: BNY, GEV, HONA;
+          periksa semua big 200 US & S&P1000". Ketiganya memang tidak ada
+          di map lama (810 ticker). FIX: bangun STOCK_US_YAHOO_MAP_EXTRA
+          (5.256 ticker) dari sumber RESMI nasdaqtrader.com
+          (nasdaqlisted.txt + otherlisted.txt, filter: bukan test issue,
+          bukan ETF, bukan warrant/unit/preferred/notes) + S&P 500 CSV.
+          Search-only: dashboard full=true tetap memakai 810 kurasi agar
+          Yahoo batch fetch tidak kelebihan beban. Patch: search pool
+          stock_us gabung EXTRA; get_stock_snapshot & region_for_symbol
+          fallback ke EXTRA. VERIFIED: search BNY (150.19 SELL),
+          GEV (955.04 BUY), HONA (158.46 HOLD) muncul sebagai stock_us di
+          atas token crypto sejenis. S&P500 coverage 503/503 ✓. Sampling
+          mid/small-cap (CROX, MSTR, SMCI, DUOL, WING, dst) 20/20 ✓.
+          Sampling acak 6 ticker EXTRA via search API: 6/6 harga+sinyal
+          valid. BNY chart endpoint OK (155 candle, SELL 91).
+          Total universe US: 6.066 ticker.
+metadata:
+  created_by: "main_agent"
+  version: "9.1.5"
+  test_sequence: 33
+  run_ui: false

@@ -1301,6 +1301,7 @@ async def search_assets(
         STOCK_YAHOO_MAP,
         ETF_YAHOO_MAP,
         STOCK_US_YAHOO_MAP,
+        STOCK_US_YAHOO_MAP_EXTRA,
         GOLD_SILVER_YAHOO_MAP,
         COMMODITY_YAHOO_MAP,
         FOREX_YAHOO_MAP,
@@ -1313,11 +1314,14 @@ async def search_assets(
         return {"hits": [], "disambiguation": []}
 
     # Static curated maps (already have priority — dashboard/premium data).
+    # v9.1.6 — stock_us pool digabung dengan search-only universe
+    # (NASDAQ Trader resmi + S&P 500/400/600 superset): BNY, GEV, HONA,
+    # dan ~5.200 ticker US lain kini bisa ditemukan via search.
     market_pools: list[tuple[str, list[str]]] = [
         ("crypto", list(CRYPTO_BINANCE_MAP.keys())),
         ("stock_id", list(STOCK_YAHOO_MAP.keys())),
         ("etf", list(ETF_YAHOO_MAP.keys())),
-        ("stock_us", list(STOCK_US_YAHOO_MAP.keys())),
+        ("stock_us", list(STOCK_US_YAHOO_MAP.keys()) + list(STOCK_US_YAHOO_MAP_EXTRA.keys())),
         ("gold_silver", list(GOLD_SILVER_YAHOO_MAP.keys())),
         ("commodity", list(COMMODITY_YAHOO_MAP.keys())),
         ("forex", list(FOREX_YAHOO_MAP.keys())),

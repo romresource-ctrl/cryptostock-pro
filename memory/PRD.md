@@ -213,3 +213,12 @@ beruntun identik (ETH SELL/91), harga sinyal anchor ke candle tutup.
 - Limit candle snapshot 100→250 → EMA200 aktif; longterm crypto berfungsi.
 - UpdatePrompt (popup update announce) terverifikasi utuh; backend
   /api/app-version masih latest=8.12.83 (naikkan ke 9.1.3 setelah publish).
+
+## v9.1.6 — US Stock Universe Lengkap
+
+BNY/GEV/HONA tidak ada di map lama (810 ticker). Ditambahkan
+STOCK_US_YAHOO_MAP_EXTRA (5.256 ticker) dari daftar resmi NASDAQ Trader
+(nasdaqlisted + otherlisted, tanpa ETF/warrant/preferred/test-issue) +
+S&P 500 penuh → total universe US 6.066 ticker. S&P500 coverage 503/503.
+Sifatnya search-only (dashboard full=true tetap 810 kurasi agar fetch
+Yahoo tidak berat). Fetch snapshot & region fallback ke EXTRA.
