@@ -31,6 +31,20 @@ export async function getDeviceId(): Promise<string> {
     // fall through to SecureStore fallback
   }
   // Fallback: persistent random UUID (web / unknown platforms)
+  // v9.2.0 — Web: baca/tulis localStorage LANGSUNG. Shim web
+  // expo-secure-store tidak konsisten antar sesi → device id berubah
+  // (ephemeral) → entitlement premium selalu gagal diverifikasi backend.
+  if (Platform.OS === "web") {
+    try {
+      const ls = globalThis.localStorage?.getItem(FALLBACK_KEY);
+      if (ls) return ls;
+      const rnd = `web:${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
+      globalThis.localStorage?.setItem(FALLBACK_KEY, rnd);
+      return rnd;
+    } catch {
+      /* fallthrough ke SecureStore */
+    }
+  }
   try {
     const existing = await SecureStore.getItemAsync(FALLBACK_KEY);
     if (existing) return existing;

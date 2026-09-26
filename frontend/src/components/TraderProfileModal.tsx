@@ -33,9 +33,12 @@ import {
 type Props = {
   visible: boolean;
   onClose: () => void;
+  // v9.2.0 — Tombol AI Suggestions (khusus member Premium; modal ini
+  // sendiri sudah premium-only dari sisi pemanggil).
+  onOpenAISuggestions: () => void;
 };
 
-export default function TraderProfileModal({ visible, onClose }: Props) {
+export default function TraderProfileModal({ visible, onClose, onOpenAISuggestions }: Props) {
   const { colors } = useTheme();
   const { profile, setProfile, explicit } = useTraderProfile();
 
@@ -136,6 +139,29 @@ export default function TraderProfileModal({ visible, onClose }: Props) {
                 );
               })}
             </ScrollView>
+            {/* v9.2.0 — AI Suggestions: pindai aset bersinyal terkuat
+                per kategori market, lengkap Entry/SL/TP. Premium only. */}
+            <TouchableOpacity
+              onPress={() => {
+                onClose();
+                onOpenAISuggestions();
+              }}
+              testID="ai-suggestions-button"
+              style={styles.aiButton}
+              accessibilityLabel="AI Suggestions (Premium)"
+            >
+              <Text style={styles.aiButtonEmoji}>✨</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.aiButtonTitle}>AI SUGGESTIONS</Text>
+                <Text style={styles.aiButtonSub}>
+                  Pindai peluang LONG/SHORT terkuat — lengkap Entry, SL & TP
+                </Text>
+              </View>
+              <View style={styles.aiButtonBadge}>
+                <Text style={styles.aiButtonBadgeText}>PREMIUM</Text>
+              </View>
+            </TouchableOpacity>
+
             <Text style={[styles.footer, { color: colors.textMuted }]}>
               Tap the active profile again to unselect — default engine: Confluence.
             </Text>
@@ -188,4 +214,24 @@ const styles = StyleSheet.create({
     marginTop: 6,
     letterSpacing: 0.3,
   },
+  aiButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderRadius: 14,
+    backgroundColor: "#F0B90B",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginTop: 14,
+  },
+  aiButtonEmoji: { fontSize: 20 },
+  aiButtonTitle: { color: "#0B0E11", fontWeight: "900", fontSize: 14, letterSpacing: 0.8 },
+  aiButtonSub: { color: "rgba(11, 14, 17, 0.65)", fontSize: 10.5, marginTop: 1 },
+  aiButtonBadge: {
+    backgroundColor: "#0B0E11",
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  aiButtonBadgeText: { color: "#F0B90B", fontSize: 8.5, fontWeight: "900", letterSpacing: 0.6 },
 });

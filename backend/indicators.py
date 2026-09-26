@@ -455,6 +455,132 @@ def _vwap_session_series(candles: list[dict[str, Any]]) -> list[float]:
     return vwaps
 
 
+
+# ============================================================
+# v9.2.0 — Modul Formula 68-Video (Macro Bias 50 SMA Harian,
+# Liquidity Zones, Choke Risk 3R, Pattern Scalp 15M/5M)
+# ============================================================
+
+def _daily_context(daily_candles: list[dict[str, Any]] | None) -> dict[str, Any] | None:
+    """[Strategi 3R Rule & Trend Bias] Context harian:
+    - trend bias dari harga vs SMA50 harian (Buyers/Sellers Control)
+    - liquidity zones: Previous Day High/Low + Swing High/Low 10 hari
+    - Daily ATR (kapasitas gerak harian untuk validasi 3R)
+    """
+    if not daily_candles or len(daily_candles) < 52:
+        return None
+    closes = [c["close"] for c in daily_candles]
+    highs = [c["high"] for c in daily_candles]
+    lows = [c["low"] for c in daily_candles]
+    sma50 = sum(closes[-50:]) / 50.0
+    prev = daily_candles[-2]
+    atr_d = _atr14(highs, lows, closes)
+    return {
+        "bias": "BULLISH" if closes[-1] > sma50 else "BEARISH",
+        "sma50": sma50,
+        "pdh": prev["high"],
+        "pdl": prev["low"],
+        "swing_high": max(highs[-10:]),
+        "swing_low": min(lows[-10:]),
+        "daily_atr": atr_d,
+    }
+
+
+def _pattern_scalp(candles: list[dict[str, Any]], daily_atr: float | None) -> dict[str, Any] | None:
+    """[Strategi 15-Minute Pattern Scalp — Market Open Manipulation]
+
+    1. Lilin 15 menit PERTAMA sesi (UTC day) dengan range >= 20% Daily ATR
+       = fase manipulasi market open.
+    2. Konfirmasi entry pada candle intraday berikutnya:
+       - John Wick: wick > 2x body, divalidasi candle berikutnya tembus
+         high (bullish) / low (bearish) candle wick tersebut.
+       - Power of Tower: candle impulsif (body > 80% range) lalu candle
+         berikutnya retrace >= 50% body.
+    3. Entry = high/low candle pola, SL = sisi lain candle pola,
+       TP = ujung range 15M pertama (range high untuk BUY).
+    Hanya pola dalam ~3 jam terakhir yang dianggap fresh.
+    """
+    if not candles or daily_atr is None or daily_atr <= 0:
+        return None
+    import datetime as _dt
+
+    def _day(c: dict[str, Any]):
+        t = c.get("t") or c.get("time")
+        if not t:
+            return None
+        ts = float(t) / 1000.0 if float(t) > 1e12 else float(t)
+        try:
+            return _dt.datetime.utcfromtimestamp(ts).date()
+        except Exception:
+            return None
+
+    last_day = _day(candles[-1])
+    if last_day is None:
+        return None
+    today = [c for c in candles if _day(c) == last_day]
+    if len(today) < 5:
+        return None
+
+    # spacing bar dalam menit
+    t_a = today[-2].get("t") or today[-2].get("time")
+    t_b = today[-1].get("t") or today[-1].get("time")
+    if not t_a or not t_b:
+        return None
+    t_a = float(t_a) / 1000.0 if float(t_a) > 1e12 else float(t_a)
+    t_b = float(t_b) / 1000.0 if float(t_b) > 1e12 else float(t_b)
+    spacing_min = (t_b - t_a) / 60.0
+    if spacing_min <= 0 or spacing_min > 15:
+        return None  # timeframe terlalu besar untuk pattern scalp
+    bars_15 = max(1, round(15.0 / spacing_min))
+    if len(today) <= bars_15 + 2:
+        return None  # sesi baru mulai, belum cukup konfirmasi
+
+    first = today[:bars_15]
+    first_high = max(c["high"] for c in first)
+    first_low = min(c["low"] for c in first)
+    is_manip = (first_high - first_low) >= 0.20 * daily_atr
+    if not is_manip:
+        return {"is_manipulation": False}
+
+    rest = today[bars_15:]
+    fresh_bars = max(4, round(180.0 / spacing_min))  # ~3 jam terakhir
+    start = max(0, len(rest) - fresh_bars)
+
+    best = None
+    for i in range(start, len(rest) - 1):
+        c = rest[i]
+        nxt = rest[i + 1]
+        body = abs(c["close"] - c["open"]) or 1e-12
+        wick_b = min(c["open"], c["close"]) - c["low"]
+        wick_t = c["high"] - max(c["open"], c["close"])
+        crange = c["high"] - c["low"] or 1e-12
+
+        # John Wick bullish (hammer): lower wick > 2x body + break high
+        if wick_b > 2 * body and nxt["close"] > c["high"] and c["high"] < first_high:
+            best = {"action": "BUY", "entry": c["high"], "sl": c["low"],
+                    "tp": first_high, "pattern": "John Wick hammer"}
+        # John Wick bearish (inverted hammer): upper wick > 2x body + break low
+        elif wick_t > 2 * body and nxt["close"] < c["low"] and c["low"] > first_low:
+            best = {"action": "SELL", "entry": c["low"], "sl": c["high"],
+                    "tp": first_low, "pattern": "John Wick inverted hammer"}
+        # Power of Tower bearish: impulsive green + retrace 50%
+        elif (c["close"] > c["open"] and (c["close"] - c["open"]) > crange * 0.8
+              and nxt["close"] <= (c["open"] + (c["close"] - c["open"]) * 0.5)
+              and nxt["close"] < c["open"] and nxt["close"] > first_low):
+            best = {"action": "SELL", "entry": nxt["close"], "sl": c["high"],
+                    "tp": first_low, "pattern": "Power of Tower bear"}
+        # Power of Tower bullish: impulsive red + retrace 50%
+        elif (c["close"] < c["open"] and (c["open"] - c["close"]) > crange * 0.8
+              and nxt["close"] >= (c["close"] + (c["open"] - c["close"]) * 0.5)
+              and nxt["close"] > c["close"] and nxt["close"] < first_high):
+            best = {"action": "BUY", "entry": nxt["close"], "sl": c["low"],
+                    "tp": first_high, "pattern": "Power of Tower bull"}
+
+    if not best:
+        return {"is_manipulation": True}
+    best["is_manipulation"] = True
+    return best
+
 def _compute_vwap_signal(
     candles: list[dict[str, Any]],
     market: str,
@@ -462,6 +588,8 @@ def _compute_vwap_signal(
     profile: str,
     dev_threshold_pct: float = 1.5,
     live_price: float | None = None,
+    daily_candles: list[dict[str, Any]] | None = None,
+    timeframe: str | None = None,
 ) -> dict[str, Any] | None:
     """Mesin sinyal VWAP sesuai formula user (SCALPER / INTRADAY / SWING).
 
@@ -539,6 +667,90 @@ def _compute_vwap_signal(
     box_break_long = row["close"] > box_high and prev["close"] <= box_high
     box_break_short = row["close"] < box_low and prev["close"] >= box_low
 
+    # ---- v9.2.0 — Konteks harian (68-video): bias 50 SMA + liquidity ----
+    daily = _daily_context(daily_candles)
+    daily_bias = daily["bias"] if daily else None
+    daily_atr = daily["daily_atr"] if daily else None
+
+    # ---- v9.2.0 — Pattern Scalp override (hanya SCALPER di TF <= 15m) ----
+    # Market Open Manipulation (lilin 15M pertama > 20% Daily ATR) +
+    # konfirmasi John Wick / Power of Tower → entry/SL/TP langsung dari
+    # pola (override aturan VWAP generik).
+    scalp = None
+    if engine == "SCALPER" and (timeframe or "1h") in ("1m", "3m", "5m", "15m"):
+        scalp = _pattern_scalp(candles, daily_atr)
+        if scalp and scalp.get("action"):
+            action = scalp["action"]
+            label = ("LONG" if market == "crypto" else "BUY") if action == "BUY" else ("SHORT" if market == "crypto" else "SELL")
+            confidence = 70
+            reasons = [
+                f"[SCALP 15M] Manipulasi open terdeteksi (range 15M pertama ≥ 20% Daily ATR) "
+                f"+ {scalp['pattern']} terkonfirmasi → {action}."
+            ]
+            if daily_bias and ((action == "BUY" and daily_bias == "BULLISH") or (action == "SELL" and daily_bias == "BEARISH")):
+                confidence = min(95, confidence + 12)
+                reasons.append(f"Searah bias harian 50 SMA ({daily_bias}) — full risk.")
+            elif daily_bias:
+                confidence -= 12
+                reasons.append(f"Counter-trend vs bias harian ({daily_bias}) — half risk (scalp cepat).")
+            # Level PERSIS dari formula: entry pola, SL sisi lain, TP ujung range 15M
+            e, sl_, tp_ = scalp["entry"], scalp["sl"], scalp["tp"]
+            band = abs(e - sl_) * 0.15 or price * 0.001
+            levels = {
+                "entry": e, "entry_moderate": e, "entry_aggressive": e,
+                "entry_low": e - band, "entry_high": e + band,
+                "entry_moderate_low": e - band, "entry_moderate_high": e + band,
+                "entry_aggressive_low": e - band, "entry_aggressive_high": e + band,
+                "stop_loss": sl_, "stop_loss_moderate": sl_, "stop_loss_aggressive": sl_,
+                "take_profit": tp_, "take_profit_2": None, "take_profit_3": None,
+            }
+            rsi = _rsi(closes, 14)
+            _pf = get_trader_profile(profile)
+            _ef = _ema(closes, int(_pf["ema_fast"]))
+            _es = _ema(closes, int(_pf["ema_slow"]))
+            _h = _macd_hist_recent(closes, 3)
+            regime_info = _detect_regime(closes, highs, lows) if market == "crypto" else {"regime": "UNKNOWN"}
+            indicators = {
+                "rsi": round(rsi, 2) if rsi is not None else None,
+                "ema20": round(_ef[-1], 6) if _ef else None,
+                "ema50": round(_es[-1], 6) if _es else None,
+                "ema_fast_n": int(_pf["ema_fast"]),
+                "ema_slow_n": int(_pf["ema_slow"]),
+                "macd_hist": round(_h[-1], 6) if _h else None,
+                "price": round(price, 8),
+                "atr": round(atr, 6),
+                "vwap": round(vwap, 8),
+                "price_dev_pct": round(price_dev * 100.0, 3),
+                "vwap_engine": "SCALP-15M",
+                "scalp_pattern": scalp["pattern"],
+                "is_manipulation": True,
+                "structure": "SCALP-15M",
+                "avg_peak": round(price * 1.05, 8),
+                "avg_valley": round(price * 0.95, 8),
+                "peaks_found": 0,
+                "valleys_found": 0,
+            }
+            if daily:
+                indicators.update({
+                    "daily_bias": daily_bias,
+                    "pdh": round(daily["pdh"], 8), "pdl": round(daily["pdl"], 8),
+                    "swing_high": round(daily["swing_high"], 8), "swing_low": round(daily["swing_low"], 8),
+                    "daily_atr": round(daily_atr, 8) if daily_atr else None,
+                })
+            return {
+                "action": action, "label": label, "confidence": int(confidence),
+                "indicators": indicators, "reasons": reasons,
+                "entry": round(e, 8),
+                "entry_low": round(e - band, 8), "entry_high": round(e + band, 8),
+                "entry_moderate": round(e, 8), "entry_aggressive": round(e, 8),
+                "entry_moderate_low": round(e - band, 8), "entry_moderate_high": round(e + band, 8),
+                "entry_aggressive_low": round(e - band, 8), "entry_aggressive_high": round(e + band, 8),
+                "stop_loss": round(sl_, 8),
+                "take_profit": round(tp_, 8), "take_profit_2": None, "take_profit_3": None,
+                "regime": regime_info.get("regime", "UNKNOWN"),
+                "_all_levels": {"BUY": {}, "SELL": {}},
+            }
+
     # --- Aturan sinyal per engine (persis formula user) ---
     action = "HOLD"
     triggers: list[str] = []
@@ -615,6 +827,29 @@ def _compute_vwap_signal(
             confidence += 6
         confidence = min(95, confidence)
 
+    # ---- v9.2.0 — Macro Trend Bias Filter (50 SMA harian, 3R Rule) ----
+    # Searah bias → full risk (confidence +6). Melawan bias:
+    #   SCALPER → boleh (scalp cepat) tapi half risk (confidence -12)
+    #   INTRADAY/SWING → HOLD (formula: short saat bias bullish hanya
+    #   untuk scalp; posisi intraday/swing wajib searah bias).
+    if daily_bias and action in ("BUY", "SELL"):
+        with_bias = (action == "BUY" and daily_bias == "BULLISH") or \
+                    (action == "SELL" and daily_bias == "BEARISH")
+        if with_bias:
+            confidence = min(95, confidence + 6)
+            reasons.append(f"Searah bias harian 50 SMA ({daily_bias}) — full risk.")
+        elif engine == "SCALPER":
+            confidence = max(50, confidence - 12)
+            reasons.append(f"Counter-trend scalp vs bias harian ({daily_bias}) — half risk, keluar cepat.")
+        else:
+            action = "HOLD"
+            label = "HOLD"
+            confidence = 48
+            reasons = [
+                f"[{engine}] Setup melawan bias harian 50 SMA ({daily_bias}) — "
+                f"3R Rule: posisi {engine.lower()} hanya searah bias makro. Tunggu harga kembali searah."
+            ]
+
     # --- Levels: tier rapat karena sinyal = pemicu, bukan limit jauh ---
     highs = [c["high"] for c in candles]
     lows = [c["low"] for c in candles]
@@ -629,6 +864,22 @@ def _compute_vwap_signal(
     if live_price and live_price > 0 and atr > 0 and abs(live_price - price) <= atr * 8:
         _anchor = float(live_price)
     levels = _compute_vwap_levels(action, _anchor, atr, peaks, valleys, market, sl_mult, tp_ladder)
+
+    # ---- v9.2.0 — Choke Risk Protection (3R Rule) ----
+    # Batalkan eksekusi bila jarak TP1 melebihi 80% kapasitas Daily ATR —
+    # target tidak realistis untuk horizon harian.
+    if (action in ("BUY", "SELL") and daily_atr and daily_atr > 0
+            and levels.get("entry") is not None and levels.get("take_profit") is not None):
+        if abs(levels["take_profit"] - levels["entry"]) > 0.8 * daily_atr:
+            action = "HOLD"
+            label = "HOLD"
+            confidence = 46
+            reasons = [
+                f"[{engine}] Choke Risk Protection: jarak TP1 melebihi 80% Daily ATR — "
+                f"target tidak realistis untuk horizon harian, eksekusi dibatalkan (3R Rule)."
+            ]
+            levels = _compute_vwap_levels("HOLD", _anchor, atr, peaks, valleys, market, sl_mult, tp_ladder)
+
     buy_levels = _compute_vwap_levels("BUY", _anchor, atr, peaks, valleys, market, sl_mult, tp_ladder)
     sell_levels = _compute_vwap_levels("SELL", _anchor, atr, peaks, valleys, market, sl_mult, tp_ladder)
 
@@ -676,6 +927,14 @@ def _compute_vwap_signal(
             "peaks_found": len(peaks),
             "valleys_found": len(valleys),
             "structure": "VWAP-" + engine,
+            # v9.2.0 — konteks makro harian untuk panel indikator
+            "daily_bias": daily_bias,
+            "pdh": round(daily["pdh"], 8) if daily else None,
+            "pdl": round(daily["pdl"], 8) if daily else None,
+            "swing_high": round(daily["swing_high"], 8) if daily else None,
+            "swing_low": round(daily["swing_low"], 8) if daily else None,
+            "daily_atr": round(daily_atr, 8) if daily_atr else None,
+            "is_manipulation": bool(scalp and scalp.get("is_manipulation")),
         },
         "reasons": reasons,
         "entry": (round(levels["entry"], 8) if levels.get("entry") is not None else None),
@@ -818,6 +1077,8 @@ def compute_signal(
     market: str,
     profile: str | None = None,
     live_price: float | None = None,
+    daily_candles: list[dict[str, Any]] | None = None,
+    timeframe: str | None = None,
     min_score: int = 4,
     htf_gate: bool = False,
     zone_cap: float = 1.5,
@@ -866,6 +1127,8 @@ def compute_signal(
         _vsig = _compute_vwap_signal(
             candles, market, _PROFILE_TO_VWAP[profile], profile,
             live_price=live_price,
+            daily_candles=daily_candles,
+            timeframe=timeframe,
         )
         if _vsig is not None:
             return _vsig

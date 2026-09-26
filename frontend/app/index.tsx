@@ -54,6 +54,7 @@ import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
 import { useSearchHistory } from "@/src/lib/useSearchHistory";
 import { PROFILE_META, useTraderProfile } from "@/src/lib/useTraderProfile";
 import TraderProfileModal from "@/src/components/TraderProfileModal";
+import AISuggestionsSheet from "@/src/components/AISuggestionsSheet";
 import UpdatePrompt from "@/src/components/UpdatePrompt";
 import { markAppReady } from "@/src/lib/appReady";
 import { APP_VERSION } from "@/src/lib/version";
@@ -345,6 +346,7 @@ export default function Dashboard() {
   // v8.12.57 — Trader Profile state + modal open state.
   const { profile: traderProfile, apiProfile, loaded: profileLoaded } = useTraderProfile();
   const [traderProfileOpen, setTraderProfileOpen] = useState(false);
+  const [aiSugOpen, setAiSugOpen] = useState(false);
   // v8.12.38.1 — When the search input is focused AND empty AND we have
   // recent hits, we drop down a small suggestion list right underneath.
   const [searchFocused, setSearchFocused] = useState(false);
@@ -528,7 +530,9 @@ export default function Dashboard() {
         extras: watchlistExtrasRef.current,
         // v9.3.0 — Hanya kirim profile jika user EKSPLISIT memilih
         // (toggle). null → backend memakai mesin Confluence v9.0 default.
-        profile: apiProfile ?? undefined,
+        // v9.2.0 — Member non-premium HANYA melihat mesin Confluence:
+        // profile tidak pernah dikirim walau tersimpan di storage.
+        profile: hasAccess ? (apiProfile ?? undefined) : undefined,
       });
       setData((prev) => {
         const next = { ...prev };
@@ -559,7 +563,7 @@ export default function Dashboard() {
         return next;
       });
     }
-  }, [apiProfile]);
+  }, [apiProfile, hasAccess]);
 
   useEffect(() => {
     // v9.1.3 — Tunggu pilihan Trader Profile termuat dari AsyncStorage
@@ -687,8 +691,16 @@ export default function Dashboard() {
               next to the Live News icon (per user request). Shows the
               currently-active preset emoji so users always see which
               horizon they're tuned to at a glance. */}
+          {/* v9.2.0 — Trader Profile selector PREMIUM-ONLY: non-member
+              diarahkan ke paywall saat mengetuk tombol ini. */}
           <TouchableOpacity
-            onPress={() => setTraderProfileOpen(true)}
+            onPress={() => {
+              if (hasAccess) {
+                setTraderProfileOpen(true);
+              } else {
+                setVipOpen(true);
+              }
+            }}
             testID="trader-profile-button"
             style={[
               styles.iconBtn,
@@ -700,7 +712,11 @@ export default function Dashboard() {
             ]}
             accessibilityLabel={apiProfile ? `Trader Profile: ${PROFILE_META[traderProfile].label}` : "Trader Profile: Default (Confluence)"}
           >
-            <Text style={{ fontSize: 15 }}>{apiProfile ? PROFILE_META[traderProfile].emoji : "🧠"}</Text>
+            <Text style={{ fontSize: 15 }}>
+              {hasAccess
+                ? (apiProfile ? PROFILE_META[traderProfile].emoji : "🧠")
+                : "🔒"}
+            </Text>
           </TouchableOpacity>
           {/* v8.6.3 — Alerts feature removed entirely (bell in header +
               🔔 on detail page + AlertModal + engine hook + i18n keys). */}
@@ -1260,6 +1276,20 @@ export default function Dashboard() {
       <TraderProfileModal
         visible={traderProfileOpen}
         onClose={() => setTraderProfileOpen(false)}
+        onOpenAISuggestions={() => {
+          // v9.2.0 — Tutup modal profil DULU, baru buka sheet (hindari
+          // dua modal RN bertumpuk di web/native).
+          setTraderProfileOpen(false);
+          setTimeout(() => setAiSugOpen(true), 280);
+        }}
+      />
+      <AISuggestionsSheet
+        visible={aiSugOpen}
+        onClose={() => setAiSugOpen(false)}
+        onRequestSubscribe={() => {
+          setAiSugOpen(false);
+          setVipOpen(true);
+        }}
       />
       {/* v8.12.44 — Privacy Notice temporarily DISABLED per user request
           for the contest snapshot. Uncomment to re-enable post-subscribe
@@ -1292,6 +1322,7 @@ function SearchResults({
   // in the search box" bug reported on production. Grab our own hook.
   const { t } = useI18n();
   const { apiProfile } = useTraderProfile();
+  const { hasAccess } = usePremiumAccess();
   const { width: screenW } = useWindowDimensions();
   const q = query.toUpperCase();
 
@@ -1309,7 +1340,8 @@ function SearchResults({
       try {
         // v9.3.0 — Pass trader profile hanya jika eksplisit dipilih;
         // null → Confluence v9.0 (konsisten dengan dashboard/detail).
-        const res = await api.search(query.trim(), undefined, apiProfile ?? undefined);
+        // v9.2.0 — Non-premium: selalu Confluence (tanpa profile).
+        const res = await api.search(query.trim(), undefined, hasAccess ? (apiProfile ?? undefined) : undefined);
         if (!cancelled) {
           const arr = (res.hits || []).map((a) => ({
             asset: a,
@@ -1327,7 +1359,7 @@ function SearchResults({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query, apiProfile]);
+  }, [query, apiProfile, hasAccess]);
 
   // Merge local (already-loaded dashboard data) + remote (full pool).
   // De-duplicate by market+symbol; local wins because it has fresher

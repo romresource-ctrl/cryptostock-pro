@@ -1062,3 +1062,76 @@ metadata:
   version: "9.1.5"
   test_sequence: 33
   run_ui: false
+
+# ============================================================
+# v9.2.0 — Formula 68-Video + AI Suggestions (premium) + gating member
+# ============================================================
+backend:
+  - task: "Modul 68-video: bias 50 SMA harian + liquidity + choke 3R + Pattern Scalp 15M"
+    implemented: true
+    working: true
+    file: "/app/backend/indicators.py, /app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Formula gabungan user (15+53 video) diintegrasikan ke 3 mesin
+          VWAP: (1) Macro bias 50 SMA harian — searah: conf +6; lawan arah:
+          SCALPER half-risk (-12), INTRADAY/SWING → HOLD; (2) Liquidity
+          zones (PDH/PDL, swing H/L 10d, daily ATR) di indicators;
+          (3) Choke Risk Protection: TP1 > 80% Daily ATR → HOLD;
+          (4) Pattern Scalp 15M (manipulasi open ≥20% Daily ATR + John
+          Wick wick>2xbody / Power of Tower) override untuk SCALPER di
+          TF <=15m dengan level persis formula. Candle harian via
+          _get_daily_candles (cache 4 jam).
+  - task: "Endpoint /api/ai-suggestions (premium-only)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          GET /api/ai-suggestions?market=&profile=&device_id= → top-10
+          aset bersinyal aktif (sort confidence) lengkap Entry/SL/TP1-3.
+          Gate: entitled via subscriptions ATAU unlock_codes (admin) —
+          keduanya dicek (fix: awalnya unlock-code user kena 403).
+          AssetSignal model + take_profit_2/3. Verified: anon 403,
+          device entitled 200 dengan 10 saran valid.
+frontend:
+  - task: "AI Suggestions sheet + Trader Profile premium-only + Confluence-only utk non-member"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/AISuggestionsSheet.tsx, TraderProfileModal.tsx, app/index.tsx, deviceId.ts"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          - Tombol profil di header: non-premium → 🔒 + paywall.
+          - Modal Trader Profile berisi CTA emas "AI SUGGESTIONS PREMIUM"
+            (desain dari design_agent, /app/design_guidelines.json).
+          - Sheet AI Suggestions: chip kategori (6 market) → daftar aset
+            berperingkat (rank, symbol, harga+24h%, chip LONG/SHORT,
+            CONF emas) → tap expand grid berdivider (Entry Zone, SL,
+            TP1/2/3, R:R, Bias Harian, alasan, tombol Buka Detail Aset).
+            Loading skeleton, empty state, locked state blur + CTA emas.
+          - Non-premium SELALU Confluence: profile tak dikirim ke
+            dashboard/search/chart/analyze walau tersimpan.
+          - Fix deviceId web: localStorage langsung (shim SecureStore web
+            bikin id ephemeral → entitlement gagal di preview).
+          - E2E screenshot PASSED: modal → CTA → sheet 10 kartu → expand
+            ETH SHORT 95% (Entry 2691-2696, SL 2707, TP 2680/2667/2653).
+metadata:
+  created_by: "main_agent"
+  version: "9.1.5"
+  test_sequence: 34
+  run_ui: false

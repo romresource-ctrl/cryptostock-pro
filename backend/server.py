@@ -408,6 +408,9 @@ class AssetSignal(BaseModel):
     entry_aggressive: float | None = None
     stop_loss: float | None = None
     take_profit: float | None = None
+    # v9.2.0 — Ladder TP lengkap untuk kartu AI Suggestions.
+    take_profit_2: float | None = None
+    take_profit_3: float | None = None
     track_record: TrackRecordMini = Field(default_factory=TrackRecordMini)
     is_premium: bool = False
     # v8.1.3 — Region key for World Stocks filter
@@ -563,14 +566,43 @@ def _filter_lists(crypto: list[str], stocks: list[str]) -> tuple[list[str], list
     return c, s
 
 
-def _build_signal(snapshot: dict, tr: dict | None = None, *, min_conf: int = 85, min_wr: float = 70.0, profile: str | None = None) -> AssetSignal:
+# v9.2.0 — Cache candle HARIAN (TTL 4 jam) untuk Macro Bias 50 SMA,
+# Liquidity Zones & Choke Risk Protection pada mesin VWAP (scalper/day/
+# swing). Data harian hanya berubah sekali sehari → cache panjang aman
+# dan menjaga dashboard batch tetap cepat.
+_DAILY_CACHE: dict[str, tuple[float, list]] = {}
+_DAILY_CACHE_TTL = 4 * 3600.0
+
+
+async def _get_daily_candles(market: str, symbol: str) -> list[dict] | None:
+    key = f"{market}|{symbol.upper()}"
+    hit = _DAILY_CACHE.get(key)
+    if hit and (time.time() - hit[0]) < _DAILY_CACHE_TTL:
+        return hit[1]
+    try:
+        if market == "crypto":
+            snap = await get_crypto_snapshot(symbol, "24h")
+        else:
+            eff = "stock_us" if market == "world_stocks" else market
+            snap = await get_stock_snapshot(symbol, "24h", market=eff)
+        candles = (snap or {}).get("candles") or []
+        _DAILY_CACHE[key] = (time.time(), candles)
+        return candles
+    except Exception:
+        return None
+
+
+def _build_signal(snapshot: dict, tr: dict | None = None, *, min_conf: int = 85, min_wr: float = 70.0, profile: str | None = None, daily_candles: list | None = None, timeframe: str | None = None) -> AssetSignal:
     market = snapshot["market"]
     candles = snapshot.get("candles", [])
     ticker = snapshot.get("ticker", {}) or {}
     # v9.0.0 — Pass the caller's trader profile so the dashboard computes
     # the SAME signal the detail page shows (single source of truth).
     # v9.1.4 — Anchor level ke harga live ticker (arah tetap candle tutup).
-    sig = compute_signal(candles, market, profile=profile, live_price=ticker.get("price"))
+    sig = compute_signal(
+        candles, market, profile=profile, live_price=ticker.get("price"),
+        daily_candles=daily_candles, timeframe=timeframe,
+    )
     spark = [c["close"] for c in candles[-30:]] if candles else []
     tr_mini = TrackRecordMini(**(tr or {}))
     wr = tr_mini.wr_30d
@@ -650,6 +682,8 @@ def _build_signal(snapshot: dict, tr: dict | None = None, *, min_conf: int = 85,
         entry_aggressive=sig.get("entry_aggressive"),
         stop_loss=sig["stop_loss"],
         take_profit=sig["take_profit"],
+        take_profit_2=sig.get("take_profit_2"),
+        take_profit_3=sig.get("take_profit_3"),
         track_record=tr_mini,
         is_premium=is_premium,
         region=region,
@@ -658,6 +692,81 @@ def _build_signal(snapshot: dict, tr: dict | None = None, *, min_conf: int = 85,
         reward_pct=reward_pct,
         risk_pct=risk_pct,
     )
+
+
+# v9.2.0 — AI Suggestions: daftar aset dengan sinyal AKTIF (BUY/SELL)
+# terkuat per kategori market, lengkap dengan Entry/SL/TP1-3. Fitur ini
+# PREMIUM-ONLY — divalidasi lewat entitlement device_id di MongoDB.
+@api.get("/ai-suggestions")
+async def ai_suggestions(
+    market: Literal["crypto", "stock_id", "stock_us", "world_stocks", "gold_silver", "commodity", "forex"] = Query("crypto"),
+    timeframe: str = Query("1h"),
+    profile: str | None = Query(None),
+    device_id: str | None = Query(None),
+    limit: int = Query(10, ge=1, le=25),
+) -> dict[str, Any]:
+    if timeframe not in TIMEFRAME_MAP:
+        raise HTTPException(400, f"Invalid timeframe. Use one of {TIMEFRAMES}")
+
+    # ---- Premium gate: subscription Play Billing ATAU unlock code admin ----
+    entitled = False
+    if device_id:
+        row = await db.subscriptions.find_one(
+            {"device_id": device_id},
+            sort=[("updated_at", -1)],
+        )
+        if row:
+            entitled = row.get("status", "invalid") in ENTITLED_STATUSES
+            expiry_iso = row.get("expiry_time")
+            if entitled and expiry_iso:
+                try:
+                    if datetime.fromisoformat(expiry_iso.replace("Z", "+00:00")) <= datetime.now(timezone.utc):
+                        entitled = False
+                except Exception:
+                    pass
+        # v9.2.0 — User yang di-unlock admin via kode juga premium.
+        if not entitled:
+            uc = await db.unlock_codes.find_one({"device_id": device_id})
+            if uc and not uc.get("revoked", False):
+                exp_iso = uc.get("expires_at")  # None = lifetime
+                if not exp_iso:
+                    entitled = True
+                else:
+                    try:
+                        entitled = datetime.fromisoformat(exp_iso.replace("Z", "+00:00")) > datetime.now(timezone.utc)
+                    except Exception:
+                        entitled = False
+    if not entitled:
+        raise HTTPException(403, "premium_required")
+
+    min_conf, min_wr = _threshold_for_market(market)
+    resp = await _build_dashboard_response(
+        market=market,
+        timeframe=timeframe,
+        sort="confidence",
+        premium_only=False,
+        min_confidence=min_conf,
+        min_wr=min_wr,
+        full=False,
+        profile=profile,
+    )
+    active = [a for a in resp.assets if a.action in ("BUY", "SELL")]
+    active.sort(key=lambda a: -a.confidence)
+    picks = active[:limit]
+
+    engine = (
+        {"scalper": "VWAP-SCALPER", "day": "VWAP-INTRADAY", "swing": "VWAP-SWING"}.get(profile or "", "CONFLUENCE")
+        if profile else "CONFLUENCE"
+    )
+    return {
+        "market": market,
+        "timeframe": timeframe,
+        "profile": profile,
+        "engine": engine,
+        "count": len(picks),
+        "suggestions": [a.model_dump() for a in picks],
+        "server_time": _now_iso(),
+    }
 
 
 def _profile_to_model(p: dict) -> Profile:
@@ -926,8 +1035,27 @@ async def _build_dashboard_response(
     tr_summary = await _get_tr_summary_cached(eff_market, symbols)
     by_sym = {s["symbol"]: s for s in snapshots}
     ordered = [by_sym[s] for s in symbols if s in by_sym]
+
+    # v9.2.0 — Macro Bias 50 SMA harian untuk mesin VWAP (scalper/day/
+    # swing). Fetch candle harian paralel (cache 4 jam per simbol).
+    daily_map: dict[str, list] = {}
+    if profile in ("scalper", "day", "swing"):
+        daily_list = await asyncio.gather(
+            *(_get_daily_candles(eff_market, s["symbol"]) for s in ordered),
+            return_exceptions=True,
+        )
+        daily_map = {
+            s["symbol"]: d
+            for s, d in zip(ordered, daily_list)
+            if isinstance(d, list) and d
+        }
+
     assets = [
-        _build_signal(s, tr_summary.get(s["symbol"]), min_conf=min_confidence, min_wr=min_wr, profile=profile)
+        _build_signal(
+            s, tr_summary.get(s["symbol"]),
+            min_conf=min_confidence, min_wr=min_wr, profile=profile,
+            daily_candles=daily_map.get(s["symbol"]), timeframe=timeframe,
+        )
         for s in ordered
     ]
 
@@ -1062,9 +1190,14 @@ async def asset_chart(
         raise HTTPException(404, "Symbol not found or upstream data unavailable")
     # v8.12.57 — Pass trader profile so v3 formula tunes EMA / RSI /
     # confidence gate per user preference (crypto / forex / gold only).
+    # v9.2.0 — Sertakan candle harian (bias 50 SMA) untuk mesin VWAP.
+    _daily = None
+    if profile in ("scalper", "day", "swing"):
+        _daily = await _get_daily_candles(eff_market, symbol)
     sig = compute_signal(
         snap.get("candles", []), eff_market, profile=profile,
         live_price=(snap.get("ticker", {}) or {}).get("price"),
+        daily_candles=_daily, timeframe=timeframe,
     )
     # v8.2.2 — Enrich raw signal with risk/reward metrics so the detail
     # page header renders the Risk badge. `compute_signal` returns a
@@ -1128,7 +1261,13 @@ async def asset_analyze(
     candles = snap.get("candles", [])
     ticker = snap.get("ticker", {}) or {}
     price = ticker.get("price") or (candles[-1]["close"] if candles else None)
-    technical = compute_signal(candles, eff_market, profile=profile, live_price=price)
+    _daily_a = None
+    if profile in ("scalper", "day", "swing"):
+        _daily_a = await _get_daily_candles(eff_market, symbol)
+    technical = compute_signal(
+        candles, eff_market, profile=profile, live_price=price,
+        daily_candles=_daily_a, timeframe=timeframe,
+    )
     if price is None:
         raise HTTPException(503, "Price unavailable")
     news = await get_news_for_symbol(symbol, eff_market, limit=8)

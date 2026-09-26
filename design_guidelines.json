@@ -1,134 +1,132 @@
 {
-  "theme_and_archetype": {
-    "domain": "Finance / Trading / Crypto & Stocks",
-    "theme": "Dark (Primary) / Light Toggleable",
-    "archetype": "2 (Performance Pro) with Pro Exchange Aesthetic"
-  },
-  "colors": {
-    "dark": {
-      "background": "#0B0E11",
-      "surface": "#181A20",
-      "surfaceHighlight": "#2B3139",
-      "textPrimary": "#EAECEF",
-      "textSecondary": "#848E9C",
-      "accentUp": "#0ECB81",
-      "accentDown": "#F6465D",
-      "accentHold": "#FCD535",
-      "accentBlue": "#2962FF",
-      "border": "#2B3139"
-    },
-    "light": {
-      "background": "#FAFAFA",
-      "surface": "#FFFFFF",
-      "surfaceHighlight": "#F0F0F0",
-      "textPrimary": "#1E2329",
-      "textSecondary": "#707A8A",
-      "accentUp": "#02C076",
-      "accentDown": "#F6465D",
-      "accentHold": "#F3BA2F",
-      "accentBlue": "#2962FF",
-      "border": "#EAECEF"
-    }
+  "app_name": "AI Signal Suggestions",
+  "personality": "7 Dark-First Utility",
+  "personality_one_liner": "A high-contrast, tactical command center that prioritizes glanceability, live metrics, and authoritative trading signals.",
+  "color": {
+    "surface": "#0F1115",
+    "onSurface": "#FFFFFF",
+    "surfaceSecondary": "#1A1D24",
+    "onSurfaceSecondary": "#F3F4F6",
+    "surfaceTertiary": "#252932",
+    "onSurfaceTertiary": "#E5E7EB",
+    "surfaceInverse": "#FFFFFF",
+    "onSurfaceInverse": "#0F1115",
+    "brand": "#F0B90B",
+    "onBrand": "#0F1115",
+    "brandPrimary": "#F0B90B",
+    "onBrandPrimary": "#0F1115",
+    "brandSecondary": "#D4A000",
+    "onBrandSecondary": "#0F1115",
+    "brandTertiary": "#3B3111",
+    "onBrandTertiary": "#F0B90B",
+    "success": "#22C55E",
+    "onSuccess": "#FFFFFF",
+    "warning": "#F59E0B",
+    "onWarning": "#FFFFFF",
+    "error": "#EF4444",
+    "onError": "#FFFFFF",
+    "info": "#3B82F6",
+    "onInfo": "#FFFFFF",
+    "border": "#2D323F",
+    "borderStrong": "#4A5266",
+    "divider": "#1F232B",
+    "muted": "#9CA3AF"
   },
   "typography": {
-    "headings": {
-      "fontFamily": "System",
-      "weights": ["600", "700"],
-      "sizes": {
-        "h1": "24px",
-        "h2": "20px",
-        "h3": "16px"
-      }
-    },
-    "data_numbers": {
-      "fontFamily": "monospace",
-      "weights": ["500", "700"],
-      "sizes": {
-        "large": "28px",
-        "medium": "16px",
-        "small": "12px",
-        "micro": "10px"
-      }
-    },
-    "body": {
-      "fontFamily": "System",
-      "weights": ["400", "500"],
-      "sizes": {
-        "base": "14px",
-        "small": "12px",
-        "micro": "10px"
-      }
+    "displayFontFamily": "Barlow Condensed",
+    "textFontFamily": "Satoshi",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
     }
   },
-  "spacing_and_layout": {
-    "padding": {
-      "xs": "4px",
-      "sm": "8px",
-      "md": "16px",
-      "lg": "24px",
-      "xl": "32px"
+  "spacing": {
+    "rule": "Generous spacing for sections, but tight spacing for related numeric data. Keep touch targets at 44pt minimum.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": "0",
+  "navigation": "bottom_sheet",
+  "icon_set": "Phosphor",
+  "glassmorphism": {
+    "enabled": "true",
+    "do's": [
+      "Use heavy blur to obscure signal cards in the Non-Premium locked state.",
+      "Use blur for the sticky CTA background in the Trader Profile Modal."
+    ],
+    "dont's": [
+      "Do not use blur on standard data cards or metrics to maintain contrast."
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
     },
-    "radius": {
-      "sm": "4px",
-      "md": "8px",
-      "lg": "12px"
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Trader Profile Modal",
+      "purpose": "A selection modal for trader types, acting as the entry point for the AI Suggestions premium feature.",
+      "states": {
+        "loading": "Centered gold spinner",
+        "empty": "N/A",
+        "error": "N/A"
+      },
+      "layout": "Vertical stack of 4 selectable profile cards (Scalper, Day Trader, Swing, Long-term) inside a bottom sheet or modal. Unselected cards use surfaceSecondary and border. Selected card uses surfaceTertiary with borderStrong (brand/gold) and a check icon. The bottom area must contain a sticky absolute/fixed container with a glass/blur background housing a full-width Gold primary CTA button: '✨ AI Suggestions — PREMIUM'."
     },
-    "dashboard_grid": {
-      "type": "2-column",
-      "description": "Split screen vertically into two 50% width scrollable columns (or a 2-column FlatList). Left: CRYPTO, Right: SAHAM.",
-      "gap": "8px"
+    {
+      "name": "AI Suggestions Bottom Sheet",
+      "purpose": "A premium command center displaying high-confidence AI trading signals, lock-gated for non-subscribers.",
+      "states": {
+        "loading": "Skeleton rows of signal cards",
+        "empty": "No signals available for this category. Show an empty state icon and text.",
+        "locked": "Displays a blurred list of dummy signal cards underneath. On top, a centered container (surfaceSecondary) with a Gold LockKey icon, a title 'Fitur Premium', a subtitle explaining the feature, and a Gold 'Upgrade ke Premium' CTA."
+      },
+      "layout": "Header with 'AI Suggestions' title. Below it, a sticky horizontally scrolling chip row for categories (Crypto, Saham IDX, World Stock, Gold, Commodity, Forex). The main scroll view contains a list of expandable Asset Cards. Each card (closed state) shows Symbol, Live Price, 24h Change, Long/Short direction chip, and AI Confidence %. Tapping the card expands it to reveal a tactical grid: Entry Zone, Stop Loss (SL), Take Profit (TP1/2/3), R:R ratio, Daily Bias, and Pattern Reason, ending with a 'Buka Detail Aset' secondary button."
+    }
+  ],
+  "haptics": {
+    "events": {
+      "category_chip_tap": "selection",
+      "asset_card_expand": "light",
+      "trader_profile_select": "medium",
+      "premium_cta_tap": "heavy"
     }
   },
-  "components_and_screens": {
-    "Header": {
-      "description": "Sticky top bar with App Name 'AITrade Pro', Theme Toggle (Sun/Moon), Settings/Manage Assets Icon."
-    },
-    "TimeframeSelector": {
-      "description": "Horizontal ScrollView containing interval pills: 15m, 30m, 60m, 3h, 6h, 12h, 18h, 24h.",
-      "active_state": "Solid background matching surfaceHighlight, border bottom accentUp or brand color."
-    },
-    "DashboardList": {
-      "description": "Two parallel columns. Due to screen width constraints, use dense rows inside each column.",
-      "CardItem": {
-        "layout": "Row based or dense vertical. Ticker top-left, Price bottom-left, Signal top-right, Confidence bottom-right.",
-        "Signal_BUY": "Text color accentUp, bg color accentUp with 20% opacity.",
-        "Signal_SELL": "Text color accentDown, bg color accentDown with 20% opacity.",
-        "Signal_HOLD": "Text color accentHold, bg color accentHold with 20% opacity."
-      }
-    },
-    "ManageAssetsModal": {
-      "description": "Screen/Modal to add/remove assets from the active screening list."
-    },
-    "DetailScreen": {
-      "description": "Asset details with big candlestick/line chart, Technical Indicators, AI textual analysis (Claude/GPT mock), Entry/Exit/SL/TP points, and News/Global Data impact reports.",
-      "Chart": "Use react-native-chart-kit, react-native-svg, or react-native-wagmi-charts for rendering."
-    }
-  },
-  "testing": {
-    "attributes": "Add testID prop to all interactive elements in React Native (e.g., testID='crypto-btc-card')."
-  },
-  "image_urls": {
-    "trading_chart_bg": {
-      "url": "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxNzV8MHwxfHNlYXJjaHwxfHx0cmFkaW5nJTIwY2hhcnR8ZW58MHx8fHwxNzgxMDczNjM1fDA&ixlib=rb-4.1.0&q=85",
-      "description": "stock market candlestick chart on dark screen",
-      "usage": "Background image for the AI Analysis / News report header on Detail screen."
-    },
-    "colorful_data_screen": {
-      "url": "https://images.pexels.com/photos/16594725/pexels-photo-16594725.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
-      "description": "Detailed financial trading screen with colorful charts",
-      "usage": "Background placeholder for global news/reports section."
+  "images": {
+    "premium_abstract_bg": {
+      "url": "https://images.unsplash.com/photo-1634549709262-508c47d4c229?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTN8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMGRhcmslMjBnb2xkJTIwcHJlbWl1bSUyMGx1eHVyeSUyMGJhY2tncm91bmR8ZW58MHx8fHwxNzkwNDA0OTQyfDA&ixlib=rb-4.1.0&q=85",
+      "dark": "https://images.unsplash.com/photo-1634549709262-508c47d4c229?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTN8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMGRhcmslMjBnb2xkJTIwcHJlbWl1bSUyMGx1eHVyeSUyMGJhY2tncm91bmR8ZW58MHx8fHwxNzkwNDA0OTQyfDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Abstract dark and gold premium luxury background"
     }
   },
   "instructions_to_main_agent": [
-    "Build an Expo React Native application using .js files (NOT .tsx).",
-    "Implement a Dark/Light theme context, defaulting to Dark Mode (Pro Exchange). No login required.",
-    "On the Home Screen, place a Timeframe Selector horizontally at the top (15m, 30m, 60m, 3h, 6h, 12h, 18h, 24h).",
-    "Below the selector, display a 2-column layout side-by-side (Left: CRYPTO, Right: SAHAM) showing asset cards. Use dense mobile UI.",
-    "Data to mock/display: CRYPTO (BTC, ETH, HYPE, USDT, ASTER, BNB, XRP, SOL, DOGE, PEPE, SUI, ADA, TRX, LTC, LINK, HBAR, SHIB, DOT, BCH, SAND, ALGO, XAUT).",
-    "Data to mock/display: SAHAM (BBCA, BBRI, BMRI, TPIA, ADRO, DEWA, ASII, EMTK, ADMR, BRMS, PANI, CBRE, RAJA, PTRO, INET, ANTM, MBMA, MDKA).",
-    "Mock AI signals containing BUY/SELL/HOLD/LONG/SHORT and a confidence percentage (e.g., 92%) for each asset.",
-    "Create a Details screen when tapping an asset, featuring an interactive chart, detailed AI analysis (mocked from Claude/GPT), Entry/Exit points, and News impact.",
-    "Implement an Add/Remove Asset screen accessible from the dashboard.",
-    "Add 'testID' attributes to all Touchable and interactive components."
+    "Strictly adhere to the 7 Dark-First Utility personality. The interface must feel like a live, tactical command center. Do not use rounded, playful, or soft iOS-native aesthetics.",
+    "Typography MUST use Barlow Condensed for numbers, prices, tickers, and display metrics. Use Satoshi for standard body text (reasons, labels). Let the font sizes create hierarchy, keep weight to 400/500.",
+    "For the Long/Short chips: Use the 'success' token (#22C55E) for LONG/BUY and the 'error' token (#EF4444) for SHORT/SELL. Do not use generic blue or purple.",
+    "Asset Cards must be expandable (accordion style). When expanded, the numeric data (Entry, SL, TP) should be laid out in a dense, highly scannable grid using dividers, not floating cards.",
+    "LOCKED STATE: Non-premium users must see the actual UI structure, but heavily obscured using expo-blur. Place a premium upsell overlay (Lock icon, text, Gold CTA) vertically centered over the blurred content. This is a critical conversion mechanism.",
+    "Trader Profile modal must have a sticky absolute CTA for 'AI Suggestions — PREMIUM' at the bottom. Use a glassmorphism (blurred) background container behind the button so scrolling profiles pass underneath it cleanly."
   ]
 }

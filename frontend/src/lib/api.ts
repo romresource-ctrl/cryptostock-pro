@@ -37,6 +37,9 @@ export interface AssetSignal {
   entry_aggressive?: number | null;
   stop_loss: number | null;
   take_profit: number | null;
+  // v9.2.0 — Ladder TP lengkap (dipakai kartu AI Suggestions).
+  take_profit_2?: number | null;
+  take_profit_3?: number | null;
   track_record: TrackRecordMini;
   is_premium: boolean;
   // v8.1.3 — Region key from Yahoo suffix (us/europe/japan/china/…).
@@ -327,6 +330,28 @@ export const api = {
   aiModels: () =>
     get<{ models: { name: string; provider: string }[] }>(`/ai/models`),
 
+  // v9.2.0 — AI Suggestions (PREMIUM): aset dengan sinyal aktif terkuat
+  // per kategori market, lengkap Entry/SL/TP1-3. Backend gate via
+  // device_id entitlement (403 bila non-premium).
+  aiSuggestions: (
+    market: Market,
+    timeframe: Timeframe = "1h",
+    profile?: string,
+    deviceId?: string,
+  ) => {
+    const params = new URLSearchParams({ market, timeframe });
+    if (profile) params.append("profile", profile);
+    if (deviceId) params.append("device_id", deviceId);
+    return get<{
+      market: Market;
+      timeframe: string;
+      profile: string | null;
+      engine: string;
+      count: number;
+      suggestions: AssetSignal[];
+      server_time: string;
+    }>(`/ai-suggestions?${params.toString()}`);
+  },
   search: (q: string, timeframe: string = "1h", profile?: string) =>
     get<{
       hits: AssetSignal[];

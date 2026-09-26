@@ -222,3 +222,17 @@ STOCK_US_YAHOO_MAP_EXTRA (5.256 ticker) dari daftar resmi NASDAQ Trader
 S&P 500 penuh → total universe US 6.066 ticker. S&P500 coverage 503/503.
 Sifatnya search-only (dashboard full=true tetap 810 kurasi agar fetch
 Yahoo tidak berat). Fetch snapshot & region fallback ke EXTRA.
+
+## v9.2.0 — Formula 68-Video + AI Suggestions (Premium)
+
+- 3 mesin VWAP (scalper/day/swing) kini menyertakan: bias harian 50 SMA
+  (lawan arah: scalper half-risk, day/swing HOLD), liquidity zones,
+  Choke Risk Protection (TP1 > 80% Daily ATR → batal), Pattern Scalp 15M
+  (manipulasi open + John Wick/Power of Tower, TF ≤15m, level persis pola).
+- Fitur AI Suggestions (premium): tombol di popup Trader Profile → sheet
+  kategori market → top-10 aset bersinyal lengkap Entry/SL/TP1-3 + bias.
+- Gating: Trader Profile selector premium-only (header 🔒 → paywall);
+  non-premium hanya dashboard dengan mesin Confluence (profile tak dikirim).
+- Gate backend mengakui subscription Play Billing + unlock code admin.
+- Fix: deviceId web kini stabil via localStorage (preview entitlement OK).
+- Test unlock code E2E: E2E-AISUG-TEST → device web:aitest-e2e-001.

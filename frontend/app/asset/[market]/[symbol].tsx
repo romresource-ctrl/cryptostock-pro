@@ -24,6 +24,7 @@ import LadderAlertBadge from "@/src/components/LadderAlertBadge";
 import DipTopPopup from "@/src/components/DipTopPopup";
 import { usePriceZoneAlert } from "@/src/hooks/usePriceZoneAlert";
 import { useDipTopAlert } from "@/src/hooks/useDipTopAlert";
+import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
 import { useTraderProfile } from "@/src/lib/useTraderProfile";
 import {
   STABLECOIN_SYMBOLS,
@@ -46,7 +47,6 @@ import {
   formatPct,
   formatPrice,
 } from "@/src/lib/api";
-import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
 import { useTheme } from "@/src/theme/ThemeContext";
 
 function signalColors(colors: ReturnType<typeof useTheme>["colors"], action: string) {
@@ -170,6 +170,9 @@ export default function AssetDetail() {
 
   // Access gating (issue #2, #3) — kick user back to home if entitlement expires
   const { hasAccess, loaded: accessLoaded } = usePremiumAccess();
+  // v9.2.0 — Non-premium selalu Confluence (deep-link safety): profile
+  // tidak dikirim ke backend meski tersimpan di storage.
+  const effectiveProfile = hasAccess ? (apiProfile ?? undefined) : undefined;
   // v8.4.2 — Same USDT→local-currency FX rate used by the dashboard card,
   // so a stablecoin's header price on the detail page renders as "Rp 17,948"
   // instead of "$1.001" when the user picked a non-USD locale.
@@ -214,7 +217,7 @@ export default function AssetDetail() {
       let lastErr: unknown = null;
       for (let attempt = 0; attempt < 3; attempt += 1) {
         try {
-          const c = await api.chart(market, symbol, tf, apiProfile ?? undefined);
+          const c = await api.chart(market, symbol, tf, effectiveProfile);
           setChart(c);
           setError("");
           setLoadingChart(false);
@@ -235,14 +238,14 @@ export default function AssetDetail() {
       setError(lastErr instanceof Error ? lastErr.message : String(lastErr));
       setLoadingChart(false);
     },
-    [market, symbol, apiProfile],
+    [market, symbol, effectiveProfile],
   );
 
   const runAnalysis = useCallback(async () => {
     setAnalyzing(true);
     setError("");
     try {
-      const a = await api.analyze(market, symbol, timeframe, lang, apiProfile ?? undefined);
+      const a = await api.analyze(market, symbol, timeframe, lang, effectiveProfile);
       setAnalysis(a);
     } catch (e) {
       setError((e as Error).message);
