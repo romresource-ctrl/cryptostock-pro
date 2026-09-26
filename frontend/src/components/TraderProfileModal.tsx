@@ -23,6 +23,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useTheme } from "@/src/theme/ThemeContext";
+import { useI18n } from "@/src/i18n/I18nContext";
 import {
   PROFILE_META,
   PROFILE_ORDER,
@@ -45,6 +46,7 @@ const AI_SUGGESTION_PROFILES: TraderProfile[] = ["scalper", "day", "swing"];
 
 export default function TraderProfileModal({ visible, onClose, onOpenAISuggestions }: Props) {
   const { colors } = useTheme();
+  const { t } = useI18n();
   const { profile, setProfile, explicit } = useTraderProfile();
   const [profileRequiredOpen, setProfileRequiredOpen] = React.useState(false);
 
@@ -168,9 +170,9 @@ export default function TraderProfileModal({ visible, onClose, onOpenAISuggestio
             >
               <Text style={styles.aiButtonEmoji}>✨</Text>
               <View style={{ flex: 1 }}>
-                <Text style={styles.aiButtonTitle}>AI SUGGESTIONS</Text>
+                <Text style={styles.aiButtonTitle}>{t("ai_suggestions_title")}</Text>
                 <Text style={styles.aiButtonSub}>
-                  Pindai peluang LONG/SHORT terkuat — lengkap Entry, SL & TP
+                  {t("ai_suggestions_sub")}
                 </Text>
               </View>
               <View style={styles.aiButtonBadge}>
@@ -200,22 +202,18 @@ export default function TraderProfileModal({ visible, onClose, onOpenAISuggestio
                 >
                   <Text style={styles.warnEmoji}>🧭</Text>
                   <Text style={[styles.warnTitle, { color: colors.textPrimary }]}>
-                    Pilih Trader Profile Dulu
+                    {t("ai_profile_required_title")}
                   </Text>
                   <Text style={[styles.warnBody, { color: colors.textMuted }]}>
-                    AI Suggestions hanya bekerja dengan profil{" "}
-                    <Text style={{ color: "#EF4444", fontWeight: "800" }}>Scalper</Text>,{" "}
-                    <Text style={{ color: "#F0B90B", fontWeight: "800" }}>Day Trader</Text>, atau{" "}
-                    <Text style={{ color: "#22C55E", fontWeight: "800" }}>Swing</Text>.{"\n\n"}
-                    Silakan pilih salah satu profil, lalu tekan tombol AI Suggestions lagi.
+                    {t("ai_profile_required_body")}
                   </Text>
                   <TouchableOpacity
                     onPress={() => setProfileRequiredOpen(false)}
                     testID="ai-profile-required-ok"
                     style={styles.warnButton}
-                    accessibilityLabel="Pilih Trader Profile"
+                    accessibilityLabel={t("ai_profile_required_title")}
                   >
-                    <Text style={styles.warnButtonText}>PILIH PROFILE</Text>
+                    <Text style={styles.warnButtonText}>{t("ai_profile_required_btn")}</Text>
                   </TouchableOpacity>
                 </Pressable>
               </Pressable>

@@ -542,6 +542,51 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   loading: { id: "Memuat…", en: "Loading…", ru: "Загрузка…", cn: "加载中…" },
   back: { id: "Kembali", en: "Back", ru: "Назад", cn: "返回" },
   close: { id: "Tutup", en: "Close", ru: "Закрыть", cn: "关闭" },
+
+  // v9.2.0 — AI Suggestions (Trader Profile modal + sheet)
+  ai_suggestions_title: { id: "SARAN AI", en: "AI SUGGESTIONS", ru: "РЕКОМЕНДАЦИИ ИИ", cn: "AI 建议" },
+  ai_suggestions_sub: {
+    id: "Pindai peluang LONG/SHORT terkuat — lengkap Entry, SL & TP",
+    en: "Scan the strongest LONG/SHORT setups — full Entry, SL & TP",
+    ru: "Сканируйте сильнейшие сетапы LONG/SHORT — с Entry, SL и TP",
+    cn: "扫描最强 LONG/SHORT 机会 — 含入场、止损和止盈",
+  },
+  ai_profile_required_title: {
+    id: "Pilih Trader Profile Dulu",
+    en: "Select a Trader Profile First",
+    ru: "Сначала выберите профиль трейдера",
+    cn: "请先选择交易者档案",
+  },
+  ai_profile_required_body: {
+    id: "AI Suggestions hanya bekerja dengan profil Scalper, Day Trader, atau Swing. Silakan pilih salah satu profil, lalu tekan tombol AI Suggestions lagi.",
+    en: "AI Suggestions only works with the Scalper, Day Trader, or Swing profile. Please select one of the profiles, then tap the AI Suggestions button again.",
+    ru: "AI Suggestions работает только с профилями «Скальпер», «Дейтрейдер» или «Свинг». Выберите один из профилей, затем снова нажмите кнопку AI Suggestions.",
+    cn: "AI 建议仅适用于“剥头皮”、“日内交易”或“波段”档案。请选择其中一个档案，然后再次点击 AI 建议按钮。",
+  },
+  ai_profile_required_btn: { id: "PILIH PROFILE", en: "SELECT PROFILE", ru: "ВЫБРАТЬ ПРОФИЛЬ", cn: "选择档案" },
+  ai_sheet_sub: {
+    id: "Peluang terkuat hasil pindaian formula — lengkap Entry · SL · TP",
+    en: "Strongest setups from the formula scan — full Entry · SL · TP",
+    ru: "Сильнейшие сетапы по формуле — Entry · SL · TP",
+    cn: "公式扫描出的最强机会 — 含入场 · 止损 · 止盈",
+  },
+  ai_locked_title: { id: "Fitur Premium", en: "Premium Feature", ru: "Премиум-функция", cn: "高级功能" },
+  ai_locked_sub: {
+    id: "AI Suggestions memindai seluruh market dan menyajikan peluang LONG/SHORT terkuat — lengkap dengan Entry, SL & TP.",
+    en: "AI Suggestions scans all markets and serves the strongest LONG/SHORT setups — complete with Entry, SL & TP.",
+    ru: "AI Suggestions сканирует все рынки и показывает сильнейшие сетапы LONG/SHORT — с Entry, SL и TP.",
+    cn: "AI 建议扫描所有市场，呈现最强 LONG/SHORT 机会 — 含入场、止损和止盈。",
+  },
+  ai_upgrade: { id: "Upgrade ke Premium", en: "Upgrade to Premium", ru: "Перейти на Премиум", cn: "升级到高级版" },
+  ai_empty_title: { id: "Belum ada setup", en: "No setups yet", ru: "Пока нет сетапов", cn: "暂无信号" },
+  ai_empty_sub: {
+    id: "Tidak ada aset yang lolos formula di kategori ini saat ini. Coba kategori lain atau tunggu candle berikutnya.",
+    en: "No assets passed the formula in this category right now. Try another category or wait for the next candle.",
+    ru: "Сейчас ни один актив не прошёл формулу в этой категории. Попробуйте другую категорию или дождитесь следующей свечи.",
+    cn: "当前该类别没有资产通过公式筛选。请尝试其他类别或等待下一根K线。",
+  },
+  ai_open_detail: { id: "Buka Detail Aset  →", en: "Open Asset Detail  →", ru: "Открыть детали актива  →", cn: "打开资产详情  →" },
+  ai_daily_bias: { id: "BIAS HARIAN", en: "DAILY BIAS", ru: "ДНЕВНОЙ БИАС", cn: "日线偏向" },
 };
 
 type StringEntry = { id: string; en: string; ru: string; cn: string };

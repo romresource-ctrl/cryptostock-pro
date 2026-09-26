@@ -252,3 +252,19 @@ Yahoo tidak berat). Fetch snapshot & region fallback ke EXTRA.
   untuk dashboard/detail (gating hanya pada tombol AI Suggestions).
 - Terverifikasi e2e web: popup muncul tanpa profil; setelah pilih
   Scalper, sheet AI Suggestions terbuka normal.
+
+## v9.2.0 — Lokalisasi AI Suggestions (EN/ID/RU/CN)
+
+- Semua teks AI Suggestions kini mengikuti bahasa pilihan via i18n
+  (I18nContext): judul & sub judul CTA di TraderProfileModal, popup
+  "Pilih Trader Profile Dulu" (judul/body/tombol), header sheet,
+  locked-state premium, empty-state, label kategori (reuse key
+  category_*), label BIAS HARIAN, dan tombol "Buka Detail Aset".
+- Key baru: ai_suggestions_title/sub, ai_profile_required_title/body/btn,
+  ai_sheet_sub, ai_locked_title/sub, ai_upgrade, ai_empty_title/sub,
+  ai_open_detail, ai_daily_bias.
+- Terverifikasi e2e: 4 bahasa menghasilkan 4 terjemahan berbeda pada
+  tombol AI Suggestions (EN "AI SUGGESTIONS" / ID "SARAN AI" /
+  RU "РЕКОМЕНДАЦИИ ИИ" / CN "AI 建议").
+- CATATAN: deskripsi kartu profil (Scalper/Day/Swing/Long-term) masih
+  Bahasa Indonesia statis di PROFILE_META — belum dilokalkan.

@@ -31,6 +31,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api, formatPrice, type AssetSignal, type Market } from "@/src/lib/api";
 import { getDeviceId } from "@/src/lib/deviceId";
 import { useTraderProfile } from "@/src/lib/useTraderProfile";
+import { useI18n } from "@/src/i18n/I18nContext";
 import { useTheme } from "@/src/theme/ThemeContext";
 
 type Props = {
@@ -39,13 +40,13 @@ type Props = {
   onRequestSubscribe: () => void;
 };
 
-const CATEGORIES: { key: Market; label: string; icon: string }[] = [
-  { key: "crypto", label: "Crypto", icon: "₿" },
-  { key: "stock_id", label: "Saham IDX", icon: "🇮🇩" },
-  { key: "stock_us", label: "World Stocks", icon: "🌍" },
-  { key: "gold_silver", label: "Gold", icon: "🥇" },
-  { key: "commodity", label: "Commodity", icon: "🛢️" },
-  { key: "forex", label: "Forex", icon: "💱" },
+const CATEGORIES: { key: Market; labelKey: string; icon: string }[] = [
+  { key: "crypto", labelKey: "category_crypto", icon: "₿" },
+  { key: "stock_id", labelKey: "category_stock_id", icon: "🇮🇩" },
+  { key: "stock_us", labelKey: "category_stock_us", icon: "🌍" },
+  { key: "gold_silver", labelKey: "category_gold_silver", icon: "🥇" },
+  { key: "commodity", labelKey: "category_commodity", icon: "🛢️" },
+  { key: "forex", labelKey: "category_forex", icon: "💱" },
 ];
 
 const GOLD = "#F0B90B";
@@ -63,6 +64,7 @@ function haptic(style: "selection" | "light" | "heavy") {
 
 export default function AISuggestionsSheet({ visible, onClose, onRequestSubscribe }: Props) {
   const { colors } = useTheme();
+  const { t } = useI18n();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { apiProfile } = useTraderProfile();
@@ -121,9 +123,9 @@ export default function AISuggestionsSheet({ visible, onClose, onRequestSubscrib
       <View style={styles.lockedCenter}>
         <View style={[styles.lockedCard, { backgroundColor: colors.surfaceAlt, borderColor: GOLD }]}>
           <Text style={styles.lockEmoji}>🔒</Text>
-          <Text style={[styles.lockedTitle, { color: colors.textPrimary }]}>Fitur Premium</Text>
+          <Text style={[styles.lockedTitle, { color: colors.textPrimary }]}>{t("ai_locked_title")}</Text>
           <Text style={[styles.lockedSub, { color: colors.textSecondary }]}>
-            AI Suggestions memindai seluruh market dan menyajikan peluang LONG/SHORT terkuat — lengkap dengan Entry, SL & TP.
+            {t("ai_locked_sub")}
           </Text>
           <TouchableOpacity
             style={[styles.goldCta, { backgroundColor: GOLD }]}
@@ -133,7 +135,7 @@ export default function AISuggestionsSheet({ visible, onClose, onRequestSubscrib
             }}
             testID="ai-suggestions-upgrade"
           >
-            <Text style={styles.goldCtaText}>Upgrade ke Premium</Text>
+            <Text style={styles.goldCtaText}>{t("ai_upgrade")}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -167,9 +169,9 @@ export default function AISuggestionsSheet({ visible, onClose, onRequestSubscrib
         {/* Header */}
         <View style={styles.headerRow}>
           <View>
-            <Text style={[styles.title, { color: colors.textPrimary }]}>AI SUGGESTIONS</Text>
+            <Text style={[styles.title, { color: colors.textPrimary }]}>{t("ai_suggestions_title")}</Text>
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-              Peluang terkuat hasil pindaian formula — lengkap Entry · SL · TP
+              {t("ai_sheet_sub")}
             </Text>
           </View>
           <View style={[styles.engineChip, { borderColor: GOLD }]}>
@@ -200,7 +202,7 @@ export default function AISuggestionsSheet({ visible, onClose, onRequestSubscrib
                 ]}
               >
                 <Text style={[styles.chipText, { color: active ? "#0B0E11" : colors.textSecondary }]}>
-                  {c.icon}  {c.label}
+                  {c.icon}  {t(c.labelKey)}
                 </Text>
               </TouchableOpacity>
             );
@@ -215,10 +217,9 @@ export default function AISuggestionsSheet({ visible, onClose, onRequestSubscrib
         ) : picks.length === 0 ? (
           <View style={styles.centerBox}>
             <Text style={styles.lockEmoji}>⏳</Text>
-            <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>Belum ada setup</Text>
+            <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>{t("ai_empty_title")}</Text>
             <Text style={[styles.muted, { color: colors.textSecondary }]}>
-              Tidak ada aset yang lolos formula di kategori ini saat ini.
-              Coba kategori lain atau tunggu candle berikutnya.
+              {t("ai_empty_sub")}
             </Text>
           </View>
         ) : (
@@ -316,7 +317,7 @@ export default function AISuggestionsSheet({ visible, onClose, onRequestSubscrib
                           </Text>
                         </View>
                         <View style={[styles.gridCell, styles.gridDivider, { borderLeftColor: colors.border }]}>
-                          <Text style={[styles.levelLabel, { color: colors.textMuted }]}>BIAS HARIAN</Text>
+                          <Text style={[styles.levelLabel, { color: colors.textMuted }]}>{t("ai_daily_bias")}</Text>
                           <Text style={[styles.levelValue, { color: colors.textPrimary }]}>
                             {a.indicators?.daily_bias ? String(a.indicators.daily_bias) : "—"}
                           </Text>
@@ -332,7 +333,7 @@ export default function AISuggestionsSheet({ visible, onClose, onRequestSubscrib
                         onPress={() => openDetail(a)}
                         testID={`ai-open-${a.symbol}`}
                       >
-                        <Text style={[styles.detailBtnText, { color: GOLD }]}>Buka Detail Aset  →</Text>
+                        <Text style={[styles.detailBtnText, { color: GOLD }]}>{t("ai_open_detail")}</Text>
                       </TouchableOpacity>
                     </View>
                   )}
