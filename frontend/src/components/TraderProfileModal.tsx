@@ -38,9 +38,28 @@ type Props = {
   onOpenAISuggestions: () => void;
 };
 
+// v9.1.6 — AI Suggestions HANYA berjalan dengan profil Scalper, Day Trader
+// (Intraday), atau Swing. Tanpa profil (Confluence default) atau profil
+// Long-term → tampilkan popup pengarahan, sheet TIDAK dibuka.
+const AI_SUGGESTION_PROFILES: TraderProfile[] = ["scalper", "day", "swing"];
+
 export default function TraderProfileModal({ visible, onClose, onOpenAISuggestions }: Props) {
   const { colors } = useTheme();
   const { profile, setProfile, explicit } = useTraderProfile();
+  const [profileRequiredOpen, setProfileRequiredOpen] = React.useState(false);
+
+  const aiProfileReady = explicit && AI_SUGGESTION_PROFILES.includes(profile);
+
+  const handleAISuggestionsPress = () => {
+    if (!aiProfileReady) {
+      // Tampilkan popup pengarahan — modal profil tetap terbuka agar
+      // user bisa langsung memilih Scalper / Day Trader / Swing.
+      setProfileRequiredOpen(true);
+      return;
+    }
+    onClose();
+    onOpenAISuggestions();
+  };
 
   const pick = (p: TraderProfile) => {
     // v9.3.0 — Toggle: ketuk kartu yang aktif = lepas pilihan (kembali ke
@@ -142,10 +161,7 @@ export default function TraderProfileModal({ visible, onClose, onOpenAISuggestio
             {/* v9.2.0 — AI Suggestions: pindai aset bersinyal terkuat
                 per kategori market, lengkap Entry/SL/TP. Premium only. */}
             <TouchableOpacity
-              onPress={() => {
-                onClose();
-                onOpenAISuggestions();
-              }}
+              onPress={handleAISuggestionsPress}
               testID="ai-suggestions-button"
               style={styles.aiButton}
               accessibilityLabel="AI Suggestions (Premium)"
@@ -161,6 +177,49 @@ export default function TraderProfileModal({ visible, onClose, onOpenAISuggestio
                 <Text style={styles.aiButtonBadgeText}>PREMIUM</Text>
               </View>
             </TouchableOpacity>
+
+            {/* v9.1.6 — Popup pengarahan: AI Suggestions butuh profil
+                Scalper / Day Trader / Swing yang dipilih eksplisit. */}
+            <Modal
+              visible={profileRequiredOpen}
+              animationType="fade"
+              transparent
+              onRequestClose={() => setProfileRequiredOpen(false)}
+            >
+              <Pressable
+                style={styles.warnBackdrop}
+                onPress={() => setProfileRequiredOpen(false)}
+                testID="ai-profile-required-backdrop"
+              >
+                <Pressable
+                  style={[
+                    styles.warnCard,
+                    { backgroundColor: colors.surface, borderColor: "#F0B90B" },
+                  ]}
+                  onPress={(e) => e.stopPropagation()}
+                >
+                  <Text style={styles.warnEmoji}>🧭</Text>
+                  <Text style={[styles.warnTitle, { color: colors.textPrimary }]}>
+                    Pilih Trader Profile Dulu
+                  </Text>
+                  <Text style={[styles.warnBody, { color: colors.textMuted }]}>
+                    AI Suggestions hanya bekerja dengan profil{" "}
+                    <Text style={{ color: "#EF4444", fontWeight: "800" }}>Scalper</Text>,{" "}
+                    <Text style={{ color: "#F0B90B", fontWeight: "800" }}>Day Trader</Text>, atau{" "}
+                    <Text style={{ color: "#22C55E", fontWeight: "800" }}>Swing</Text>.{"\n\n"}
+                    Silakan pilih salah satu profil, lalu tekan tombol AI Suggestions lagi.
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => setProfileRequiredOpen(false)}
+                    testID="ai-profile-required-ok"
+                    style={styles.warnButton}
+                    accessibilityLabel="Pilih Trader Profile"
+                  >
+                    <Text style={styles.warnButtonText}>PILIH PROFILE</Text>
+                  </TouchableOpacity>
+                </Pressable>
+              </Pressable>
+            </Modal>
 
             <Text style={[styles.footer, { color: colors.textMuted }]}>
               Tap the active profile again to unselect — default engine: Confluence.
@@ -234,4 +293,33 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   aiButtonBadgeText: { color: "#F0B90B", fontSize: 8.5, fontWeight: "900", letterSpacing: 0.6 },
+  warnBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  warnCard: {
+    width: "100%",
+    maxWidth: 340,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    paddingHorizontal: 20,
+    paddingVertical: 22,
+    alignItems: "center",
+  },
+  warnEmoji: { fontSize: 30 },
+  warnTitle: { fontSize: 15, fontWeight: "900", letterSpacing: 0.3, marginTop: 10 },
+  warnBody: { fontSize: 12.5, lineHeight: 18, textAlign: "center", marginTop: 8 },
+  warnButton: {
+    marginTop: 16,
+    backgroundColor: "#F0B90B",
+    borderRadius: 10,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    minWidth: 180,
+    alignItems: "center",
+  },
+  warnButtonText: { color: "#0B0E11", fontWeight: "900", fontSize: 12.5, letterSpacing: 0.8 },
 });

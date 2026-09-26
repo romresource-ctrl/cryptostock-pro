@@ -236,3 +236,19 @@ Yahoo tidak berat). Fetch snapshot & region fallback ke EXTRA.
 - Gate backend mengakui subscription Play Billing + unlock code admin.
 - Fix: deviceId web kini stabil via localStorage (preview entitlement OK).
 - Test unlock code E2E: E2E-AISUG-TEST → device web:aitest-e2e-001.
+
+## v9.1.6 — Popup Wajib Profil untuk AI Suggestions
+
+- Menekan tombol AI Suggestions di TraderProfileModal TANPA profil
+  eksplisit (Confluence default) ATAU dengan profil Long-term kini
+  menampilkan popup "Pilih Trader Profile Dulu" (Bahasa Indonesia).
+  Sheet TIDAK dibuka, API /api/ai-suggestions TIDAK dipanggil.
+- AI Suggestions hanya berjalan dengan profil Scalper / Day Trader
+  (Intraday) / Swing (AI_SUGGESTION_PROFILES di TraderProfileModal.tsx).
+- Tombol "PILIH PROFILE" menutup popup, modal profil tetap terbuka agar
+  user langsung memilih; setelah pilih, user menekan AI Suggestions lagi.
+- Non-premium tidak berubah: tombol profil di header → paywall;
+  dashboard tetap Confluence. Toggle unselect profil tetap berfungsi
+  untuk dashboard/detail (gating hanya pada tombol AI Suggestions).
+- Terverifikasi e2e web: popup muncul tanpa profil; setelah pilih
+  Scalper, sheet AI Suggestions terbuka normal.
