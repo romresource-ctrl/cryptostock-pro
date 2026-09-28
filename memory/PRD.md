@@ -268,3 +268,28 @@ Yahoo tidak berat). Fetch snapshot & region fallback ke EXTRA.
   RU "РЕКОМЕНДАЦИИ ИИ" / CN "AI 建议").
 - CATATAN: deskripsi kartu profil (Scalper/Day/Swing/Long-term) masih
   Bahasa Indonesia statis di PROFILE_META — belum dilokalkan.
+
+## v9.2.1 — Fix AI Suggestions: World Stocks kosong + chip tak terbaca
+
+- Backend /api/ai-suggestions kini full=True → memindai SELURUH universe
+  terkurasi (stock_us 787 ticker, bukan 50 mega-cap). Hasil: stock_us
+  mengembalikan 10/10/5 setup untuk scalper/day/swing (sebelumnya 0).
+- Penyebab empty: universe 49 mega-cap + trigger VWAP ketat + gate bias
+  50 SMA harian → semua HOLD. Bukan bug formula, tapi sampel terlalu kecil.
+- Gold/Silver HANYA punya 4 instrumen (XAU/XAG/XPT/XPD) — empty state
+  saat tak ada setup adalah kondisi pasar yang sah, bukan salah setup.
+- Frontend chip kategori: flexShrink:0 + minHeight 40 + numberOfLines=1
+  → teks chip tidak lagi tergepeng/terpotong saat daftar penuh (terlihat
+  di device user sebagai teks bertumpuk tak terbaca pada IDX Stocks/Forex).
+- Terverifikasi: 6 chip terbaca penuh satu baris di web preview.
+
+## v9.2.1 — Fix UpdatePrompt tidak muncul
+
+- Penyebab: APP_LATEST_VERSION di backend masih "8.12.83" sedangkan
+  build terinstal 9.2.1 → isOutdated() false → popup tak pernah muncul.
+- Fix: APP_LATEST_VERSION = "9.2.1" (server.py). Endpoint
+  /api/app-version terverifikasi mengembalikan 9.2.1.
+- Catatan: popup HANYA muncul di perangkat dengan versi < 9.2.1
+  (mis. build lama 8.12.x / 9.1.x). Perangkat yang sudah 9.2.1 tidak
+  akan melihat popup — by design.
+- WAJIB: bump APP_LATEST_VERSION bersamaan setiap rilis versi baru.

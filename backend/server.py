@@ -747,7 +747,10 @@ async def ai_suggestions(
         premium_only=False,
         min_confidence=min_conf,
         min_wr=min_wr,
-        full=False,
+        # v9.2.1 — full=True: pindai SELURuh universe terkurasi (mis.
+        # stock_us 787 ticker, bukan 50 mega-cap saja) agar kategori
+        # World Stocks tidak kosong saat mesin VWAP profil aktif.
+        full=True,
         profile=profile,
     )
     active = [a for a in resp.assets if a.action in ("BUY", "SELL")]
@@ -1608,7 +1611,7 @@ async def search_assets(
 # v8.12.69 — Latest published Android build. The /app-version endpoint
 # serves this so outdated installs get an update prompt. Bump together
 # with frontend APP_VERSION / app.json version on every release.
-APP_LATEST_VERSION = "8.12.83"
+APP_LATEST_VERSION = "9.2.1"
 
 
 @api.get("/app-version")

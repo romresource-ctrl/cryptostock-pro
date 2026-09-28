@@ -179,8 +179,14 @@ export default function AISuggestionsSheet({ visible, onClose, onRequestSubscrib
           </View>
         </View>
 
-        {/* Kategori */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
+        {/* Kategori — v9.2.1: flexShrink:0 agar baris chip tidak
+            tergepeng (teks terpotong/stack) saat daftar penuh di device. */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.chipsScroll}
+          contentContainerStyle={styles.chipsRow}
+        >
           {CATEGORIES.map((c) => {
             const active = market === c.key;
             return (
@@ -201,7 +207,10 @@ export default function AISuggestionsSheet({ visible, onClose, onRequestSubscrib
                   },
                 ]}
               >
-                <Text style={[styles.chipText, { color: active ? "#0B0E11" : colors.textSecondary }]}>
+                <Text
+                  style={[styles.chipText, { color: active ? "#0B0E11" : colors.textSecondary }]}
+                  numberOfLines={1}
+                >
                   {c.icon}  {t(c.labelKey)}
                 </Text>
               </TouchableOpacity>
@@ -367,8 +376,12 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, marginTop: 2,
   },
   engineText: { color: GOLD, fontSize: 10, fontWeight: "800", letterSpacing: 0.8 },
+  chipsScroll: { flexGrow: 0, flexShrink: 0 },
   chipsRow: { gap: 8, paddingVertical: 14 },
-  chip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 15, paddingVertical: 9 },
+  chip: {
+    borderWidth: 1, borderRadius: 999, paddingHorizontal: 15, paddingVertical: 9,
+    minHeight: 40, justifyContent: "center",
+  },
   chipText: { fontSize: 13, fontWeight: "700" },
   list: { flexGrow: 0 },
   card: { borderWidth: 1, borderRadius: 12, marginBottom: 10, overflow: "hidden" },
