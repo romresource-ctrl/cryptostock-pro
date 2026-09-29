@@ -1,0 +1,253 @@
+{
+  "generated_at": "2026-09-29T07:30:41.643254+00:00",
+  "params": {
+    "months": 24,
+    "timeframe": "1h",
+    "sample_every": 12,
+    "warmup": 210,
+    "fill_window": 6,
+    "trade_window": 24
+  },
+  "modes": {
+    "Confluence": {
+      "profile": null,
+      "total": {
+        "trades": 467,
+        "wins": 312,
+        "losses": 152,
+        "open": 3,
+        "rr_sum": 335.86999999999995,
+        "wr_decisive": 67.2,
+        "avg_rr": 0.72,
+        "expectancy_r": 0.16
+      },
+      "per_symbol": {
+        "BTCUSDT": {
+          "trades": 85,
+          "wins": 52,
+          "losses": 32,
+          "open": 1,
+          "wr_decisive": 61.9,
+          "avg_rr": 0.75,
+          "expectancy_r": 0.08
+        },
+        "ETHUSDT": {
+          "trades": 102,
+          "wins": 69,
+          "losses": 32,
+          "open": 1,
+          "wr_decisive": 68.3,
+          "avg_rr": 0.7,
+          "expectancy_r": 0.16
+        },
+        "SOLUSDT": {
+          "trades": 87,
+          "wins": 61,
+          "losses": 26,
+          "open": 0,
+          "wr_decisive": 70.1,
+          "avg_rr": 0.7,
+          "expectancy_r": 0.19
+        },
+        "XRPUSDT": {
+          "trades": 100,
+          "wins": 72,
+          "losses": 27,
+          "open": 1,
+          "wr_decisive": 72.7,
+          "avg_rr": 0.71,
+          "expectancy_r": 0.24
+        },
+        "BNBUSDT": {
+          "trades": 93,
+          "wins": 58,
+          "losses": 35,
+          "open": 0,
+          "wr_decisive": 62.4,
+          "avg_rr": 0.74,
+          "expectancy_r": 0.09
+        }
+      }
+    },
+    "Scalper": {
+      "profile": "scalper",
+      "total": {
+        "trades": 125,
+        "wins": 99,
+        "losses": 26,
+        "open": 0,
+        "rr_sum": 65.61,
+        "wr_decisive": 79.2,
+        "avg_rr": 0.52,
+        "expectancy_r": 0.2
+      },
+      "per_symbol": {
+        "BTCUSDT": {
+          "trades": 29,
+          "wins": 22,
+          "losses": 7,
+          "open": 0,
+          "wr_decisive": 75.9,
+          "avg_rr": 0.6,
+          "expectancy_r": 0.21
+        },
+        "ETHUSDT": {
+          "trades": 16,
+          "wins": 13,
+          "losses": 3,
+          "open": 0,
+          "wr_decisive": 81.2,
+          "avg_rr": 0.5,
+          "expectancy_r": 0.22
+        },
+        "SOLUSDT": {
+          "trades": 35,
+          "wins": 30,
+          "losses": 5,
+          "open": 0,
+          "wr_decisive": 85.7,
+          "avg_rr": 0.5,
+          "expectancy_r": 0.29
+        },
+        "XRPUSDT": {
+          "trades": 24,
+          "wins": 18,
+          "losses": 6,
+          "open": 0,
+          "wr_decisive": 75.0,
+          "avg_rr": 0.5,
+          "expectancy_r": 0.12
+        },
+        "BNBUSDT": {
+          "trades": 21,
+          "wins": 16,
+          "losses": 5,
+          "open": 0,
+          "wr_decisive": 76.2,
+          "avg_rr": 0.51,
+          "expectancy_r": 0.15
+        }
+      }
+    },
+    "DayTrader": {
+      "profile": "day",
+      "total": {
+        "trades": 122,
+        "wins": 94,
+        "losses": 27,
+        "open": 1,
+        "rr_sum": 68.73,
+        "wr_decisive": 77.7,
+        "avg_rr": 0.56,
+        "expectancy_r": 0.21
+      },
+      "per_symbol": {
+        "BTCUSDT": {
+          "trades": 28,
+          "wins": 26,
+          "losses": 2,
+          "open": 0,
+          "wr_decisive": 92.9,
+          "avg_rr": 0.6,
+          "expectancy_r": 0.49
+        },
+        "ETHUSDT": {
+          "trades": 23,
+          "wins": 15,
+          "losses": 7,
+          "open": 1,
+          "wr_decisive": 68.2,
+          "avg_rr": 0.56,
+          "expectancy_r": 0.06
+        },
+        "SOLUSDT": {
+          "trades": 18,
+          "wins": 13,
+          "losses": 5,
+          "open": 0,
+          "wr_decisive": 72.2,
+          "avg_rr": 0.55,
+          "expectancy_r": 0.12
+        },
+        "XRPUSDT": {
+          "trades": 27,
+          "wins": 21,
+          "losses": 6,
+          "open": 0,
+          "wr_decisive": 77.8,
+          "avg_rr": 0.55,
+          "expectancy_r": 0.21
+        },
+        "BNBUSDT": {
+          "trades": 26,
+          "wins": 19,
+          "losses": 7,
+          "open": 0,
+          "wr_decisive": 73.1,
+          "avg_rr": 0.55,
+          "expectancy_r": 0.13
+        }
+      }
+    },
+    "Swing": {
+      "profile": "swing",
+      "total": {
+        "trades": 19,
+        "wins": 9,
+        "losses": 8,
+        "open": 2,
+        "rr_sum": 11.399999999999999,
+        "wr_decisive": 52.9,
+        "avg_rr": 0.6,
+        "expectancy_r": -0.14
+      },
+      "per_symbol": {
+        "BTCUSDT": {
+          "trades": 4,
+          "wins": 2,
+          "losses": 1,
+          "open": 1,
+          "wr_decisive": 66.7,
+          "avg_rr": 0.6,
+          "expectancy_r": 0.05
+        },
+        "ETHUSDT": {
+          "trades": 3,
+          "wins": 2,
+          "losses": 1,
+          "open": 0,
+          "wr_decisive": 66.7,
+          "avg_rr": 0.6,
+          "expectancy_r": 0.07
+        },
+        "SOLUSDT": {
+          "trades": 5,
+          "wins": 3,
+          "losses": 2,
+          "open": 0,
+          "wr_decisive": 60.0,
+          "avg_rr": 0.6,
+          "expectancy_r": -0.04
+        },
+        "XRPUSDT": {
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "open": 0,
+          "wr_decisive": 50.0,
+          "avg_rr": 0.6,
+          "expectancy_r": -0.2
+        },
+        "BNBUSDT": {
+          "trades": 5,
+          "wins": 1,
+          "losses": 3,
+          "open": 1,
+          "wr_decisive": 25.0,
+          "avg_rr": 0.6,
+          "expectancy_r": -0.48
+        }
+      }
+    }
+  }
+}

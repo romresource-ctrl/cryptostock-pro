@@ -322,3 +322,29 @@ Yahoo tidak berat). Fetch snapshot & region fallback ke EXTRA.
   RATA-RATA confidence 94.3 (sebelumnya jauh lebih rendah dan sinyal
   ambang lolos). Kualitas > kuantitas.
 - Bump 9.2.3 di version.ts, app.json, APP_LATEST_VERSION.
+
+## v9.2.4 — Opsi C: WR tuning Confluence & VWAP (user-approved)
+
+Perubahan (indicators.py):
+- TRADER_PROFILES: tp_ladder → (0.7,1.5,2.5) untuk semua; TAMBAHAN
+  vwap_tp_ladder khusus mesin VWAP: scalper (0.5,1.0,1.75),
+  day (0.55,1.1,2.0), swing (0.6,1.25,2.25), longterm (0.8,1.75,3.0).
+- Confluence min_score: 5 → 8 (butuh 8 dari 9 faktor confluence).
+- VWAP triggers: SCALPER & INTRADAY & SWING wajib pola reversal
+  (bull_rev/bear_rev); SCALPER+INTRADAY wajib volume ekspansi x1.1;
+  SWING tanpa volume gate (breakout box-50 multi-hari sering terjadi
+  saat akumulasi bervolume biasa).
+- Confidence floor VWAP: scalper/intraday 78, swing 72.
+- FIX LATENT BUG: closes/highs/lows/atr di _compute_vwap_signal dipakai
+  blok SCALP-15M sebelum didefinisikan → NameError setiap scalp pattern
+  terpicu. Dipindah ke awal fungsi.
+- backtest_24mo.py: jendela per mode (swing 96/12, day 36/6 candle).
+
+Hasil backtest 24 bulan (5 big caps, 1h, TP1 vs SL, pra-tuning swing):
+- Confluence (min_score 7): 467 trade, WR 67.2%, exp +0.16R
+- Scalper: 125 trade, WR 79.2%, exp +0.20R  ✓ target 75-80
+- Day: 122 trade, WR 77.7%, exp +0.21R  ✓ target 75-80
+- Swing: 19 trade, WR 52.9%  ✗ (terlalu ketat di 1h + jendela 24 jam)
+- Penyesuaian pasca-backtest (min_score 8, swing tanpa vol gate, floor
+  swing 72, jendela swing 96 candle) BELUM di-backtest ulang — user
+  minta publish segera. TODO: backtest ulang v3 untuk konfirmasi.

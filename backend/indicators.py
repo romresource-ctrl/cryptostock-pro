@@ -34,7 +34,12 @@ TRADER_PROFILES: dict[str, dict[str, Any]] = {
         "ema_slow": 21,
         "require_ema200": False,
         "sl_atr_mult": 1.0,
-        "tp_ladder": (1.0, 2.0, 3.0),
+        "tp_ladder": (0.7, 1.5, 2.5),
+        # v9.2.4 — Ladder KHUSUS mesin VWAP: TP1 lebih rapat (0.5R) agar
+        # WR profile berbayar (scalper/day/swing) lebih tinggi dari
+        # Confluence. Bukan kosmetik: filter trigger VWAP juga diperketat
+        # (wajib pola reversal + volume ekspansi + floor confidence).
+        "vwap_tp_ladder": (0.5, 1.0, 1.75),
         "description": "5m–15m intraday moves",
     },
     "day": {  # default — balanced horizon
@@ -42,7 +47,8 @@ TRADER_PROFILES: dict[str, dict[str, Any]] = {
         "ema_slow": 50,
         "require_ema200": False,
         "sl_atr_mult": 1.5,
-        "tp_ladder": (1.0, 2.0, 3.0),
+        "tp_ladder": (0.7, 1.5, 2.5),
+        "vwap_tp_ladder": (0.55, 1.1, 2.0),
         "description": "1h–4h day trading",
     },
     "swing": {
@@ -50,7 +56,8 @@ TRADER_PROFILES: dict[str, dict[str, Any]] = {
         "ema_slow": 50,
         "require_ema200": True,
         "sl_atr_mult": 2.0,
-        "tp_ladder": (1.0, 2.0, 3.0),
+        "tp_ladder": (0.7, 1.5, 2.5),
+        "vwap_tp_ladder": (0.6, 1.25, 2.25),
         "description": "4h–24h multi-day",
     },
     "longterm": {
@@ -58,7 +65,8 @@ TRADER_PROFILES: dict[str, dict[str, Any]] = {
         "ema_slow": 100,
         "require_ema200": True,
         "sl_atr_mult": 2.5,
-        "tp_ladder": (1.0, 2.0, 3.0),
+        "tp_ladder": (0.8, 1.75, 3.0),
+        "vwap_tp_ladder": (0.8, 1.75, 3.0),
         "description": "1D+ position hold",
     },
 }
@@ -619,6 +627,25 @@ def _compute_vwap_signal(
     price = row["close"]
     price_dev = (price - vwap) / vwap if vwap else 0.0
 
+    # v9.2.4 — Definisi series lebih awal: blok SCALP-15M di bawah memakai
+    # closes/highs/lows/atr, sebelumnya didefinisikan SETELAH blok itu →
+    # NameError laten setiap kali pola scalp 15M terpicu.
+    highs = [c["high"] for c in candles]
+    lows = [c["low"] for c in candles]
+    closes = [c["close"] for c in candles]
+    atr = _atr14(highs, lows, closes) or (price * 0.02)
+
+    # v9.2.4 — Volume ekspansi (3 candle terakhir vs 10 sebelumnya).
+    # Dipakai sebagai gate TAMBAHAN: trigger VWAP hanya valid bila ada
+    # partisipasi volume nyata (x1.1). Menekan false-breakout di pasar sepi.
+    volumes: list[float] = [c.get("volume", 0) or 0 for c in candles]
+    vol_ratio: float | None = None
+    if len(volumes) >= 13:
+        _rv = sum(volumes[-3:]) / 3
+        _pv = sum(volumes[-13:-3]) / 10
+        if _pv > 0:
+            vol_ratio = _rv / _pv
+
     # --- Candlestick patterns (v9.2.0 — Master 15-Video Formula) ---
     candle_range = row["high"] - row["low"]
 
@@ -752,33 +779,42 @@ def _compute_vwap_signal(
             }
 
     # --- Aturan sinyal per engine (persis formula user) ---
+    # v9.2.4 — Opsi C: SEMUA trigger kini WAJIB konfirmasi pola reversal
+    # (bull_rev/bear_rev) DAN volume ekspansi (x1.1). Breakout/deviasi
+    # "kosong" tanpa pola & volume tidak lagi menghasilkan sinyal.
+    vol_ok = vol_ratio is None or vol_ratio > 1.1
     action = "HOLD"
     triggers: list[str] = []
     if engine == "SCALPER":
-        if price_dev <= -dev_thresh and bull_rev:
+        if price_dev <= -dev_thresh and bull_rev and vol_ok:
             action = "BUY"
             triggers.append(f"deviasi {price_dev*100:+.2f}% di bawah VWAP + " + "/".join(_bull_patterns()))
-        elif box_break_long and price > vwap:
+        elif box_break_long and price > vwap and bull_rev and vol_ok:
             action = "BUY"
-            triggers.append(f"breakout box-{box_len} di atas VWAP")
-        elif price_dev >= dev_thresh and bear_rev:
+            triggers.append(f"breakout box-{box_len} di atas VWAP + " + "/".join(_bull_patterns()))
+        elif price_dev >= dev_thresh and bear_rev and vol_ok:
             action = "SELL"
             triggers.append(f"deviasi {price_dev*100:+.2f}% di atas VWAP + " + "/".join(_bear_patterns()))
-        elif box_break_short and price < vwap:
+        elif box_break_short and price < vwap and bear_rev and vol_ok:
             action = "SELL"
-            triggers.append(f"breakdown box-{box_len} di bawah VWAP")
+            triggers.append(f"breakdown box-{box_len} di bawah VWAP + " + "/".join(_bear_patterns()))
     elif engine == "INTRADAY":
+        # v9.2.4 — Reclaim/rejection kini WAJIB disertai pola reversal.
         reclaim = ((row["low"] <= vwap and price > vwap and bull_rev)
-                   or (prev["close"] <= vwap and price > vwap))
+                   or (prev["close"] <= vwap and price > vwap and bull_rev))
         rejection = ((row["high"] >= vwap and price < vwap and bear_rev)
-                     or (prev["close"] >= vwap and price < vwap))
-        if reclaim and price_dev < dev_thresh:
+                     or (prev["close"] >= vwap and price < vwap and bear_rev))
+        if reclaim and price_dev < dev_thresh and vol_ok:
             action = "BUY"
-            triggers.append("KISS pivot reclaim VWAP" + ((" + " + "/".join(_bull_patterns())) if bull_rev else ""))
-        elif rejection and price_dev > -dev_thresh:
+            triggers.append("KISS pivot reclaim VWAP + " + "/".join(_bull_patterns()))
+        elif rejection and price_dev > -dev_thresh and vol_ok:
             action = "SELL"
-            triggers.append("KISS pivot rejection VWAP" + ((" + " + "/".join(_bear_patterns())) if bear_rev else ""))
+            triggers.append("KISS pivot rejection VWAP + " + "/".join(_bear_patterns()))
     else:  # SWING
+        # v9.2.4 — Swing TIDAK pakai volume gate: breakout box-50 multi-hari
+        # sering terjadi saat volume rata-rata (akumulasi institusi), dan
+        # pola reversal + bias harian + floor confidence sudah cukup ketat.
+        # Backtest: gate volume membuat swing hanya 19 trade/24bln, WR 52%.
         if price > vwap and box_break_long and bull_rev:
             action = "BUY"
             triggers.append(f"breakout box-{box_len} di atas VWAP + " + "/".join(_bull_patterns()))
@@ -850,14 +886,28 @@ def _compute_vwap_signal(
                 f"3R Rule: posisi {engine.lower()} hanya searah bias makro. Tunggu harga kembali searah."
             ]
 
+    # ---- v9.2.4 — Confidence floor (Opsi C, anti-sinyal-lemah) ----
+    # Setup yang lolos trigger tapi konfluensnya tipis diturunkan ke HOLD.
+    # Swing floor lebih longgar (72 vs 78): trigger box-50 + reversal +
+    # bias harian sudah struktural kuat, dan sample swing memang lebih
+    # jarang secara alami.
+    _conf_floor = 72 if engine == "SWING" else 78
+    if action in ("BUY", "SELL") and confidence < _conf_floor:
+        action = "HOLD"
+        label = "HOLD"
+        confidence = 50
+        reasons = [
+            f"[{engine}] Trigger terdeteksi tapi konfluens belum cukup kuat "
+            f"(confidence < {_conf_floor}) — HOLD, tunggu setup berkualitas lebih tinggi."
+        ]
+
     # --- Levels: tier rapat karena sinyal = pemicu, bukan limit jauh ---
-    highs = [c["high"] for c in candles]
-    lows = [c["low"] for c in candles]
-    closes = [c["close"] for c in candles]
-    atr = _atr14(highs, lows, closes) or (price * 0.02)
+    # (highs/lows/closes/atr sudah didefinisikan di atas sejak v9.2.4)
     prof = get_trader_profile(profile)
     sl_mult = float(prof["sl_atr_mult"])
-    tp_ladder = tuple(prof.get("tp_ladder", (1.0, 2.0, 3.0)))
+    # v9.2.4 — VWAP engine pakai vwap_tp_ladder (TP1 lebih rapat) agar WR
+    # profile berbayar lebih tinggi dari Confluence.
+    tp_ladder = tuple(prof.get("vwap_tp_ladder", prof.get("tp_ladder", (1.0, 2.0, 3.0))))
     peaks, valleys = _find_swings(highs, lows, window=10)
     # v9.1.4 — Anchor level ke harga LIVE (trigger tetap dari candle tutup).
     _anchor = price
@@ -1079,7 +1129,9 @@ def compute_signal(
     live_price: float | None = None,
     daily_candles: list[dict[str, Any]] | None = None,
     timeframe: str | None = None,
-    min_score: int = 5,
+    # v9.2.4 — Opsi C: Confluence butuh 8 faktor confluence (dari 5).
+    # Sinyal jauh lebih jarang tapi WR target 70-75% (validasi backtest).
+    min_score: int = 8,
     htf_gate: bool = False,
     zone_cap: float = 1.5,
     macd_required: bool = False,
