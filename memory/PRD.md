@@ -347,4 +347,4 @@ Hasil backtest 24 bulan (5 big caps, 1h, TP1 vs SL, pra-tuning swing):
 - Swing: 19 trade, WR 52.9%  ✗ (terlalu ketat di 1h + jendela 24 jam)
 - Penyesuaian pasca-backtest (min_score 8, swing tanpa vol gate, floor
   swing 72, jendela swing 96 candle) BELUM di-backtest ulang — user
-  minta publish segera. TODO: backtest ulang v3 untuk konfirmasi.
+  minta publish segera. TODO: backtest ulang v3 untuk konfirmasi. Versi 9.2.4 sudah di-bump (version.ts, app.json, APP_LATEST_VERSION).
