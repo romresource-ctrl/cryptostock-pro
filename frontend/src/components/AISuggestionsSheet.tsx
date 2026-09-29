@@ -47,6 +47,7 @@ const CATEGORIES: { key: Market; labelKey: string; icon: string }[] = [
   { key: "gold_silver", labelKey: "category_gold_silver", icon: "🥇" },
   { key: "commodity", labelKey: "category_commodity", icon: "🛢️" },
   { key: "forex", labelKey: "category_forex", icon: "💱" },
+  { key: "etf", labelKey: "category_etf", icon: "📊" },
 ];
 
 const GOLD = "#F0B90B";

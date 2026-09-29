@@ -699,7 +699,7 @@ def _build_signal(snapshot: dict, tr: dict | None = None, *, min_conf: int = 85,
 # PREMIUM-ONLY — divalidasi lewat entitlement device_id di MongoDB.
 @api.get("/ai-suggestions")
 async def ai_suggestions(
-    market: Literal["crypto", "stock_id", "stock_us", "world_stocks", "gold_silver", "commodity", "forex"] = Query("crypto"),
+    market: Literal["crypto", "stock_id", "stock_us", "world_stocks", "gold_silver", "commodity", "forex", "etf"] = Query("crypto"),
     timeframe: str = Query("1h"),
     profile: str | None = Query(None),
     device_id: str | None = Query(None),

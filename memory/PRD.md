@@ -293,3 +293,14 @@ Yahoo tidak berat). Fetch snapshot & region fallback ke EXTRA.
   (mis. build lama 8.12.x / 9.1.x). Perangkat yang sudah 9.2.1 tidak
   akan melihat popup — by design.
 - WAJIB: bump APP_LATEST_VERSION bersamaan setiap rilis versi baru.
+
+## v9.2.2 — ETF ditambahkan ke AI Suggestions + bump versi
+
+- ETF sebelumnya tidak terdaftar di ai-suggestions (Literal backend +
+  CATEGORIES sheet). Kini ditambahkan: chip 📊 ETF (label reuse key
+  category_etf), endpoint menerima market=etf.
+- Universe ETF = 66 instrumen (FULL_ETF). Hasil tes: Confluence 10 pick
+  (VTI, VXUS, ...); profil VWAP 0 saat ini — ETF bervolatilitas rendah
+  jarang memicu box breakout/reversal + gate bias 50 SMA → HOLD. Ini
+  perilaku formula yang sah, sama seperti Gold/Silver (4 instrumen).
+- Bump versi 9.2.2 di version.ts, app.json, APP_LATEST_VERSION backend.
