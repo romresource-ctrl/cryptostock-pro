@@ -68,10 +68,17 @@ function formatDateTime(iso: string, langCode: string): { date: string; time: st
   }
 }
 
-function formatPct(pct: number | undefined | null): string {
+function formatPct(pct: number | undefined | null, action?: string | null): string {
   if (pct === undefined || pct === null || Number.isNaN(pct)) return "—";
-  const sign = pct > 0 ? "+" : "";
-  return `${sign}${pct.toFixed(2)}%`;
+  // v9.2.3 — Tampilkan pct dari sudut pandang P/L trader:
+  //   BUY  → harga naik = profit (+), harga turun = rugi (-)
+  //   SELL → harga TURUN = profit (+), harga NAIK = rugi (-)  ← balik tanda
+  // Sebelumnya raw pct pasar ditampilkan mentah sehingga trade SHORT
+  // yang untung tampak "-1.23%" (padahal profit) dan trade SHORT yang
+  // rugi tampak "+6.59%" (padahal LOSS). Sangat membingungkan user.
+  const pl = action === "SELL" ? -pct : pct;
+  const sign = pl > 0 ? "+" : "";
+  return `${sign}${pl.toFixed(2)}%`;
 }
 
 const WrHistoryModal: React.FC<Props> = ({ visible, onClose, initialPeriod, data, langCode }) => {
@@ -153,7 +160,7 @@ const WrHistoryModal: React.FC<Props> = ({ visible, onClose, initialPeriod, data
         </View>
         <View style={{ alignItems: "flex-end" }}>
           <Text style={[styles.rowOutcome, { color: outColor }]}>{outLabel}</Text>
-          <Text style={[styles.rowPct, { color: outColor, marginTop: 2 }]}>{formatPct(pct)}</Text>
+          <Text style={[styles.rowPct, { color: outColor, marginTop: 2 }]}>{formatPct(pct, item.action)}</Text>
         </View>
       </View>
     );

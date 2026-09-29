@@ -1079,7 +1079,7 @@ def compute_signal(
     live_price: float | None = None,
     daily_candles: list[dict[str, Any]] | None = None,
     timeframe: str | None = None,
-    min_score: int = 4,
+    min_score: int = 5,
     htf_gate: bool = False,
     zone_cap: float = 1.5,
     macd_required: bool = False,

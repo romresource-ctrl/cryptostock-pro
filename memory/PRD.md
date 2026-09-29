@@ -304,3 +304,21 @@ Yahoo tidak berat). Fetch snapshot & region fallback ke EXTRA.
   jarang memicu box breakout/reversal + gate bias 50 SMA → HOLD. Ini
   perilaku formula yang sah, sama seperti Gold/Silver (4 instrumen).
 - Bump versi 9.2.2 di version.ts, app.json, APP_LATEST_VERSION backend.
+
+## v9.2.3 — WR label fix + perketat agresivitas sinyal
+
+- Investigasi bug label WIN/LOSS terbalik: DB terbukti BENAR
+  (ETH SELL pct=-1.41 → outcome=WIN, BTC SELL pct=+0.63 → BE, dst).
+  Masalahnya UI menampilkan raw market pct, bukan P/L dari sisi trader.
+- FIX UI: formatPct di WrHistoryModal kini balik tanda untuk action SELL
+  → trade SHORT yang untung sekarang tampil "+1.23%" (bukan "-1.23%"),
+  yang rugi tampil "-6.59%" (bukan "+6.59%"). Warna & label WIN/LOSS/BE
+  otomatis konsisten dengan P/L view.
+- WR formula: sudah wins/(wins+losses) exclude BE — sesuai permintaan
+  user (jangan hitung BE/CL). Tidak berubah.
+- Turunkan agresivitas Confluence: min_score default 4→5.
+  Butuh minimal 5 komponen confluence untuk trigger BUY/SELL
+  (sebelumnya 4). Verifikasi crypto dashboard: 17 sinyal aktif dengan
+  RATA-RATA confidence 94.3 (sebelumnya jauh lebih rendah dan sinyal
+  ambang lolos). Kualitas > kuantitas.
+- Bump 9.2.3 di version.ts, app.json, APP_LATEST_VERSION.
