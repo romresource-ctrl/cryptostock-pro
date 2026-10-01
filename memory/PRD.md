@@ -384,3 +384,4 @@ Verifikasi:
   profil AI Suggestions, popup, sheet↔detail, lokalisasi 4 bahasa, WR
   history P/L view). Pytest 11/12 (1 gagal = test harness GET vs POST
   analyze, bukan bug produk).
+## v9.2.5 — bump rilis (semua perbaikan konsistensi v9.2.4 termasuk di dalamnya)
