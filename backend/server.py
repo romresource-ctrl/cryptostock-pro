@@ -100,7 +100,30 @@ DASHBOARD_CACHE_TTL = float(os.environ.get("DASHBOARD_CACHE_TTL_SEC", "300"))
 # Serve a stale cached response IMMEDIATELY if its age is below this
 # hard ceiling. Beyond this, we block on a fresh fetch.
 DASHBOARD_STALE_MAX = float(os.environ.get("DASHBOARD_STALE_MAX_SEC", "900"))
-_snapshot_cache: dict[str, tuple[float, list[dict]]] = {}
+
+# v9.2.4 — Candle-boundary aware cache invalidation.
+# BUG KONSISTENSI (laporan user): dashboard menyajikan sinyal dari snapshot
+# cache hingga 5-15 menit, sementara halaman detail fetch segar. Tepat saat
+# candle 1h TUTUP (mis. 09:00:00), detail langsung menghitung ulang dengan
+# candle baru (SUI → HOLD) sedangkan dashboard masih menampilkan sinyal dari
+# candle sebelumnya (SUI → LONG) hingga cache kedaluwarsa. Sinyal dihitung
+# dari candle TUTUP (_drop_forming_candle), jadi cache WAJIB dibatalkan
+# begitu candle baru terbentuk — bukan hanya berdasarkan umur TTL.
+_TF_SECONDS: dict[str, int] = {
+    "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
+    "1h": 3600, "3h": 7200, "6h": 21600, "12h": 43200, "18h": 43200,
+    "24h": 86400, "7d": 86400, "14d": 86400, "30d": 86400,
+}
+
+
+def _candle_boundary(timeframe: str, now: float | None = None) -> int:
+    """Epoch detik dari awal candle timeframe yang sedang berjalan."""
+    sec = _TF_SECONDS.get(timeframe, 3600)
+    t = int(now if now is not None else time.time())
+    return (t // sec) * sec
+
+
+_snapshot_cache: dict[str, tuple[float, int, list[dict]]] = {}
 _snapshot_locks: dict[str, asyncio.Lock] = {}
 _snapshot_refresh_inflight: dict[str, bool] = {}
 _tr_cache: dict[str, tuple[float, dict]] = {}
@@ -128,24 +151,31 @@ async def _get_snapshots_cached(market: str, symbols: list[str], timeframe: str)
     """
     key = _cache_key_snap(market, symbols, timeframe)
     now = time.time()
+    boundary = _candle_boundary(timeframe, now)
     hit = _snapshot_cache.get(key)
     if hit:
         age = now - hit[0]
-        if age < DASHBOARD_CACHE_TTL:
-            return hit[1]
-        if age < DASHBOARD_STALE_MAX:
-            # Stale-while-revalidate: kick off refresh without blocking.
-            if not _snapshot_refresh_inflight.get(key):
-                _snapshot_refresh_inflight[key] = True
-                asyncio.create_task(_refresh_snapshot(key, market, symbols, timeframe))
-            return hit[1]
+        # v9.2.4 — Cache dari periode candle SEBELUMNYA tidak boleh disajikan
+        # sama sekali: sinyal berubah saat candle tutup, dan menyajikan cache
+        # lama adalah akar desync dashboard-vs-detail yang dilaporkan user.
+        if hit[1] == boundary:
+            if age < DASHBOARD_CACHE_TTL:
+                return hit[2]
+            if age < DASHBOARD_STALE_MAX:
+                # Stale-while-revalidate (masih candle yang sama → aman).
+                if not _snapshot_refresh_inflight.get(key):
+                    _snapshot_refresh_inflight[key] = True
+                    asyncio.create_task(_refresh_snapshot(key, market, symbols, timeframe))
+                return hit[2]
+        # Candle baru sudah mulai → paksa fetch segar (blokir sebentar)
+        # agar dashboard & detail selalu menghitung dari candle yang sama.
     lock = _snapshot_locks.setdefault(key, asyncio.Lock())
     async with lock:
         hit = _snapshot_cache.get(key)
-        if hit and time.time() - hit[0] < DASHBOARD_CACHE_TTL:
-            return hit[1]
+        if hit and hit[1] == boundary and time.time() - hit[0] < DASHBOARD_CACHE_TTL:
+            return hit[2]
         data = await get_batch(market, symbols, timeframe)
-        _snapshot_cache[key] = (time.time(), data)
+        _snapshot_cache[key] = (time.time(), boundary, data)
         return data
 
 
@@ -156,7 +186,7 @@ async def _refresh_snapshot(key: str, market: str, symbols: list[str], timeframe
     try:
         data = await get_batch(market, symbols, timeframe)
         if data:
-            _snapshot_cache[key] = (time.time(), data)
+            _snapshot_cache[key] = (time.time(), _candle_boundary(timeframe), data)
     except Exception:
         # Swallow — the stale cache continues to serve requests.
         pass

@@ -1764,14 +1764,21 @@ async def _fetch_yahoo_chart_by_symbol(client: httpx.AsyncClient, yahoo_sym: str
     # trigger back-to-back fetches for the same symbol) and also gives a
     # near-instant response on repeated visits during the same minute.
     #
-    # We also do ONE retry with a shorter (5s) timeout before returning None
-    # so a single Yahoo hiccup no longer nukes the whole request.
+    # v9.2.4 — Boundary-aware: cache dibatalkan begitu candle interval
+    # saat ini berganti (mirror fix dashboard di server.py). Sinyal
+    # dihitung dari candle tutup, jadi menyajikan candle set lama setelah
+    # penutupan candle = desync dashboard vs detail.
+    _INTERVAL_SEC = {"1m": 60, "2m": 120, "5m": 300, "15m": 900, "30m": 1800,
+                     "60m": 3600, "90m": 5400, "1h": 3600, "1d": 86400,
+                     "5d": 432000, "1wk": 604800, "1mo": 2592000}
+    _sec = _INTERVAL_SEC.get(interval, 3600)
+    _boundary = int(time.time()) // _sec * _sec
     cache_key = (yahoo_sym, range_, interval)
     now = time.monotonic()
     cached = _YAHOO_CHART_CACHE.get(cache_key)
     if cached is not None:
-        ts, payload = cached
-        if now - ts < _YAHOO_CHART_TTL_SEC:
+        ts, payload, cb = cached
+        if cb == _boundary and now - ts < _YAHOO_CHART_TTL_SEC:
             return payload
 
     async def _do_fetch(timeout: float) -> dict[str, Any] | None:
@@ -1827,7 +1834,7 @@ async def _fetch_yahoo_chart_by_symbol(client: httpx.AsyncClient, yahoo_sym: str
         payload = await _do_fetch(5.0)
 
     if payload is not None:
-        _YAHOO_CHART_CACHE[cache_key] = (now, payload)
+        _YAHOO_CHART_CACHE[cache_key] = (now, payload, _boundary)
         # Opportunistic cache eviction — keep the dict from growing unbounded.
         if len(_YAHOO_CHART_CACHE) > _YAHOO_CHART_CACHE_MAX:
             _yahoo_cache_evict(now)
@@ -1835,14 +1842,15 @@ async def _fetch_yahoo_chart_by_symbol(client: httpx.AsyncClient, yahoo_sym: str
 
 
 # v7.0.8 — module-level cache (bounded, opportunistic eviction).
+# v9.2.4 — entri: (monotonic_ts, payload, candle_boundary_epoch)
 _YAHOO_CHART_TTL_SEC = 60.0
 _YAHOO_CHART_CACHE_MAX = 512
-_YAHOO_CHART_CACHE: dict[tuple[str, str, str], tuple[float, dict[str, Any]]] = {}
+_YAHOO_CHART_CACHE: dict[tuple[str, str, str], tuple[float, dict[str, Any], int]] = {}
 
 
 def _yahoo_cache_evict(now: float) -> None:
     """Drop entries older than TTL; if still too large, drop the oldest half."""
-    dead = [k for k, (ts, _p) in _YAHOO_CHART_CACHE.items() if now - ts >= _YAHOO_CHART_TTL_SEC]
+    dead = [k for k, (ts, _p, _b) in _YAHOO_CHART_CACHE.items() if now - ts >= _YAHOO_CHART_TTL_SEC]
     for k in dead:
         _YAHOO_CHART_CACHE.pop(k, None)
     if len(_YAHOO_CHART_CACHE) > _YAHOO_CHART_CACHE_MAX:

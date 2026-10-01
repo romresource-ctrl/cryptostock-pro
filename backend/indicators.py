@@ -909,10 +909,15 @@ def _compute_vwap_signal(
     # profile berbayar lebih tinggi dari Confluence.
     tp_ladder = tuple(prof.get("vwap_tp_ladder", prof.get("tp_ladder", (1.0, 2.0, 3.0))))
     peaks, valleys = _find_swings(highs, lows, window=10)
-    # v9.1.4 — Anchor level ke harga LIVE (trigger tetap dari candle tutup).
+    # v9.2.4 — Anchor level = harga candle TUTUP (deterministik).
+    # Live-anchor v9.1.4 dicabut: dashboard (batch fetch) dan detail
+    # (per-symbol fetch) membaca live ticker pada milidetik berbeda →
+    # Entry/SL/TP bergeser 0.02-0.1% antar layar. User menuntut angka
+    # IDENTIK di semua tampilan. Level kini tetap selama candle berjalan
+    # dan baru berubah saat candle berikutnya tutup (seperti alert
+    # TradingView). Konsekuensi: saat pump ekstrem intra-candle, level
+    # bisa tampak tertinggal dari harga live hingga candle tutup.
     _anchor = price
-    if live_price and live_price > 0 and atr > 0 and abs(live_price - price) <= atr * 8:
-        _anchor = float(live_price)
     levels = _compute_vwap_levels(action, _anchor, atr, peaks, valleys, market, sl_mult, tp_ladder)
 
     # ---- v9.2.0 — Choke Risk Protection (3R Rule) ----
@@ -1452,14 +1457,14 @@ def compute_signal(
         confidence = 45
 
     # v9.1.4 — LEVEL ANCHORING ke harga LIVE. Arah sinyal tetap diputuskan
-    # dari candle TUTUP (stabilitas), tetapi entry/SL/TP dihitung dari
-    # harga realtime agar sinkron dengan yang user lihat di layar.
-    # Tanpa ini, saat harga bergerak cepat (mis. LINK pump +8%), seluruh
-    # ladder TP bisa berada di SISI YANG SALAH dari harga live.
-    # Guard: abaikan live_price yang tidak masuk akal (>8 ATR dari close).
+    # v9.2.4 — Anchor level = harga candle TUTUP (deterministik), sama
+    # seperti mesin VWAP. Live-anchor v9.1.4 dicabut karena menyebabkan
+    # Entry/SL/TP bergeser antar jalur fetch (dashboard vs detail).
+    # Kompensasi kasus pompa ekstrem: jika harga live sudah melewati TP1
+    # untuk sinyal BUY (atau di bawah TP1 untuk SELL), sinyal dianggap
+    # "sudah tercapai" dan level tetap dari candle konfirmasi — candle
+    # berikutnya akan menghitung ulang.
     _anchor = price
-    if live_price and live_price > 0 and atr > 0 and abs(live_price - price) <= atr * 8:
-        _anchor = float(live_price)
 
     # Swing metrics for display + level anchoring.
     peaks, valleys = _find_swings(highs, lows, window=10)

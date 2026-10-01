@@ -70,8 +70,12 @@ async def audit_case(client: httpx.AsyncClient, market: str, symbol: str, profil
     chart = await get(client, f"/asset/{market}/{symbol}/chart?timeframe={TF}{pq}")
     csig = (chart or {}).get("signal") or {}
 
-    # C. analyze (kartu AI prediction di detail)
-    an = await get(client, f"/asset/{market}/{symbol}/analyze?timeframe={TF}&lang=id{pq}")
+    # C. analyze (kartu AI prediction di detail) — endpoint POST.
+    try:
+        _r = await client.post(f"{BASE}/asset/{market}/{symbol}/analyze?timeframe={TF}&lang=id{pq}", timeout=120)
+        an = _r.json() if _r.status_code == 200 else {"_http": _r.status_code}
+    except Exception as e:
+        an = {"_err": str(e)[:80]}
     atech = ((an or {}).get("technical") or {})
 
     # D. search

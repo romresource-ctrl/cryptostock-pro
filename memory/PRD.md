@@ -348,3 +348,39 @@ Hasil backtest 24 bulan (5 big caps, 1h, TP1 vs SL, pra-tuning swing):
 - Penyesuaian pasca-backtest (min_score 8, swing tanpa vol gate, floor
   swing 72, jendela swing 96 candle) BELUM di-backtest ulang — user
   minta publish segera. TODO: backtest ulang v3 untuk konfirmasi. Versi 9.2.4 sudah di-bump (version.ts, app.json, APP_LATEST_VERSION).
+
+## v9.2.4 — Audit Konsistensi Menyeluruh & Fix Desync Dashboard vs Detail
+
+Keluhan user: dashboard SUI LONG 95% tapi detail SIDEWAYS 58% (tanpa
+profil, TF standar 1H). Screenshot user tepat di batas penutupan candle
+1h (09:00/09:01).
+
+Root cause bertingkat yang ditemukan & diperbaiki:
+1. DEFAULT TF DETAIL: crypto default 1m (fitur animasi live) vs dashboard
+   1h → FIXED: default 1h untuk semua market; AISuggestionsSheet.openDetail
+   kini mengirim ?timeframe=1h.
+2. CACHE DASHBOARD 300s (stale s/d 900s): dashboard menyajikan sinyal dari
+   candle lama hingga 5-15 menit setelah candle baru tutup, sementara
+   detail fetch segar → FIXED: _snapshot_cache kini candle-boundary-aware
+   (server.py): cache dibatalkan begitu candle timeframe berganti; stale-
+   while-revalidate hanya berlaku dalam candle yang sama.
+3. CACHE YAHOO DETAIL 60s: aturan boundary yang sama diterapkan ke
+   _YAHOO_CHART_CACHE (market_data.py) untuk konsistensi dua arah.
+4. LIVE ANCHOR v9.1.4: Entry/SL/TP di-anchor ke live ticker → bergeser
+   0.02-0.1% antar jalur fetch → FIXED: anchor = harga candle TUTUP
+   (deterministik) di KEDUA mesin (Confluence & VWAP). Level identik di
+   semua layar selama candle berjalan, berubah hanya saat candle tutup.
+
+Verifikasi:
+- audit_consistency.py (baru): 48 kasus (12 aset × 4 profil) membandingkan
+  dashboard vs chart vs analyze vs search — termasuk Entry/SL/TP.
+  Hasil final: 0 mismatch arah/label/confidence; chart == analyze identik.
+- Residu terdokumentasi: Yahoo kadang me-restate closed candle lintas
+  menit (drift level <0.1% pada komoditas antar-menit); dalam satu sesi
+  user (dashboard→detail dalam hitungan detik) semua jalur berbagi cache
+  per-symbol 60s yang sama → angka identik. Arah sinyal tidak pernah
+  berubah karena ini.
+- Testing agent E2E: 7/7 flow UI lulus (konsistensi kartu↔detail, gate
+  profil AI Suggestions, popup, sheet↔detail, lokalisasi 4 bahasa, WR
+  history P/L view). Pytest 11/12 (1 gagal = test harness GET vs POST
+  analyze, bukan bug produk).
