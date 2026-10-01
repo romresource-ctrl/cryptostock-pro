@@ -1,0 +1,17 @@
+{
+  "total": 48,
+  "mismatches": [
+    {
+      "market": "commodity",
+      "symbol": "WTI",
+      "profile": "confluence",
+      "ok": false,
+      "views": {
+        "dashboard": "SELL/SELL conf=95 E=90.4198 SL=91.7761 TP=89.4704",
+        "chart": "SELL/SELL conf=95 E=90.3194 SL=91.6741 TP=89.371",
+        "analyze_tech": "HTTP_405",
+        "search": "ABSENT"
+      }
+    }
+  ]
+}

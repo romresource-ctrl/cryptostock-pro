@@ -132,11 +132,13 @@ export default function AssetDetail() {
   const displaySymbol = (market === "forex" || market === "gold_silver")
     ? symbol.replace(/-/g, "/")
     : symbol;
-  // v8.6.12 — Default timeframe now depends on market:
-  // - crypto → "1m" (Binance WS emits ~1 frame/sec, visible candle motion)
-  // - non-crypto → "1h" (no WS anyway, longer TF is more useful)
-  // The user can still override via ?timeframe=… query param.
-  const defaultTfForMarket: Timeframe = market === "crypto" ? "1m" : "1h";
+  // v9.2.4 — Default timeframe detail = "1h" untuk SEMUA market.
+  // SEBELUMNYA crypto default "1m" (demi animasi candle live) — ini
+  // menyebabkan desync fatal: dashboard menghitung sinyal di 1h
+  // (SUI LONG), tapi detail menghitung ulang di 1m (SUI SIDEWAYS).
+  // User sangat dirugikan oleh inkonsistensi ini. 1m tetap bisa
+  // dipilih manual via selector; default harus konsisten dgn dashboard.
+  const defaultTfForMarket: Timeframe = "1h";
   const initialTf = (
     TIMEFRAMES.includes(params.timeframe as Timeframe) ? params.timeframe : defaultTfForMarket
   ) as Timeframe;

@@ -101,7 +101,9 @@ export default function AISuggestionsSheet({ visible, onClose, onRequestSubscrib
 
   const openDetail = (asset: AssetSignal) => {
     onClose();
-    router.push(`/asset/${asset.market}/${asset.symbol}` as never);
+    // v9.2.4 — Teruskan timeframe=1h (TF yang dipakai sheet untuk
+    // memindai) agar sinyal di halaman detail SAMA dengan kartu sheet.
+    router.push(`/asset/${asset.market}/${asset.symbol}?timeframe=1h` as never);
   };
 
   const UP = colors.accentUp;

@@ -1,0 +1,48 @@
+{
+  "summary": "v9.2.4 end-to-end signal consistency verification in WEB PREVIEW — user's original complaint (dashboard vs detail direction mismatch) is FIXED. UI tests: (1) Dashboard card label+confidence == detail Technical Signal pill for BTC (HOLD 45%) and ETH (HOLD 58%) — PASS. (2) Direct /asset/crypto/BTC without param → active TF chip is 1h, not 1m — PASS. (3) No-profile AI Suggestions tap → 'Select a Trader Profile First' popup, sheet stays closed, SELECT PROFILE closes popup and profile modal remains open — PASS. (4) Scalper flow → sheet opens, 7 category chips in one horizontal scrollable row (4 visible at 390px, commodity/forex/etf need scroll), World Stocks non-empty (NEC BUY 95, VIX BUY 95, SUN_HUNG_KAI BUY 83); crypto category legitimately 'No setups yet' (all-HOLD market) — PASS. (5) Sheet→detail consistency: NEC sheet Entry 4,784.27–4,803.55 / SL 4,722.00 / TP1 4,829.86 matches detail EXACTLY, navigation carries ?timeframe=1h — PASS. (6) Localization EN/ID/RU/CN AI Suggestions titles all correct — PASS. (7) WR History: SHORT WIN shows +1.41% (positive), signs rendered from trader P/L side — PASS. Backend: pytest 11/12; premium gating verified (403 without/unknown device, 200 + correct engine with premium device). ONE REMAINING INCONSISTENCY CLASS FOUND: dashboard vs chart Entry/SL/TP can drift slightly (SUI entry 1.16054 dashboard vs 1.16014–1.16034 chart; WTI in one audit run E 90.4198 vs 90.3294) because dashboard uses a cached batch snapshot while chart recomputes from a fresh fetch — label/action/confidence always match, only ATR-derived levels drift ~0.03–0.1% with live ticks.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/dashboard vs GET /api/asset/{market}/{symbol}/chart", "issue": "Entry/SL/TP (and last price) can differ slightly between dashboard and detail for the same asset+TF+profile (SUI crypto reproduced 2x, persistently; WTI commodity in 1 audit run). Root cause: dashboard computes from cached batch snapshot (TTL cache / Yahoo spark batch) while chart endpoint refetches per-symbol (Binance fresh / Yahoo v8 chart) — live price ticks shift ATR-derived levels. Label/action/confidence are stable and consistent everywhere. Audit rule 'Entry/SL/TP HARUS identik' is therefore intermittently violated.", "priority": "HIGH"}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "AI Suggestions sheet", "issues": ["Only 4 of 7 category chips visible at 390px width (Commodities/Forex/ETF offscreen, require horizontal scroll). Chips themselves are not truncated; acceptable but user asked 'semua terbaca satu baris' — consider smaller chip padding or 2-row wrap if full visibility is required."]}
+    ],
+    "react_native_issues": [
+      {"component": "Styling", "issue": "Web preview console warnings persist: deprecated shadow* props (use boxShadow) and props.pointerEvents (use style.pointerEvents). Non-breaking. Reference: multiple components (carried over from iteration_30)."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter31_v924_signal_consistency.py",
+    "/app/test_reports/pytest/iter31.xml",
+    "/app/test_reports/screenshots/iter31_detail_consistency.jpeg",
+    "/app/test_reports/screenshots/iter31_profile_required.jpeg",
+    "/app/test_reports/screenshots/iter31_sheet_us.jpeg",
+    "/app/test_reports/screenshots/iter31_sheet_detail.jpeg",
+    "/app/test_reports/screenshots/iter31_wr_history.jpeg"
+  ],
+  "action_items": [
+    "Fix residual dashboard-vs-detail Entry/SL/TP drift: make the chart/analyze endpoints reuse the SAME snapshot object the dashboard cached (shared per-symbol TTL cache keyed by symbol+timeframe+profile), or stamp dashboard payload with snapshot_time and have detail reuse it within TTL — so levels shown on both screens are computed from identical candles, not just identical formulas.",
+    "Optional design: AI Suggestions category chips — only 4/7 fit at 390px; confirm horizontal scroll is acceptable or compact the chips.",
+    "Minor cleanup: replace deprecated shadow*/pointerEvents props to silence web warnings.",
+    "File size: index.tsx (1884), [symbol].tsx (1669), server.py (3049), indicators.py (1542) all exceed the 700-line guideline — consider splitting in a future refactor."
+  ],
+  "critical_code_review_comments": [
+    "ROOT CAUSE of residual drift: server.py asset_chart/asset_analyze call get_stock_snapshot/get_crypto_snapshot per request (fresh), while _build_dashboard_response uses cached batch snapshots (v7 spark for Yahoo markets, TTL-cached). Two snapshot sources → same formula, different input candles → different ATR levels. This is the same architectural seam that caused the original LONG-vs-SIDEWAYS bug; direction is now aligned (single compute_signal + default TF 1h) but numeric levels still diverge at the seam.",
+    "usePremiumAccess has `hasAccess = __DEV__ || ...` — paywall UI intentionally lifted in web preview, so the non-premium paywall tap-gate CANNOT be UI-tested in preview (profile modal opens). Server-side gate is intact: /api/ai-suggestions returns 403 for unknown devices (verified). Ensure release builds are validated on device.",
+    "audit_consistency.py: /api/asset/.../analyze is POST-only but the audit GETs it (HTTP_405 ignored by its present-filter) — audit's analyze_tech column never actually validates. Fix audit to POST if analyze path coverage is desired."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter31_v924_signal_consistency.py"
+  ],
+  "success_rate": {"backend": "92% (11/12; 1 failure = SUI entry drift, levels-only)", "frontend": "100% (all 7 requested flows verified in web preview)"},
+  "seed_data_creation": "None — used existing premium test device web:aitest-e2e-001 (localStorage key cryptostock.device_fingerprint). NOTE for next agent: page.add_init_script does NOT reliably run before the app's first load in the automation harness — set localStorage AFTER first goto, then page.reload(), otherwise the app generates a random ephemeral device id and premium endpoints 403.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "v9.2.4 fixes VERIFIED: detail default TF=1h (chip active without param), AISuggestionsSheet.openDetail carries ?timeframe=1h, sheet-vs-detail levels match exactly for NEC, profile-gate popup works, localization 4/4, WR history SHORT P/L signs correct (+1.41% on SHORT WIN). Remaining open issue: dashboard-vs-chart Entry/SL/TP micro-drift from dual snapshot sources (cached batch vs fresh per-symbol fetch) — SUI reproduces reliably, WTI intermittent. Re-run /app/backend/tests/test_iter31_v924_signal_consistency.py and /app/backend/audit_consistency.py (currently 47-48/48 depending on tick timing) after main agent unifies the snapshot source. Disclaimer gate: testIDs disclaimer-checkbox → disclaimer-agree. Non-premium paywall UI not testable in web preview due to __DEV__ bypass in usePremiumAccess.",
+  "rca_of_issue": "Residual inconsistency RCA: (1) Reproduce — pytest test_crypto_label_conf_levels_match[SUI] fails repeatedly: dashboard entry=1.16053571 (stable, cached) vs chart entry=1.16013571→1.16033571 (moves with live ticks). WTI showed dash price 89.97 vs chart price 89.88 with E 90.4198 vs 90.3294 in audit run. (2) Root cause — dashboard path (_build_dashboard_response) computes signals from TTL-cached batch snapshots (Binance batch / Yahoo v7 spark), while detail path (asset_chart/asset_analyze, server.py:1187-1204) calls get_crypto_snapshot/get_stock_snapshot which fetch fresh per-symbol data (Yahoo v8 chart / Binance klines). compute_signal is identical, but its INPUT candles/last price differ → ATR-derived Entry/SL/TP differ by ~0.03-0.1%. Direction (action/label) and confidence pass gates on both inputs so they stay consistent — which is why the user's primary complaint is resolved. (3) Mitigation — share one snapshot cache between dashboard and chart paths keyed by (symbol, timeframe), or include the snapshot timestamp in dashboard responses and have the detail page/API reuse the cached snapshot while fresh. Also fix audit_consistency.py to POST /analyze (currently GET→405 silently ignored)."
+}
