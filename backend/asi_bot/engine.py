@@ -21,9 +21,31 @@ from typing import Any, Literal
 from .crypto import decrypt
 from .exchanges import _build
 from .whitelist import is_allowed
+from .algo import new_conditional_order, cancel_all_conditional
 
 Side = Literal["BUY", "SELL"]
 TP_SPLIT = (0.4, 0.3, 0.3)  # TP1, TP2, TP3 share of total qty
+
+
+def _split_tp_qty(qty: float, step: float | None) -> list[float]:
+    """Split qty into TP1/2/3 (40/30/30) aligned to market amount step.
+
+    Guarantees the parts sum to EXACTLY `qty` (remainder goes to last
+    TP) and each part is a multiple of `step`. Parts that round to 0
+    are merged into the next TP so tiny positions still get covered.
+    """
+    parts = [qty * s for s in TP_SPLIT]
+    if step and step > 0:
+        import math
+        parts = [math.floor(p / step) * step for p in parts]
+        # Remainder to last part
+        parts[-1] = round(qty - parts[0] - parts[1], 10)
+    # Merge zero-parts forward (TP1 → TP2 → TP3)
+    for i in range(len(parts) - 1):
+        if parts[i] <= 0:
+            parts[i + 1] = round(parts[i + 1] + parts[i], 10)
+            parts[i] = 0.0
+    return parts
 
 
 def _ccxt_side(side: Side) -> str:
@@ -188,15 +210,17 @@ async def execute_trade(
         margin = bal * risk_pct / 100.0
         size_usdt = margin * leverage
         qty = size_usdt / entry
+        amount_step: float | None = None
         try:
             markets = client.markets or await client.load_markets()
             m = markets.get(exch_sym) or {}
             precision = (m.get("precision") or {}).get("amount")
             if isinstance(precision, int) and precision >= 0:
                 qty = round(qty, precision)
+                amount_step = 10 ** -precision if precision > 0 else 1.0
             elif isinstance(precision, float) and precision > 0:
-                step = precision
-                qty = (int(qty / step)) * step
+                amount_step = precision
+                qty = (int(qty / precision)) * precision
         except Exception:
             pass
         if qty <= 0:
@@ -209,44 +233,82 @@ async def execute_trade(
         actual_fill = float(entry_order.get("average") or entry_order.get("price") or entry)
         actual_qty = float(entry_order.get("filled") or qty)
         close_side = _opposite(side)
-        # v9.4.0 — HARD-BRACKET (native exchange SL/TP):
-        #   Binance USDM: STOP_MARKET + closePosition=True + workingType=MARK_PRICE
-        #                 TAKE_PROFIT_MARKET + reduceOnly=True + split 40/30/30
+        # v9.4.3 — HARD-BRACKET (native exchange SL/TP):
+        #   Binance USDM: NEW Algo Order API (`/fapi/v1/algoOrder`,
+        #                 algoType=CONDITIONAL). Binance migrated ALL
+        #                 conditional orders off /fapi/v1/order on
+        #                 Dec 9 2025 — legacy endpoint returns -4120.
         #   Bybit/OKX/Bitget: unified via CCXT stopPrice/triggerPrice params.
         # If exchange rejects → fallback to soft-bracket (backend watcher).
         exchange = (doc.get("exchange") or "binance").lower()
-        sl_params = _sl_params(exchange, stop_loss, actual_qty)
-        tp_params_fn = lambda tp_price, qty: _tp_params(exchange, tp_price, qty)
         soft_bracket = False
         sl_err: str | None = None
-        try:
-            sl_order = await client.create_order(
-                exch_sym, "STOP_MARKET", close_side,
-                None if sl_params.get("closePosition") else actual_qty, None,
-                params=sl_params,
-            )
-            sl_order_id = sl_order.get("id")
-        except Exception as e:
-            # Exchange menolak conditional order (mis. Binance Portfolio
-            # Margin akun atau sub-account non-trading). Fallback ke
-            # soft-bracket: backend watcher close posisi via MARKET
-            # reduceOnly saat harga menyentuh SL/TP.
-            sl_err = str(e)[:200]
-            soft_bracket = True
-        for i, tp in enumerate(tps[:3]):
-            tp_qty = actual_qty * TP_SPLIT[i]
-            if soft_bracket:
-                tp_order_ids.append(None)
-                continue
+
+        if exchange == "binance":
+            api_key = decrypt(doc["api_key_enc"])
+            api_secret = decrypt(doc["api_secret_enc"])
+            is_testnet = bool(doc.get("testnet", True))
+            spot_sym = symbol.upper().split("/")[0] + "USDT"
             try:
-                o = await client.create_order(
-                    exch_sym, "TAKE_PROFIT_MARKET", close_side, tp_qty, None,
-                    params=tp_params_fn(tp, tp_qty),
+                # SL — close FULL position when triggered.
+                sl_order = await new_conditional_order(
+                    api_key, api_secret, is_testnet,
+                    symbol=spot_sym, side=close_side.upper(),
+                    order_type="STOP_MARKET",
+                    trigger_price=stop_loss, close_position=True,
                 )
-                tp_order_ids.append(o.get("id"))
-            except Exception:
-                tp_order_ids.append(None)
+                sl_order_id = str(sl_order.get("algoId") or "")
+            except Exception as e:
+                sl_err = str(e)[:200]
                 soft_bracket = True
+            tp_parts = _split_tp_qty(actual_qty, amount_step)
+            for i, tp in enumerate(tps[:3]):
+                tp_qty = tp_parts[i] if i < len(tp_parts) else 0.0
+                if soft_bracket or tp_qty <= 0:
+                    tp_order_ids.append(None)
+                    continue
+                try:
+                    o = await new_conditional_order(
+                        api_key, api_secret, is_testnet,
+                        symbol=spot_sym, side=close_side.upper(),
+                        order_type="TAKE_PROFIT_MARKET",
+                        trigger_price=tp, quantity=tp_qty,
+                    )
+                    tp_order_ids.append(str(o.get("algoId") or ""))
+                except Exception:
+                    tp_order_ids.append(None)
+                    soft_bracket = True
+        else:
+            sl_params = _sl_params(exchange, stop_loss, actual_qty)
+            tp_params_fn = lambda tp_price, qty: _tp_params(exchange, tp_price, qty)
+            try:
+                sl_order = await client.create_order(
+                    exch_sym, "STOP_MARKET", close_side,
+                    None if sl_params.get("closePosition") else actual_qty, None,
+                    params=sl_params,
+                )
+                sl_order_id = sl_order.get("id")
+            except Exception as e:
+                # Exchange menolak conditional order. Fallback ke
+                # soft-bracket: backend watcher close posisi via MARKET
+                # reduceOnly saat harga menyentuh SL/TP.
+                sl_err = str(e)[:200]
+                soft_bracket = True
+            tp_parts = _split_tp_qty(actual_qty, amount_step)
+            for i, tp in enumerate(tps[:3]):
+                tp_qty = tp_parts[i] if i < len(tp_parts) else 0.0
+                if soft_bracket or tp_qty <= 0:
+                    tp_order_ids.append(None)
+                    continue
+                try:
+                    o = await client.create_order(
+                        exch_sym, "TAKE_PROFIT_MARKET", close_side, tp_qty, None,
+                        params=tp_params_fn(tp, tp_qty),
+                    )
+                    tp_order_ids.append(o.get("id"))
+                except Exception:
+                    tp_order_ids.append(None)
+                    soft_bracket = True
     finally:
         try:
             await client.close()
@@ -270,7 +332,20 @@ async def execute_trade(
 
 async def close_position(doc: dict[str, Any], symbol: str, side: Side,
                          qty: float) -> dict[str, Any]:
-    """Market close for manual close/cancel bot action."""
+    """Market close for manual close/cancel bot action.
+
+    v9.4.3 — For Binance, first cancel any open conditional orders
+    (algo SL/TP) so no orphan triggers fire after the close.
+    """
+    if (doc.get("exchange") or "").lower() == "binance":
+        try:
+            await cancel_all_conditional(
+                decrypt(doc["api_key_enc"]), decrypt(doc["api_secret_enc"]),
+                bool(doc.get("testnet", True)),
+                symbol.upper().split("/")[0] + "USDT",
+            )
+        except Exception:
+            pass
     client = await _get_client(doc)
     try:
         exch_sym = _ccxt_symbol(doc["exchange"], symbol)

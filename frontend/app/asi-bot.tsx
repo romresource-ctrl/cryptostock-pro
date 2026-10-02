@@ -324,7 +324,7 @@ function ConnectExchangeModal({ visible, onClose, exchange, colors, onSaved, dev
   const [network, setNetwork] = useState<"testnet" | "mainnet">("testnet");
   const [mainnetAck, setMainnetAck] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [serverIp, setServerIp] = useState("35.193.209.116");
+  const [serverIp, setServerIp] = useState("143.198.197.107");
   const [copied, setCopied] = useState(false);
   const ex = useMemo(() => EXCHANGES.find((e) => e.id === exchange)!, [exchange]);
   const isMainnet = network === "mainnet";

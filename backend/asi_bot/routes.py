@@ -11,6 +11,7 @@ device). Phase 4 will optionally bind to an auth user id if present.
 """
 from __future__ import annotations
 
+import os
 import re
 from datetime import datetime, timezone
 from typing import Any, Literal
@@ -166,11 +167,17 @@ async def _get_whitelist() -> dict[str, Any]:
 
 @router.get("/server-ip")
 async def _get_server_ip() -> dict[str, Any]:
-    """v9.4.2 — Return server egress public IP for Binance IP Whitelisting."""
+    """v9.4.3 — Return the IP that exchange APIs ACTUALLY see.
+
+    When ASI_PROXY_URL is set, trading traffic exits through the proxy,
+    so we resolve the egress IP THROUGH the proxy — this is the address
+    users must whitelist in Binance API Management.
+    """
     import httpx
-    ip = "35.193.209.116"
+    proxy = os.environ.get("ASI_PROXY_URL") or os.environ.get("HTTPS_PROXY")
+    ip = "143.198.197.107" if proxy else "35.193.209.116"
     try:
-        async with httpx.AsyncClient(timeout=4.0) as client:
+        async with httpx.AsyncClient(proxy=proxy, timeout=4.0) as client:
             r = await client.get("https://api.ipify.org?format=json")
             if r.status_code == 200:
                 ip = r.json().get("ip", ip)
@@ -178,6 +185,7 @@ async def _get_server_ip() -> dict[str, Any]:
         pass
     return {
         "ip": ip,
+        "via_proxy": bool(proxy),
         "instructions": (
             "Masukkan IP ini ke 'Restrict access to trusted IPs only' "
             "di menu API Management Binance/exchange Anda."
