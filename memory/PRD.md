@@ -548,3 +548,23 @@ Fase berikutnya (BELUM):
 - Template runtime {ex}/{n}/{wr}/{price}/{ago} untuk string dinamis.
 - timeAgo copy-trade memakai key relatif existing (news_time_*).
 - Lint bersih 3 file; screenshot-verified EN di web preview.
+
+
+## v9.6.0 — Flexible TP + Native Trailing Stop (Okt 2026)
+- Pengguna bisa pilih berapa TP (1/2/3). Default 3.
+  - 1 TP → close 100% posisi
+  - 2 TP → split 50 / 50
+  - 3 TP → split ≈33 / 33 / 34 (step-aligned)
+- Chip TP ditempatkan tepat di bawah Leverage (per permintaan user).
+- Trailing Stop callbackRate (default 2%) default aktif.
+  - Setelah TP1 fill, scheduler mendeteksi via refresh_trade_pnl, lalu:
+    1) cancel SL original + sisa TP via Algo API
+    2) pasang TRAILING_STOP_MARKET native via Binance Algo
+  - SL mengikuti harga puncak secara otomatis di exchange (tidak bergantung
+    uptime backend / polling). Matematis lebih aman dibanding set SL
+    manual di `last price − 2%` yang telat.
+- Idempotent via flag `trailing_activated` di dokumen trade.
+- Semi-Auto sheet dapat override tp_count & trailing_callback_rate per-trade.
+- `_split_tp_qty` di-generalisasi menerima `n_targets=1|2|3`, memakai
+  perhitungan integer step-units supaya hasil step-aligned & sum = qty.
+- Version bump 9.5.0 → 9.6.0.
