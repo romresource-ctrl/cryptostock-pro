@@ -512,3 +512,12 @@ Fase berikutnya (BELUM):
 - Pada Binance Mainnet standar, STOP_MARKET umumnya diterima — code
   path yang sama akan menghasilkan sl_order_id dan tp_order_ids
   berisi, soft_bracket=False.
+
+
+## v9.5.0 — Version Bump & Play Store Prep (Sep 2026)
+- Version bumped 9.4.3 → 9.5.0 di `frontend/app.json` dan `frontend/src/lib/version.ts`
+  untuk rilis fitur: ASI-Bot auto trading, native SL/TP hard-bracket, daily risk limiter,
+  dan Copy Trade LIVE leaderboard.
+- Full Description Play Store diperbarui user (mencakup ASI-Bot, disclaimer, link legal).
+- Legal URLs terverifikasi user di Play Console: /api/privacy, /api/data-deletion, /api/terms.
+- Release notes v9.5.0 (ID & EN) sudah diberikan untuk kolom "What's new".
