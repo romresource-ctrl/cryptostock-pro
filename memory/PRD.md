@@ -539,3 +539,12 @@ Fase berikutnya (BELUM):
 - SECURITY: test_mainnet_via_sg.py berisi API key+secret PLAINTEXT — dihapus dari
   working tree, TAPI masih ada di git history (commit 4e9ef2f, ba713dd).
   REKOMENDASI: user regenerate API key Binance.
+
+
+## v9.5.0 — Lokalisasi ASI-Bot & Copy Trade (Okt 2026)
+- Kedua halaman sebelumnya hardcode Bahasa Indonesia; kini mengikuti bahasa
+  pilihan user di dashboard (EN/ID/RU/CN) via useI18n.
+- +50 key baru di I18nContext.tsx (prefix asi_* dan copy_*).
+- Template runtime {ex}/{n}/{wr}/{price}/{ago} untuk string dinamis.
+- timeAgo copy-trade memakai key relatif existing (news_time_*).
+- Lint bersih 3 file; screenshot-verified EN di web preview.
