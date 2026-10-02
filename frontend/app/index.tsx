@@ -817,6 +817,35 @@ export default function Dashboard() {
         </View>
       </View>
 
+      {/* v9.3.0 — ASI-Bot & Copy Trade CTA: dua tombol eye-catching di
+          bawah header, mengikuti level estetika AI Suggestions. */}
+      <View style={styles.asiRow}>
+        <TouchableOpacity
+          onPress={() => router.push("/asi-bot" as never)}
+          testID="asi-bot-button"
+          activeOpacity={0.85}
+          style={[styles.asiBtn, { backgroundColor: "#F0B90B", borderColor: "#F0B90B" }]}
+        >
+          <Text style={styles.asiBtnEmoji}>🤖</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.asiBtnTitle}>ASI-Bot</Text>
+            <Text style={styles.asiBtnSub}>Auto-Trade Futures</Text>
+          </View>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => router.push("/copy-trade" as never)}
+          testID="copy-trade-button"
+          activeOpacity={0.85}
+          style={[styles.asiBtn, { backgroundColor: "#8B5CF6", borderColor: "#8B5CF6" }]}
+        >
+          <Text style={styles.asiBtnEmoji}>🏆</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.asiBtnTitle, { color: "#fff" }]}>Copy Trade</Text>
+            <Text style={[styles.asiBtnSub, { color: "rgba(255,255,255,0.85)" }]}>Top 10 Rank Trader</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+
       {/* v8.5.7 — USDT→IDR FX strip removed per user request. Users can
           find USDT directly by typing "USDT" in the search box; keeping
           a permanent strip at the top adds noise for non-stablecoin
@@ -1628,6 +1657,19 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", gap: 4,
   },
   loginBtnText: { color: "#fff", fontSize: 11, fontWeight: "700", letterSpacing: 0.5 },
+
+  // v9.3.0 — ASI-Bot & Copy Trade CTA row (dua kartu eye-catching).
+  asiRow: { flexDirection: "row", gap: 10, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 },
+  asiBtn: {
+    flex: 1, flexDirection: "row", alignItems: "center", gap: 10,
+    paddingHorizontal: 12, paddingVertical: 12,
+    borderWidth: 1.5, borderRadius: 14,
+    shadowColor: "#000", shadowOpacity: 0.18, shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8, elevation: 4,
+  },
+  asiBtnEmoji: { fontSize: 24 },
+  asiBtnTitle: { color: "#0B0E11", fontSize: 15, fontWeight: "900", letterSpacing: 0.3 },
+  asiBtnSub: { color: "rgba(11,14,17,0.75)", fontSize: 10.5, fontWeight: "700" },
   unlockedBtn: {
     height: 32, paddingHorizontal: 8, borderRadius: 9, borderWidth: 1,
     flexDirection: "row", alignItems: "center", gap: 4, maxWidth: 130,

@@ -360,6 +360,106 @@ export const api = {
     }>(
       `/search?q=${encodeURIComponent(q)}&timeframe=${encodeURIComponent(timeframe)}${profile ? `&profile=${encodeURIComponent(profile)}` : ""}`,
     ),
+
+  // ===== v9.3.0 ASI-Bot (Phase 2-4) =====
+  asi: {
+    listCredentials: (deviceId: string) =>
+      get<{ items: AsiCredential[]; supported_exchanges: { id: string; display: string }[] }>(
+        `/asi/credentials?device_id=${encodeURIComponent(deviceId)}`,
+      ),
+    saveCredential: (deviceId: string, body: AsiSaveCredentialBody) =>
+      send<AsiCredentialSaveResp>(
+        `/asi/credentials?device_id=${encodeURIComponent(deviceId)}`,
+        "POST", body,
+      ),
+    deleteCredential: (deviceId: string, exchange: string) =>
+      send<{ deleted: number }>(
+        `/asi/credentials/${exchange}?device_id=${encodeURIComponent(deviceId)}`,
+        "DELETE",
+      ),
+    testCredential: (deviceId: string, exchange: string) =>
+      send<{ ok: boolean; message?: string }>(
+        `/asi/credentials/${exchange}/test?device_id=${encodeURIComponent(deviceId)}`,
+        "POST",
+      ),
+    whitelist: () => get<{ top_100: string[]; count: number }>(`/asi/whitelist`),
+    previewTrade: (deviceId: string, body: AsiTradeBody) =>
+      send<AsiPreview>(
+        `/asi/trades/preview?device_id=${encodeURIComponent(deviceId)}`, "POST", body,
+      ),
+    executeTrade: (deviceId: string, body: AsiTradeBody) =>
+      send<AsiTradeResp>(
+        `/asi/trades/execute?device_id=${encodeURIComponent(deviceId)}`, "POST", body,
+      ),
+    listTrades: (deviceId: string) =>
+      get<{ items: AsiTradeResp[] }>(`/asi/trades?device_id=${encodeURIComponent(deviceId)}`),
+    pnl: (deviceId: string) =>
+      get<AsiPnl>(`/asi/pnl?device_id=${encodeURIComponent(deviceId)}`),
+    leaderboard: (periodDays = 7) =>
+      get<{ items: AsiLeaderRow[]; period_days: number }>(
+        `/asi/leaderboard?period_days=${periodDays}`,
+      ),
+    getBot: (deviceId: string) =>
+      get<AsiBotConfig & { exists: boolean }>(
+        `/asi/bot?device_id=${encodeURIComponent(deviceId)}`,
+      ),
+    saveBot: (deviceId: string, body: AsiBotConfig) =>
+      send<{ ok: boolean } & AsiBotConfig>(
+        `/asi/bot?device_id=${encodeURIComponent(deviceId)}`, "POST", body,
+      ),
+  },
+};
+
+export type AsiCredential = {
+  device_id: string; exchange: string; display: string;
+  testnet: boolean; api_key_mask: string; handle: string;
+  created_at: string; updated_at: string;
+};
+export type AsiSaveCredentialBody = {
+  exchange: "binance" | "bybit" | "okx" | "bitget";
+  api_key: string; api_secret: string; password?: string | null;
+  testnet: boolean; email?: string | null;
+};
+export type AsiCredentialSaveResp = {
+  ok: boolean; exchange: string; display: string; testnet: boolean;
+  api_key_mask: string; handle: string; message: string;
+};
+export type AsiTradeBody = {
+  exchange: "binance" | "bybit" | "okx" | "bitget";
+  symbol: string; side: "BUY" | "SELL";
+  entry: number; stop_loss: number; take_profits: number[];
+  risk_pct: number; leverage: number;
+  mode?: "semi" | "full";
+};
+export type AsiPreview = {
+  ok: boolean; balance_usdt: number; margin_usdt: number;
+  size_usdt: number; qty: number; leverage: number; risk_pct: number;
+  est_loss_usdt: number;
+  tp_estimations: { tp: number; qty_share: number; est_profit_usdt: number }[];
+  message?: string;
+};
+export type AsiTradeResp = {
+  ok?: boolean; exchange: string; testnet: boolean; symbol: string;
+  side: "BUY" | "SELL"; entry_price: number; stop_loss: number;
+  take_profits: number[]; qty: number; leverage: number; risk_pct: number;
+  status: "open" | "closed"; pnl_usdt: number; created_at: string;
+  entry_order_id?: string | null;
+};
+export type AsiPnl = Record<"daily" | "weekly" | "monthly", {
+  pnl_usdt: number; pnl_pct: number; trades: number; wins: number; losses: number;
+}>;
+export type AsiLeaderRow = {
+  rank: number; handle: string; pnl_usdt: number; trades: number; wr: number;
+};
+export type AsiBotConfig = {
+  enabled: boolean;
+  exchange: "binance" | "bybit" | "okx" | "bitget";
+  mode: "semi" | "full";
+  max_trades_per_day: number;
+  risk_pct: number;
+  leverage: number;
+  whitelist: string[];
+  profile?: "confluence" | "scalper" | "day" | "swing" | null;
 };
 
 export const TIMEFRAMES: Timeframe[] = ["1m", "3m", "5m", "15m", "30m", "1h", "3h", "6h", "12h", "18h", "24h", "7d", "14d", "30d"];

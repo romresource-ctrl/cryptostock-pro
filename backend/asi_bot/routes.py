@@ -19,7 +19,10 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from .crypto import decrypt, encrypt, mask
+from .engine import execute_trade, preview_trade, refresh_trade_pnl
 from .exchanges import EXCHANGE_DISPLAY, EXCHANGES, ExchangeId, validate_credentials
+from .pnl import leaderboard, pnl_summary
+from .whitelist import TOP_100_FUTURES, is_allowed
 
 router = APIRouter(prefix="/asi", tags=["asi-bot"])
 
@@ -49,8 +52,33 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+class TradePayload(BaseModel):
+    exchange: Literal["binance", "bybit", "okx", "bitget"]
+    symbol: str
+    side: Literal["BUY", "SELL"]
+    entry: float
+    stop_loss: float
+    take_profits: list[float] = Field(..., min_length=1, max_length=3)
+    risk_pct: float = Field(5.0, ge=1.0, le=30.0)
+    leverage: int = Field(10, ge=1, le=125)
+    mode: Literal["semi", "full"] = "semi"
+
+
+class BotConfigPayload(BaseModel):
+    enabled: bool = False
+    exchange: Literal["binance", "bybit", "okx", "bitget"]
+    mode: Literal["semi", "full"] = "semi"
+    max_trades_per_day: int = Field(5, ge=1, le=50)
+    risk_pct: float = Field(5.0, ge=1.0, le=30.0)
+    leverage: int = Field(10, ge=1, le=125)
+    whitelist: list[str] = Field(default_factory=list)
+    profile: Literal["confluence", "scalper", "day", "swing"] | None = None
+
+
 def register(app_api: APIRouter, db: Any) -> None:
     """Mount ASI-Bot routes onto an existing FastAPI APIRouter."""
+    # Attach trade-level endpoints (defined below with `router` closure).
+    _attach_trade_routes(db)
 
     @router.post("/credentials")
     async def save_credential(payload: SaveCredentialPayload,
@@ -121,3 +149,92 @@ def register(app_api: APIRouter, db: Any) -> None:
         return res
 
     app_api.include_router(router)
+
+
+# Mounted via register(); keep extra endpoints under same router.
+@router.get("/whitelist")
+async def _get_whitelist() -> dict[str, Any]:
+    return {"top_100": TOP_100_FUTURES, "count": len(TOP_100_FUTURES)}
+
+
+def _attach_trade_routes(db: Any) -> None:
+    @router.post("/trades/preview")
+    async def preview(payload: TradePayload, device_id: str = Query(..., min_length=4)):
+        if not is_allowed(payload.symbol):
+            raise HTTPException(400, f"{payload.symbol} tidak di whitelist Top-100.")
+        doc = await db.asi_credentials.find_one({"_id": f"{device_id}:{payload.exchange}"})
+        if not doc:
+            raise HTTPException(404, "Hubungkan API exchange terlebih dahulu.")
+        return await preview_trade(
+            doc, payload.symbol, payload.side,
+            payload.entry, payload.stop_loss, payload.take_profits,
+            payload.risk_pct, payload.leverage,
+        )
+
+    @router.post("/trades/execute")
+    async def execute(payload: TradePayload, device_id: str = Query(..., min_length=4)):
+        if not is_allowed(payload.symbol):
+            raise HTTPException(400, f"{payload.symbol} tidak di whitelist Top-100.")
+        doc = await db.asi_credentials.find_one({"_id": f"{device_id}:{payload.exchange}"})
+        if not doc:
+            raise HTTPException(404, "Hubungkan API exchange terlebih dahulu.")
+        res = await execute_trade(
+            doc, payload.symbol, payload.side,
+            payload.entry, payload.stop_loss, payload.take_profits,
+            payload.risk_pct, payload.leverage, payload.mode,
+        )
+        if not res.get("ok"):
+            raise HTTPException(400, res.get("message") or "Execute failed")
+        margin_usdt = round(float(res["qty"]) * float(res["entry_price"]) / max(1, int(res["leverage"])), 2)
+        rec = {**res, "device_id": device_id, "margin_usdt": margin_usdt}
+        rec["_id"] = f"{device_id}:{res['entry_order_id']}" if res.get("entry_order_id") else None
+        if rec["_id"]:
+            await db.asi_trades.replace_one({"_id": rec["_id"]}, rec, upsert=True)
+        return res
+
+    @router.get("/trades")
+    async def list_trades(device_id: str = Query(..., min_length=4), limit: int = 50):
+        rows: list[dict[str, Any]] = []
+        async for d in db.asi_trades.find({"device_id": device_id}).sort("created_at", -1).limit(limit):
+            d.pop("_id", None)
+            rows.append(d)
+        return {"items": rows}
+
+    @router.post("/trades/{trade_id}/refresh")
+    async def refresh_trade(trade_id: str, device_id: str = Query(..., min_length=4)):
+        doc = await db.asi_trades.find_one({"_id": f"{device_id}:{trade_id}"})
+        if not doc:
+            raise HTTPException(404, "Trade tidak ditemukan")
+        cred = await db.asi_credentials.find_one({"_id": f"{device_id}:{doc['exchange']}"})
+        if not cred:
+            raise HTTPException(404, "Credential exchange tidak ditemukan")
+        update = await refresh_trade_pnl(cred, doc)
+        update["updated_at"] = _now_iso()
+        await db.asi_trades.update_one({"_id": doc["_id"]}, {"$set": update})
+        return {**doc, **update}
+
+    @router.get("/pnl")
+    async def pnl(device_id: str = Query(..., min_length=4)):
+        return await pnl_summary(db, device_id)
+
+    @router.get("/leaderboard")
+    async def leader(period_days: int = Query(7, ge=1, le=90)):
+        return {"items": await leaderboard(db, period_days=period_days, limit=10),
+                "period_days": period_days}
+
+    @router.get("/bot")
+    async def get_bot(device_id: str = Query(..., min_length=4)):
+        doc = await db.asi_bot_config.find_one({"_id": device_id})
+        if not doc:
+            return {"enabled": False, "exists": False}
+        doc.pop("_id", None)
+        return {**doc, "exists": True}
+
+    @router.post("/bot")
+    async def set_bot(payload: BotConfigPayload, device_id: str = Query(..., min_length=4)):
+        doc = payload.model_dump()
+        doc["device_id"] = device_id
+        doc["_id"] = device_id
+        doc["updated_at"] = _now_iso()
+        await db.asi_bot_config.replace_one({"_id": device_id}, doc, upsert=True)
+        return {"ok": True, **doc}

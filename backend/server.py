@@ -1641,7 +1641,7 @@ async def search_assets(
 # v8.12.69 — Latest published Android build. The /app-version endpoint
 # serves this so outdated installs get an update prompt. Bump together
 # with frontend APP_VERSION / app.json version on every release.
-APP_LATEST_VERSION = "9.2.5"
+APP_LATEST_VERSION = "9.3.0"
 
 
 @api.get("/app-version")

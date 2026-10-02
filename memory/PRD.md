@@ -406,3 +406,52 @@ Fase berikutnya (BELUM):
 - F4 PnL harian/mingguan/bulanan + Top-10 leaderboard
 - F5 Copy Trade engine + UI
 - F6 Legal update (Privacy + In-App Disclaimer), E2E testnet, bump versi, publish
+
+## v9.3.0 — ASI-Bot FASE 2+3+4 ✓
+
+### Fase 2 — Execution Engine (backend)
+- /app/backend/asi_bot/engine.py: preview_trade(), execute_trade(),
+  close_position(), refresh_trade_pnl()
+- Flow: whitelist check → fetch USDT balance → set_leverage → MARKET
+  entry → reduce-only STOP_MARKET SL → reduce-only TAKE_PROFIT_MARKET
+  TP1/TP2/TP3 dengan split 40/30/30. Safety net: tutup posisi darurat
+  bila SL gagal setelah entry sukses.
+- /app/backend/asi_bot/whitelist.py: 100 futures crypto (BTC, ETH, SOL,
+  …, PYR). is_allowed() cocok base symbol apapun.
+- /app/backend/asi_bot/pnl.py: pnl_summary (daily/weekly/monthly dgn
+  wins/losses) + leaderboard (top N by pnl periode N hari).
+
+### Fase 3 — UI (frontend)
+- /app/frontend/app/asi-bot.tsx: layar lengkap — status aktif/nonaktif,
+  koneksi 4 exchange (modal input key+secret+passphrase+testnet switch),
+  mode Semi/Full chip, parameter risk/leverage/max-trade stepper,
+  disclaimer check wajib, kartu PnL 3-kolom, leaderboard 7-hari, trade
+  terbaru. Validasi credential langsung lewat endpoint backend.
+- /app/frontend/app/copy-trade.tsx: leaderboard full-page 7/30/90 hari
+  dengan filter chip, kartu top-3 highlighted GOLD; tombol "Copy"
+  disabled (SEGERA) menunggu jaringan trader-master.
+- Dashboard header: 2 tombol eye-catching tinggi/lebar sama di bawah
+  Login — "🤖 ASI-Bot" GOLD + "🏆 Copy Trade" PURPLE dengan shadow.
+
+### Fase 4 — PnL + Leaderboard
+- Endpoint: /api/asi/pnl, /api/asi/leaderboard, /api/asi/trades,
+  /api/asi/trades/{id}/refresh. Terhubung dari UI.
+- Anonim handle 3-huruf auto-generate dari email prefix atau sha256
+  device_id (fallback).
+
+### Verifikasi
+- Semua lint pass (asi-bot.tsx, copy-trade.tsx, api.ts, index.tsx).
+- Backend endpoint smoke-test (/whitelist=100 items, /pnl zero-state,
+  /leaderboard empty-state).
+- Screenshot web preview: 2 tombol dashboard tampil benar, halaman
+  ASI-Bot terbuka dengan semua seksi (koneksi, mode, parameter, risk).
+
+### Belum (Fase 5 & 6)
+- F5: integrasi tombol "Trade with ASI-Bot" di dalam AI Suggestions
+  sheet & halaman detail aset (preview trade dari sinyal aktif).
+- F6: Legal — update Privacy Policy & Terms teks di-app dan dokumen
+  publish ke Google Play Console; E2E dengan testnet exchange nyata
+  (butuh user API key testnet).
+
+### Bump versi
+- 9.3.0: version.ts, app.json, APP_LATEST_VERSION backend.
