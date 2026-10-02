@@ -2633,7 +2633,9 @@ async def market_brief_generate(admin_token: str = Query(..., description="Admin
 # Credential management (AES-256-GCM encrypted exchange API keys).
 # Register BEFORE include_router so sub-routes are picked up.
 from asi_bot.routes import register as _register_asi_bot  # noqa: E402
+from asi_bot.scheduler import ASIScheduler  # noqa: E402
 _register_asi_bot(api, db)
+_asi_scheduler_state: dict[str, Any] = {"scheduler": None}
 
 app.include_router(api)
 app.add_middleware(
@@ -2908,6 +2910,9 @@ async def _startup_bootstrap() -> None:
     # everything), generate one in the background so the News tab isn't
     # empty for first-time users.
     asyncio.create_task(_brief_warm_start())
+    # v9.4.0 — ASI-Bot scheduler: soft-bracket watcher, open-PnL refresh,
+    # and Full-Auto scanner. Safe to start even if no users have keys yet.
+    _start_asi_scheduler()
 
 
 # --------------- Push scheduler wiring (v8.3.0) ---------------
@@ -2965,6 +2970,58 @@ def _start_push_scheduler() -> None:
         logger.exception("failed to start push scheduler: %s", e)
 
 
+# --------------- ASI-Bot scheduler (v9.4.0) ---------------
+
+async def _asi_signal_fetcher(market: str, symbol: str) -> dict[str, Any] | None:
+    """Return a dashboard-grade signal for Full-Auto execution.
+
+    Pulls from the SAME pipeline used by /api/dashboard so Full-Auto
+    stays in-sync with what users see on screen.
+    """
+    try:
+        resp = await _build_dashboard_response(
+            market=market, timeframe="1h", sort="confidence",
+            full=True, min_confidence=70, min_wr=70.0, region=None,
+        )
+        for a in resp.assets:
+            if a.symbol.upper() != symbol.upper():
+                continue
+            d = a.model_dump()
+            action = (d.get("action") or "").upper()
+            side = "BUY" if action in ("BUY", "LONG") else (
+                "SELL" if action in ("SELL", "SHORT") else None
+            )
+            if not side:
+                return None
+            entry = d.get("entry") or d.get("price")
+            sl = d.get("stop_loss")
+            tps = [t for t in (d.get("take_profit"), d.get("take_profit_2"),
+                                d.get("take_profit_3")) if t]
+            if not (entry and sl and tps):
+                return None
+            return {
+                "side": side, "entry": entry, "stop_loss": sl,
+                "take_profits": tps,
+                "confidence": int(d.get("confidence") or 0),
+            }
+        return None
+    except Exception as e:  # noqa: BLE001
+        logger.debug("asi signal fetch %s/%s failed: %s", market, symbol, e)
+        return None
+
+
+def _start_asi_scheduler() -> None:
+    if _asi_scheduler_state.get("scheduler"):
+        return
+    try:
+        sch = ASIScheduler(db=db, signal_fetcher=_asi_signal_fetcher)
+        sch.start()
+        _asi_scheduler_state["scheduler"] = sch
+        logger.info("ASI-Bot scheduler started")
+    except Exception as e:
+        logger.exception("failed to start ASI scheduler: %s", e)
+
+
 @app.on_event("shutdown")
 async def _shutdown() -> None:
     # Stop push scheduler first so its jobs don't try to talk to a closed
@@ -2980,6 +3037,13 @@ async def _shutdown() -> None:
     if bsched is not None:
         try:
             bsched.shutdown(wait=False)  # type: ignore[union-attr]
+        except Exception:
+            pass
+    # v9.4.0 — Stop ASI-Bot scheduler.
+    asi_sch = _asi_scheduler_state.get("scheduler")
+    if asi_sch is not None:
+        try:
+            await asi_sch.stop()  # type: ignore[union-attr]
         except Exception:
             pass
     from market_data import close_http_client

@@ -399,6 +399,8 @@ export const api = {
       get<{ items: AsiLeaderRow[]; period_days: number }>(
         `/asi/leaderboard?period_days=${periodDays}`,
       ),
+    leaderboardLive: () =>
+      get<{ items: AsiLiveRow[] }>(`/asi/leaderboard/live`),
     getBot: (deviceId: string) =>
       get<AsiBotConfig & { exists: boolean }>(
         `/asi/bot?device_id=${encodeURIComponent(deviceId)}`,
@@ -450,6 +452,24 @@ export type AsiPnl = Record<"daily" | "weekly" | "monthly", {
 }>;
 export type AsiLeaderRow = {
   rank: number; handle: string; pnl_usdt: number; trades: number; wr: number;
+};
+export type AsiLiveRow = {
+  rank: number;
+  handle: string;
+  unrealized_usdt: number;
+  open_count: number;
+  wr30d: number;
+  trades30d: number;
+  latest_trade: {
+    symbol: string | null;
+    side: "BUY" | "SELL" | null;
+    entry_price: number | null;
+    stop_loss: number | null;
+    take_profits: number[] | null;
+    leverage: number | null;
+    exchange: string | null;
+    created_at: string | null;
+  };
 };
 export type AsiBotConfig = {
   enabled: boolean;

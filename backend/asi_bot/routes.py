@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from .crypto import decrypt, encrypt, mask
 from .engine import execute_trade, preview_trade, refresh_trade_pnl
 from .exchanges import EXCHANGE_DISPLAY, EXCHANGES, ExchangeId, validate_credentials
-from .pnl import leaderboard, pnl_summary
+from .pnl import leaderboard, live_leaderboard, pnl_summary
 from .whitelist import TOP_100_FUTURES, is_allowed
 
 router = APIRouter(prefix="/asi", tags=["asi-bot"])
@@ -73,6 +73,8 @@ class BotConfigPayload(BaseModel):
     leverage: int = Field(10, ge=1, le=125)
     whitelist: list[str] = Field(default_factory=list)
     profile: Literal["confluence", "scalper", "day", "swing"] | None = None
+    # v9.4.0 — Minimum confidence required to auto-execute (0-100).
+    min_confidence: int = Field(75, ge=50, le=100)
 
 
 def register(app_api: APIRouter, db: Any) -> None:
@@ -221,6 +223,13 @@ def _attach_trade_routes(db: Any) -> None:
     async def leader(period_days: int = Query(7, ge=1, le=90)):
         return {"items": await leaderboard(db, period_days=period_days, limit=10),
                 "period_days": period_days}
+
+    @router.get("/leaderboard/live")
+    async def leader_live():
+        """v9.4.0 — Only traders CURRENTLY in open positions, ranked by
+        live unrealized PnL. Rows disappear automatically when positions
+        close. No time-window parameter needed."""
+        return {"items": await live_leaderboard(db, limit=10)}
 
     @router.get("/bot")
     async def get_bot(device_id: str = Query(..., min_length=4)):

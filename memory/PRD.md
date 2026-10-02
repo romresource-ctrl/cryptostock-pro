@@ -488,3 +488,27 @@ Fase berikutnya (BELUM):
 - Testnet Live: user perlu share Binance Futures Testnet API key +
   secret (dari https://testnet.binancefuture.com) agar saya dapat
   menjalankan E2E execute test real dari backend ke exchange.
+
+## v9.3.0 — Testnet Live E2E ✓ dengan Catatan Penting
+
+### Yang Terverifikasi Live
+- Credential disimpan terenkripsi (AES-256-GCM). Handle "NEO".
+- Preview trade: balance real $5000 testnet, hitung margin/qty/risk benar.
+- Entry MARKET: order sukses, ID 28614597338, posisi 0.0057 BTC muncul
+  di akun testnet (verifikasi lewat /fapi/v2/positionRisk).
+- PnL unrealized tracked via refresh endpoint.
+
+### Catatan untuk Mainnet / Testnet Lain
+- Binance Futures Testnet akun ini menolak STOP_MARKET & TAKE_PROFIT_MARKET
+  pada /fapi/v1/order dgn error -4120. Reproducible juga via raw HTTP
+  (bukan bug CCXT atau kode kita). Kemungkinan kebijakan akun spesifik.
+- Engine kini punya "SOFT BRACKET" fallback: entry sukses tetap tersimpan,
+  SL/TP ID = null, field soft_bracket=True + soft_bracket_reason.
+- TODO Fase 7: scheduler watcher yang poll fetch_positions tiap N detik;
+  bila mark price menyentuh SL atau TP level yang disimpan di DB,
+  kirim MARKET close reduceOnly. Pattern ini standar di bot pro
+  (3Commas, Pionex) karena menghindari batasan conditional order
+  per exchange.
+- Pada Binance Mainnet standar, STOP_MARKET umumnya diterima — code
+  path yang sama akan menghasilkan sl_order_id dan tp_order_ids
+  berisi, soft_bracket=False.

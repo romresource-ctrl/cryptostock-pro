@@ -64,3 +64,66 @@ async def leaderboard(db: Any, period_days: int = 7, limit: int = 10) -> list[di
             "trades": trades, "wr": wr,
         })
     return out
+
+
+async def live_leaderboard(db: Any, limit: int = 10) -> list[dict[str, Any]]:
+    """v9.4.0 — Return traders that are CURRENTLY in open positions.
+
+    Ranked by UNREALIZED PnL (desc). Traders whose last open trade just
+    closed will fall off the list automatically — fully live.
+    Each row includes the open trade snapshot so the UI can show what's
+    being traded (symbol, side, entry) and the user can preview a copy.
+    """
+    pipeline = [
+        {"$match": {"status": "open"}},
+        {"$sort": {"updated_at": -1}},
+        {"$group": {
+            "_id": "$device_id",
+            "unrealized_usdt": {"$sum": "$pnl_usdt"},
+            "open_count": {"$sum": 1},
+            "latest": {"$first": "$$ROOT"},
+        }},
+        {"$sort": {"unrealized_usdt": -1}},
+        {"$limit": limit},
+    ]
+    rows = await db.asi_trades.aggregate(pipeline).to_list(limit)
+    out = []
+    for i, r in enumerate(rows):
+        device_id = r["_id"]
+        cred = await db.asi_credentials.find_one({"device_id": device_id}, {"handle": 1})
+        handle = (cred or {}).get("handle") or "***"
+        # Realised 30-day Win Rate for extra context.
+        hist = await db.asi_trades.aggregate([
+            {"$match": {
+                "device_id": device_id, "status": "closed",
+                "created_at": {"$gte": _iso_days_ago(30)},
+            }},
+            {"$group": {
+                "_id": None,
+                "trades": {"$sum": 1},
+                "wins": {"$sum": {"$cond": [{"$gt": ["$pnl_usdt", 0]}, 1, 0]}},
+            }},
+        ]).to_list(1)
+        h = hist[0] if hist else {}
+        tr30 = int(h.get("trades") or 0)
+        wr30 = round((h.get("wins") or 0) / tr30 * 100, 1) if tr30 else 0.0
+        latest = r.get("latest") or {}
+        out.append({
+            "rank": i + 1,
+            "handle": handle,
+            "unrealized_usdt": round(r.get("unrealized_usdt") or 0.0, 2),
+            "open_count": int(r.get("open_count") or 0),
+            "wr30d": wr30,
+            "trades30d": tr30,
+            "latest_trade": {
+                "symbol": latest.get("symbol"),
+                "side": latest.get("side"),
+                "entry_price": latest.get("entry_price"),
+                "stop_loss": latest.get("stop_loss"),
+                "take_profits": latest.get("take_profits"),
+                "leverage": latest.get("leverage"),
+                "exchange": latest.get("exchange"),
+                "created_at": latest.get("created_at"),
+            },
+        })
+    return out

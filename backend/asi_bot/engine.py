@@ -34,6 +34,66 @@ def _opposite(side: Side) -> str:
     return "sell" if side == "BUY" else "buy"
 
 
+def _sl_params(exchange: str, stop_loss: float, qty: float) -> dict[str, Any]:
+    """Per-exchange STOP_MARKET params. Returns dict ready for ccxt.create_order."""
+    if exchange == "binance":
+        # closePosition=True → close FULL position when triggered, no qty needed.
+        # workingType=MARK_PRICE → avoid wick-liquidations on last-price spikes.
+        return {
+            "stopPrice": float(stop_loss),
+            "closePosition": True,
+            "workingType": "MARK_PRICE",
+            "timeInForce": "GTE_GTC",
+        }
+    if exchange == "bybit":
+        return {
+            "triggerPrice": float(stop_loss),
+            "reduceOnly": True,
+            "triggerBy": "MarkPrice",
+        }
+    if exchange == "okx":
+        return {
+            "stopLossPrice": float(stop_loss),
+            "reduceOnly": True,
+        }
+    if exchange == "bitget":
+        return {
+            "triggerPrice": float(stop_loss),
+            "reduceOnly": True,
+            "triggerType": "mark_price",
+        }
+    return {"stopPrice": float(stop_loss), "reduceOnly": True}
+
+
+def _tp_params(exchange: str, tp_price: float, qty: float) -> dict[str, Any]:
+    """Per-exchange TAKE_PROFIT_MARKET params (partial close, split 40/30/30)."""
+    if exchange == "binance":
+        return {
+            "stopPrice": float(tp_price),
+            "reduceOnly": True,
+            "workingType": "MARK_PRICE",
+            "timeInForce": "GTE_GTC",
+        }
+    if exchange == "bybit":
+        return {
+            "triggerPrice": float(tp_price),
+            "reduceOnly": True,
+            "triggerBy": "MarkPrice",
+        }
+    if exchange == "okx":
+        return {
+            "takeProfitPrice": float(tp_price),
+            "reduceOnly": True,
+        }
+    if exchange == "bitget":
+        return {
+            "triggerPrice": float(tp_price),
+            "reduceOnly": True,
+            "triggerType": "mark_price",
+        }
+    return {"stopPrice": float(tp_price), "reduceOnly": True}
+
+
 async def _get_client(doc: dict[str, Any]):
     return _build(
         doc["exchange"],
@@ -149,29 +209,44 @@ async def execute_trade(
         actual_fill = float(entry_order.get("average") or entry_order.get("price") or entry)
         actual_qty = float(entry_order.get("filled") or qty)
         close_side = _opposite(side)
+        # v9.4.0 — HARD-BRACKET (native exchange SL/TP):
+        #   Binance USDM: STOP_MARKET + closePosition=True + workingType=MARK_PRICE
+        #                 TAKE_PROFIT_MARKET + reduceOnly=True + split 40/30/30
+        #   Bybit/OKX/Bitget: unified via CCXT stopPrice/triggerPrice params.
+        # If exchange rejects → fallback to soft-bracket (backend watcher).
+        exchange = (doc.get("exchange") or "binance").lower()
+        sl_params = _sl_params(exchange, stop_loss, actual_qty)
+        tp_params_fn = lambda tp_price, qty: _tp_params(exchange, tp_price, qty)
+        soft_bracket = False
+        sl_err: str | None = None
         try:
             sl_order = await client.create_order(
-                exch_sym, "stop_market", close_side, actual_qty, None,
-                params={"stopPrice": stop_loss, "reduceOnly": True, "triggerPrice": stop_loss},
+                exch_sym, "STOP_MARKET", close_side,
+                None if sl_params.get("closePosition") else actual_qty, None,
+                params=sl_params,
             )
             sl_order_id = sl_order.get("id")
         except Exception as e:
-            try:
-                await client.create_order(exch_sym, "market", close_side, actual_qty, None,
-                                          params={"reduceOnly": True})
-            except Exception:
-                pass
-            return {"ok": False, "message": f"SL gagal, posisi ditutup darurat: {e}"}
+            # Exchange menolak conditional order (mis. Binance Portfolio
+            # Margin akun atau sub-account non-trading). Fallback ke
+            # soft-bracket: backend watcher close posisi via MARKET
+            # reduceOnly saat harga menyentuh SL/TP.
+            sl_err = str(e)[:200]
+            soft_bracket = True
         for i, tp in enumerate(tps[:3]):
             tp_qty = actual_qty * TP_SPLIT[i]
+            if soft_bracket:
+                tp_order_ids.append(None)
+                continue
             try:
                 o = await client.create_order(
-                    exch_sym, "take_profit_market", close_side, tp_qty, None,
-                    params={"stopPrice": tp, "reduceOnly": True, "triggerPrice": tp},
+                    exch_sym, "TAKE_PROFIT_MARKET", close_side, tp_qty, None,
+                    params=tp_params_fn(tp, tp_qty),
                 )
                 tp_order_ids.append(o.get("id"))
             except Exception:
                 tp_order_ids.append(None)
+                soft_bracket = True
     finally:
         try:
             await client.close()
@@ -186,6 +261,9 @@ async def execute_trade(
         "stop_loss": stop_loss, "take_profits": tps[:3],
         "qty": actual_qty, "leverage": leverage, "risk_pct": risk_pct,
         "mode": mode, "status": "open", "pnl_usdt": 0.0,
+        "soft_bracket": soft_bracket,
+        "soft_bracket_reason": sl_err if soft_bracket else None,
+        "bracket_type": "soft" if soft_bracket else "hard",
         "created_at": now, "updated_at": now,
     }
 

@@ -34,6 +34,11 @@ def _build(ex_id: ExchangeId, api_key: str, api_secret: str,
         "enableRateLimit": True,
         "options": {"defaultType": "swap"},
     }
+    # v9.3.0 — Explicitly disable portfolio margin routing for Binance.
+    # Without this flag, CCXT 4.4 can route STOP_MARKET through the
+    # Portfolio Margin "conditional" endpoint which returns -4120.
+    if ex_id == "binance":
+        config["options"]["portfolioMargin"] = False
     if password:
         config["password"] = password  # OKX passphrase, Bitget passphrase
     client = cls(config)
