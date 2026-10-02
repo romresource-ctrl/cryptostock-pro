@@ -1,0 +1,39 @@
+
+===== PROFILE: confluence (default) =====
+[OK ] crypto/BTC
+[OK ] crypto/ETH
+[OK ] crypto/SUI
+[OK ] crypto/SOL
+[OK ] stock_id/BBCA
+[OK ] stock_id/GOTO
+[OK ] stock_us/AAPL
+[OK ] stock_us/TSLA
+[OK ] gold_silver/XAU-USD
+[OK ] forex/EUR-USD
+[MISMATCH] commodity/WTI
+    dashboard     : SELL/SELL conf=95 E=90.0983 SL=91.4497 TP=89.1522
+    chart         : SELL/SELL conf=95 E=90.1485 SL=91.5007 TP=89.2019
+    analyze_tech  : SELL/SELL conf=95 E=90.1485 SL=91.5007 TP=89.2019
+    search        : ABSENT
+[OK ] etf/QQQ
+
+===== PROFILE: scalper =====
+[OK ] crypto/BTC
+[OK ] crypto/ETH
+[OK ] crypto/SUI
+[OK ] crypto/SOL
+[OK ] stock_id/BBCA
+[OK ] stock_id/GOTO
+[OK ] stock_us/AAPL
+[OK ] stock_us/TSLA
+[OK ] gold_silver/XAU-USD
+[OK ] forex/EUR-USD
+[OK ] commodity/WTI
+[OK ] etf/QQQ
+
+===== PROFILE: day =====
+[OK ] crypto/BTC
+[OK ] crypto/ETH
+[OK ] crypto/SUI
+[OK ] crypto/SOL
+[OK ] stock_id/BBCA

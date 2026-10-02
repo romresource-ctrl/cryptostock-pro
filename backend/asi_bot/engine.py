@@ -30,16 +30,21 @@ TP_SPLIT = (0.4, 0.3, 0.3)  # TP1, TP2, TP3 share of total qty
 def _split_tp_qty(qty: float, step: float | None) -> list[float]:
     """Split qty into TP1/2/3 (40/30/30) aligned to market amount step.
 
-    Guarantees the parts sum to EXACTLY `qty` (remainder goes to last
-    TP) and each part is a multiple of `step`. Parts that round to 0
-    are merged into the next TP so tiny positions still get covered.
+    Works in integer step-units so every part is an exact multiple of
+    `step` and the parts always sum to the step-floored `qty`.
+    Parts that round to 0 are merged into the next TP so tiny
+    positions still get covered.
     """
-    parts = [qty * s for s in TP_SPLIT]
     if step and step > 0:
         import math
-        parts = [math.floor(p / step) * step for p in parts]
-        # Remainder to last part
-        parts[-1] = round(qty - parts[0] - parts[1], 10)
+        units = int(math.floor(qty / step + 1e-9))
+        if units <= 0:
+            return [0.0, 0.0, 0.0]
+        u = [int(units * s) for s in TP_SPLIT]
+        u[-1] = units - u[0] - u[1]
+        parts = [round(x * step, 10) for x in u]
+    else:
+        parts = [qty * s for s in TP_SPLIT]
     # Merge zero-parts forward (TP1 → TP2 → TP3)
     for i in range(len(parts) - 1):
         if parts[i] <= 0:
@@ -211,6 +216,7 @@ async def execute_trade(
         size_usdt = margin * leverage
         qty = size_usdt / entry
         amount_step: float | None = None
+        price_tick: float | None = None
         try:
             markets = client.markets or await client.load_markets()
             m = markets.get(exch_sym) or {}
@@ -221,8 +227,18 @@ async def execute_trade(
             elif isinstance(precision, float) and precision > 0:
                 amount_step = precision
                 qty = (int(qty / precision)) * precision
+            # v9.5.0 — Normalize trigger prices to the symbol's tick size
+            # (Binance rejects -1111 "Precision is over the maximum").
+            pprec = (m.get("precision") or {}).get("price")
+            if isinstance(pprec, int) and pprec >= 0:
+                price_tick = 10 ** -pprec
+            elif isinstance(pprec, float) and pprec > 0:
+                price_tick = pprec
         except Exception:
             pass
+        if price_tick and price_tick > 0:
+            stop_loss = round(round(stop_loss / price_tick) * price_tick, 8)
+            tps = [round(round(float(t) / price_tick) * price_tick, 8) for t in tps]
         if qty <= 0:
             return {"ok": False, "message": "Qty terhitung 0 — margin/balance kurang."}
         entry_order = await client.create_order(
@@ -243,12 +259,13 @@ async def execute_trade(
         exchange = (doc.get("exchange") or "binance").lower()
         soft_bracket = False
         sl_err: str | None = None
+        tp_err: str | None = None
 
         if exchange == "binance":
             api_key = decrypt(doc["api_key_enc"])
             api_secret = decrypt(doc["api_secret_enc"])
             is_testnet = bool(doc.get("testnet", True))
-            spot_sym = symbol.upper().split("/")[0] + "USDT"
+            spot_sym = symbol.upper().split("/")[0].split("USDT")[0].split("-")[0] + "USDT"
             try:
                 # SL — close FULL position when triggered.
                 sl_order = await new_conditional_order(
@@ -275,8 +292,9 @@ async def execute_trade(
                         trigger_price=tp, quantity=tp_qty,
                     )
                     tp_order_ids.append(str(o.get("algoId") or ""))
-                except Exception:
+                except Exception as e:
                     tp_order_ids.append(None)
+                    tp_err = str(e)[:200]
                     soft_bracket = True
         else:
             sl_params = _sl_params(exchange, stop_loss, actual_qty)
@@ -324,7 +342,7 @@ async def execute_trade(
         "qty": actual_qty, "leverage": leverage, "risk_pct": risk_pct,
         "mode": mode, "status": "open", "pnl_usdt": 0.0,
         "soft_bracket": soft_bracket,
-        "soft_bracket_reason": sl_err if soft_bracket else None,
+        "soft_bracket_reason": (sl_err or tp_err) if soft_bracket else None,
         "bracket_type": "soft" if soft_bracket else "hard",
         "created_at": now, "updated_at": now,
     }
@@ -342,7 +360,7 @@ async def close_position(doc: dict[str, Any], symbol: str, side: Side,
             await cancel_all_conditional(
                 decrypt(doc["api_key_enc"]), decrypt(doc["api_secret_enc"]),
                 bool(doc.get("testnet", True)),
-                symbol.upper().split("/")[0] + "USDT",
+                symbol.upper().split("/")[0].split("USDT")[0].split("-")[0] + "USDT",
             )
         except Exception:
             pass

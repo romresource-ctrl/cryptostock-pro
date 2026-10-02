@@ -1,0 +1,28 @@
+============================================================================
+BACKTEST 24 BULAN — 4 mode (Confluence, Scalper, Day, Swing) · TF 1h
+Sample every 12 candle · warm-up 210 · TP1 vs SL windows
+============================================================================
+[fetch] BTCUSDT 24mo 1h ...
+  BTCUSDT: 17194 candle · 720 hari
+[fetch] ETHUSDT 24mo 1h ...
+  ETHUSDT: 17194 candle · 720 hari
+[fetch] SOLUSDT 24mo 1h ...
+  SOLUSDT: 17194 candle · 720 hari
+[fetch] XRPUSDT 24mo 1h ...
+  XRPUSDT: 17194 candle · 720 hari
+[fetch] BNBUSDT 24mo 1h ...
+  BNBUSDT: 17194 candle · 720 hari
+
+Fetch total: 146.7s
+
+--- MODE: Confluence (profile=None) ---
+  BTCUSDT    trades= 209  W=106  L= 97  open=  6  WR=52.2%  avgRR=1.06  exp=+0.07R  (111.7s)
+  ETHUSDT    trades= 259  W=127  L=121  open= 11  WR=51.2%  avgRR=1.02  exp=+0.03R  (111.7s)
+  SOLUSDT    trades= 237  W=121  L=107  open=  9  WR=53.1%  avgRR=1.0  exp=+0.06R  (111.7s)
+  XRPUSDT    trades= 249  W=126  L=107  open= 16  WR=54.1%  avgRR=1.0  exp=+0.08R  (111.2s)
+  BNBUSDT    trades= 236  W=113  L=115  open=  8  WR=49.6%  avgRR=1.04  exp=+0.01R  (112.2s)
+  TOTAL      trades=1197  W=600  L=544  open=53  WR=52.4%  avgRR=1.02  expectancy=+0.06R/trade
+
+--- MODE: Scalper (profile=scalper) ---
+  BTCUSDT    trades= 174  W= 89  L= 83  open=  2  WR=51.7%  avgRR=1.25  exp=+0.16R  (109.3s)
+  ETHUSDT    trades= 138  W= 69  L= 68  open=  1  WR=50.4%  avgRR=1.05  exp=+0.03R  (109.5s)
