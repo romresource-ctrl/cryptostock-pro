@@ -63,6 +63,9 @@ class TradePayload(BaseModel):
     risk_pct: float = Field(5.0, ge=1.0, le=30.0)
     leverage: int = Field(10, ge=1, le=125)
     mode: Literal["semi", "full"] = "semi"
+    # v9.6.0 — TP strategy & trailing stop
+    tp_count: Literal[1, 2, 3] = 3
+    trailing_callback_rate: float = Field(2.0, ge=0.0, le=10.0)
 
 
 class BotConfigPayload(BaseModel):
@@ -78,6 +81,10 @@ class BotConfigPayload(BaseModel):
     min_confidence: int = Field(75, ge=50, le=100)
     # v9.4.1 — Daily loss limit (USDT, absolute). 0 = disabled.
     daily_loss_limit_usdt: float = Field(0.0, ge=0.0, le=100_000.0)
+    # v9.6.0 — TP strategy. 1=TP1 100%, 2=TP1/TP2 50/50, 3=TP1/TP2/TP3 33/33/34.
+    tp_count: Literal[1, 2, 3] = 3
+    # v9.6.0 — Trailing stop callback rate %. 0 = disabled. Active after TP1.
+    trailing_callback_rate: float = Field(2.0, ge=0.0, le=10.0)
     # Set to null to CLEAR previous auto-disable (when user re-enables manually).
     auto_disabled_reason: str | None = None
     auto_disabled_at: str | None = None
@@ -205,6 +212,7 @@ def _attach_trade_routes(db: Any) -> None:
             doc, payload.symbol, payload.side,
             payload.entry, payload.stop_loss, payload.take_profits,
             payload.risk_pct, payload.leverage,
+            tp_count=payload.tp_count,
         )
 
     @router.post("/trades/execute")
@@ -218,6 +226,8 @@ def _attach_trade_routes(db: Any) -> None:
             doc, payload.symbol, payload.side,
             payload.entry, payload.stop_loss, payload.take_profits,
             payload.risk_pct, payload.leverage, payload.mode,
+            tp_count=payload.tp_count,
+            trailing_callback_rate=payload.trailing_callback_rate,
         )
         if not res.get("ok"):
             raise HTTPException(400, res.get("message") or "Execute failed")

@@ -433,6 +433,9 @@ export type AsiTradeBody = {
   entry: number; stop_loss: number; take_profits: number[];
   risk_pct: number; leverage: number;
   mode?: "semi" | "full";
+  // v9.6.0 — TP strategy & trailing stop
+  tp_count?: 1 | 2 | 3;
+  trailing_callback_rate?: number;
 };
 export type AsiPreview = {
   ok: boolean; balance_usdt: number; margin_usdt: number;
@@ -483,6 +486,9 @@ export type AsiBotConfig = {
   profile?: "confluence" | "scalper" | "day" | "swing" | null;
   min_confidence?: number;
   daily_loss_limit_usdt?: number;
+  // v9.6.0 — TP flexibility & trailing stop
+  tp_count?: 1 | 2 | 3;
+  trailing_callback_rate?: number;
   auto_disabled_reason?: string | null;
   auto_disabled_at?: string | null;
 };

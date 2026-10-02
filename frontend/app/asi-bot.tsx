@@ -37,6 +37,7 @@ export default function ASIBotScreen() {
     enabled: false, exchange: "binance", mode: "semi",
     max_trades_per_day: 5, risk_pct: 5, leverage: 10, whitelist: [], profile: "confluence",
     min_confidence: 75, daily_loss_limit_usdt: 0,
+    tp_count: 3, trailing_callback_rate: 2,
   });
   const [pnl, setPnl] = useState<AsiPnl | null>(null);
   const [trades, setTrades] = useState<AsiTradeResp[]>([]);
@@ -177,6 +178,31 @@ export default function ASIBotScreen() {
                   onDec={() => saveBot({ leverage: Math.max(1, bot.leverage - 1) })}
                   onInc={() => saveBot({ leverage: Math.min(125, bot.leverage + 1) })}
                   colors={colors} testID="asi-lev" />
+        {/* v9.6.0 — Centang TP1/TP2/TP3 (dibawah leverage) */}
+        <View style={{ flexDirection: "row", gap: 8, marginBottom: 6 }}>
+          {([1, 2, 3] as const).map((n) => {
+            const active = (bot.tp_count ?? 3) === n;
+            const label = n === 1 ? t("asi_tp_1_label") : n === 2 ? t("asi_tp_2_label") : t("asi_tp_3_label");
+            return (
+              <TouchableOpacity
+                key={n}
+                onPress={() => saveBot({ tp_count: n })}
+                style={[s.tpChip, {
+                  borderColor: active ? GOLD : colors.border,
+                  backgroundColor: active ? GOLD : colors.surface,
+                }]}
+                testID={`asi-tp-${n}`}
+              >
+                <Text style={{ color: active ? ACCENT_TEXT : colors.textPrimary, fontWeight: "900", fontSize: 12.5 }}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+        <Text style={{ color: colors.textMuted, fontSize: 11, marginBottom: 10, lineHeight: 16 }}>
+          {t("asi_tp_hint")}
+        </Text>
         {bot.mode === "full" ? (
           <ParamRow label={t("asi_max_trades_day")} value={`${bot.max_trades_per_day}`}
                     onDec={() => saveBot({ max_trades_per_day: Math.max(1, bot.max_trades_per_day - 1) })}
@@ -191,6 +217,18 @@ export default function ASIBotScreen() {
         <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: -4, marginBottom: 8, lineHeight: 16 }}>
           {t("asi_daily_loss_hint")}
         </Text>
+
+        <ParamRow
+          label={t("asi_trailing_label")}
+          value={(bot.trailing_callback_rate ?? 0) === 0 ? "OFF" : `${(bot.trailing_callback_rate ?? 0).toFixed(1)}%`}
+          onDec={() => saveBot({ trailing_callback_rate: Math.max(0, Math.round(((bot.trailing_callback_rate ?? 0) - 0.5) * 10) / 10) })}
+          onInc={() => saveBot({ trailing_callback_rate: Math.min(10, Math.round(((bot.trailing_callback_rate ?? 0) + 0.5) * 10) / 10) })}
+          colors={colors} testID="asi-trailing"
+        />
+        <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: -4, marginBottom: 8, lineHeight: 16 }}>
+          {t("asi_trailing_hint")}
+        </Text>
+
         {bot.auto_disabled_reason ? (
           <View style={{ padding: 10, borderRadius: 10, borderWidth: 1.5,
                           borderColor: RED, backgroundColor: "rgba(239,68,68,0.08)",
@@ -488,6 +526,7 @@ const s = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", padding: 12, borderWidth: 1, borderRadius: 10 },
   rowLabel: { fontWeight: "800" },
   modeChip: { flex: 1, borderWidth: 1.5, borderRadius: 14, padding: 12, alignItems: "flex-start", gap: 6 },
+  tpChip: { flex: 1, borderWidth: 1.5, borderRadius: 10, paddingVertical: 10, alignItems: "center" },
   modeTitle: { fontWeight: "900", fontSize: 13 },
   modeSub: { fontSize: 10.5, lineHeight: 15 },
   paramRow: { flexDirection: "row", alignItems: "center", padding: 10, borderWidth: 1, borderRadius: 10, marginBottom: 8, gap: 10 },

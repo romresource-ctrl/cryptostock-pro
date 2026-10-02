@@ -50,6 +50,8 @@ export default function AsiTradeSheet({ visible, onClose, intent }: Props) {
   const [exchange, setExchange] = useState<"binance" | "bybit" | "okx" | "bitget">("binance");
   const [riskPct, setRiskPct] = useState(5);
   const [leverage, setLeverage] = useState(10);
+  const [tpCount, setTpCount] = useState<1 | 2 | 3>(3);
+  const [trailingCbRate, setTrailingCbRate] = useState<number>(2);
   const [preview, setPreview] = useState<AsiPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [executing, setExecuting] = useState(false);
@@ -80,8 +82,8 @@ export default function AsiTradeSheet({ visible, onClose, intent }: Props) {
         const p = await api.asi.previewTrade(deviceId, {
           exchange, symbol: intent.symbol, side: intent.side,
           entry: intent.entry, stop_loss: intent.stop_loss,
-          take_profits: intent.take_profits.slice(0, 3),
-          risk_pct: riskPct, leverage,
+          take_profits: intent.take_profits.slice(0, tpCount),
+          risk_pct: riskPct, leverage, tp_count: tpCount,
         });
         setPreview(p);
       } catch (e: any) {
@@ -91,7 +93,7 @@ export default function AsiTradeSheet({ visible, onClose, intent }: Props) {
       } finally { setLoading(false); }
     }, 250);
     return () => clearTimeout(t);
-  }, [visible, intent, deviceId, exchange, riskPct, leverage, creds.length]);
+  }, [visible, intent, deviceId, exchange, riskPct, leverage, tpCount, creds.length]);
 
   const activeCred = useMemo(
     () => creds.find((c) => c.exchange === exchange),
@@ -105,8 +107,9 @@ export default function AsiTradeSheet({ visible, onClose, intent }: Props) {
       const res = await api.asi.executeTrade(deviceId, {
         exchange, symbol: intent.symbol, side: intent.side,
         entry: intent.entry, stop_loss: intent.stop_loss,
-        take_profits: intent.take_profits.slice(0, 3),
+        take_profits: intent.take_profits.slice(0, tpCount),
         risk_pct: riskPct, leverage, mode: "semi",
+        tp_count: tpCount, trailing_callback_rate: trailingCbRate,
       });
       Alert.alert(
         "✅ Order Terkirim",
@@ -182,9 +185,15 @@ export default function AsiTradeSheet({ visible, onClose, intent }: Props) {
                 <View style={s.grid}>
                   <LevelCell label="ENTRY" value={formatPrice(intent.entry, "crypto")} color={colors.textPrimary} colors={colors} />
                   <LevelCell label="STOP LOSS" value={formatPrice(intent.stop_loss, "crypto")} color={RED} colors={colors} />
-                  <LevelCell label="TP1" value={formatPrice(intent.take_profits[0] ?? NaN, "crypto")} color={GREEN} colors={colors} />
-                  <LevelCell label="TP2" value={formatPrice(intent.take_profits[1] ?? NaN, "crypto")} color={GREEN} colors={colors} />
-                  <LevelCell label="TP3" value={formatPrice(intent.take_profits[2] ?? NaN, "crypto")} color={GREEN} colors={colors} />
+                  {tpCount >= 1 ? (
+                    <LevelCell label="TP1" value={formatPrice(intent.take_profits[0] ?? NaN, "crypto")} color={GREEN} colors={colors} />
+                  ) : null}
+                  {tpCount >= 2 ? (
+                    <LevelCell label="TP2" value={formatPrice(intent.take_profits[1] ?? NaN, "crypto")} color={GREEN} colors={colors} />
+                  ) : null}
+                  {tpCount >= 3 ? (
+                    <LevelCell label="TP3" value={formatPrice(intent.take_profits[2] ?? NaN, "crypto")} color={GREEN} colors={colors} />
+                  ) : null}
                   <LevelCell label="SIDE" value={intent.side === "BUY" ? "LONG" : "SHORT"} color={sideColor} colors={colors} />
                 </View>
 
@@ -195,6 +204,27 @@ export default function AsiTradeSheet({ visible, onClose, intent }: Props) {
                 <StepperRow label="Leverage" value={`${leverage}x`} colors={colors}
                   onDec={() => setLeverage(Math.max(1, leverage - 1))}
                   onInc={() => setLeverage(Math.min(125, leverage + 1))} />
+
+                {/* v9.6.0 — TP Strategy selector */}
+                <View style={{ flexDirection: "row", gap: 6, marginTop: 10 }}>
+                  {([1, 2, 3] as const).map((n) => {
+                    const act = tpCount === n;
+                    const lbl = n === 1 ? "1 TP · 100%" : n === 2 ? "2 TP · 50/50" : "3 TP · 33/33/34";
+                    return (
+                      <TouchableOpacity key={n} onPress={() => setTpCount(n)}
+                        style={[s.exChip, { flex: 1, alignItems: "center", backgroundColor: act ? MINT : colors.background, borderColor: act ? MINT : colors.border }]}>
+                        <Text style={{ color: act ? "#FFFFFF" : colors.textPrimary, fontWeight: "900", fontSize: 10.5 }}>{lbl}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                <StepperRow
+                  label="Trailing Callback (after TP1)"
+                  value={trailingCbRate === 0 ? "OFF" : `${trailingCbRate.toFixed(1)}%`}
+                  colors={colors}
+                  onDec={() => setTrailingCbRate(Math.max(0, Math.round((trailingCbRate - 0.5) * 10) / 10))}
+                  onInc={() => setTrailingCbRate(Math.min(10, Math.round((trailingCbRate + 0.5) * 10) / 10))}
+                />
 
                 {/* Preview */}
                 <View style={[s.preview, { backgroundColor: colors.background, borderColor: colors.border }]}>

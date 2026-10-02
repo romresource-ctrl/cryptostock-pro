@@ -272,6 +272,8 @@ async def _run_full_auto_scanner(
                         float(sig["entry"]), float(sig["stop_loss"]),
                         [float(x) for x in sig.get("take_profits") or []],
                         risk, lev, mode="full",
+                        tp_count=int(cfg.get("tp_count") or 3),
+                        trailing_callback_rate=float(cfg.get("trailing_callback_rate") or 0.0),
                     )
                 except Exception as e:
                     logger.warning("full-auto execute failed %s/%s: %s", device_id, sym, e)

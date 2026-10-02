@@ -93,6 +93,50 @@ async def new_conditional_order(
     return data
 
 
+async def new_trailing_stop_order(
+    api_key: str, api_secret: str, testnet: bool, *,
+    symbol: str,
+    side: str,                     # closing side: SELL for long, BUY for short
+    quantity: float,
+    callback_rate: float,          # % — Binance range 0.1 .. 10
+    activation_price: float | None = None,
+    working_type: str = "MARK_PRICE",
+) -> dict[str, Any]:
+    """Native TRAILING_STOP_MARKET via Algo API.
+
+    Binance geser SL otomatis mengikuti harga puncak terbaik:
+      - long:  SL = max_price_since_open  * (1 - callback_rate/100)
+      - short: SL = min_price_since_open  * (1 + callback_rate/100)
+    Tidak bergantung backend uptime — exchange yang jaga.
+    """
+    cb = max(0.1, min(10.0, float(callback_rate)))
+    params: dict[str, Any] = {
+        "algoType": "CONDITIONAL",
+        "symbol": symbol.upper().replace("/", ""),
+        "side": side.upper(),
+        "type": "TRAILING_STOP_MARKET",
+        "quantity": f"{quantity}",
+        "callbackRate": f"{cb}",
+        "reduceOnly": "true",
+        "workingType": working_type,
+        "positionSide": "BOTH",
+        "timestamp": int(time.time() * 1000),
+        "recvWindow": 10000,
+    }
+    if activation_price is not None:
+        params["activationPrice"] = f"{activation_price}"
+    signed = _sign(api_secret, params)
+    async with _client() as c:
+        r = await c.post(
+            f"{_base_url(testnet)}/fapi/v1/algoOrder",
+            data=signed, headers={"X-MBX-APIKEY": api_key},
+        )
+    data = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    if r.status_code != 200 or ("code" in data and not data.get("algoId")):
+        raise Exception(f"trailing algoOrder rejected: {data or r.text[:200]}")
+    return data
+
+
 async def cancel_conditional_order(
     api_key: str, api_secret: str, testnet: bool, *,
     algo_id: int | str | None = None,
