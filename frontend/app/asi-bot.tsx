@@ -7,7 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { getDeviceId } from "@/src/lib/deviceId";
 import {
-  api, type AsiBotConfig, type AsiCredential, type AsiLeaderRow,
+  api, type AsiBotConfig, type AsiCredential,
   type AsiPnl, type AsiTradeResp,
 } from "@/src/lib/api";
 
@@ -34,7 +34,6 @@ export default function ASIBotScreen() {
     max_trades_per_day: 5, risk_pct: 5, leverage: 10, whitelist: [], profile: "confluence",
   });
   const [pnl, setPnl] = useState<AsiPnl | null>(null);
-  const [leader, setLeader] = useState<AsiLeaderRow[]>([]);
   const [trades, setTrades] = useState<AsiTradeResp[]>([]);
   const [connectOpen, setConnectOpen] = useState(false);
   const [disclaimerAck, setDisclaimerAck] = useState(false);
@@ -56,7 +55,6 @@ export default function ASIBotScreen() {
       const b = await api.asi.getBot(id);
       if (b.exists) setBot({ ...bot, ...b });
       const p = await api.asi.pnl(id); setPnl(p);
-      const l = await api.asi.leaderboard(7); setLeader(l.items);
       const t = await api.asi.listTrades(id); setTrades(t.items.slice(0, 10));
     } catch {}
   };
@@ -235,27 +233,7 @@ export default function ASIBotScreen() {
           })}
         </View>
 
-        {/* Leaderboard */}
-        <SectionHeader title="🏆 Top 10 Trader (7 hari)" />
-        <View style={{ gap: 6 }}>
-          {leader.length === 0 ? (
-            <Text style={{ color: colors.textMuted, fontSize: 12, padding: 8 }}>
-              Belum ada data leaderboard. Jadilah yang pertama.
-            </Text>
-          ) : leader.map((row) => (
-            <View key={row.rank} style={[s.leaderRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Text style={[s.rank, { color: row.rank <= 3 ? GOLD : colors.textMuted }]}>#{row.rank}</Text>
-              <Text style={[s.handle, { color: colors.textPrimary }]}>{row.handle}***</Text>
-              <View style={{ flex: 1 }} />
-              <Text style={{ color: row.pnl_usdt >= 0 ? GREEN : RED, fontWeight: "800" }}>
-                {row.pnl_usdt >= 0 ? "+" : ""}${row.pnl_usdt.toFixed(2)}
-              </Text>
-              <Text style={{ color: colors.textMuted, fontSize: 10, marginLeft: 6 }}>
-                {row.trades}T · {row.wr}%
-              </Text>
-            </View>
-          ))}
-        </View>
+        {/* Leaderboard — hidden on this screen; pindah ke /copy-trade */}
 
         {/* Recent trades */}
         {trades.length ? (
