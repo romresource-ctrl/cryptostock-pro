@@ -674,7 +674,7 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   copy_wr_line: { id: "WR 30h: {wr}% · {n} trade closed", en: "WR 30d: {wr}% · {n} closed trades", ru: "WR 30д: {wr}% · {n} закрытых", cn: "30天胜率: {wr}% · {n} 笔已平仓" },
   copy_unrealized: { id: "UNREALIZED", en: "UNREALIZED", ru: "НЕРЕАЛИЗ.", cn: "未实现" },
   copy_entry_line: { id: "Entry ${price} · dibuka {ago}", en: "Entry ${price} · opened {ago}", ru: "Вход ${price} · открыта {ago}", cn: "入场 ${price} · {ago}开仓" },
-  copy_coming_soon: { id: "SEGERA", en: "SOON", ru: "СКОРО", cn: "即将" },
+  copy_execute: { id: "EXECUTE", en: "EXECUTE", ru: "EXECUTE", cn: "EXECUTE" },
   copy_footer: { id: "Daftar refresh tiap 15 detik · trader hilang otomatis saat posisi mereka ditutup.", en: "List refreshes every 15 seconds · traders auto-removed when their positions close.", ru: "Обновление каждые 15 секунд · трейдеры исчезают при закрытии позиций.", cn: "列表每 15 秒刷新 · 交易者平仓后自动移除。" },
 };
 

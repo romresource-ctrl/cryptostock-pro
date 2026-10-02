@@ -153,7 +153,7 @@ export default function CopyTradeScreen() {
                       </Text>
                     </View>
                     <TouchableOpacity style={[s.copyBtn, { backgroundColor: GOLD, opacity: 0.6 }]} disabled>
-                      <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 11 }}>{t("copy_coming_soon")}</Text>
+                      <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 11 }}>{t("copy_execute")}</Text>
                     </TouchableOpacity>
                   </View>
                 ) : null}
