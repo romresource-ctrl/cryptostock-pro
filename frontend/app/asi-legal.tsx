@@ -122,7 +122,7 @@ export default function AsiLegalScreen() {
 
         <Text style={{ color: colors.textMuted, fontSize: 11, textAlign: "center", marginTop: 10 }}>
           Terakhir diperbarui: {new Date().toISOString().split("T")[0]}
-          {"\n"}Versi: 9.3.0 (ASI-Bot Launch)
+          {"\n"}Versi: 9.4.3 (ASI-Bot Hard-Bracket Mainnet)
         </Text>
       </ScrollView>
     </View>

@@ -19,10 +19,10 @@
 <body>
 
 <h1>Privacy Policy — AI Crypstock Pro</h1>
-<p class="meta"><strong>Last updated:</strong> July 2026<br><strong>Effective date:</strong> Upon first launch of the app</p>
+<p class="meta"><strong>Last updated:</strong> October 2026<br><strong>Effective date:</strong> Upon first launch of the app</p>
 
 <div class="box">
-  <p>This Privacy Policy describes how <span class="accent">AI Crypstock Pro</span> ("we", "our", or "the App") collects, uses, and safeguards your information when you use our mobile application on Android devices. By downloading, installing, or using AI Crypstock Pro, you agree to the practices described in this policy.</p>
+  <p>This Privacy Policy describes how <span class="accent">AI Crypstock Pro</span> ("we", "our", or "the App") collects, uses, and safeguards your information when you use our mobile application on Android devices — including the optional <strong>ASI-Bot automated trading</strong> feature. By downloading, installing, or using AI Crypstock Pro, you agree to the practices described in this policy.</p>
 </div>
 
 <h2>1. Information We Collect</h2>
@@ -30,13 +30,16 @@
   <li><strong>Email address</strong> — Used solely for account identification, login authentication (admin/beta tester accounts), and support communications.</li>
   <li><strong>Device identifiers</strong> — A random device ID is generated locally and stored on your device to bind your subscription to your device (fraud prevention). This ID is not linked to any personally identifiable Android ID or IMEI.</li>
   <li><strong>Subscription status</strong> — Managed by Google Play Billing. We receive only the status (active/expired/trial) — we never see your payment method or card details.</li>
+  <li><strong>Exchange API credentials (OPTIONAL — ASI-Bot only)</strong> — If you voluntarily enable the ASI-Bot auto-trading feature, you provide your own exchange API Key and Secret (Binance / Bybit / OKX / Bitget). These are stored ONLY in <strong>AES-256-GCM envelope-encrypted</strong> form on our backend (the same standard used by AWS Encryption SDK and Google Tink). Keys are decrypted in-memory only at the moment of order submission and are never transmitted to any other system. <strong>The App actively REJECTS any API key that has Withdrawal permission enabled.</strong></li>
+  <li><strong>Trade activity records (ASI-Bot only)</strong> — Orders you execute through the App (symbol, side, entry, stop-loss, take-profit, PnL) are stored to power your personal history, PnL summary, and the anonymous Top-10 live leaderboard (identified only by an auto-generated 3-letter handle — never your name or email).</li>
   <li><strong>Anonymous usage analytics</strong> — App version, crash reports (aggregated).</li>
 </ul>
 
 <h2>2. Information We Do NOT Collect</h2>
 <ul>
   <li>❌ We do NOT collect your name, phone number, physical address, or biometric data.</li>
-  <li>❌ We do NOT collect your trading account credentials, exchange API keys, or any financial account information. The App does NOT execute trades on your behalf.</li>
+  <li>❌ We do NOT have access to withdraw your funds. The App is strictly <strong>non-custodial</strong>: your assets remain 100% in your own exchange account at all times.</li>
+  <li>❌ We do NOT store exchange credentials in plaintext, and we refuse keys with Withdrawal permission.</li>
   <li>❌ We do NOT track your location.</li>
   <li>❌ We do NOT sell, rent, or share your personal data with third-party advertisers.</li>
 </ul>
@@ -45,6 +48,8 @@
 <ul>
   <li>Verify your subscription status and device binding.</li>
   <li>Deliver AI-generated market analysis and news translation to your logged language.</li>
+  <li>Execute trade orders on your connected exchange account ONLY when you explicitly confirm (Semi-Auto) or enable automation (Full-Auto), including protective Stop-Loss / Take-Profit bracket orders.</li>
+  <li>Display your trade history, PnL summary, and anonymous leaderboard rank.</li>
   <li>Respond to your support requests.</li>
   <li>Improve app performance and fix bugs.</li>
 </ul>
@@ -53,28 +58,30 @@
 <p>The App uses the following third-party services to deliver its core functionality:</p>
 <ul>
   <li><strong>Google Play Billing</strong> — Subscription management, billing, and refund processing. Governed by <a href="https://policies.google.com/privacy" target="_blank">Google Privacy Policy</a>.</li>
-  <li><strong>Binance Public API</strong> — Live crypto price data. Read-only, no account required.</li>
+  <li><strong>Binance Public API</strong> — Live crypto price data. Read-only, no account required for price display.</li>
+  <li><strong>Binance / Bybit / OKX / Bitget Trade APIs</strong> — ONLY used if you connect your own API credentials for ASI-Bot. Your orders are routed directly to the exchange you chose; we recommend restricting your API key to our server's static IP address (shown in-app) per each exchange's security policy.</li>
   <li><strong>Yahoo Finance API</strong> — Live stock, ETF, forex, gold, and commodity price data. Read-only, public data.</li>
-  <li><strong>Anthropic (Claude Fable 5, Opus 4.8, Sonnet 4.6)</strong> — AI-generated market analysis. Prompts contain only technical indicators and public news headlines, no personal data.</li>
-  <li><strong>MongoDB Atlas</strong> — Encrypted cloud database for subscription records and translated news cache.</li>
+  <li><strong>Anthropic (Claude)</strong> — AI-generated market analysis. Prompts contain only technical indicators and public news headlines, no personal data.</li>
+  <li><strong>MongoDB Atlas</strong> — Encrypted cloud database for subscription records, encrypted credentials, and translated news cache.</li>
 </ul>
 
 <h2>5. Data Retention & Deletion</h2>
-<p>Your subscription record is retained while your subscription is active plus 90 days after cancellation for refund/dispute processing. You may request <strong>immediate deletion</strong> of your account data by emailing <a href="mailto:cryptostockapps@gmail.com">cryptostockapps@gmail.com</a> from the same email you registered with. Deletion is processed within 30 days.</p>
+<p>Your subscription record is retained while your subscription is active plus 90 days after cancellation for refund/dispute processing. ASI-Bot credentials and trade history can be deleted <strong>instantly by you</strong> via the Delete button inside the ASI-Bot page — deletion is irreversible. You may also request <strong>full deletion</strong> of all your account data by emailing <a href="mailto:cryptostockapps@gmail.com">cryptostockapps@gmail.com</a> from the same email you registered with. Email-based deletion is processed within 30 days.</p>
 
 <h2>6. Data Security</h2>
 <ul>
   <li>All data transmission uses HTTPS (TLS 1.2+).</li>
+  <li>Exchange API credentials are encrypted at rest with <strong>AES-256-GCM</strong> envelope encryption.</li>
   <li>Passwords / unlock codes are hashed with bcrypt.</li>
   <li>Subscription verification is signed by Google Play server-side receipt validation.</li>
-  <li>The backend runs on encrypted containers with restricted access.</li>
+  <li>The backend runs on encrypted containers with restricted access and a static egress IP suitable for exchange IP-whitelisting.</li>
 </ul>
 
 <h2>7. Children's Privacy</h2>
 <p>The App is intended for users <strong>18 years or older</strong> due to the financial nature of the content. We do not knowingly collect data from users under 18. Parents who believe their child has provided data should contact us for removal.</p>
 
 <h2>8. Financial Disclaimer</h2>
-<p>The App provides <strong>educational and reference information only</strong>. It is <strong>NOT financial, tax, or legal advice</strong>. All buy/sell/long/short decisions and resulting profits or losses are solely the user's responsibility. See the in-app Disclaimer for full terms.</p>
+<p>The App provides <strong>educational and reference information only</strong>. It is <strong>NOT financial, tax, or legal advice</strong>. The ASI-Bot feature is an automation tool that executes YOUR configured parameters on YOUR exchange account — it does not constitute portfolio management or investment advice. All buy/sell/long/short decisions and resulting profits or losses are solely the user's responsibility. See the in-app Disclaimer and ASI-Bot Terms for full terms.</p>
 
 <h2>9. Your Rights (GDPR / CCPA)</h2>
 <p>Depending on your jurisdiction, you may have the right to:</p>
