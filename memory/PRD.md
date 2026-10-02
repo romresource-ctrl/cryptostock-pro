@@ -582,3 +582,12 @@ Fase berikutnya (BELUM):
 - User TIDAK minta chip profil tambahan di halaman ASI-Bot (pakai yang tersimpan).
 - Timeframe fetch tetap 1h (konsisten dashboard). Catatan: Pattern Scalp 15M
   hanya aktif bila TF≤15m — di Full-Auto 1h, scalper memakai VWAP+Box+KISS saja.
+
+
+## v9.6.2 — Version Bump (Okt 2026)
+- User generate build 9.6.1 tapi preview masih tampil 9.6.0 karena bump
+  nomor versi tidak dilakukan saat fix v9.6.1 (backend-only change).
+- Fix: app.json + version.ts → 9.6.2. Diverifikasi string "9.6.2" termuat
+  di bundle preview.
+- RULE MULAI SEKARANG: setiap perubahan yang akan di-build HARUS disertai
+  bump APP_VERSION + app.json version agar label versi tidak stale.
