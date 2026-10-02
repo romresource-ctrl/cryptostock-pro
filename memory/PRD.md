@@ -591,3 +591,13 @@ Fase berikutnya (BELUM):
   di bundle preview.
 - RULE MULAI SEKARANG: setiap perubahan yang akan di-build HARUS disertai
   bump APP_VERSION + app.json version agar label versi tidak stale.
+
+
+## v9.6.3 — Bump + Investigasi Android Build Gagal (Okt 2026)
+- User melaporkan "Android build generation failed" di Manage Publishing.
+- Health check deployment: SEMUA pass (kompilasi OK, app.json valid,
+  release build config OK). Hanya 1 warning iOS push (GoogleService-Info.plist
+  belum ada — tidak relevan untuk Android).
+- Tidak ada blocker kode → kemungkinan kegagalan transient sisi build infra.
+- Versi di-bump 9.6.2 → 9.6.3 untuk build ulang.
+- Saran ke user: Re-publish changes → generate Android build lagi.
