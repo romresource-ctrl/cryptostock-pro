@@ -199,6 +199,15 @@ export default function ASIBotScreen() {
               Saya mengerti & menerima semua risiko di atas
             </Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.push("/asi-legal" as never)}
+            style={{ marginTop: 10, alignItems: "center" }}
+            testID="asi-legal-link"
+          >
+            <Text style={{ color: GOLD, fontSize: 12, fontWeight: "800", textDecorationLine: "underline" }}>
+              Baca Terms, Privacy & Compliance Lengkap →
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* PnL */}

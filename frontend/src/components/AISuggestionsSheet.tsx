@@ -33,6 +33,7 @@ import { getDeviceId } from "@/src/lib/deviceId";
 import { useTraderProfile } from "@/src/lib/useTraderProfile";
 import { useI18n } from "@/src/i18n/I18nContext";
 import { useTheme } from "@/src/theme/ThemeContext";
+import AsiTradeSheet, { type AsiTradeIntent } from "./AsiTradeSheet";
 
 type Props = {
   visible: boolean;
@@ -75,6 +76,7 @@ export default function AISuggestionsSheet({ visible, onClose, onRequestSubscrib
   const [error, setError] = useState<string | null>(null);
   const [engine, setEngine] = useState<string>("CONFLUENCE");
   const [picks, setPicks] = useState<AssetSignal[]>([]);
+  const [tradeIntent, setTradeIntent] = useState<AsiTradeIntent | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const load = useCallback(async (m: Market) => {
@@ -164,6 +166,7 @@ export default function AISuggestionsSheet({ visible, onClose, onRequestSubscrib
   );
 
   return (
+    <>
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose} testID="ai-suggestions-backdrop" />
       <View style={[styles.sheet, { backgroundColor: colors.background, paddingBottom: insets.bottom + 16 }]}>
@@ -347,6 +350,27 @@ export default function AISuggestionsSheet({ visible, onClose, onRequestSubscrib
                       >
                         <Text style={[styles.detailBtnText, { color: GOLD }]}>{t("ai_open_detail")}</Text>
                       </TouchableOpacity>
+                      {/* v9.3.0 — Satu tap trade via ASI-Bot (hanya untuk aset crypto). */}
+                      {a.market === "crypto" && typeof a.entry === "number"
+                        && typeof a.stop_loss === "number"
+                        && Array.isArray(a.take_profits) && a.take_profits.length > 0 ? (
+                        <TouchableOpacity
+                          style={[styles.detailBtn, { backgroundColor: GOLD, borderColor: GOLD, marginTop: 6 }]}
+                          onPress={() => {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+                            setTradeIntent({
+                              symbol: a.symbol, side: a.action as "BUY" | "SELL",
+                              entry: a.entry!, stop_loss: a.stop_loss!,
+                              take_profits: a.take_profits || [], source: "ai-suggestions",
+                            });
+                          }}
+                          testID={`ai-trade-${a.symbol}`}
+                        >
+                          <Text style={[styles.detailBtnText, { color: "#0B0E11" }]}>
+                            🤖 Trade with ASI-Bot
+                          </Text>
+                        </TouchableOpacity>
+                      ) : null}
                     </View>
                   )}
                 </View>
@@ -357,6 +381,12 @@ export default function AISuggestionsSheet({ visible, onClose, onRequestSubscrib
         )}
       </View>
     </Modal>
+    <AsiTradeSheet
+      visible={!!tradeIntent}
+      intent={tradeIntent}
+      onClose={() => setTradeIntent(null)}
+    />
+    </>
   );
 }
 

@@ -455,3 +455,36 @@ Fase berikutnya (BELUM):
 
 ### Bump versi
 - 9.3.0: version.ts, app.json, APP_LATEST_VERSION backend.
+
+## v9.3.0 — ASI-Bot Fase 5 + 6 ✓
+
+### Fase 5 — Tombol Trade with ASI-Bot
+- Komponen baru: /app/frontend/src/components/AsiTradeSheet.tsx
+  (bottom sheet reusable). Terima AsiTradeIntent {symbol, side, entry,
+  stop_loss, take_profits}. Alur: fetch creds → preview debounced →
+  stepper Risk/Leverage → tampilkan balance/margin/qty/est loss/
+  tp estimations → tombol EXECUTE memanggil /api/asi/trades/execute.
+- Terintegrasi di 2 titik:
+  * AI Suggestions sheet: tombol "🤖 Trade with ASI-Bot" per kartu
+    (hanya kategori crypto dengan entry/sl/tp lengkap).
+  * Asset detail page: tombol gold besar di bawah TargetProfit untuk
+    aset crypto dengan sinyal BUY/SELL aktif.
+- Jika user belum terhubung ke exchange → tampilkan empty state
+  dengan CTA menuju /asi-bot untuk connect.
+
+### Fase 6 — Legal, Privacy & Compliance
+- Halaman baru: /app/frontend/app/asi-legal.tsx dengan 3 seksi:
+  * In-App Disclaimer & Terms of Use (6 pasal: non-custodial, risiko
+    trading, kegagalan pihak ketiga, larangan withdrawal, whitelist,
+    yurisdiksi pengguna).
+  * Privacy Policy ASI-Bot (penyimpanan AES-256-GCM, penggunaan kunci,
+    data yang dikumpulkan, hak hapus).
+  * Google Play Data Safety Declaration (checklist yang WAJIB
+    dicantumkan di Play Console App Content → Data Safety).
+- Link "Baca Terms, Privacy & Compliance Lengkap →" dari halaman
+  ASI-Bot di bawah disclaimer.
+
+### Belum (menunggu input user)
+- Testnet Live: user perlu share Binance Futures Testnet API key +
+  secret (dari https://testnet.binancefuture.com) agar saya dapat
+  menjalankan E2E execute test real dari backend ke exchange.

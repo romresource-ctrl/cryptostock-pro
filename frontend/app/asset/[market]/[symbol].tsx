@@ -19,6 +19,7 @@ import TickCounter from "@/src/components/TickCounter";
 import PriceChart from "@/src/components/PriceChart";
 import PositionSizeCalculator from "@/src/components/PositionSizeCalculator";
 import TargetProfit from "@/src/components/TargetProfit";
+import AsiTradeSheet, { type AsiTradeIntent } from "@/src/components/AsiTradeSheet";
 import WrHistoryModal, { type WrPeriod } from "@/src/components/WrHistoryModal";
 import LadderAlertBadge from "@/src/components/LadderAlertBadge";
 import DipTopPopup from "@/src/components/DipTopPopup";
@@ -152,6 +153,7 @@ export default function AssetDetail() {
   const [trackRecord, setTrackRecord] = useState<TrackRecordResponse | null>(null);
   // v8.7.0 — WR history modal state (period tab: 7d / 30d / all)
   const [wrModalPeriod, setWrModalPeriod] = useState<WrPeriod | null>(null);
+  const [asiIntent, setAsiIntent] = useState<AsiTradeIntent | null>(null);
   // Live-fetched AI model labels from backend. If backend swaps models
   // (e.g. Sonnet 4.6 → Sonnet 5), the hint text updates without a
   // mobile rebuild. Falls back to a generic label if endpoint is down.
@@ -1347,6 +1349,40 @@ export default function AssetDetail() {
                 takeProfit={analysis.consensus.take_profit}
               />
 
+              {/* v9.3.0 — Satu-tap trade via ASI-Bot (hanya crypto, sinyal aktif). */}
+              {market === "crypto"
+                && (analysis.consensus.action === "BUY" || analysis.consensus.action === "SELL")
+                && analysis.consensus.entry != null
+                && analysis.consensus.stop_loss != null
+                && analysis.consensus.take_profit != null ? (
+                <TouchableOpacity
+                  onPress={() => {
+                    const tp = analysis.consensus.take_profit as number;
+                    const entry = analysis.consensus.entry as number;
+                    const spread = Math.abs(tp - entry);
+                    const dir = analysis.consensus.action === "BUY" ? 1 : -1;
+                    setAsiIntent({
+                      symbol: symbol.replace(/[-/].*$/, ""),
+                      side: analysis.consensus.action as "BUY" | "SELL",
+                      entry,
+                      stop_loss: analysis.consensus.stop_loss as number,
+                      take_profits: [tp, entry + dir * spread * 2, entry + dir * spread * 3],
+                      source: "asset-detail",
+                    });
+                  }}
+                  testID="asset-asi-trade"
+                  style={{
+                    marginTop: 14, backgroundColor: "#F0B90B",
+                    paddingVertical: 14, borderRadius: 12, alignItems: "center",
+                    flexDirection: "row", justifyContent: "center", gap: 8,
+                  }}>
+                  <Text style={{ fontSize: 18 }}>🤖</Text>
+                  <Text style={{ color: "#0B0E11", fontWeight: "900", letterSpacing: 0.6 }}>
+                    Trade {analysis.consensus.action === "BUY" ? "LONG" : "SHORT"} dengan ASI-Bot
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+
               {/* v8.5.8 — Position Size Calculator was previously duplicated
                   here in the AI Analysis section. Removed per user request
                   to avoid redundancy — the calculator inside the Technical
@@ -1448,6 +1484,11 @@ export default function AssetDetail() {
           langCode={lang as "id" | "en" | "ru" | "cn"}
         />
       ) : null}
+      <AsiTradeSheet
+        visible={!!asiIntent}
+        intent={asiIntent}
+        onClose={() => setAsiIntent(null)}
+      />
     </SafeAreaView>
   );
 }
