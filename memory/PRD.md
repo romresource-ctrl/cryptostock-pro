@@ -521,3 +521,21 @@ Fase berikutnya (BELUM):
 - Full Description Play Store diperbarui user (mencakup ASI-Bot, disclaimer, link legal).
 - Legal URLs terverifikasi user di Play Console: /api/privacy, /api/data-deletion, /api/terms.
 - Release notes v9.5.0 (ID & EN) sudah diberikan untuk kolom "What's new".
+
+
+## v9.5.0 — E2E 3 Test Trade MAINNET (Okt 2026) — BUG DITEMUKAN & DIPERBAIKI
+- Bug kritis engine: `split("/")[0] + "USDT"` pada simbol "SOLUSDT" menghasilkan
+  "SOLUSDTUSDT" → Algo API -1121 Invalid symbol → bracket diam-diam jadi soft.
+  Diperbaiki di execute_trade & close_position (strip "USDT" dulu).
+- Bug presisi: trigger price tidak di-normalize ke tick size → -1111. Engine kini
+  round stop_loss/TPs ke price tick market.
+- Bug `_split_tp_qty`: remainder tidak align ke amount step → qty invalid.
+  Ditulis ulang berbasis integer step-units (sum selalu pas & step-aligned).
+- TP failure kini terekam di soft_bracket_reason (sebelumnya silent).
+- Hasil live mainnet (balance 12 USDT): SOL entry 118.58 → SL 117.4 tereksekusi
+  NATIVE oleh Binance (fill 117.34, realized -0.06 USDT) — bukti hard-bracket
+  bekerja tanpa backend. ETH & XRP posisi long berjalan dgn SL+TP1-3 native.
+- Orphan TP algo orders dibatalkan setelah SL trigger (cancel_all_conditional).
+- SECURITY: test_mainnet_via_sg.py berisi API key+secret PLAINTEXT — dihapus dari
+  working tree, TAPI masih ada di git history (commit 4e9ef2f, ba713dd).
+  REKOMENDASI: user regenerate API key Binance.
