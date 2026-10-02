@@ -385,3 +385,24 @@ Verifikasi:
   history P/L view). Pytest 11/12 (1 gagal = test harness GET vs POST
   analyze, bukan bug produk).
 ## v9.2.5 — bump rilis (semua perbaikan konsistensi v9.2.4 termasuk di dalamnya)
+
+## v9.3.0-dev — ASI-Bot Phase 1 (Credential Management) ✓
+
+- Dependensi baru: ccxt 4.4.100, cryptography 48.0.0 (sudah di requirements.txt)
+- Modul: /app/backend/asi_bot/{crypto.py, exchanges.py, routes.py}
+- Enkripsi AES-256-GCM envelope: master key 32B di ASI_MASTER_KEY (auto-generate ke .env saat first boot) + per-record 16B salt via HKDF-SHA256. Pola setara AWS Encryption SDK; siap migrate ke KMS tanpa ubah data.
+- Routes (prefix /api/asi):
+  * POST /credentials — validate via CCXT, TOLAK jika permission "withdraw" aktif, enkripsi api_key+secret+passphrase, simpan di asi_credentials.
+  * GET /credentials — list user's masked connections.
+  * DELETE /credentials/{exchange}
+  * POST /credentials/{exchange}/test — re-validate stored key.
+- 4 exchange didukung: binance (binanceusdm), bybit, okx, bitget — defaultType="swap" (USDT-M perpetual), set_sandbox_mode(True) untuk testnet.
+- Fixed credential: auto-generate 3-huruf anonim dari email prefix (atau sha256 device_id).
+- Verifikasi: list=200, invalid-key save=400 pesan jelas, 4 exchange terdaftar.
+
+Fase berikutnya (BELUM):
+- F2 Execution Engine (Entry + Bracket SL/TP1-3, Semi/Full-Auto, risk 1-30%, whitelist Top-100)
+- F3 UI: tombol ASI-Bot & Copy Trade di dashboard, halaman ASI-Bot Semi/Full
+- F4 PnL harian/mingguan/bulanan + Top-10 leaderboard
+- F5 Copy Trade engine + UI
+- F6 Legal update (Privacy + In-App Disclaimer), E2E testnet, bump versi, publish

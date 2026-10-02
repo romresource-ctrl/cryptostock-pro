@@ -2629,6 +2629,12 @@ async def market_brief_generate(admin_token: str = Query(..., description="Admin
     return {"ok": bool(doc), "id": doc.get("_id") if doc else None}
 
 
+# v9.3.0 — ASI-Bot (Artificial Super Intelligence Bot) Phase 1:
+# Credential management (AES-256-GCM encrypted exchange API keys).
+# Register BEFORE include_router so sub-routes are picked up.
+from asi_bot.routes import register as _register_asi_bot  # noqa: E402
+_register_asi_bot(api, db)
+
 app.include_router(api)
 app.add_middleware(
     CORSMiddleware,
