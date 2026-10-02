@@ -297,19 +297,28 @@ function ConnectExchangeModal({ visible, onClose, exchange, colors, onSaved, dev
   onSaved: () => void; deviceId: string;
 }) {
   const [k, setK] = useState(""); const [s2, setS2] = useState(""); const [p, setP] = useState("");
-  const [testnet, setTestnet] = useState(true); const [loading, setLoading] = useState(false);
+  const [network, setNetwork] = useState<"testnet" | "mainnet">("testnet");
+  const [mainnetAck, setMainnetAck] = useState(false);
+  const [loading, setLoading] = useState(false);
   const ex = useMemo(() => EXCHANGES.find((e) => e.id === exchange)!, [exchange]);
+  const isMainnet = network === "mainnet";
 
   const save = async () => {
     if (!k || !s2) return Alert.alert("Lengkapi", "API Key & Secret wajib diisi.");
     if (ex.needsPass && !p) return Alert.alert("Lengkapi", `${ex.label} butuh passphrase.`);
+    if (isMainnet && !mainnetAck) {
+      return Alert.alert(
+        "Konfirmasi Mainnet",
+        "Anda akan menghubungkan akun UANG NYATA. Pastikan API key TIDAK memiliki izin Withdraw. Centang persetujuan dulu.",
+      );
+    }
     setLoading(true);
     try {
       await api.asi.saveCredential(deviceId, {
         exchange, api_key: k.trim(), api_secret: s2.trim(),
-        password: ex.needsPass ? p.trim() : null, testnet,
+        password: ex.needsPass ? p.trim() : null, testnet: !isMainnet,
       });
-      setK(""); setS2(""); setP(""); onSaved();
+      setK(""); setS2(""); setP(""); setMainnetAck(false); onSaved();
     } catch (e: any) {
       Alert.alert("Gagal", e?.message || String(e));
     } finally { setLoading(false); }
@@ -321,8 +330,41 @@ function ConnectExchangeModal({ visible, onClose, exchange, colors, onSaved, dev
         <Pressable style={[m.sheet, { backgroundColor: colors.surface }]} onPress={(e) => e.stopPropagation()}>
           <Text style={[m.title, { color: colors.textPrimary }]}>Hubungkan {ex.label}</Text>
           <Text style={[m.sub, { color: colors.textMuted }]}>
-            Buat API key di dashboard {ex.label}, HANYA centang {`"Enable Futures"`}. JANGAN centang {`"Enable Withdrawals"`}.
+            Masukkan API Key & Secret ANDA sendiri. Buat di dashboard {ex.label}, HANYA centang {`"Enable Futures"`}. JANGAN centang {`"Enable Withdrawals"`}.
           </Text>
+
+          {/* Network selector: TESTNET / MAINNET */}
+          <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
+            {(["testnet", "mainnet"] as const).map((n) => {
+              const active = network === n;
+              const isM = n === "mainnet";
+              return (
+                <TouchableOpacity
+                  key={n}
+                  onPress={() => setNetwork(n)}
+                  style={[m.netChip, {
+                    flex: 1,
+                    backgroundColor: active ? (isM ? RED : GOLD) : colors.background,
+                    borderColor: active ? (isM ? RED : GOLD) : colors.border,
+                  }]}
+                >
+                  <Text style={{
+                    color: active ? (isM ? "#fff" : "#0B0E11") : colors.textPrimary,
+                    fontWeight: "900", fontSize: 12, letterSpacing: 0.8,
+                  }}>
+                    {isM ? "🔴 MAINNET" : "🧪 TESTNET"}
+                  </Text>
+                  <Text style={{
+                    color: active ? (isM ? "#FFE5E5" : "#0B0E11") : colors.textMuted,
+                    fontSize: 10, marginTop: 2,
+                  }}>
+                    {isM ? "Uang nyata" : "Uji coba gratis"}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
           <TextInput value={k} onChangeText={setK} placeholder="API Key" placeholderTextColor={colors.textMuted}
                      style={[m.input, { color: colors.textPrimary, borderColor: colors.border }]} autoCapitalize="none" />
           <TextInput value={s2} onChangeText={setS2} placeholder="API Secret" placeholderTextColor={colors.textMuted}
@@ -331,16 +373,26 @@ function ConnectExchangeModal({ visible, onClose, exchange, colors, onSaved, dev
             <TextInput value={p} onChangeText={setP} placeholder="Passphrase" placeholderTextColor={colors.textMuted}
                        style={[m.input, { color: colors.textPrimary, borderColor: colors.border }]} secureTextEntry autoCapitalize="none" />
           ) : null}
-          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 10 }}>
-            <Switch value={testnet} onValueChange={setTestnet} trackColor={{ true: GOLD }} />
-            <Text style={{ color: colors.textPrimary, marginLeft: 8, fontWeight: "700" }}>
-              Testnet (uji dulu tanpa uang nyata)
-            </Text>
-          </View>
-          <TouchableOpacity onPress={save} disabled={loading}
-                            style={[m.save, { backgroundColor: loading ? colors.textMuted : GOLD }]}>
-            <Text style={{ color: "#0B0E11", fontWeight: "900", letterSpacing: 0.6 }}>
-              {loading ? "MEMVERIFIKASI..." : "SIMPAN & VALIDASI"}
+
+          {isMainnet ? (
+            <Pressable
+              onPress={() => setMainnetAck((v) => !v)}
+              style={[m.warnBox, { borderColor: RED, backgroundColor: "rgba(239,68,68,0.08)" }]}
+            >
+              <View style={[s.checkbox, { borderColor: RED, backgroundColor: mainnetAck ? RED : "transparent" }]}>
+                {mainnetAck ? <Ionicons name="checkmark" size={14} color="#fff" /> : null}
+              </View>
+              <Text style={{ color: colors.textPrimary, fontSize: 11.5, flex: 1, lineHeight: 16 }}>
+                Saya paham ini akun <Text style={{ fontWeight: "900" }}>UANG NYATA</Text> dan API key saya
+                TANPA izin penarikan (withdraw). Risiko 100% tanggung jawab saya.
+              </Text>
+            </Pressable>
+          ) : null}
+
+          <TouchableOpacity onPress={save} disabled={loading || (isMainnet && !mainnetAck)}
+                            style={[m.save, { backgroundColor: loading ? colors.textMuted : (isMainnet ? RED : GOLD) }]}>
+            <Text style={{ color: isMainnet ? "#fff" : "#0B0E11", fontWeight: "900", letterSpacing: 0.6 }}>
+              {loading ? "MEMVERIFIKASI..." : isMainnet ? "SIMPAN KE MAINNET" : "SIMPAN KE TESTNET"}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={onClose} style={{ padding: 12, alignItems: "center" }}>
@@ -386,4 +438,7 @@ const m = StyleSheet.create({
   input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: Platform.OS === "ios" ? 12 : 8,
            marginTop: 10 },
   save: { padding: 14, borderRadius: 12, alignItems: "center", marginTop: 10 },
+  netChip: { padding: 12, borderRadius: 12, borderWidth: 1.5, alignItems: "center" },
+  warnBox: { flexDirection: "row", gap: 10, alignItems: "flex-start", padding: 12,
+             borderRadius: 10, borderWidth: 1.5, marginTop: 10 },
 });
