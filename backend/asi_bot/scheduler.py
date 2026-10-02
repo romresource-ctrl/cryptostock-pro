@@ -220,11 +220,11 @@ async def _enforce_daily_loss_limit(db: Any) -> None:
 
 async def _run_full_auto_scanner(
     db: Any,
-    signal_fetcher: Callable[[str, str], Awaitable[dict[str, Any] | None]],
+    signal_fetcher: Callable[[str, str, str | None], Awaitable[dict[str, Any] | None]],
 ) -> None:
     """Scan every enabled Full-Auto bot config and trigger trades.
 
-    `signal_fetcher(market, symbol)` must return a dict with:
+    `signal_fetcher(market, symbol, profile)` must return a dict with:
       side ("BUY"|"SELL"), entry, stop_loss, take_profits[], confidence
     Must return None/missing fields to skip.
     """
@@ -248,12 +248,15 @@ async def _run_full_auto_scanner(
             risk = float(cfg.get("risk_pct") or 5.0)
             lev = int(cfg.get("leverage") or 10)
             user_min_conf = int(cfg.get("min_confidence") or MIN_FULL_AUTO_CONFIDENCE)
+            # v9.6.1 — Hormati profil strategi user: scalper→VWAP-SCALPER,
+            # day→VWAP-INTRADAY, swing→VWAP-SWING, confluence→mesin default.
+            bot_profile = cfg.get("profile") or None
             budget = max_tr - placed
             for sym in whitelist[: budget * 3]:  # try ≤3x slots so we have options
                 if not is_allowed(sym):
                     continue
                 try:
-                    sig = await signal_fetcher("crypto", sym)
+                    sig = await signal_fetcher("crypto", sym, bot_profile)
                 except Exception:
                     continue
                 if not sig or not sig.get("side"):
@@ -302,7 +305,7 @@ class ASIScheduler:
     def __init__(
         self,
         db: Any,
-        signal_fetcher: Callable[[str, str], Awaitable[dict[str, Any] | None]],
+        signal_fetcher: Callable[[str, str, str | None], Awaitable[dict[str, Any] | None]],
     ) -> None:
         self.db = db
         self.signal_fetcher = signal_fetcher

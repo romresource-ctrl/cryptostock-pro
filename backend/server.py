@@ -2972,16 +2972,22 @@ def _start_push_scheduler() -> None:
 
 # --------------- ASI-Bot scheduler (v9.4.0) ---------------
 
-async def _asi_signal_fetcher(market: str, symbol: str) -> dict[str, Any] | None:
+async def _asi_signal_fetcher(market: str, symbol: str, profile: str | None = None) -> dict[str, Any] | None:
     """Return a dashboard-grade signal for Full-Auto execution.
 
     Pulls from the SAME pipeline used by /api/dashboard so Full-Auto
     stays in-sync with what users see on screen.
+
+    v9.6.1 — `profile` diteruskan dari konfigurasi bot: scalper/day/swing
+    memakai mesin VWAP (VWAP Core, Box Theory, KISS Pivot, John Wick,
+    Power of Tower, Pattern Scalp 15M); confluence/None memakai mesin
+    Confluence default.
     """
     try:
         resp = await _build_dashboard_response(
             market=market, timeframe="1h", sort="confidence",
             full=True, min_confidence=70, min_wr=70.0, region=None,
+            profile=profile,
         )
         for a in resp.assets:
             if a.symbol.upper() != symbol.upper():
