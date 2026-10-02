@@ -824,7 +824,7 @@ export default function Dashboard() {
           onPress={() => router.push("/asi-bot" as never)}
           testID="asi-bot-button"
           activeOpacity={0.85}
-          style={[styles.asiBtn, { backgroundColor: "#F0B90B", borderColor: "#F0B90B" }]}
+          style={[styles.asiBtn, { backgroundColor: "#4ADE80", borderColor: "#4ADE80" }]}
         >
           <Text style={styles.asiBtnEmoji}>🤖</Text>
           <View style={{ flex: 1 }}>
@@ -1668,8 +1668,8 @@ const styles = StyleSheet.create({
     shadowRadius: 8, elevation: 4,
   },
   asiBtnEmoji: { fontSize: 24 },
-  asiBtnTitle: { color: "#0B0E11", fontSize: 15, fontWeight: "900", letterSpacing: 0.3 },
-  asiBtnSub: { color: "rgba(11,14,17,0.75)", fontSize: 10.5, fontWeight: "700" },
+  asiBtnTitle: { color: "#FFFFFF", fontSize: 15, fontWeight: "900", letterSpacing: 0.3 },
+  asiBtnSub: { color: "rgba(255,255,255,0.85)", fontSize: 10.5, fontWeight: "700" },
   unlockedBtn: {
     height: 32, paddingHorizontal: 8, borderRadius: 9, borderWidth: 1,
     flexDirection: "row", alignItems: "center", gap: 4, maxWidth: 130,

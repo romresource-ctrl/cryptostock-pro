@@ -21,6 +21,7 @@ import {
 } from "@/src/lib/api";
 
 const GOLD = "#F0B90B";
+const MINT = "#4ADE80"; // v9.4.3 — ASI-Bot accent (hijau muda + teks putih)
 const GREEN = "#22C55E";
 const RED = "#EF4444";
 
@@ -155,9 +156,9 @@ export default function AsiTradeSheet({ visible, onClose, intent }: Props) {
                   Hubungkan API Binance / Bybit / OKX / Bitget di halaman ASI-Bot sebelum trade otomatis.
                 </Text>
                 <TouchableOpacity
-                  style={[s.cta, { backgroundColor: GOLD, marginTop: 14 }]}
+                  style={[s.cta, { backgroundColor: MINT, marginTop: 14 }]}
                   onPress={() => { onClose(); router.push("/asi-bot" as never); }}>
-                  <Text style={{ color: "#0B0E11", fontWeight: "900", letterSpacing: 0.6 }}>HUBUNGKAN EXCHANGE</Text>
+                  <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.6 }}>HUBUNGKAN EXCHANGE</Text>
                 </TouchableOpacity>
               </View>
             ) : (
@@ -168,8 +169,8 @@ export default function AsiTradeSheet({ visible, onClose, intent }: Props) {
                     const act = c.exchange === exchange;
                     return (
                       <TouchableOpacity key={c.exchange} onPress={() => setExchange(c.exchange as any)}
-                        style={[s.exChip, { backgroundColor: act ? GOLD : colors.background, borderColor: act ? GOLD : colors.border }]}>
-                        <Text style={{ color: act ? "#0B0E11" : colors.textPrimary, fontWeight: "800", fontSize: 11 }}>
+                        style={[s.exChip, { backgroundColor: act ? MINT : colors.background, borderColor: act ? MINT : colors.border }]}>
+                        <Text style={{ color: act ? "#FFFFFF" : colors.textPrimary, fontWeight: "800", fontSize: 11 }}>
                           {c.exchange.toUpperCase()} {c.testnet ? "·T" : ""}
                         </Text>
                       </TouchableOpacity>
@@ -226,8 +227,8 @@ export default function AsiTradeSheet({ visible, onClose, intent }: Props) {
                     marginTop: 14,
                   }]}
                   testID="asi-trade-execute">
-                  <Ionicons name="rocket" size={18} color="#0B0E11" />
-                  <Text style={{ color: "#0B0E11", fontWeight: "900", letterSpacing: 0.8 }}>
+                  <Ionicons name="rocket" size={18} color="#FFFFFF" />
+                  <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.8 }}>
                     {executing ? "MENGIRIM ORDER..." : `EXECUTE ${intent.side === "BUY" ? "LONG" : "SHORT"} ${activeCred?.testnet ? "(TESTNET)" : ""}`}
                   </Text>
                 </TouchableOpacity>
