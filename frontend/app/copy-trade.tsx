@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
 import { useTheme } from "@/src/theme/ThemeContext";
+import { useI18n } from "@/src/i18n/I18nContext";
 import { api, type AsiLiveRow } from "@/src/lib/api";
 
 const GOLD = "#F0B90B";
@@ -14,20 +15,10 @@ const BLUE = "#3B82F6";
 
 const LIVE_REFRESH_MS = 15_000;
 
-function timeAgo(iso?: string | null): string {
-  if (!iso) return "";
-  const t = Date.parse(iso);
-  if (!Number.isFinite(t)) return "";
-  const d = Math.max(0, Math.floor((Date.now() - t) / 1000));
-  if (d < 60) return `${d}d lalu`;
-  if (d < 3600) return `${Math.floor(d / 60)}m lalu`;
-  if (d < 86400) return `${Math.floor(d / 3600)}j lalu`;
-  return `${Math.floor(d / 86400)}h lalu`;
-}
-
 export default function CopyTradeScreen() {
   const router = useRouter();
   const { colors } = useTheme();
+  const { t, lang } = useI18n();
   const insets = useSafeAreaInsets();
   const [leader, setLeader] = useState<AsiLiveRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -56,6 +47,19 @@ export default function CopyTradeScreen() {
     load();
   }, [load]);
 
+  // Localized relative time: "5m ago" / "5m lalu" / "5м назад" / "5分前"
+  const timeAgo = (iso?: string | null): string => {
+    if (!iso) return "";
+    const tt = Date.parse(iso);
+    if (!Number.isFinite(tt)) return "";
+    const d = Math.max(0, Math.floor((Date.now() - tt) / 1000));
+    const gap = lang === "cn" ? "" : " ";
+    if (d < 60) return `${d}${t("news_time_second_short")}${gap}${t("news_time_ago")}`;
+    if (d < 3600) return `${Math.floor(d / 60)}${t("news_time_minute_short")}${gap}${t("news_time_ago")}`;
+    if (d < 86400) return `${Math.floor(d / 3600)}${t("news_time_hour_short")}${gap}${t("news_time_ago")}`;
+    return `${Math.floor(d / 86400)}${t("news_time_day_short")}${gap}${t("news_time_ago")}`;
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
       <View style={s.header}>
@@ -65,7 +69,7 @@ export default function CopyTradeScreen() {
         <View style={{ flex: 1 }}>
           <Text style={[s.title, { color: colors.textPrimary }]}>🏆 Copy Trade · LIVE</Text>
           <Text style={[s.sub, { color: colors.textMuted }]}>
-            10 trader yang SEDANG di posisi · hilang otomatis bila closed
+            {t("copy_sub")}
           </Text>
         </View>
         <View style={s.livePill}>
@@ -81,23 +85,22 @@ export default function CopyTradeScreen() {
         {loading ? (
           <View style={{ paddingVertical: 40, alignItems: "center" }}>
             <ActivityIndicator color={GOLD} />
-            <Text style={{ color: colors.textMuted, marginTop: 10, fontSize: 12 }}>Memuat posisi aktif…</Text>
+            <Text style={{ color: colors.textMuted, marginTop: 10, fontSize: 12 }}>{t("copy_loading")}</Text>
           </View>
         ) : leader.length === 0 ? (
           <View style={[s.empty, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Ionicons name="pulse-outline" size={28} color={colors.textMuted} />
             <Text style={{ color: colors.textPrimary, fontWeight: "800", marginTop: 8 }}>
-              Tidak ada posisi aktif saat ini
+              {t("copy_empty_title")}
             </Text>
             <Text style={{ color: colors.textMuted, fontSize: 12, textAlign: "center", marginTop: 6, lineHeight: 18 }}>
-              Trader akan muncul di sini saat mereka{"\n"}
-              membuka posisi lewat ASI-Bot. Daftar akan refresh otomatis tiap 15 detik.
+              {t("copy_empty_body")}
             </Text>
           </View>
         ) : (
           leader.map((row) => {
-            const t = row.latest_trade || {};
-            const isLong = t.side === "BUY";
+            const tr = row.latest_trade || {};
+            const isLong = tr.side === "BUY";
             return (
               <View
                 key={`${row.handle}-${row.rank}`}
@@ -111,44 +114,46 @@ export default function CopyTradeScreen() {
                       <View style={[s.openPill, { borderColor: BLUE }]}>
                         <View style={[s.liveDot, { backgroundColor: BLUE }]} />
                         <Text style={{ color: BLUE, fontWeight: "900", fontSize: 10 }}>
-                          {row.open_count} POS AKTIF
+                          {t("copy_open_count").replace("{n}", String(row.open_count))}
                         </Text>
                       </View>
                     </View>
                     <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 2 }}>
-                      WR 30h: {row.wr30d}% · {row.trades30d} trade closed
+                      {t("copy_wr_line").replace("{wr}", String(row.wr30d)).replace("{n}", String(row.trades30d))}
                     </Text>
                   </View>
                   <View style={{ alignItems: "flex-end" }}>
-                    <Text style={{ color: colors.textMuted, fontSize: 10, fontWeight: "700" }}>UNREALIZED</Text>
+                    <Text style={{ color: colors.textMuted, fontSize: 10, fontWeight: "700" }}>{t("copy_unrealized")}</Text>
                     <Text style={{ color: row.unrealized_usdt >= 0 ? GREEN : RED, fontWeight: "900", fontSize: 18 }}>
                       {row.unrealized_usdt >= 0 ? "+" : ""}${row.unrealized_usdt.toFixed(2)}
                     </Text>
                   </View>
                 </View>
 
-                {t.symbol && t.side ? (
+                {tr.symbol && tr.side ? (
                   <View style={[s.tradeRow, { borderColor: colors.border, backgroundColor: colors.background }]}>
                     <View style={{ flex: 1, gap: 2 }}>
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                         <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 15 }}>
-                          {t.symbol}/USDT
+                          {tr.symbol}/USDT
                         </Text>
                         <View style={{
                           paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
                           backgroundColor: isLong ? GREEN : RED,
                         }}>
                           <Text style={{ color: "#fff", fontWeight: "900", fontSize: 10 }}>
-                            {isLong ? "LONG" : "SHORT"} {t.leverage ? `${t.leverage}x` : ""}
+                            {isLong ? "LONG" : "SHORT"} {tr.leverage ? `${tr.leverage}x` : ""}
                           </Text>
                         </View>
                       </View>
                       <Text style={{ color: colors.textMuted, fontSize: 11 }}>
-                        Entry ${(t.entry_price || 0).toLocaleString()} · dibuka {timeAgo(t.created_at)}
+                        {t("copy_entry_line")
+                          .replace("{price}", (tr.entry_price || 0).toLocaleString())
+                          .replace("{ago}", timeAgo(tr.created_at))}
                       </Text>
                     </View>
                     <TouchableOpacity style={[s.copyBtn, { backgroundColor: GOLD, opacity: 0.6 }]} disabled>
-                      <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 11 }}>SEGERA</Text>
+                      <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 11 }}>{t("copy_coming_soon")}</Text>
                     </TouchableOpacity>
                   </View>
                 ) : null}
@@ -159,7 +164,7 @@ export default function CopyTradeScreen() {
 
         {leader.length > 0 && (
           <Text style={{ color: colors.textMuted, fontSize: 11, textAlign: "center", marginTop: 20, lineHeight: 17 }}>
-            Daftar refresh tiap 15 detik · trader hilang otomatis saat posisi mereka ditutup.
+            {t("copy_footer")}
           </Text>
         )}
       </ScrollView>

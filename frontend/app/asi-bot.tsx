@@ -6,6 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 
 import { useTheme } from "@/src/theme/ThemeContext";
+import { useI18n } from "@/src/i18n/I18nContext";
 import { getDeviceId } from "@/src/lib/deviceId";
 import {
   api, type AsiBotConfig, type AsiCredential,
@@ -28,6 +29,7 @@ const EXCHANGES: { id: ExchangeId; label: string; needsPass: boolean }[] = [
 export default function ASIBotScreen() {
   const router = useRouter();
   const { colors } = useTheme();
+  const { t } = useI18n();
   const insets = useSafeAreaInsets();
   const [deviceId, setDeviceId] = useState<string>("");
   const [creds, setCreds] = useState<AsiCredential[]>([]);
@@ -58,7 +60,7 @@ export default function ASIBotScreen() {
       const b = await api.asi.getBot(id);
       if (b.exists) setBot({ ...bot, ...b });
       const p = await api.asi.pnl(id); setPnl(p);
-      const t = await api.asi.listTrades(id); setTrades(t.items.slice(0, 10));
+      const t2 = await api.asi.listTrades(id); setTrades(t2.items.slice(0, 10));
     } catch {}
   };
 
@@ -74,8 +76,8 @@ export default function ASIBotScreen() {
   const toggleBot = async (val: boolean) => {
     if (val && !canUseBot) {
       Alert.alert(
-        "Butuh Koneksi + Persetujuan",
-        !activeCred ? "Hubungkan API exchange terlebih dahulu." : "Centang persetujuan disclaimer sebelum mengaktifkan bot.",
+        t("asi_alert_need_title"),
+        !activeCred ? t("asi_alert_need_connect") : t("asi_alert_need_ack"),
       );
       return;
     }
@@ -105,18 +107,18 @@ export default function ASIBotScreen() {
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
             <View style={[s.dot, { backgroundColor: bot.enabled ? GREEN : colors.textMuted }]} />
             <Text style={[s.cardTitle, { color: colors.textPrimary }]}>
-              {bot.enabled ? "AKTIF" : "NONAKTIF"}
+              {bot.enabled ? t("asi_status_active") : t("asi_status_inactive")}
             </Text>
             <View style={{ flex: 1 }} />
             <Switch value={bot.enabled} onValueChange={toggleBot} trackColor={{ true: GOLD }} testID="asi-toggle" />
           </View>
           <Text style={[s.cardSub, { color: colors.textMuted }]}>
-            {bot.enabled ? "Bot sedang memindai sinyal & siap eksekusi." : "Nyalakan untuk mulai auto-trade."}
+            {bot.enabled ? t("asi_status_on_sub") : t("asi_status_off_sub")}
           </Text>
         </View>
 
         {/* Connect exchange */}
-        <SectionHeader title="Koneksi Exchange" />
+        <SectionHeader title={t("asi_sec_exchange")} />
         <View style={{ gap: 8 }}>
           {EXCHANGES.map((ex) => {
             const c = creds.find((x) => x.exchange === ex.id);
@@ -134,7 +136,7 @@ export default function ASIBotScreen() {
                     {c.testnet ? "TESTNET" : "MAINNET"} · {c.api_key_mask}
                   </Text>
                 ) : (
-                  <Text style={{ color: colors.textMuted, fontSize: 11 }}>Belum terhubung →</Text>
+                  <Text style={{ color: colors.textMuted, fontSize: 11 }}>{t("asi_not_connected")}</Text>
                 )}
               </TouchableOpacity>
             );
@@ -142,7 +144,7 @@ export default function ASIBotScreen() {
         </View>
 
         {/* Mode */}
-        <SectionHeader title="Mode" />
+        <SectionHeader title={t("asi_sec_mode")} />
         <View style={{ flexDirection: "row", gap: 10 }}>
           {(["semi", "full"] as const).map((m) => {
             const active = bot.mode === m;
@@ -158,7 +160,7 @@ export default function ASIBotScreen() {
                   {m === "semi" ? "Semi-Auto" : "Full-Auto"}
                 </Text>
                 <Text style={[s.modeSub, { color: active ? ACCENT_TEXT : colors.textMuted }]}>
-                  {m === "semi" ? "Preview & konfirmasi tiap trade" : "Eksekusi otomatis tanpa konfirmasi"}
+                  {m === "semi" ? t("asi_mode_semi_sub") : t("asi_mode_full_sub")}
                 </Text>
               </TouchableOpacity>
             );
@@ -166,8 +168,8 @@ export default function ASIBotScreen() {
         </View>
 
         {/* Parameters */}
-        <SectionHeader title="Parameter Risiko" />
-        <ParamRow label="Risk per Trade" value={`${bot.risk_pct}%`}
+        <SectionHeader title={t("asi_sec_risk")} />
+        <ParamRow label={t("asi_risk_per_trade")} value={`${bot.risk_pct}%`}
                   onDec={() => saveBot({ risk_pct: Math.max(1, bot.risk_pct - 1) })}
                   onInc={() => saveBot({ risk_pct: Math.min(30, bot.risk_pct + 1) })}
                   colors={colors} testID="asi-risk" />
@@ -176,18 +178,18 @@ export default function ASIBotScreen() {
                   onInc={() => saveBot({ leverage: Math.min(125, bot.leverage + 1) })}
                   colors={colors} testID="asi-lev" />
         {bot.mode === "full" ? (
-          <ParamRow label="Max Trade / Hari" value={`${bot.max_trades_per_day}`}
+          <ParamRow label={t("asi_max_trades_day")} value={`${bot.max_trades_per_day}`}
                     onDec={() => saveBot({ max_trades_per_day: Math.max(1, bot.max_trades_per_day - 1) })}
                     onInc={() => saveBot({ max_trades_per_day: Math.min(50, bot.max_trades_per_day + 1) })}
                     colors={colors} testID="asi-maxtrade" />
         ) : null}
-        <ParamRow label="Limit Rugi Harian (USDT)"
+        <ParamRow label={t("asi_daily_loss_limit")}
                   value={(bot.daily_loss_limit_usdt ?? 0) === 0 ? "OFF" : `$${bot.daily_loss_limit_usdt}`}
                   onDec={() => saveBot({ daily_loss_limit_usdt: Math.max(0, (bot.daily_loss_limit_usdt ?? 0) - 10) })}
                   onInc={() => saveBot({ daily_loss_limit_usdt: Math.min(100000, (bot.daily_loss_limit_usdt ?? 0) + 10) })}
                   colors={colors} testID="asi-dailyloss" />
         <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: -4, marginBottom: 8, lineHeight: 16 }}>
-          Bot otomatis mati bila kerugian realized hari ini mencapai limit. Set OFF untuk nonaktifkan.
+          {t("asi_daily_loss_hint")}
         </Text>
         {bot.auto_disabled_reason ? (
           <View style={{ padding: 10, borderRadius: 10, borderWidth: 1.5,
@@ -195,19 +197,16 @@ export default function ASIBotScreen() {
                           flexDirection: "row", alignItems: "flex-start", gap: 8, marginBottom: 10 }}>
             <Ionicons name="shield-checkmark" size={18} color={RED} />
             <Text style={{ color: colors.textPrimary, fontSize: 11.5, flex: 1, lineHeight: 16 }}>
-              <Text style={{ fontWeight: "900" }}>Bot auto-mati:</Text> {bot.auto_disabled_reason}
+              <Text style={{ fontWeight: "900" }}>{t("asi_auto_disabled")}</Text> {bot.auto_disabled_reason}
             </Text>
           </View>
         ) : null}
 
         {/* Disclaimer */}
-        <SectionHeader title="Disclaimer Wajib" />
+        <SectionHeader title={t("asi_sec_disclaimer")} />
         <View style={[s.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <Text style={{ color: colors.textPrimary, fontSize: 12.5, lineHeight: 19 }}>
-            • Risiko slippage, latency & kerugian pasar adalah 100% tanggung jawab Anda.{"\n"}
-            • Pengembang tidak bertanggung jawab atas kegagalan API exchange.{"\n"}
-            • JANGAN PERNAH centang izin {`"Enable Withdrawals"`} di API key exchange.{"\n"}
-            • Aplikasi non-custodial — dana tetap 100% di exchange milik Anda.
+            {t("asi_disc_body")}
           </Text>
           <TouchableOpacity
             onPress={() => setDisclaimerAck(!disclaimerAck)}
@@ -218,7 +217,7 @@ export default function ASIBotScreen() {
               {disclaimerAck ? <Ionicons name="checkmark" size={14} color={ACCENT_TEXT} /> : null}
             </View>
             <Text style={{ color: colors.textPrimary, fontWeight: "700", fontSize: 12.5 }}>
-              Saya mengerti & menerima semua risiko di atas
+              {t("asi_disc_ack")}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -227,13 +226,13 @@ export default function ASIBotScreen() {
             testID="asi-legal-link"
           >
             <Text style={{ color: GOLD, fontSize: 12, fontWeight: "800", textDecorationLine: "underline" }}>
-              Baca Terms, Privacy & Compliance Lengkap →
+              {t("asi_legal_link")}
             </Text>
           </TouchableOpacity>
         </View>
 
         {/* PnL */}
-        <SectionHeader title="Rekap PnL" />
+        <SectionHeader title={t("asi_sec_pnl")} />
         <View style={{ flexDirection: "row", gap: 8 }}>
           {(["daily", "weekly", "monthly"] as const).map((k) => {
             const row = pnl?.[k];
@@ -241,7 +240,7 @@ export default function ASIBotScreen() {
             return (
               <View key={k} style={[s.pnlCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                 <Text style={[s.pnlLabel, { color: colors.textMuted }]}>
-                  {k === "daily" ? "Hari Ini" : k === "weekly" ? "Minggu" : "Bulan"}
+                  {k === "daily" ? t("asi_pnl_daily") : k === "weekly" ? t("asi_pnl_weekly") : t("asi_pnl_monthly")}
                 </Text>
                 <Text style={[s.pnlValue, { color: pos ? GREEN : RED }]}>
                   {pos ? "+" : ""}${(row?.pnl_usdt ?? 0).toFixed(2)}
@@ -262,14 +261,14 @@ export default function ASIBotScreen() {
         {/* Recent trades */}
         {trades.length ? (
           <>
-            <SectionHeader title="Trade Terbaru" />
-            {trades.map((t, i) => (
+            <SectionHeader title={t("asi_sec_recent")} />
+            {trades.map((tr, i) => (
               <View key={i} style={[s.leaderRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Text style={{ color: t.side === "BUY" ? GREEN : RED, fontWeight: "900", width: 46 }}>{t.side}</Text>
-                <Text style={{ color: colors.textPrimary, fontWeight: "700" }}>{t.symbol}</Text>
+                <Text style={{ color: tr.side === "BUY" ? GREEN : RED, fontWeight: "900", width: 46 }}>{tr.side}</Text>
+                <Text style={{ color: colors.textPrimary, fontWeight: "700" }}>{tr.symbol}</Text>
                 <View style={{ flex: 1 }} />
-                <Text style={{ color: t.pnl_usdt >= 0 ? GREEN : RED, fontWeight: "800" }}>
-                  {t.pnl_usdt >= 0 ? "+" : ""}${(t.pnl_usdt ?? 0).toFixed(2)}
+                <Text style={{ color: tr.pnl_usdt >= 0 ? GREEN : RED, fontWeight: "800" }}>
+                  {tr.pnl_usdt >= 0 ? "+" : ""}${(tr.pnl_usdt ?? 0).toFixed(2)}
                 </Text>
               </View>
             ))}
@@ -320,6 +319,7 @@ function ConnectExchangeModal({ visible, onClose, exchange, colors, onSaved, dev
   visible: boolean; onClose: () => void; exchange: ExchangeId; colors: any;
   onSaved: () => void; deviceId: string;
 }) {
+  const { t } = useI18n();
   const [k, setK] = useState(""); const [s2, setS2] = useState(""); const [p, setP] = useState("");
   const [network, setNetwork] = useState<"testnet" | "mainnet">("testnet");
   const [mainnetAck, setMainnetAck] = useState(false);
@@ -342,13 +342,10 @@ function ConnectExchangeModal({ visible, onClose, exchange, colors, onSaved, dev
   };
 
   const save = async () => {
-    if (!k || !s2) return Alert.alert("Lengkapi", "API Key & Secret wajib diisi.");
-    if (ex.needsPass && !p) return Alert.alert("Lengkapi", `${ex.label} butuh passphrase.`);
+    if (!k || !s2) return Alert.alert(t("asi_alert_fill_title"), t("asi_alert_fill_body"));
+    if (ex.needsPass && !p) return Alert.alert(t("asi_alert_fill_title"), t("asi_alert_pass_body").replace("{ex}", ex.label));
     if (isMainnet && !mainnetAck) {
-      return Alert.alert(
-        "Konfirmasi Mainnet",
-        "Anda akan menghubungkan akun UANG NYATA. Pastikan API key TIDAK memiliki izin Withdraw. Centang persetujuan dulu.",
-      );
+      return Alert.alert(t("asi_alert_mainnet_title"), t("asi_alert_mainnet_body"));
     }
     setLoading(true);
     try {
@@ -358,7 +355,7 @@ function ConnectExchangeModal({ visible, onClose, exchange, colors, onSaved, dev
       });
       setK(""); setS2(""); setP(""); setMainnetAck(false); onSaved();
     } catch (e: any) {
-      Alert.alert("Gagal", e?.message || String(e));
+      Alert.alert(t("asi_alert_fail_title"), e?.message || String(e));
     } finally { setLoading(false); }
   };
 
@@ -367,9 +364,9 @@ function ConnectExchangeModal({ visible, onClose, exchange, colors, onSaved, dev
       <Pressable style={m.backdrop} onPress={onClose}>
         <Pressable style={[m.sheet, { backgroundColor: colors.surface }]} onPress={(e) => e.stopPropagation()}>
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
-            <Text style={[m.title, { color: colors.textPrimary }]}>Hubungkan {ex.label}</Text>
+            <Text style={[m.title, { color: colors.textPrimary }]}>{t("asi_connect_title").replace("{ex}", ex.label)}</Text>
             <Text style={[m.sub, { color: colors.textMuted }]}>
-              Masukkan API Key & Secret ANDA sendiri. Dana tetap 100% aman di akun exchange Anda (non-custodial).
+              {t("asi_connect_sub")}
             </Text>
 
             {/* Network selector: TESTNET / MAINNET */}
@@ -397,7 +394,7 @@ function ConnectExchangeModal({ visible, onClose, exchange, colors, onSaved, dev
                       color: active ? (isM ? "#FFE5E5" : "rgba(255,255,255,0.85)") : colors.textMuted,
                       fontSize: 10, marginTop: 2,
                     }}>
-                      {isM ? "Uang nyata" : "Uji coba gratis"}
+                      {isM ? t("asi_net_mainnet_sub") : t("asi_net_testnet_sub")}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -409,17 +406,17 @@ function ConnectExchangeModal({ visible, onClose, exchange, colors, onSaved, dev
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                 <Ionicons name="shield-checkmark" size={16} color={GOLD} />
                 <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 12 }}>
-                  IP Whitelist Server (Wajib di Binance)
+                  {t("asi_ip_title")}
                 </Text>
               </View>
               <Text style={{ color: colors.textMuted, fontSize: 11, lineHeight: 16 }}>
-                Binance mewajibkan pembatasan IP untuk API key berizin Futures:
+                {t("asi_ip_sub")}
               </Text>
 
               {/* IP Copy Box */}
               <View style={[m.ipRow, { backgroundColor: colors.surface, borderColor: GOLD }]}>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ color: colors.textMuted, fontSize: 9.5, fontWeight: "700" }}>IP STATIS SERVER ASI-BOT</Text>
+                  <Text style={{ color: colors.textMuted, fontSize: 9.5, fontWeight: "700" }}>{t("asi_ip_label")}</Text>
                   <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 13, fontFamily: Platform.OS === "ios" ? "Courier" : "monospace", letterSpacing: 0.5 }}>
                     {serverIp}
                   </Text>
@@ -427,24 +424,16 @@ function ConnectExchangeModal({ visible, onClose, exchange, colors, onSaved, dev
                 <TouchableOpacity onPress={copyIp} style={[m.copyBtn, { backgroundColor: copied ? GREEN : GOLD }]}>
                   <Ionicons name={copied ? "checkmark" : "copy-outline"} size={14} color={ACCENT_TEXT} />
                   <Text style={{ color: ACCENT_TEXT, fontWeight: "900", fontSize: 11 }}>
-                    {copied ? "Tersalin!" : "Salin IP"}
+                    {copied ? t("asi_ip_copied") : t("asi_ip_copy")}
                   </Text>
                 </TouchableOpacity>
               </View>
 
               <View style={{ gap: 3, marginTop: 4 }}>
-                <Text style={{ color: colors.textMuted, fontSize: 10.5, lineHeight: 15 }}>
-                  1️⃣ Centang <Text style={{ color: colors.textPrimary, fontWeight: "800" }}>Enable Futures</Text>
-                </Text>
-                <Text style={{ color: colors.textMuted, fontSize: 10.5, lineHeight: 15 }}>
-                  2️⃣ <Text style={{ color: RED, fontWeight: "800" }}>JANGAN</Text> centang <Text style={{ color: colors.textPrimary, fontWeight: "800" }}>Enable Withdrawals</Text>
-                </Text>
-                <Text style={{ color: colors.textMuted, fontSize: 10.5, lineHeight: 15 }}>
-                  3️⃣ Pilih <Text style={{ color: colors.textPrimary, fontWeight: "800" }}>Restrict access to trusted IPs only</Text>
-                </Text>
-                <Text style={{ color: colors.textMuted, fontSize: 10.5, lineHeight: 15 }}>
-                  4️⃣ Paste IP di atas ke kotak Binance lalu klik <Text style={{ color: colors.textPrimary, fontWeight: "800" }}>Confirm</Text>
-                </Text>
+                <Text style={{ color: colors.textMuted, fontSize: 10.5, lineHeight: 15 }}>{t("asi_ip_step1")}</Text>
+                <Text style={{ color: colors.textMuted, fontSize: 10.5, lineHeight: 15 }}>{t("asi_ip_step2")}</Text>
+                <Text style={{ color: colors.textMuted, fontSize: 10.5, lineHeight: 15 }}>{t("asi_ip_step3")}</Text>
+                <Text style={{ color: colors.textMuted, fontSize: 10.5, lineHeight: 15 }}>{t("asi_ip_step4")}</Text>
               </View>
             </View>
 
@@ -466,8 +455,7 @@ function ConnectExchangeModal({ visible, onClose, exchange, colors, onSaved, dev
                   {mainnetAck ? <Ionicons name="checkmark" size={14} color="#fff" /> : null}
                 </View>
                 <Text style={{ color: colors.textPrimary, fontSize: 11.5, flex: 1, lineHeight: 16 }}>
-                  Saya paham ini akun <Text style={{ fontWeight: "900" }}>UANG NYATA</Text> dan API key saya
-                  TANPA izin penarikan (withdraw). Risiko 100% tanggung jawab saya.
+                  {t("asi_mainnet_ack")}
                 </Text>
               </Pressable>
             ) : null}
@@ -475,11 +463,11 @@ function ConnectExchangeModal({ visible, onClose, exchange, colors, onSaved, dev
             <TouchableOpacity onPress={save} disabled={loading || (isMainnet && !mainnetAck)}
                               style={[m.save, { backgroundColor: loading ? colors.textMuted : (isMainnet ? RED : GOLD) }]}>
               <Text style={{ color: isMainnet ? "#fff" : ACCENT_TEXT, fontWeight: "900", letterSpacing: 0.6 }}>
-                {loading ? "MEMVERIFIKASI..." : isMainnet ? "SIMPAN KE MAINNET" : "SIMPAN KE TESTNET"}
+                {loading ? t("asi_verifying") : isMainnet ? t("asi_save_mainnet") : t("asi_save_testnet")}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={onClose} style={{ padding: 8, alignItems: "center" }}>
-              <Text style={{ color: colors.textMuted }}>Batal</Text>
+              <Text style={{ color: colors.textMuted }}>{t("common_cancel")}</Text>
             </TouchableOpacity>
           </ScrollView>
         </Pressable>
