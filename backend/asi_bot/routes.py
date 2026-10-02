@@ -75,6 +75,11 @@ class BotConfigPayload(BaseModel):
     profile: Literal["confluence", "scalper", "day", "swing"] | None = None
     # v9.4.0 — Minimum confidence required to auto-execute (0-100).
     min_confidence: int = Field(75, ge=50, le=100)
+    # v9.4.1 — Daily loss limit (USDT, absolute). 0 = disabled.
+    daily_loss_limit_usdt: float = Field(0.0, ge=0.0, le=100_000.0)
+    # Set to null to CLEAR previous auto-disable (when user re-enables manually).
+    auto_disabled_reason: str | None = None
+    auto_disabled_at: str | None = None
 
 
 def register(app_api: APIRouter, db: Any) -> None:

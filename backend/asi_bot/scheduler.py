@@ -163,6 +163,61 @@ async def _trades_today_count(db: Any, device_id: str) -> int:
     )
 
 
+async def _realized_pnl_today(db: Any, device_id: str) -> float:
+    """Sum of pnl_usdt for CLOSED trades in the last 24h (realized loss/gain)."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    pipeline = [
+        {"$match": {
+            "device_id": device_id, "status": "closed",
+            "closed_at": {"$gte": cutoff},
+        }},
+        {"$group": {"_id": None, "pnl": {"$sum": "$pnl_usdt"}}},
+    ]
+    agg = await db.asi_trades.aggregate(pipeline).to_list(1)
+    return float((agg[0] if agg else {}).get("pnl") or 0.0)
+
+
+async def _enforce_daily_loss_limit(db: Any) -> None:
+    """v9.4.1 — Auto-disable any bot whose realized loss today ≤ -limit.
+
+    Writes `enabled=False` + `auto_disabled_reason` + `auto_disabled_at`
+    so the UI can show WHY the bot stopped. Users must manually re-enable.
+    """
+    cursor = db.asi_bot_config.find({
+        "enabled": True,
+        "daily_loss_limit_usdt": {"$gt": 0},
+    })
+    async for cfg in cursor:
+        try:
+            device_id = cfg.get("device_id") or cfg.get("_id")
+            if not device_id:
+                continue
+            limit = float(cfg.get("daily_loss_limit_usdt") or 0.0)
+            if limit <= 0:
+                continue
+            realized = await _realized_pnl_today(db, device_id)
+            if realized <= -limit:
+                now = datetime.now(timezone.utc).isoformat()
+                await db.asi_bot_config.update_one(
+                    {"_id": cfg["_id"]},
+                    {"$set": {
+                        "enabled": False,
+                        "auto_disabled_reason": (
+                            f"Daily loss limit reached: "
+                            f"${realized:.2f} ≤ -${limit:.2f}"
+                        ),
+                        "auto_disabled_at": now,
+                        "updated_at": now,
+                    }},
+                )
+                logger.warning(
+                    "Bot auto-disabled for %s: realized=%.2f limit=%.2f",
+                    device_id, realized, limit,
+                )
+        except Exception as e:  # noqa: BLE001
+            logger.debug("daily loss check %s: %s", cfg.get("_id"), e)
+
+
 async def _run_full_auto_scanner(
     db: Any,
     signal_fetcher: Callable[[str, str], Awaitable[dict[str, Any] | None]],
@@ -288,6 +343,8 @@ class ASIScheduler:
         while self._running:
             try:
                 await _refresh_open_pnl(self.db)
+                # v9.4.1 — After refreshing PnL, enforce daily loss limits.
+                await _enforce_daily_loss_limit(self.db)
             except Exception as e:  # noqa: BLE001
                 logger.exception("pnl loop crash: %s", e)
             await asyncio.sleep(60)  # unrealized PnL every 60s

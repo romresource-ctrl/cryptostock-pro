@@ -480,6 +480,10 @@ export type AsiBotConfig = {
   leverage: number;
   whitelist: string[];
   profile?: "confluence" | "scalper" | "day" | "swing" | null;
+  min_confidence?: number;
+  daily_loss_limit_usdt?: number;
+  auto_disabled_reason?: string | null;
+  auto_disabled_at?: string | null;
 };
 
 export const TIMEFRAMES: Timeframe[] = ["1m", "3m", "5m", "15m", "30m", "1h", "3h", "6h", "12h", "18h", "24h", "7d", "14d", "30d"];

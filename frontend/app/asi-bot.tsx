@@ -11,9 +11,10 @@ import {
   type AsiPnl, type AsiTradeResp,
 } from "@/src/lib/api";
 
-const GOLD = "#F0B90B";
+const GOLD = "#4ADE80"; // v9.4.1 — primary ASI-Bot accent (hijau muda)
 const GREEN = "#22C55E";
 const RED = "#EF4444";
+const ACCENT_TEXT = "#FFFFFF"; // teks di atas tombol primary
 
 type ExchangeId = "binance" | "bybit" | "okx" | "bitget";
 const EXCHANGES: { id: ExchangeId; label: string; needsPass: boolean }[] = [
@@ -32,6 +33,7 @@ export default function ASIBotScreen() {
   const [bot, setBot] = useState<AsiBotConfig>({
     enabled: false, exchange: "binance", mode: "semi",
     max_trades_per_day: 5, risk_pct: 5, leverage: 10, whitelist: [], profile: "confluence",
+    min_confidence: 75, daily_loss_limit_usdt: 0,
   });
   const [pnl, setPnl] = useState<AsiPnl | null>(null);
   const [trades, setTrades] = useState<AsiTradeResp[]>([]);
@@ -76,7 +78,10 @@ export default function ASIBotScreen() {
       );
       return;
     }
-    await saveBot({ enabled: val });
+    // v9.4.1 — Clear auto-disabled flags when user manually re-enables.
+    await saveBot(val
+      ? { enabled: true, auto_disabled_reason: null, auto_disabled_at: null }
+      : { enabled: false });
   };
 
   return (
@@ -148,10 +153,10 @@ export default function ASIBotScreen() {
                 testID={`asi-mode-${m}`}
               >
                 <Text style={{ fontSize: 20 }}>{m === "semi" ? "🖐️" : "🤖"}</Text>
-                <Text style={[s.modeTitle, { color: active ? "#0B0E11" : colors.textPrimary }]}>
+                <Text style={[s.modeTitle, { color: active ? ACCENT_TEXT : colors.textPrimary }]}>
                   {m === "semi" ? "Semi-Auto" : "Full-Auto"}
                 </Text>
-                <Text style={[s.modeSub, { color: active ? "#0B0E11" : colors.textMuted }]}>
+                <Text style={[s.modeSub, { color: active ? ACCENT_TEXT : colors.textMuted }]}>
                   {m === "semi" ? "Preview & konfirmasi tiap trade" : "Eksekusi otomatis tanpa konfirmasi"}
                 </Text>
               </TouchableOpacity>
@@ -175,6 +180,24 @@ export default function ASIBotScreen() {
                     onInc={() => saveBot({ max_trades_per_day: Math.min(50, bot.max_trades_per_day + 1) })}
                     colors={colors} testID="asi-maxtrade" />
         ) : null}
+        <ParamRow label="Limit Rugi Harian (USDT)"
+                  value={(bot.daily_loss_limit_usdt ?? 0) === 0 ? "OFF" : `$${bot.daily_loss_limit_usdt}`}
+                  onDec={() => saveBot({ daily_loss_limit_usdt: Math.max(0, (bot.daily_loss_limit_usdt ?? 0) - 10) })}
+                  onInc={() => saveBot({ daily_loss_limit_usdt: Math.min(100000, (bot.daily_loss_limit_usdt ?? 0) + 10) })}
+                  colors={colors} testID="asi-dailyloss" />
+        <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: -4, marginBottom: 8, lineHeight: 16 }}>
+          Bot otomatis mati bila kerugian realized hari ini mencapai limit. Set OFF untuk nonaktifkan.
+        </Text>
+        {bot.auto_disabled_reason ? (
+          <View style={{ padding: 10, borderRadius: 10, borderWidth: 1.5,
+                          borderColor: RED, backgroundColor: "rgba(239,68,68,0.08)",
+                          flexDirection: "row", alignItems: "flex-start", gap: 8, marginBottom: 10 }}>
+            <Ionicons name="shield-checkmark" size={18} color={RED} />
+            <Text style={{ color: colors.textPrimary, fontSize: 11.5, flex: 1, lineHeight: 16 }}>
+              <Text style={{ fontWeight: "900" }}>Bot auto-mati:</Text> {bot.auto_disabled_reason}
+            </Text>
+          </View>
+        ) : null}
 
         {/* Disclaimer */}
         <SectionHeader title="Disclaimer Wajib" />
@@ -191,7 +214,7 @@ export default function ASIBotScreen() {
             testID="asi-disc"
           >
             <View style={[s.checkbox, { borderColor: GOLD, backgroundColor: disclaimerAck ? GOLD : "transparent" }]}>
-              {disclaimerAck ? <Ionicons name="checkmark" size={14} color="#0B0E11" /> : null}
+              {disclaimerAck ? <Ionicons name="checkmark" size={14} color={ACCENT_TEXT} /> : null}
             </View>
             <Text style={{ color: colors.textPrimary, fontWeight: "700", fontSize: 12.5 }}>
               Saya mengerti & menerima semua risiko di atas
@@ -349,13 +372,13 @@ function ConnectExchangeModal({ visible, onClose, exchange, colors, onSaved, dev
                   }]}
                 >
                   <Text style={{
-                    color: active ? (isM ? "#fff" : "#0B0E11") : colors.textPrimary,
+                    color: active ? (isM ? "#fff" : ACCENT_TEXT) : colors.textPrimary,
                     fontWeight: "900", fontSize: 12, letterSpacing: 0.8,
                   }}>
                     {isM ? "🔴 MAINNET" : "🧪 TESTNET"}
                   </Text>
                   <Text style={{
-                    color: active ? (isM ? "#FFE5E5" : "#0B0E11") : colors.textMuted,
+                    color: active ? (isM ? "#FFE5E5" : "rgba(255,255,255,0.85)") : colors.textMuted,
                     fontSize: 10, marginTop: 2,
                   }}>
                     {isM ? "Uang nyata" : "Uji coba gratis"}
@@ -391,7 +414,7 @@ function ConnectExchangeModal({ visible, onClose, exchange, colors, onSaved, dev
 
           <TouchableOpacity onPress={save} disabled={loading || (isMainnet && !mainnetAck)}
                             style={[m.save, { backgroundColor: loading ? colors.textMuted : (isMainnet ? RED : GOLD) }]}>
-            <Text style={{ color: isMainnet ? "#fff" : "#0B0E11", fontWeight: "900", letterSpacing: 0.6 }}>
+            <Text style={{ color: isMainnet ? "#fff" : ACCENT_TEXT, fontWeight: "900", letterSpacing: 0.6 }}>
               {loading ? "MEMVERIFIKASI..." : isMainnet ? "SIMPAN KE MAINNET" : "SIMPAN KE TESTNET"}
             </Text>
           </TouchableOpacity>
