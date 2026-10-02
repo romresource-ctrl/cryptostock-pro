@@ -409,6 +409,7 @@ export const api = {
       send<{ ok: boolean } & AsiBotConfig>(
         `/asi/bot?device_id=${encodeURIComponent(deviceId)}`, "POST", body,
       ),
+    serverIp: () => get<{ ip: string; instructions: string }>("/asi/server-ip"),
   },
 };
 

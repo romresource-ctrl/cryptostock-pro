@@ -3,6 +3,7 @@ import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
 
 import { useTheme } from "@/src/theme/ThemeContext";
 import { getDeviceId } from "@/src/lib/deviceId";
@@ -323,8 +324,22 @@ function ConnectExchangeModal({ visible, onClose, exchange, colors, onSaved, dev
   const [network, setNetwork] = useState<"testnet" | "mainnet">("testnet");
   const [mainnetAck, setMainnetAck] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [serverIp, setServerIp] = useState("35.193.209.116");
+  const [copied, setCopied] = useState(false);
   const ex = useMemo(() => EXCHANGES.find((e) => e.id === exchange)!, [exchange]);
   const isMainnet = network === "mainnet";
+
+  useEffect(() => {
+    if (visible) {
+      api.asi.serverIp().then((r) => { if (r?.ip) setServerIp(r.ip); }).catch(() => {});
+    }
+  }, [visible]);
+
+  const copyIp = async () => {
+    await Clipboard.setStringAsync(serverIp);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
 
   const save = async () => {
     if (!k || !s2) return Alert.alert("Lengkapi", "API Key & Secret wajib diisi.");
@@ -351,76 +366,122 @@ function ConnectExchangeModal({ visible, onClose, exchange, colors, onSaved, dev
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={m.backdrop} onPress={onClose}>
         <Pressable style={[m.sheet, { backgroundColor: colors.surface }]} onPress={(e) => e.stopPropagation()}>
-          <Text style={[m.title, { color: colors.textPrimary }]}>Hubungkan {ex.label}</Text>
-          <Text style={[m.sub, { color: colors.textMuted }]}>
-            Masukkan API Key & Secret ANDA sendiri. Buat di dashboard {ex.label}, HANYA centang {`"Enable Futures"`}. JANGAN centang {`"Enable Withdrawals"`}.
-          </Text>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
+            <Text style={[m.title, { color: colors.textPrimary }]}>Hubungkan {ex.label}</Text>
+            <Text style={[m.sub, { color: colors.textMuted }]}>
+              Masukkan API Key & Secret ANDA sendiri. Dana tetap 100% aman di akun exchange Anda (non-custodial).
+            </Text>
 
-          {/* Network selector: TESTNET / MAINNET */}
-          <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
-            {(["testnet", "mainnet"] as const).map((n) => {
-              const active = network === n;
-              const isM = n === "mainnet";
-              return (
-                <TouchableOpacity
-                  key={n}
-                  onPress={() => setNetwork(n)}
-                  style={[m.netChip, {
-                    flex: 1,
-                    backgroundColor: active ? (isM ? RED : GOLD) : colors.background,
-                    borderColor: active ? (isM ? RED : GOLD) : colors.border,
-                  }]}
-                >
-                  <Text style={{
-                    color: active ? (isM ? "#fff" : ACCENT_TEXT) : colors.textPrimary,
-                    fontWeight: "900", fontSize: 12, letterSpacing: 0.8,
-                  }}>
-                    {isM ? "🔴 MAINNET" : "🧪 TESTNET"}
+            {/* Network selector: TESTNET / MAINNET */}
+            <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
+              {(["testnet", "mainnet"] as const).map((n) => {
+                const active = network === n;
+                const isM = n === "mainnet";
+                return (
+                  <TouchableOpacity
+                    key={n}
+                    onPress={() => setNetwork(n)}
+                    style={[m.netChip, {
+                      flex: 1,
+                      backgroundColor: active ? (isM ? RED : GOLD) : colors.background,
+                      borderColor: active ? (isM ? RED : GOLD) : colors.border,
+                    }]}
+                  >
+                    <Text style={{
+                      color: active ? (isM ? "#fff" : ACCENT_TEXT) : colors.textPrimary,
+                      fontWeight: "900", fontSize: 12, letterSpacing: 0.8,
+                    }}>
+                      {isM ? "🔴 MAINNET" : "🧪 TESTNET"}
+                    </Text>
+                    <Text style={{
+                      color: active ? (isM ? "#FFE5E5" : "rgba(255,255,255,0.85)") : colors.textMuted,
+                      fontSize: 10, marginTop: 2,
+                    }}>
+                      {isM ? "Uang nyata" : "Uji coba gratis"}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* IP Whitelist guidance card (crucial for Binance & security) */}
+            <View style={[m.ipCard, { borderColor: colors.border, backgroundColor: colors.background }]}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Ionicons name="shield-checkmark" size={16} color={GOLD} />
+                <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 12 }}>
+                  IP Whitelist Server (Wajib di Binance)
+                </Text>
+              </View>
+              <Text style={{ color: colors.textMuted, fontSize: 11, lineHeight: 16 }}>
+                Binance mewajibkan pembatasan IP untuk API key berizin Futures:
+              </Text>
+
+              {/* IP Copy Box */}
+              <View style={[m.ipRow, { backgroundColor: colors.surface, borderColor: GOLD }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: colors.textMuted, fontSize: 9.5, fontWeight: "700" }}>IP STATIS SERVER ASI-BOT</Text>
+                  <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 13, fontFamily: Platform.OS === "ios" ? "Courier" : "monospace", letterSpacing: 0.5 }}>
+                    {serverIp}
                   </Text>
-                  <Text style={{
-                    color: active ? (isM ? "#FFE5E5" : "rgba(255,255,255,0.85)") : colors.textMuted,
-                    fontSize: 10, marginTop: 2,
-                  }}>
-                    {isM ? "Uang nyata" : "Uji coba gratis"}
+                </View>
+                <TouchableOpacity onPress={copyIp} style={[m.copyBtn, { backgroundColor: copied ? GREEN : GOLD }]}>
+                  <Ionicons name={copied ? "checkmark" : "copy-outline"} size={14} color={ACCENT_TEXT} />
+                  <Text style={{ color: ACCENT_TEXT, fontWeight: "900", fontSize: 11 }}>
+                    {copied ? "Tersalin!" : "Salin IP"}
                   </Text>
                 </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <TextInput value={k} onChangeText={setK} placeholder="API Key" placeholderTextColor={colors.textMuted}
-                     style={[m.input, { color: colors.textPrimary, borderColor: colors.border }]} autoCapitalize="none" />
-          <TextInput value={s2} onChangeText={setS2} placeholder="API Secret" placeholderTextColor={colors.textMuted}
-                     style={[m.input, { color: colors.textPrimary, borderColor: colors.border }]} secureTextEntry autoCapitalize="none" />
-          {ex.needsPass ? (
-            <TextInput value={p} onChangeText={setP} placeholder="Passphrase" placeholderTextColor={colors.textMuted}
-                       style={[m.input, { color: colors.textPrimary, borderColor: colors.border }]} secureTextEntry autoCapitalize="none" />
-          ) : null}
-
-          {isMainnet ? (
-            <Pressable
-              onPress={() => setMainnetAck((v) => !v)}
-              style={[m.warnBox, { borderColor: RED, backgroundColor: "rgba(239,68,68,0.08)" }]}
-            >
-              <View style={[s.checkbox, { borderColor: RED, backgroundColor: mainnetAck ? RED : "transparent" }]}>
-                {mainnetAck ? <Ionicons name="checkmark" size={14} color="#fff" /> : null}
               </View>
-              <Text style={{ color: colors.textPrimary, fontSize: 11.5, flex: 1, lineHeight: 16 }}>
-                Saya paham ini akun <Text style={{ fontWeight: "900" }}>UANG NYATA</Text> dan API key saya
-                TANPA izin penarikan (withdraw). Risiko 100% tanggung jawab saya.
-              </Text>
-            </Pressable>
-          ) : null}
 
-          <TouchableOpacity onPress={save} disabled={loading || (isMainnet && !mainnetAck)}
-                            style={[m.save, { backgroundColor: loading ? colors.textMuted : (isMainnet ? RED : GOLD) }]}>
-            <Text style={{ color: isMainnet ? "#fff" : ACCENT_TEXT, fontWeight: "900", letterSpacing: 0.6 }}>
-              {loading ? "MEMVERIFIKASI..." : isMainnet ? "SIMPAN KE MAINNET" : "SIMPAN KE TESTNET"}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={onClose} style={{ padding: 12, alignItems: "center" }}>
-            <Text style={{ color: colors.textMuted }}>Batal</Text>
-          </TouchableOpacity>
+              <View style={{ gap: 3, marginTop: 4 }}>
+                <Text style={{ color: colors.textMuted, fontSize: 10.5, lineHeight: 15 }}>
+                  1️⃣ Centang <Text style={{ color: colors.textPrimary, fontWeight: "800" }}>Enable Futures</Text>
+                </Text>
+                <Text style={{ color: colors.textMuted, fontSize: 10.5, lineHeight: 15 }}>
+                  2️⃣ <Text style={{ color: RED, fontWeight: "800" }}>JANGAN</Text> centang <Text style={{ color: colors.textPrimary, fontWeight: "800" }}>Enable Withdrawals</Text>
+                </Text>
+                <Text style={{ color: colors.textMuted, fontSize: 10.5, lineHeight: 15 }}>
+                  3️⃣ Pilih <Text style={{ color: colors.textPrimary, fontWeight: "800" }}>Restrict access to trusted IPs only</Text>
+                </Text>
+                <Text style={{ color: colors.textMuted, fontSize: 10.5, lineHeight: 15 }}>
+                  4️⃣ Paste IP di atas ke kotak Binance lalu klik <Text style={{ color: colors.textPrimary, fontWeight: "800" }}>Confirm</Text>
+                </Text>
+              </View>
+            </View>
+
+            <TextInput value={k} onChangeText={setK} placeholder="API Key" placeholderTextColor={colors.textMuted}
+                       style={[m.input, { color: colors.textPrimary, borderColor: colors.border }]} autoCapitalize="none" />
+            <TextInput value={s2} onChangeText={setS2} placeholder="API Secret" placeholderTextColor={colors.textMuted}
+                       style={[m.input, { color: colors.textPrimary, borderColor: colors.border }]} secureTextEntry autoCapitalize="none" />
+            {ex.needsPass ? (
+              <TextInput value={p} onChangeText={setP} placeholder="Passphrase" placeholderTextColor={colors.textMuted}
+                         style={[m.input, { color: colors.textPrimary, borderColor: colors.border }]} secureTextEntry autoCapitalize="none" />
+            ) : null}
+
+            {isMainnet ? (
+              <Pressable
+                onPress={() => setMainnetAck((v) => !v)}
+                style={[m.warnBox, { borderColor: RED, backgroundColor: "rgba(239,68,68,0.08)" }]}
+              >
+                <View style={[s.checkbox, { borderColor: RED, backgroundColor: mainnetAck ? RED : "transparent" }]}>
+                  {mainnetAck ? <Ionicons name="checkmark" size={14} color="#fff" /> : null}
+                </View>
+                <Text style={{ color: colors.textPrimary, fontSize: 11.5, flex: 1, lineHeight: 16 }}>
+                  Saya paham ini akun <Text style={{ fontWeight: "900" }}>UANG NYATA</Text> dan API key saya
+                  TANPA izin penarikan (withdraw). Risiko 100% tanggung jawab saya.
+                </Text>
+              </Pressable>
+            ) : null}
+
+            <TouchableOpacity onPress={save} disabled={loading || (isMainnet && !mainnetAck)}
+                              style={[m.save, { backgroundColor: loading ? colors.textMuted : (isMainnet ? RED : GOLD) }]}>
+              <Text style={{ color: isMainnet ? "#fff" : ACCENT_TEXT, fontWeight: "900", letterSpacing: 0.6 }}>
+                {loading ? "MEMVERIFIKASI..." : isMainnet ? "SIMPAN KE MAINNET" : "SIMPAN KE TESTNET"}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={onClose} style={{ padding: 8, alignItems: "center" }}>
+              <Text style={{ color: colors.textMuted }}>Batal</Text>
+            </TouchableOpacity>
+          </ScrollView>
         </Pressable>
       </Pressable>
     </Modal>
@@ -455,13 +516,17 @@ const s = StyleSheet.create({
 const m = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.65)", justifyContent: "flex-end" },
   sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, gap: 10,
+           maxHeight: "88%",
            paddingBottom: Platform.OS === "ios" ? 32 : 20 },
   title: { fontSize: 16, fontWeight: "900" },
   sub: { fontSize: 11.5, lineHeight: 17 },
   input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: Platform.OS === "ios" ? 12 : 8,
-           marginTop: 10 },
+           marginTop: 8 },
   save: { padding: 14, borderRadius: 12, alignItems: "center", marginTop: 10 },
   netChip: { padding: 12, borderRadius: 12, borderWidth: 1.5, alignItems: "center" },
   warnBox: { flexDirection: "row", gap: 10, alignItems: "flex-start", padding: 12,
              borderRadius: 10, borderWidth: 1.5, marginTop: 10 },
+  ipCard: { padding: 12, borderRadius: 12, borderWidth: 1, gap: 6, marginTop: 4 },
+  ipRow: { flexDirection: "row", alignItems: "center", padding: 10, borderRadius: 8, borderWidth: 1, gap: 8, marginTop: 2 },
+  copyBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 6 },
 });

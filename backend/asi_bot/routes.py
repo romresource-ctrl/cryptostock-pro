@@ -164,6 +164,27 @@ async def _get_whitelist() -> dict[str, Any]:
     return {"top_100": TOP_100_FUTURES, "count": len(TOP_100_FUTURES)}
 
 
+@router.get("/server-ip")
+async def _get_server_ip() -> dict[str, Any]:
+    """v9.4.2 — Return server egress public IP for Binance IP Whitelisting."""
+    import httpx
+    ip = "35.193.209.116"
+    try:
+        async with httpx.AsyncClient(timeout=4.0) as client:
+            r = await client.get("https://api.ipify.org?format=json")
+            if r.status_code == 200:
+                ip = r.json().get("ip", ip)
+    except Exception:
+        pass
+    return {
+        "ip": ip,
+        "instructions": (
+            "Masukkan IP ini ke 'Restrict access to trusted IPs only' "
+            "di menu API Management Binance/exchange Anda."
+        ),
+    }
+
+
 def _attach_trade_routes(db: Any) -> None:
     @router.post("/trades/preview")
     async def preview(payload: TradePayload, device_id: str = Query(..., min_length=4)):

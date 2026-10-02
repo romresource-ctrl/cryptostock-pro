@@ -6,6 +6,7 @@ reject any API key that has withdrawal permission enabled.
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import Any, Literal
 
 import ccxt
@@ -39,6 +40,9 @@ def _build(ex_id: ExchangeId, api_key: str, api_secret: str,
     # Portfolio Margin "conditional" endpoint which returns -4120.
     if ex_id == "binance":
         config["options"]["portfolioMargin"] = False
+    proxy = os.environ.get("ASI_PROXY_URL") or os.environ.get("HTTPS_PROXY")
+    if proxy:
+        config["httpsProxy"] = proxy
     if password:
         config["password"] = password  # OKX passphrase, Bitget passphrase
     client = cls(config)
