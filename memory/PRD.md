@@ -568,3 +568,17 @@ Fase berikutnya (BELUM):
 - `_split_tp_qty` di-generalisasi menerima `n_targets=1|2|3`, memakai
   perhitungan integer step-units supaya hasil step-aligned & sum = qty.
 - Version bump 9.5.0 → 9.6.0.
+
+
+## v9.6.1 — Full-Auto Hormati Profil Strategi (Okt 2026)
+- Gap ditemukan: scheduler Full-Auto memanggil pipeline sinyal TANPA profil
+  → selalu Confluence meski user simpan profile scalper/day/swing.
+- Fix: scheduler meneruskan cfg.profile → _asi_signal_fetcher(market, symbol, profile)
+  → _build_dashboard_response(profile=...). Sekarang:
+  scalper=VWAP-SCALPER (+Pattern Scalp 15M bila TF≤15m), day=VWAP-INTRADAY,
+  swing=VWAP-SWING, confluence/None=mesin default.
+- Mesin VWAP mencakup: VWAP Core session, Box Theory breakout (10/20/50),
+  KISS Pivot reclaim/rejection, John Wick, Power of Tower, volume-expansion gate.
+- User TIDAK minta chip profil tambahan di halaman ASI-Bot (pakai yang tersimpan).
+- Timeframe fetch tetap 1h (konsisten dashboard). Catatan: Pattern Scalp 15M
+  hanya aktif bila TF≤15m — di Full-Auto 1h, scalper memakai VWAP+Box+KISS saja.
