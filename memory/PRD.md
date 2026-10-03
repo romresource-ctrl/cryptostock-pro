@@ -601,3 +601,15 @@ Fase berikutnya (BELUM):
 - Tidak ada blocker kode → kemungkinan kegagalan transient sisi build infra.
 - Versi di-bump 9.6.2 → 9.6.3 untuk build ulang.
 - Saran ke user: Re-publish changes → generate Android build lagi.
+
+
+## v9.6.4 — Premium Gate ASI-Bot & Copy Trade (Okt 2026)
+- Kedua halaman dikunci untuk member premium via usePremiumAccess()
+  (isPremium Google Play Billing ATAU isUnlocked kode admin).
+- Komponen bersama baru: src/components/PremiumLocked.tsx (lock icon,
+  judul, body per-halaman, CTA → dashboard). i18n 4 bahasa.
+- __DEV__ bypass: di web preview halaman tetap terbuka (by design,
+  sama seperti News/Chat) — di APK produksi non-premium melihat
+  layar terkunci.
+- Catatan: gate saat ini UI-side (mengikuti pola app). Endpoint /api/asi/*
+  belum 403-gated per-device; pertimbangkan hardening backend bila perlu.
