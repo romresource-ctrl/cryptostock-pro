@@ -14,6 +14,7 @@ import {
 } from "@/src/lib/api";
 
 const GOLD = "#4ADE80"; // v9.4.1 — primary ASI-Bot accent (hijau muda)
+const ORANGE = "#F97316"; // v9.6.3 — Full-Auto active accent
 const GREEN = "#22C55E";
 const RED = "#EF4444";
 const ACCENT_TEXT = "#FFFFFF"; // teks di atas tombol primary
@@ -149,14 +150,15 @@ export default function ASIBotScreen() {
         <View style={{ flexDirection: "row", gap: 10 }}>
           {(["semi", "full"] as const).map((m) => {
             const active = bot.mode === m;
+            const accent = m === "full" ? ORANGE : GOLD;
             return (
               <TouchableOpacity
                 key={m}
                 onPress={() => saveBot({ mode: m })}
-                style={[s.modeChip, { borderColor: active ? GOLD : colors.border, backgroundColor: active ? GOLD : colors.surface }]}
+                style={[s.modeChip, { borderColor: active ? accent : colors.border, backgroundColor: active ? accent : colors.surface }]}
                 testID={`asi-mode-${m}`}
               >
-                <Text style={{ fontSize: 20 }}>{m === "semi" ? "🖐️" : "🤖"}</Text>
+                <Text style={{ fontSize: 20 }}>{m === "semi" ? "🦾" : "🤖"}</Text>
                 <Text style={[s.modeTitle, { color: active ? ACCENT_TEXT : colors.textPrimary }]}>
                   {m === "semi" ? "Semi-Auto" : "Full-Auto"}
                 </Text>
