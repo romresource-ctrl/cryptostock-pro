@@ -693,6 +693,22 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   copy_entry_line: { id: "Entry ${price} · dibuka {ago}", en: "Entry ${price} · opened {ago}", ru: "Вход ${price} · открыта {ago}", cn: "入场 ${price} · {ago}开仓" },
   copy_execute: { id: "EXECUTE", en: "EXECUTE", ru: "EXECUTE", cn: "EXECUTE" },
   copy_footer: { id: "Daftar refresh tiap 15 detik · trader hilang otomatis saat posisi mereka ditutup.", en: "List refreshes every 15 seconds · traders auto-removed when their positions close.", ru: "Обновление каждые 15 секунд · трейдеры исчезают при закрытии позиций.", cn: "列表每 15 秒刷新 · 交易者平仓后自动移除。" },
+
+  // v9.6.4 — Premium gate (ASI-Bot & Copy Trade)
+  premium_locked_title: { id: "Fitur Khusus Premium", en: "Premium Members Only", ru: "Только для Premium", cn: "仅限高级会员" },
+  premium_locked_asi_body: {
+    id: "ASI-Bot auto-trading hanya tersedia untuk member premium. Upgrade untuk menghubungkan exchange Anda dan mulai trading otomatis dengan SL/TP native.",
+    en: "ASI-Bot auto-trading is available for premium members only. Upgrade to connect your exchange and start automated trading with native SL/TP.",
+    ru: "ASI-Bot автоторговля доступна только Premium-участникам. Обновите, чтобы подключить биржу и торговать автоматически с нативным SL/TP.",
+    cn: "ASI-Bot 自动交易仅限高级会员使用。升级以连接您的交易所并开始自动交易（含原生止损/止盈）。",
+  },
+  premium_locked_copy_body: {
+    id: "Copy Trade live leaderboard hanya tersedia untuk member premium. Upgrade untuk memantau dan menyalin posisi top trader secara real-time.",
+    en: "Copy Trade live leaderboard is available for premium members only. Upgrade to watch and copy top traders' positions in real-time.",
+    ru: "Live-таблица Copy Trade доступна только Premium-участникам. Обновите, чтобы следить и копировать позиции топ-трейдеров в реальном времени.",
+    cn: "Copy Trade 实时排行榜仅限高级会员使用。升级以实时查看并复制顶级交易者的持仓。",
+  },
+  premium_locked_cta: { id: "UPGRADE KE PREMIUM", en: "UPGRADE TO PREMIUM", ru: "ОБНОВИТЬ ДО PREMIUM", cn: "升级到高级版" },
 };
 
 type StringEntry = { id: string; en: string; ru: string; cn: string };

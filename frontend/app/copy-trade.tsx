@@ -6,6 +6,8 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { useTheme } from "@/src/theme/ThemeContext";
 import { useI18n } from "@/src/i18n/I18nContext";
+import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
+import PremiumLocked from "@/src/components/PremiumLocked";
 import { api, type AsiLiveRow } from "@/src/lib/api";
 
 const GOLD = "#F0B90B";
@@ -23,6 +25,7 @@ export default function CopyTradeScreen() {
   const [leader, setLeader] = useState<AsiLiveRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const { hasAccess, loaded: accessLoaded } = usePremiumAccess();
 
   const load = useCallback(async () => {
     try {
@@ -59,6 +62,26 @@ export default function CopyTradeScreen() {
     if (d < 86400) return `${Math.floor(d / 3600)}${t("news_time_hour_short")}${gap}${t("news_time_ago")}`;
     return `${Math.floor(d / 86400)}${t("news_time_day_short")}${gap}${t("news_time_ago")}`;
   };
+
+  // v9.6.4 — Premium gate: halaman ini khusus member premium.
+  if (accessLoaded && !hasAccess) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
+        <View style={s.header}>
+          <TouchableOpacity onPress={() => router.back()} testID="copy-back" hitSlop={10}>
+            <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={[s.title, { color: colors.textPrimary }]}>🏆 Copy Trade · LIVE</Text>
+            <Text style={[s.sub, { color: colors.textMuted }]}>
+              {t("copy_sub")}
+            </Text>
+          </View>
+        </View>
+        <PremiumLocked bodyKey="premium_locked_copy_body" />
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>

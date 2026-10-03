@@ -7,6 +7,8 @@ import * as Clipboard from "expo-clipboard";
 
 import { useTheme } from "@/src/theme/ThemeContext";
 import { useI18n } from "@/src/i18n/I18nContext";
+import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
+import PremiumLocked from "@/src/components/PremiumLocked";
 import { getDeviceId } from "@/src/lib/deviceId";
 import {
   api, type AsiBotConfig, type AsiCredential,
@@ -32,6 +34,7 @@ export default function ASIBotScreen() {
   const { colors } = useTheme();
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
+  const { hasAccess, loaded: accessLoaded } = usePremiumAccess();
   const [deviceId, setDeviceId] = useState<string>("");
   const [creds, setCreds] = useState<AsiCredential[]>([]);
   const [bot, setBot] = useState<AsiBotConfig>({
@@ -68,6 +71,27 @@ export default function ASIBotScreen() {
 
   const activeCred = creds.find((c) => c.exchange === bot.exchange);
   const canUseBot = !!activeCred && disclaimerAck;
+
+  // v9.6.4 — Premium gate: halaman ini khusus member premium.
+  // (__DEV__ bypass membuat web preview tetap bisa diakses untuk testing.)
+  if (accessLoaded && !hasAccess) {
+    return (
+      <View style={[s.root, { backgroundColor: colors.background, paddingTop: insets.top }]}>
+        <View style={s.header}>
+          <TouchableOpacity onPress={() => router.back()} testID="asi-back" hitSlop={10}>
+            <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={[s.title, { color: colors.textPrimary }]}>🤖 ASI-Bot</Text>
+            <Text style={[s.sub, { color: colors.textMuted }]}>
+              Artificial Super Intelligence · Auto-Trade Futures
+            </Text>
+          </View>
+        </View>
+        <PremiumLocked bodyKey="premium_locked_asi_body" />
+      </View>
+    );
+  }
 
   const saveBot = async (next: Partial<AsiBotConfig>) => {
     const merged = { ...bot, ...next };
