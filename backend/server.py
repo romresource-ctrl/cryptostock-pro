@@ -129,6 +129,12 @@ _snapshot_refresh_inflight: dict[str, bool] = {}
 _tr_cache: dict[str, tuple[float, dict]] = {}
 _tr_locks: dict[str, asyncio.Lock] = {}
 
+# v9.6.8 — Cache AI Suggestions responses per (market, timeframe, profile).
+# AI Suggestions must scan the FULL curated universe (full=True) → very slow
+# cold path. With a short TTL, switching profiles the 2nd+ time is instant.
+_ai_suggestions_cache: dict[str, tuple[float, dict]] = {}
+AI_SUGGESTIONS_TTL = float(os.environ.get("AI_SUGGESTIONS_TTL_SEC", "60"))
+
 
 def _cache_key_snap(market: str, symbols: list[str], timeframe: str) -> str:
     return f"{market}|{timeframe}|{','.join(symbols)}"
@@ -769,6 +775,13 @@ async def ai_suggestions(
     if not entitled:
         raise HTTPException(403, "premium_required")
 
+    # v9.6.8 — Short-TTL cache per (market, timeframe, profile) so switching
+    # profiles doesn't rescan the full universe each tap.
+    cache_key = f"{market}|{timeframe}|{profile or 'none'}|{limit}"
+    hit = _ai_suggestions_cache.get(cache_key)
+    if hit and time.time() - hit[0] < AI_SUGGESTIONS_TTL:
+        return hit[1]
+
     min_conf, min_wr = _threshold_for_market(market)
     resp = await _build_dashboard_response(
         market=market,
@@ -791,7 +804,7 @@ async def ai_suggestions(
         {"scalper": "VWAP-SCALPER", "day": "VWAP-INTRADAY", "swing": "VWAP-SWING"}.get(profile or "", "CONFLUENCE")
         if profile else "CONFLUENCE"
     )
-    return {
+    out = {
         "market": market,
         "timeframe": timeframe,
         "profile": profile,
@@ -800,6 +813,8 @@ async def ai_suggestions(
         "suggestions": [a.model_dump() for a in picks],
         "server_time": _now_iso(),
     }
+    _ai_suggestions_cache[cache_key] = (time.time(), out)
+    return out
 
 
 def _profile_to_model(p: dict) -> Profile:

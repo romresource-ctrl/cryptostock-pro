@@ -345,6 +345,27 @@ export default function Dashboard() {
   const searchHistory = useSearchHistory();
   // v8.12.57 — Trader Profile state + modal open state.
   const { profile: traderProfile, apiProfile, loaded: profileLoaded } = useTraderProfile();
+  // v9.6.8 — When trader profile changes, immediately clear old data so the
+  // skeleton re-appears while the new fetch (triggered by the useEffect
+  // below via `apiProfile` dep) is in flight. Without this, users see the
+  // old data lingering and think the switch didn't take effect.
+  const firstApiProfileRef = React.useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (!profileLoaded) return;
+    if (firstApiProfileRef.current === undefined) {
+      firstApiProfileRef.current = apiProfile;
+      return;
+    }
+    if (firstApiProfileRef.current !== apiProfile) {
+      firstApiProfileRef.current = apiProfile;
+      // Clear per-market data → skeleton shows immediately.
+      setData((prev) => {
+        const next: typeof prev = {} as any;
+        (Object.keys(prev) as Category[]).forEach((k) => { next[k] = []; });
+        return next;
+      });
+    }
+  }, [apiProfile, profileLoaded]);
   const [traderProfileOpen, setTraderProfileOpen] = useState(false);
   const [aiSugOpen, setAiSugOpen] = useState(false);
   // v8.12.38.1 — When the search input is focused AND empty AND we have
