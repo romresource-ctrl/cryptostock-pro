@@ -40,6 +40,11 @@ def _build(ex_id: ExchangeId, api_key: str, api_secret: str,
     # Portfolio Margin "conditional" endpoint which returns -4120.
     if ex_id == "binance":
         config["options"]["portfolioMargin"] = False
+        # v9.6.5 — Only load USDⓈ-M futures markets. Default CCXT also
+        # loads /sapi/v1/margin/allPairs which requires "Enable Margin"
+        # permission; API keys with only "Enable Futures" get HTTP 400
+        # here even though they are valid for futures trading.
+        config["options"]["fetchMarkets"] = ["linear"]
     proxy = os.environ.get("ASI_PROXY_URL") or os.environ.get("HTTPS_PROXY")
     if proxy:
         config["httpsProxy"] = proxy
@@ -65,14 +70,20 @@ async def validate_credentials(
     """
     client = _build(ex_id, api_key, api_secret, password, testnet)
     try:
-        try:
-            await client.load_markets()
-        except Exception as e:
-            return {"ok": False, "message": f"Tidak dapat terkoneksi ke {ex_id}: {e}"}
+        # v9.6.5 — Skip load_markets() during validation. For binanceusdm
+        # it also hits /sapi/v1/margin/allPairs which fails for API keys
+        # without "Enable Margin" permission (we only need "Enable Futures").
+        # fetch_balance alone is enough to prove auth + futures reach.
         try:
             bal = await client.fetch_balance()
         except Exception as e:
-            return {"ok": False, "message": f"API key gagal autentikasi: {e}"}
+            msg = str(e)
+            # Classify common root causes for a friendlier UI message.
+            if "-2015" in msg or "Invalid API-key" in msg:
+                return {"ok": False, "message": "API key atau secret salah, atau IP belum di-whitelist di Binance."}
+            if "451" in msg or "Restricted Location" in msg:
+                return {"ok": False, "message": "Binance menolak dari lokasi server (HTTP 451). Hubungi admin."}
+            return {"ok": False, "message": f"API key gagal autentikasi: {msg}"}
         perms = {"read": True, "trade": None, "withdraw": None}
         info = (bal or {}).get("info") or {}
         for k in ("permissions", "apiKeyPermissions", "permission"):
