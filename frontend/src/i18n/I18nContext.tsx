@@ -695,6 +695,12 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   asi_run_bot: { id: "▶ START BOT", en: "▶ START BOT", ru: "▶ ЗАПУСТИТЬ БОТА", cn: "▶ 启动机器人" },
   asi_stop_bot: { id: "■ STOP BOT", en: "■ STOP BOT", ru: "■ ОСТАНОВИТЬ", cn: "■ 停止机器人" },
   asi_running_hint: { id: "Bot aktif — memindai pasar tiap 5 menit & eksekusi otomatis saat sinyal lolos.", en: "Bot is running — scans the market every 5 minutes & auto-executes when signals qualify.", ru: "Бот работает — сканирует рынок каждые 5 минут и исполняет при подходящих сигналах.", cn: "机器人运行中——每 5 分钟扫描市场，信号合格时自动执行。" },
+  asi_running_hint_semi: {
+    id: "Bot aktif (Semi-Auto) — buka AI Suggestions, pilih sinyal, lalu konfirmasi eksekusi. Posisi terjaga SL/TP native.",
+    en: "Bot active (Semi-Auto) — open AI Suggestions, pick a signal, then confirm execution. Positions stay protected by native SL/TP.",
+    ru: "Бот активен (Semi-Auto) — откройте AI Suggestions, выберите сигнал и подтвердите исполнение. Позиции защищены нативным SL/TP.",
+    cn: "机器人已激活（半自动）——打开 AI 建议，选择信号后确认执行。持仓由原生 SL/TP 保护。",
+  },
 
   // v9.6.9 — Credential validation error codes (backend returns {code, message})
   asi_err_ip_or_key_invalid: {

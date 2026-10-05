@@ -162,7 +162,9 @@ export default function ASIBotScreen() {
             ) : null}
           </View>
           <Text style={[s.cardSub, { color: colors.textMuted }]}>
-            {bot.enabled ? t("asi_running_hint") : t("asi_status_off_sub")}
+            {bot.enabled
+              ? (bot.mode === "full" ? t("asi_running_hint") : t("asi_running_hint_semi"))
+              : t("asi_status_off_sub")}
           </Text>
           <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
             <TouchableOpacity
