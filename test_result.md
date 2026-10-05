@@ -1848,3 +1848,82 @@ metadata_v988:
   version: "9.8.8"
   test_sequence: 46
   run_ui: false
+
+# ======================================================
+# v9.9.0 — Native SL/TP fix + Cross/Isolated + Repair
+# ======================================================
+backend_v990:
+  - task: "Fix SL/TP native gagal terpasang di Binance"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/engine.py, algo.py, whitelist.py"
+    stuck_count: 0
+    priority: "critical"
+    needs_retesting: true
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          USER REPORT: posisi MANA/ARB/TURBO terbuka TANPA SL/TP sama sekali
+          (Open Orders 0), semua Cross.
+          FIXES: (1) triggerPrice kini dibulatkan ke tickSize resmi
+          (binance_symbol_filters cache 10m, 525 simbol terverifikasi via
+          proxy). (2) TP TIDAK lagi di-skip ketika SL gagal (sebelumnya
+          `if soft_bracket` membuat posisi benar-benar telanjang).
+          (3) _fmt_num di algo.py — harga/qty diformat Decimal polos,
+          tanpa notasi ilmiah. (4) set_margin_mode dipanggil sebelum
+          entry (default ISOLATED). (5) Error Binance mentah disimpan di
+          soft_bracket_reason dan disertakan di response repair.
+  - task: "POST /asi/trades/repair-brackets"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/routes.py + engine.attach_brackets"
+    stuck_count: 0
+    priority: "critical"
+    needs_retesting: true
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          attach_brackets() membaca qty posisi REAL dari exchange, lalu
+          memasang ulang SL (closePosition) + TP (split qty) dengan tick
+          rounding. Endpoint me-loop semua open trades user, update doc,
+          return per-symbol errors. Curl-verified 404 tanpa kredensial.
+  - task: "margin_mode di payload + scheduler Full-Auto"
+    implemented: true
+    working: true
+    file: "routes.py (TradePayload/BotConfigPayload), scheduler.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          TradePayload.margin_mode (default isolated) + BotConfigPayload.
+          margin_mode. Scheduler full-auto meneruskan cfg.margin_mode ke
+          execute_trade. Simpan/ambil config verified via curl.
+frontend_v990:
+  - task: "Selector Cross/Isolated di trade sheet + bot config + badge ISO/CRS"
+    implemented: true
+    working: true
+    file: "AsiTradeSheet.tsx, asi-bot.tsx, api.ts, I18nContext.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Trade sheet: chips ISOLATED (default) / CROSS di bawah leverage +
+          note SL/TP native. Default diambil dari bot config. Bot config page:
+          selector yang sama (tersimpan → dipakai Full-Auto). Recent Trades:
+          badge ISO (teal) / CRS (ungu) per row + badge ⚠️ utk soft-bracket
+          (tap = alasan Binance) + banner merah REPAIR BRACKETS. Panel sukses
+          eksekusi memperingatkan bila bracket soft. Screenshot-verified:
+          selector Margin Mode tampil di Risk Parameters.
+metadata_v990:
+  created_by: "main_agent"
+  version: "9.9.0"
+  test_sequence: 47
+  run_ui: false

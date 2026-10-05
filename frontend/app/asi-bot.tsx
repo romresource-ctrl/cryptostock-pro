@@ -24,6 +24,8 @@ const LIGHT_BLUE = "#38BDF8"; // v9.7.4 — STOP BOT button
 const GREEN = "#22C55E";
 const RED = "#EF4444";
 const ACCENT_TEXT = "#FFFFFF"; // teks di atas tombol primary
+const TEAL = "#2DD4BF"; // v9.9.0 — badge margin ISOLATED
+const PURPLE = "#A78BFA"; // v9.9.0 — badge margin CROSS
 
 type ExchangeId = "binance" | "bybit" | "okx" | "bitget";
 const EXCHANGES: { id: ExchangeId; label: string; needsPass: boolean }[] = [
@@ -302,6 +304,44 @@ export default function ASIBotScreen() {
                   onDec={() => saveBot({ leverage: Math.max(1, bot.leverage - 1) })}
                   onInc={() => saveBot({ leverage: Math.min(125, bot.leverage + 1) })}
                   colors={colors} testID="asi-lev" />
+        {/* v9.9.0 — Margin Mode selector (Cross/Isolated). Dipakai Full-Auto
+            scheduler (via bot config) DAN jadi default di trade sheet.
+            SL/TP native tetap terpasang di Binance untuk kedua mode. */}
+        <View style={{ marginBottom: 8 }}>
+          <Text style={{ color: colors.textMuted, fontSize: 11, fontWeight: "700", marginBottom: 6 }}>
+            {t("ats_margin_mode")}
+          </Text>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            {(["isolated", "cross"] as const).map((mm) => {
+              const active = (bot.margin_mode ?? "isolated") === mm;
+              const accent = bot.mode === "full" ? ORANGE : GOLD;
+              return (
+                <TouchableOpacity
+                  key={mm}
+                  onPress={() => saveBot({ margin_mode: mm })}
+                  style={{
+                    flex: 1, paddingVertical: 10, borderRadius: 10,
+                    borderWidth: 1.5,
+                    borderColor: active ? accent : colors.border,
+                    backgroundColor: active ? accent : colors.surface,
+                    alignItems: "center",
+                  }}
+                  testID={`asi-bot-margin-${mm}`}
+                >
+                  <Text style={{
+                    color: active ? ACCENT_TEXT : colors.textPrimary,
+                    fontWeight: "900", fontSize: 11.5, letterSpacing: 0.6,
+                  }}>
+                    {mm === "isolated" ? t("ats_margin_isolated") : t("ats_margin_cross")}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <Text style={{ color: colors.textMuted, fontSize: 10, lineHeight: 14, marginTop: 6 }}>
+            {t("ats_bracket_native")}
+          </Text>
+        </View>
         {/* v9.6.0 — Centang TP1/TP2/TP3 (dibawah leverage).
             v9.7.4 — warna aktif mengikuti mode: Semi-Auto=hijau, Full-Auto=orange */}
         <View style={{ flexDirection: "row", gap: 8, marginBottom: 6 }}>
@@ -428,6 +468,37 @@ export default function ASIBotScreen() {
 
         {/* Recent trades — v9.7.6: selalu tampil; SEMI/FULL badge + tombol CLOSE untuk posisi open */}
         <SectionHeader title={t("asi_sec_recent")} />
+        {/* v9.9.0 — Banner REPAIR bila ada posisi open tanpa SL/TP native
+            (bracket_type=soft). Satu tap memasang ulang bracket Binance. */}
+        {trades.some((tr) => String(tr.status).toLowerCase() === "open"
+          && (tr.bracket_type === "soft" || !tr.sl_order_id)) ? (
+          <TouchableOpacity
+            onPress={async () => {
+              try {
+                const res = await api.asi.repairBrackets(deviceId, bot.exchange);
+                const failed = (res.results || []).filter((r) => !r.ok);
+                Alert.alert(
+                  t("asi_repair_title"),
+                  failed.length === 0
+                    ? t("asi_repair_ok").replace("{n}", String(res.repaired))
+                    : failed.map((f) => `${f.symbol}: ${(f.errors || []).join(" | ")}`).join("\n"),
+                );
+                await refresh();
+              } catch (e: any) {
+                Alert.alert(t("asi_close_failed"), String(e?.message || e));
+              }
+            }}
+            style={{
+              backgroundColor: "rgba(239,68,68,0.12)", borderColor: RED, borderWidth: 1.5,
+              borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12, marginBottom: 8,
+            }}
+            testID="asi-repair-brackets"
+          >
+            <Text style={{ color: RED, fontWeight: "900", fontSize: 12, textAlign: "center" }}>
+              {t("asi_repair_cta")}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
         {trades.length === 0 ? (
           <View style={[s.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Text style={{ color: colors.textMuted, fontSize: 12, lineHeight: 18 }}>
@@ -462,6 +533,21 @@ export default function ASIBotScreen() {
                       {modeBadge === "full" ? t("asi_badge_full") : t("asi_badge_semi")}
                     </Text>
                   </View>
+                  {/* v9.9.0 — Margin mode badge (ISO / CROSS) */}
+                  {tr.margin_mode ? (
+                    <View style={{
+                      paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4,
+                      borderWidth: 1,
+                      borderColor: tr.margin_mode === "cross" ? PURPLE : TEAL,
+                    }}>
+                      <Text style={{
+                        color: tr.margin_mode === "cross" ? PURPLE : TEAL,
+                        fontWeight: "900", fontSize: 8.5, letterSpacing: 0.3,
+                      }}>
+                        {tr.margin_mode === "cross" ? "CRS" : "ISO"}
+                      </Text>
+                    </View>
+                  ) : null}
                   {/* OPEN / CLOSED badge */}
                   <View style={{
                     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
@@ -476,6 +562,18 @@ export default function ASIBotScreen() {
                         bukan BUY/SELL (permintaan user). */}
                     {tr.side === "BUY" ? "LONG" : "SHORT"}
                   </Text>
+                  {/* v9.9.0 — Peringatan bracket native hilang (soft). */}
+                  {isOpen && (tr.bracket_type === "soft" || !tr.sl_order_id) ? (
+                    <TouchableOpacity
+                      onPress={() => Alert.alert(
+                        t("asi_soft_warn_title"),
+                        tr.soft_bracket_reason || t("asi_soft_warn_body"),
+                      )}
+                      testID={`asi-soft-${tr.symbol}`}
+                    >
+                      <Text style={{ fontSize: 13 }}>⚠️</Text>
+                    </TouchableOpacity>
+                  ) : null}
                   <Text style={{ color: colors.textPrimary, fontWeight: "700" }}>{tr.symbol}</Text>
                   <View style={{ flex: 1 }} />
                   <View style={{ alignItems: "flex-end" }}>

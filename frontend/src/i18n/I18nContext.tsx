@@ -893,6 +893,36 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     cn: "已执行",
   },
   ats_try_again: { id: "Coba Lagi", en: "Try Again", ru: "Повторить", cn: "重试" },
+  // v9.9.0 — Margin mode selector + bracket repair
+  ats_margin_mode: { id: "Margin Mode", en: "Margin Mode", ru: "Режим маржи", cn: "保证金模式" },
+  ats_margin_isolated: { id: "ISOLATED", en: "ISOLATED", ru: "ИЗОЛИРОВАННАЯ", cn: "逐仓" },
+  ats_margin_cross: { id: "CROSS", en: "CROSS", ru: "КРОСС", cn: "全仓" },
+  ats_bracket_native: {
+    id: "SL/TP dipasang native di Binance — tetap bekerja walau app ditutup. Isolated: rugi terbatas margin posisi. Cross: seluruh saldo jadi jaminan.",
+    en: "SL/TP are placed natively on Binance — they keep working even if the app is closed. Isolated: loss limited to position margin. Cross: entire futures balance is collateral.",
+    ru: "SL/TP выставляются нативно на Binance — работают даже при закрытом приложении. Isolated: убыток ограничен маржой позиции. Cross: залогом является весь баланс фьючерсов.",
+    cn: "SL/TP 以原生方式挂在 Binance——即使关闭 App 也持续生效。逐仓：亏损仅限仓位保证金。全仓：整个合约余额作为担保。",
+  },
+  asi_repair_cta: {
+    id: "⚠️ Ada posisi TANPA SL/TP native — ketuk untuk pasang ulang",
+    en: "⚠️ Open positions WITHOUT native SL/TP — tap to re-attach",
+    ru: "⚠️ Есть позиции БЕЗ нативных SL/TP — нажмите, чтобы перевыставить",
+    cn: "⚠️ 有持仓缺少原生 SL/TP——点击重新挂出",
+  },
+  asi_repair_title: { id: "Perbaikan Bracket", en: "Bracket Repair", ru: "Восстановление скобок", cn: "修复括号单" },
+  asi_repair_ok: {
+    id: "Berhasil memasang SL/TP native untuk {n} posisi.",
+    en: "Successfully attached native SL/TP for {n} position(s).",
+    ru: "Нативные SL/TP выставлены для {n} позиций.",
+    cn: "已为 {n} 个持仓挂出原生 SL/TP。",
+  },
+  asi_soft_warn_title: { id: "SL/TP Native Hilang", en: "Native SL/TP Missing", ru: "Нет нативных SL/TP", cn: "缺少原生 SL/TP" },
+  asi_soft_warn_body: {
+    id: "Bracket native gagal terpasang. Posisi dipantau watcher backend (soft). Ketuk banner merah di atas untuk memasang ulang.",
+    en: "Native bracket failed to attach. The position is monitored by the backend watcher (soft). Tap the red banner above to re-attach.",
+    ru: "Нативная скобка не выставлена. Позицию отслеживает бэкенд-наблюдатель (soft). Нажмите красный баннер выше, чтобы перевыставить.",
+    cn: "原生括号单未能挂出。该持仓由后台监控器（软）看护。点击上方红色横幅重新挂出。",
+  },
   ats_err_min_notional: {
     id: "Ukuran posisi ${size} di bawah minimum exchange (${min}). Naikkan Risk % atau Leverage.",
     en: "Position size ${size} is below the exchange minimum (${min}). Raise Risk % or Leverage.",

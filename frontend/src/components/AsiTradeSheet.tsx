@@ -70,6 +70,8 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
   const [preview, setPreview] = useState<AsiPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [executing, setExecuting] = useState(false);
+  // v9.9.0 — Margin mode wajib dipilih sebelum eksekusi (default ISOLATED).
+  const [marginMode, setMarginMode] = useState<"isolated" | "cross">("isolated");
   // v9.8.5 — Hasil eksekusi ditampilkan sebagai panel di DALAM sheet
   // (Alert.alert bawaan tidak tampil di web preview). null = belum eksekusi.
   const [execResult, setExecResult] = useState<{ ok: boolean; title: string; body: string } | null>(null);
@@ -87,6 +89,14 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
         setCreds(r.items);
         if (r.items.length > 0) {
           setExchange(r.items[0].exchange as any);
+        }
+      } catch {}
+      try {
+        // v9.9.0 — Default margin mode dari bot config (diset di halaman
+        // ASI-Bot). User tetap bisa ubah per-trade di selector bawah.
+        const b = await api.asi.getBot(did);
+        if (b.exists && (b as any).margin_mode) {
+          setMarginMode((b as any).margin_mode as "isolated" | "cross");
         }
       } catch {}
     })();
@@ -160,15 +170,22 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
         take_profits: intent.take_profits.slice(0, tpCount),
         risk_pct: riskPct, leverage, mode: "semi",
         tp_count: tpCount, trailing_callback_rate: trailingCbRate,
+        margin_mode: marginMode,
       });
       // v9.8.5 — Panel sukses in-sheet (bekerja di web & native).
+      // v9.9.0 — Bila bracket native gagal (soft), tampilkan peringatan
+      // + alasan mentah dari Binance supaya bisa dilaporkan/di-repair.
+      const bracketWarn = (res as any).bracket_type === "soft";
       setExecResult({
         ok: true,
         title: t("ats_exec_done"),
         body:
           `${intent.side} ${intent.symbol} @ ${res.entry_price?.toFixed?.(6) ?? intent.entry}\n` +
           `Qty: ${res.qty} · ${t("ats_leverage")}: ${res.leverage}x\n` +
-          `${res.testnet ? "TESTNET" : "MAINNET"}`,
+          `${res.testnet ? "TESTNET" : "MAINNET"}` +
+          (bracketWarn
+            ? `\n\n⚠️ ${t("asi_soft_warn_title")}\n${(res as any).soft_bracket_reason || t("asi_soft_warn_body")}`
+            : ""),
       });
     } catch (e: any) {
       setExecResult({
@@ -261,6 +278,44 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
                 <StepperRow label={t("ats_leverage")} value={`${leverage}x`} colors={colors}
                   onDec={() => setLeverage(Math.max(1, leverage - 1))}
                   onInc={() => setLeverage(Math.min(125, leverage + 1))} />
+
+                {/* v9.9.0 — Margin Mode selector (WAJIB sebelum eksekusi).
+                    ISOLATED default: kerugian terbatas pada margin posisi.
+                    CROSS: seluruh saldo futures jadi jaminan. */}
+                <View style={{ marginTop: 4 }}>
+                  <Text style={{ color: colors.textMuted, fontSize: 11, fontWeight: "700", marginBottom: 6 }}>
+                    {t("ats_margin_mode")}
+                  </Text>
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    {(["isolated", "cross"] as const).map((mm) => {
+                      const active = marginMode === mm;
+                      return (
+                        <TouchableOpacity
+                          key={mm}
+                          onPress={() => setMarginMode(mm)}
+                          style={{
+                            flex: 1, paddingVertical: 10, borderRadius: 10,
+                            borderWidth: 1.5,
+                            borderColor: active ? MINT : colors.border,
+                            backgroundColor: active ? MINT : "transparent",
+                            alignItems: "center",
+                          }}
+                          testID={`asi-margin-${mm}`}
+                        >
+                          <Text style={{
+                            color: active ? "#FFFFFF" : colors.textPrimary,
+                            fontWeight: "900", fontSize: 11.5, letterSpacing: 0.6,
+                          }}>
+                            {mm === "isolated" ? t("ats_margin_isolated") : t("ats_margin_cross")}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                  <Text style={{ color: colors.textMuted, fontSize: 10, lineHeight: 14, marginTop: 6 }}>
+                    {t("ats_bracket_native")}
+                  </Text>
+                </View>
 
                 {/* v9.6.0 — TP Strategy selector */}
                 <View style={{ flexDirection: "row", gap: 6, marginTop: 10 }}>

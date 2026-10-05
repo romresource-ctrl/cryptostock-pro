@@ -76,3 +76,71 @@ async def binance_perp_tradable() -> set[str] | None:
         pass
     # Jangan timpa cache sukses dengan kegagalan; pakai cache lama bila ada.
     return cached
+
+
+# ---------------------------------------------------------------------------
+# v9.9.0 — Symbol filters (tickSize / stepSize) untuk format harga & qty
+# yang sah secara presisi Binance. Tanpa ini triggerPrice mentah (mis.
+# 0.1051625 padahal tick 0.0001) ditolak Algo API → SL/TP native gagal
+# terpasang. Cache 10 menit, public endpoint (no auth).
+# ---------------------------------------------------------------------------
+_FILTERS_CACHE: tuple[float, dict[str, dict[str, float]] | None] = (0.0, None)
+
+
+async def binance_symbol_filters() -> dict[str, dict[str, float]] | None:
+    """Return { "MANA": {"tick": 0.0001, "step": 1.0}, ... } utk semua
+    USDT perpetual TRADING. None bila fetch gagal."""
+    global _FILTERS_CACHE
+    now = _time.monotonic()
+    cached_at, cached = _FILTERS_CACHE
+    if cached is not None and (now - cached_at) < _PERPS_TTL:
+        return cached
+    try:
+        import httpx  # noqa: PLC0415
+        proxy = _os.environ.get("ASI_PROXY_URL") or _os.environ.get("HTTPS_PROXY")
+        async with httpx.AsyncClient(proxy=proxy, timeout=15) as c:
+            r = await c.get("https://fapi.binance.com/fapi/v1/exchangeInfo")
+            r.raise_for_status()
+            data = r.json()
+        out: dict[str, dict[str, float]] = {}
+        for s in data.get("symbols", []):
+            if (
+                s.get("quoteAsset") == "USDT"
+                and s.get("contractType") == "PERPETUAL"
+                and s.get("status") == "TRADING"
+            ):
+                tick = step = None
+                for f in s.get("filters", []):
+                    if f.get("filterType") == "PRICE_FILTER":
+                        tick = float(f.get("tickSize") or 0)
+                    elif f.get("filterType") == "LOT_SIZE":
+                        step = float(f.get("stepSize") or 0)
+                base = (s.get("baseAsset") or "").upper()
+                if base:
+                    out[base] = {"tick": tick or 0.0, "step": step or 0.0}
+        if out:
+            _FILTERS_CACHE = (now, out)
+            return out
+    except Exception:
+        pass
+    return cached
+
+
+def round_to_tick(price: float, tick: float) -> float:
+    """Bulatkan harga ke tick size (floor ke tick terdekat, lalu rapikan
+    floating point). tick<=0 → kembalikan apa adanya."""
+    if tick <= 0:
+        return price
+    import math
+    steps = math.floor(price / tick + 1e-9)
+    # Hindari floating error: hitung ulang dari integer steps.
+    from decimal import Decimal
+    d = Decimal(steps) * Decimal(str(tick))
+    return float(d.normalize())
+
+
+def fmt_decimal(x: float) -> str:
+    """Format float → string desimal polos (tanpa notasi ilmiah) agar
+    diterima Binance (mis. 5.9e-05 → '0.000059')."""
+    from decimal import Decimal
+    return format(Decimal(str(x)).normalize(), "f")

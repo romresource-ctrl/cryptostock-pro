@@ -46,6 +46,14 @@ def _client() -> httpx.AsyncClient:
     return httpx.AsyncClient(proxy=_proxy(), timeout=15.0)
 
 
+def _fmt_num(x: float) -> str:
+    """v9.9.0 — Format float ke string desimal polos (tanpa notasi ilmiah
+    seperti 5.9e-05) dan pangkas trailing zero berlebih. Binance menolak
+    parameter numerik ber-format ilmiah."""
+    from decimal import Decimal
+    return format(Decimal(f"{x}").normalize(), "f")
+
+
 async def new_conditional_order(
     api_key: str, api_secret: str, testnet: bool, *,
     symbol: str,          # e.g. "BTCUSDT"
@@ -67,7 +75,7 @@ async def new_conditional_order(
         "symbol": symbol.upper().replace("/", ""),
         "side": side.upper(),
         "type": order_type,
-        "triggerPrice": f"{trigger_price}",
+        "triggerPrice": _fmt_num(trigger_price),
         "workingType": working_type,
         "positionSide": "BOTH",
         "priceProtect": "TRUE",
@@ -79,7 +87,7 @@ async def new_conditional_order(
     else:
         if quantity is None or quantity <= 0:
             raise ValueError("quantity required when close_position=False")
-        params["quantity"] = f"{quantity}"
+        params["quantity"] = _fmt_num(quantity)
         params["reduceOnly"] = "true"
     signed = _sign(api_secret, params)
     async with _client() as c:
@@ -115,7 +123,7 @@ async def new_trailing_stop_order(
         "symbol": symbol.upper().replace("/", ""),
         "side": side.upper(),
         "type": "TRAILING_STOP_MARKET",
-        "quantity": f"{quantity}",
+        "quantity": _fmt_num(quantity),
         "callbackRate": f"{cb}",
         "reduceOnly": "true",
         "workingType": working_type,
@@ -124,7 +132,7 @@ async def new_trailing_stop_order(
         "recvWindow": 10000,
     }
     if activation_price is not None:
-        params["activationPrice"] = f"{activation_price}"
+        params["activationPrice"] = _fmt_num(activation_price)
     signed = _sign(api_secret, params)
     async with _client() as c:
         r = await c.post(

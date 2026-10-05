@@ -423,6 +423,12 @@ export const api = {
         `&symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange)}`,
         "POST",
       ),
+    repairBrackets: (deviceId: string, exchange: string = "binance") =>
+      send<{ ok: boolean; repaired: number; total: number;
+             results: { ok: boolean; symbol?: string; errors?: string[] }[] }>(
+        `/asi/trades/repair-brackets?device_id=${encodeURIComponent(deviceId)}&exchange=${encodeURIComponent(exchange)}`,
+        "POST",
+      ),
     pnl: (deviceId: string) =>
       get<AsiPnl>(`/asi/pnl?device_id=${encodeURIComponent(deviceId)}`),
     leaderboard: (periodDays = 7) =>
@@ -466,6 +472,8 @@ export type AsiTradeBody = {
   // v9.6.0 — TP strategy & trailing stop
   tp_count?: 1 | 2 | 3;
   trailing_callback_rate?: number;
+  // v9.9.0 — Margin mode wajib dipilih user sebelum eksekusi
+  margin_mode?: "isolated" | "cross";
 };
 export type AsiPreview = {
   ok: boolean; balance_usdt: number; margin_usdt: number;
@@ -490,6 +498,9 @@ export type AsiTradeResp = {
   bracket_type?: string | null;
   close_reason?: string | null;
   closed_at?: string | null;
+  // v9.9.0 — alasan bracket native gagal (ditampilkan saat tap badge ⚠️)
+  soft_bracket_reason?: string | null;
+  margin_mode?: string | null;
   // v9.7.6 — mode badge (SEMI / FULL) + stable id for manual close
   mode?: "semi" | "full" | null;
   _id?: string | null;
@@ -538,6 +549,8 @@ export type AsiBotConfig = {
   full_enabled?: boolean;
   // v9.7.7 — persistent disclaimer acknowledgement
   disclaimer_ack?: boolean;
+  // v9.9.0 — default margin mode bot
+  margin_mode?: "isolated" | "cross";
   auto_disabled_reason?: string | null;
   auto_disabled_at?: string | null;
 };

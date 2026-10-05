@@ -66,6 +66,9 @@ class TradePayload(BaseModel):
     # v9.6.0 — TP strategy & trailing stop
     tp_count: Literal[1, 2, 3] = 3
     trailing_callback_rate: float = Field(2.0, ge=0.0, le=10.0)
+    # v9.9.0 — Margin mode dipilih user sebelum eksekusi (wajib).
+    # Default ISOLATED: kerugian terbatas pada margin posisi saja.
+    margin_mode: Literal["isolated", "cross"] = "isolated"
 
 
 class BotConfigPayload(BaseModel):
@@ -95,6 +98,8 @@ class BotConfigPayload(BaseModel):
     # v9.7.7 — Disclaimer persistent: once ticked it stays acknowledged
     # across sessions. Frontend hides disclaimer card forever when True.
     disclaimer_ack: bool = False
+    # v9.9.0 — Default margin mode bot (dipakai Full-Auto & default sheet).
+    margin_mode: Literal["isolated", "cross"] = "isolated"
 
 
 def register(app_api: APIRouter, db: Any) -> None:
@@ -257,6 +262,7 @@ def _attach_trade_routes(db: Any) -> None:
             payload.risk_pct, payload.leverage, payload.mode,
             tp_count=payload.tp_count,
             trailing_callback_rate=payload.trailing_callback_rate,
+            margin_mode=payload.margin_mode,
         )
         if not res.get("ok"):
             raise HTTPException(400, res.get("message") or "Execute failed")
@@ -381,6 +387,39 @@ def _attach_trade_routes(db: Any) -> None:
             )
         return {"ok": True, "closed": len(ids), "symbol": sym,
                 "note": "db_row_missing" if not open_trades else None}
+
+    @router.post("/trades/repair-brackets")
+    async def repair_brackets(
+        device_id: str = Query(..., min_length=4),
+        exchange: str = Query("binance"),
+    ):
+        """v9.9.0 — Pasang ulang SL/TP native untuk SEMUA posisi open milik
+        user yang bracket-nya soft/gagal (mis. akibat bug format harga lama).
+        Response menyertakan error mentah Binance per simbol sehingga mudah
+        didiagnosis dari UI."""
+        from .engine import attach_brackets
+        cred = await db.asi_credentials.find_one({"_id": f"{device_id}:{exchange}"})
+        if not cred:
+            raise HTTPException(404, "Hubungkan API exchange terlebih dahulu.")
+        open_trades = [
+            d async for d in db.asi_trades.find({
+                "device_id": device_id, "exchange": exchange, "status": "open",
+            }).sort("created_at", -1).limit(50)
+        ]
+        results: list[dict[str, Any]] = []
+        for tr in open_trades:
+            try:
+                res = await attach_brackets(cred, tr)
+            except Exception as e:  # noqa: BLE001
+                res = {"ok": False, "symbol": tr.get("symbol"),
+                       "errors": [str(e)[:180]]}
+            if res.get("update"):
+                await db.asi_trades.update_one(
+                    {"_id": tr["_id"]}, {"$set": res["update"]},
+                )
+            results.append(res)
+        return {"ok": True, "repaired": sum(1 for r in results if r.get("ok")),
+                "total": len(results), "results": results}
 
     @router.get("/trades")
     async def list_trades(device_id: str = Query(..., min_length=4), limit: int = 50):
