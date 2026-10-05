@@ -10,7 +10,7 @@ import { useI18n } from "@/src/i18n/I18nContext";
 import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
 import { useTraderProfile } from "@/src/lib/useTraderProfile";
 import PremiumLocked from "@/src/components/PremiumLocked";
-import AsiTradeSheet, { type AsiTradeIntent } from "@/src/components/AsiTradeSheet";
+import AISuggestionsSheet from "@/src/components/AISuggestionsSheet";
 import { getDeviceId } from "@/src/lib/deviceId";
 import {
   api, type AsiBotConfig, type AsiCredential,
@@ -62,10 +62,9 @@ export default function ASIBotScreen() {
   const [connectOpen, setConnectOpen] = useState(false);
   // v9.7.6 — track in-flight close requests per trade id
   const [closingIds, setClosingIds] = useState<Record<string, boolean>>({});
-  // v9.7.7 — AsiTradeSheet intent (dibuka dari tombol PILIH SINYAL)
-  const [tradeIntent, setTradeIntent] = useState<AsiTradeIntent | null>(null);
-  // v9.7.7 — Loading state saat memindai signal
-  const [scanning, setScanning] = useState(false);
+  // v9.8.1 — AISuggestionsSheet popup (daftar aset hasil scan, dibuka
+  // dari tombol PICK A SIGNAL). Sheet ini punya AsiTradeSheet internal.
+  const [suggestOpen, setSuggestOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -152,67 +151,19 @@ export default function ASIBotScreen() {
     });
   };
 
-  const pickTopSignal = async () => {
-    // v9.8.0 — Semi-Auto PICK A SIGNAL (fix 3 bug):
-    //   1. Profile aktif dibaca dari useTraderProfile hook — bukan
-    //      bot.profile. User yang pilih Scalper / Intraday / Swing di
-    //      modal profile akan BENAR-BENAR kirim profile itu.
-    //      "longterm" & default → confluence (engine CONFLUENCE).
-    //   2. "need_connect" alert hanya tampil setelah refresh pertama
-    //      selesai (credsLoaded) — tidak lagi muncul karena race.
-    //   3. Jika tidak ada sinyal untuk profile X, pesan menyebut
-    //      profile X yang BENAR, bukan selalu "CONFLUENCE".
-    if (credsLoaded && !canUseBot) {
-      Alert.alert(
-        t("asi_alert_need_title"),
-        !activeCred ? t("asi_alert_need_connect") : t("asi_alert_need_ack"),
-      );
+  const openSignalPicker = () => {
+    // v9.8.1 — Semi-Auto PICK A SIGNAL: buka popup daftar aset hasil scan
+    // (AISuggestionsSheet) yang sudah difilter sesuai Trader Profile aktif.
+    // Setiap kartu aset punya tombol "⚡ EXECUTE SEMI-AUTO" langsung.
+    //
+    // Koneksi exchange TIDAK wajib untuk MELIHAT sinyal — hanya wajib saat
+    // eksekusi (AsiTradeSheet menampilkan CTA "HUBUNGKAN EXCHANGE" sendiri).
+    // Yang wajib hanya persetujuan disclaimer (kecuali di __DEV__ preview).
+    if (!__DEV__ && credsLoaded && !bot.disclaimer_ack) {
+      Alert.alert(t("asi_alert_need_title"), t("asi_alert_need_ack"));
       return;
     }
-    // Map traderProfile → API profile accepted by /api/ai-suggestions
-    //   scalper → scalper, day → day, swing → swing, longterm/default → confluence
-    const apiProfile: "scalper" | "day" | "swing" | "confluence" =
-      traderExplicit && (traderProfile === "scalper" || traderProfile === "day" || traderProfile === "swing")
-        ? traderProfile
-        : "confluence";
-    setScanning(true);
-    try {
-      const resp = await api.aiSuggestions("crypto", "1h", apiProfile, deviceId);
-      const normalized = (resp.suggestions || []).map((a: any) => {
-        // v9.8.0 — Backend kirim take_profit (singular) + take_profit_2/_3.
-        // Build array take_profits agar kondisi filter + eksekusi benar.
-        const tps = [a.take_profit, a.take_profit_2, a.take_profit_3]
-          .filter((x: any) => typeof x === "number" && !Number.isNaN(x));
-        return { ...a, take_profits: tps };
-      });
-      const picks = normalized.filter(
-        (a: any) => (a.action === "BUY" || a.action === "SELL")
-          && typeof a.entry === "number"
-          && typeof a.stop_loss === "number"
-          && Array.isArray(a.take_profits) && a.take_profits.length > 0,
-      );
-      if (picks.length === 0) {
-        Alert.alert(
-          t("asi_no_signal_title"),
-          t("asi_no_signal_body").replace("{profile}", apiProfile.toUpperCase()),
-        );
-        return;
-      }
-      picks.sort((a: any, b: any) => (b.confidence || 0) - (a.confidence || 0));
-      const top = picks[0];
-      setTradeIntent({
-        symbol: top.symbol,
-        side: top.action as "BUY" | "SELL",
-        entry: top.entry!,
-        stop_loss: top.stop_loss!,
-        take_profits: top.take_profits || [],
-        source: "asi-bot-semi",
-      });
-    } catch (e: any) {
-      Alert.alert(t("asi_no_signal_title"), String(e?.message || e));
-    } finally {
-      setScanning(false);
-    }
+    setSuggestOpen(true);
   };
 
   const toggleFull = async (val: boolean) => {
@@ -270,8 +221,7 @@ export default function ASIBotScreen() {
         <StatusCard
           kind={bot.mode === "full" ? "full" : "semi"}
           running={bot.mode === "full" ? !!bot.full_enabled : !!bot.semi_enabled}
-          scanning={scanning}
-          onPrimary={() => (bot.mode === "full" ? toggleFull(true) : pickTopSignal())}
+          onPrimary={() => (bot.mode === "full" ? toggleFull(true) : openSignalPicker())}
           onStop={() => toggleFull(false)}
           colors={colors}
           t={t}
@@ -552,12 +502,14 @@ export default function ASIBotScreen() {
         deviceId={deviceId}
       />
 
-      {/* v9.7.7 — AsiTradeSheet dibuka langsung dgn top-signal dari profile.
-          Trade sheet sudah ada duplicate-position check sebelum execute. */}
-      <AsiTradeSheet
-        visible={!!tradeIntent}
-        intent={tradeIntent}
-        onClose={() => { setTradeIntent(null); refresh(); }}
+      {/* v9.8.1 — Popup daftar aset hasil scan (difilter Trader Profile
+          aktif). Tiap kartu aset punya tombol "⚡ EXECUTE SEMI-AUTO".
+          Sheet internal sudah memuat AsiTradeSheet + duplicate-position
+          confirm. Saat ditutup → refresh agar trade baru muncul. */}
+      <AISuggestionsSheet
+        visible={suggestOpen}
+        onClose={() => { setSuggestOpen(false); refresh(); }}
+        onRequestSubscribe={() => { setSuggestOpen(false); router.replace("/" as never); }}
       />
     </View>
   );
@@ -577,10 +529,9 @@ function SectionHeader({ title }: { title: string }) {
 //     Tidak ada STOP (eksekusi 1-tap, bukan proses kontinu).
 //   • full: START (pink) → scan 24/7. STOP (light blue) → henti scan baru,
 //     posisi lama tetap aman via native SL/TP.
-function StatusCard({ kind, running, scanning, onPrimary, onStop, colors, t }: {
+function StatusCard({ kind, running, onPrimary, onStop, colors, t }: {
   kind: "semi" | "full";
   running: boolean;
-  scanning?: boolean;
   onPrimary: () => void;
   onStop: () => void;
   colors: any;
@@ -645,12 +596,11 @@ function StatusCard({ kind, running, scanning, onPrimary, onStop, colors, t }: {
         <View style={{ marginTop: 12 }}>
           <TouchableOpacity
             onPress={onPrimary}
-            disabled={!!scanning}
-            style={[s.bigBtn, { backgroundColor: scanning ? colors.border : PINK }]}
+            style={[s.bigBtn, { backgroundColor: PINK }]}
             testID="asi-pick-signal"
           >
             <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.6, fontSize: 13 }}>
-              {scanning ? t("asi_scanning") : t("asi_pick_signal")}
+              {t("asi_pick_signal")}
             </Text>
           </TouchableOpacity>
         </View>

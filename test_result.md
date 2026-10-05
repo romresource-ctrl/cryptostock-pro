@@ -1550,3 +1550,38 @@ metadata_v980:
   version: "9.8.0"
   test_sequence: 39
   run_ui: false
+
+# ======================================================
+# v9.8.1 — PICK A SIGNAL = popup daftar aset + EXECUTE per aset
+# ======================================================
+frontend_v981:
+  - task: "PICK A SIGNAL buka popup list aset dengan tombol EXECUTE"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/asi-bot.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          User request: PICK A SIGNAL harus membuka popup window berisi
+          daftar aset yang sudah di-scan sesuai Trader Profile, dengan
+          tombol EXECUTE langsung di samping tiap aset.
+          FIX: pickTopSignal (auto-pick top-1) DIGANTI dgn openSignalPicker
+          yang membuka AISuggestionsSheet (sudah punya list + tombol
+          EXECUTE SEMI-AUTO per kartu sejak v9.8.0). Sheet sudah membaca
+          useTraderProfile secara internal → aset difilter sesuai profil.
+          Guard dilonggarkan: melihat sinyal TIDAK butuh koneksi exchange
+          (eksekusi tetap dijaga AsiTradeSheet dgn CTA HUBUNGKAN EXCHANGE);
+          hanya disclaimer_ack yang wajib (bypass __DEV__ untuk preview).
+          State tradeIntent/scanning + AsiTradeSheet mount di asi-bot.tsx
+          dihapus (sudah di-handle internal sheet).
+          Verified Playwright: tap PICK A SIGNAL → popup muncul,
+          10 tombol ai-trade-* terdeteksi (APT/ARB/OP/INJ/RENDER...).
+metadata_v981:
+  created_by: "main_agent"
+  version: "9.8.1"
+  test_sequence: 40
+  run_ui: false
