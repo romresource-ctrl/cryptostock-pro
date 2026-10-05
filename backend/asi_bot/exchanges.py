@@ -144,6 +144,17 @@ async def validate_credentials(
             if any(x in msg.lower() for x in ("readtimeout", "connecttimeout", "connecttimeouterror", "connecterror", "read timeout", "connection refused", "proxyerror")):
                 return {"ok": False, "code": "proxy_down", "message": "Server IP relay is unreachable. Please contact admin."}
             if "-2015" in msg or "Invalid API-key" in msg:
+                # v9.7.3 — Binance -2015 is ambiguous: bad key OR bad IP OR
+                # missing permission. Disambiguate by probing the SPOT-side
+                # permissions endpoint: if it succeeds, the key+IP are fine
+                # and the failure is the missing Futures permission.
+                if not testnet:
+                    try:
+                        await _binance_api_restrictions(api_key, api_secret, testnet)
+                        return {"ok": False, "code": "trade_disabled",
+                                "message": "API key is valid and IP whitelisted, but 'Enable Futures' is NOT ticked on this key. Enable it in Binance API Management."}
+                    except Exception:
+                        pass
                 return {"ok": False, "code": "ip_or_key_invalid", "message": "Invalid API key/secret OR server IP not whitelisted (IP: 143.198.197.107)."}
             if "-2014" in msg or "API-key format invalid" in msg:
                 return {"ok": False, "code": "key_format_invalid", "message": "Invalid API key format."}
