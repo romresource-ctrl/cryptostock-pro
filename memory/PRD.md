@@ -651,3 +651,22 @@ Fase berikutnya (BELUM):
 - Scanner interval 5 menit; watcher 20s; PnL 60s.
 - CATATAN: min_confidence default 75 belum ada kontrol UI di asi-bot.tsx
   (state ada, ParamRow belum) — kandidat fitur berikutnya jika user minta.
+
+
+## v9.7.4 — START/STOP Bot + UX ASI-Bot (Okt 2026)
+- Tombol besar ▶ START BOT / ■ STOP BOT menggantikan Switch kecil; status
+  card menampilkan RUNNING/STOPPED + badge FULL-AUTO.
+- Mandatory Disclaimer box hanya tampil saat bot NONAKTIF; hilang saat ACTIVE
+  dan posisinya digantikan Recent Trades (permintaan user).
+- Recent Trades selalu tampil: empty-state saat belum ada trade; setiap baris
+  menampilkan badge OPEN/CLOSED, side, simbol, PnL $ dan % (dari margin).
+- Stop dengan posisi terbuka → dialog 3 opsi: Cancel / Keep Positions
+  (SL-TP native tetap jaga di exchange; watcher tetap memantau) /
+  Close All & Stop (endpoint baru POST /asi/trades/close-all).
+- BUG FIX saveBot: stale-closure bisa menimpa enabled=true kembali false
+  saat tap beruntun → diganti functional setState. Ini kemungkinan penyebab
+  "bot tidak jalan" meski user sudah mengaktifkan.
+- PENTING: environment dev/preview vs produksi TERPISAH (DB & egress IP
+  berbeda). Bot user berjalan di produksi; test di container ini tidak
+  menyentuh akun produksi.
+- Perlu NEW BUILD 9.7.4 karena perubahan frontend.
