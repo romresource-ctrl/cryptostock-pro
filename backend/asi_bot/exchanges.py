@@ -95,6 +95,32 @@ async def _binance_fapi_account(api_key: str, api_secret: str, testnet: bool) ->
     return data
 
 
+async def _binance_api_restrictions(api_key: str, api_secret: str, testnet: bool) -> dict[str, Any]:
+    """Signed GET /sapi/v1/account/apiRestrictions — the ONLY endpoint that
+    truthfully reports API-key-level permissions (enableWithdrawals etc).
+    """
+    base = "https://testnet.binancefuture.com" if testnet else "https://api.binance.com"
+    params = {"timestamp": int(time.time() * 1000), "recvWindow": 10000}
+    qs = urlencode(params)
+    sig = hmac.new(api_secret.encode(), qs.encode(), hashlib.sha256).hexdigest()
+    proxy = os.environ.get("ASI_PROXY_URL") or os.environ.get("HTTPS_PROXY")
+    async with httpx.AsyncClient(proxy=proxy, timeout=15) as c:
+        r = await c.get(
+            f"{base}/sapi/v1/account/apiRestrictions",
+            params={**params, "signature": sig},
+            headers={"X-MBX-APIKEY": api_key},
+        )
+    try:
+        data = r.json()
+    except Exception:
+        raise Exception(f"HTTP {r.status_code}: {r.text[:200]}")
+    if r.status_code != 200:
+        code = data.get("code") if isinstance(data, dict) else None
+        msg = data.get("msg") if isinstance(data, dict) else r.text[:200]
+        raise Exception(f"code={code} msg={msg}")
+    return data
+
+
 async def validate_credentials(
     ex_id: ExchangeId, api_key: str, api_secret: str,
     password: str | None, testnet: bool,
@@ -127,14 +153,29 @@ async def validate_credentials(
         perms = {
             "trade": bool(acct.get("canTrade", False)),
             "deposit": bool(acct.get("canDeposit", False)),
-            "withdraw": bool(acct.get("canWithdraw", False)),
+            "withdraw": None,  # v9.7.2 — placeholder; real check below
         }
-        if perms["withdraw"] is True:
-            return {"ok": False, "code": "withdraw_enabled", "permissions": perms,
-                    "message": "Your API key has WITHDRAW permission. For safety, ASI-Bot rejects such keys."}
-        if not perms["trade"]:
-            return {"ok": False, "code": "trade_disabled", "permissions": perms,
-                    "message": "API key has no trading permission. Enable 'Futures' in Binance API Management."}
+        # v9.7.2 — /fapi/v2/account's canWithdraw refers to the ACCOUNT's
+        # ability (basically always true), NOT the API key's permission.
+        # The ONLY truthful source is /sapi/v1/account/apiRestrictions.
+        # On testnet the sapi endpoint doesn't exist → skip check there.
+        if not testnet:
+            try:
+                restr = await _binance_api_restrictions(api_key, api_secret, testnet)
+            except Exception as e:
+                return {"ok": False, "code": "auth_failed",
+                        "message": f"Cannot verify API-key permissions: {e}"}
+            perms = {
+                "futures": bool(restr.get("enableFutures", False)),
+                "withdraw": bool(restr.get("enableWithdrawals", False)),
+                "universal_transfer": bool(restr.get("permitsUniversalTransfer", False)),
+            }
+            if perms["withdraw"] or perms["universal_transfer"]:
+                return {"ok": False, "code": "withdraw_enabled", "permissions": perms,
+                        "message": "Your API key has WITHDRAW permission. For safety, ASI-Bot rejects such keys."}
+            if not perms["futures"]:
+                return {"ok": False, "code": "trade_disabled", "permissions": perms,
+                        "message": "API key has no Futures permission. Enable 'Futures' in Binance API Management."}
         return {"ok": True, "permissions": perms, "message": "OK"}
 
     # Non-Binance (bybit, okx, bitget) — via CCXT.
