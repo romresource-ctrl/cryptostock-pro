@@ -627,7 +627,7 @@ export default function ASIBotScreen() {
                       }}>
                         {String(tr.actual_margin_mode || tr.margin_mode || "isolated").toUpperCase()}
                       </Text>
-                      {`  ·  ${tr.leverage ?? "?"}x`}
+                      {`  ·  ${(tr as any).actual_leverage ?? tr.leverage ?? "?"}x`}
                     </Text>
                     <Text style={{
                       fontSize: 10, fontWeight: "800",

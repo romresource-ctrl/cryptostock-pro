@@ -699,6 +699,25 @@ Fase berikutnya (BELUM):
 - Tombol eksekusi Semi-Auto di kartu AI Suggestions ("⚡ EXECUTE SEMI-AUTO") dengan badge pink SEMI.
 - Konfirmasi sukses kini menyediakan opsi langsung "Lihat Recent Trades" → navigasi ke `/asi-bot`.
 
+## v9.9.3 — Leverage AKTUAL (user temukan 50x request → 20x real di Binance)
+
+User buka SOL long 103.8 SOL @121.06 via app (request leverage 50x), tapi
+Binance menampilkan posisi 20x. Root cause: set_leverage best-effort — Binance
+menolak 50x karena tier notional (~$12.5k melebihi bracket 50x SOL), engine
+melanjutkan tanpa memberitahu, UI menampilkan angka request palsu.
+
+FIX (backend): execute_trade kini membaca `leverage` AKTUAL dari positionRisk
+setelah entry → disimpan sebagai `actual_leverage` + `leverage_note` (bila
+berbeda dari request). refresh_trade_pnl & attach_brackets ikut memperbarui
+field itu tiap siklus. Frontend Recent Trades menampilkan actual_leverage.
+
+KLARIFIKASI PENTING (dijawab ke user): TP1/TP2 TIDAK tampil di kolom
+"TP/SL for position" Binance karena kolom itu khusus order closePosition=true
+(SL kami). TP parsial dengan quantity (split 50/50) muncul di tab
+**Open Orders → Conditional/Algo**. Screenshot user menunjukkan
+"Open Orders(3)" = cocok dengan SL + TP1 + TP2 — kemungkinan besar
+proteksi lengkap. User diminta memverifikasi tab tersebut.
+
 ## v9.9.2 — Fix Kritis: SL/TP Native yang BENAR + Auto-Rollback (Jun 2026)
 
 **Masalah user (sangat kritis):** UI ASI-Bot menyatakan SL/TP terpasang native

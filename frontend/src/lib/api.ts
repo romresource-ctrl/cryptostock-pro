@@ -505,6 +505,10 @@ export type AsiTradeResp = {
   // berbeda dari margin_mode yang diminta kalau posisi sudah terbuka
   // di mode berbeda). UI pakai field ini (bukan margin_mode request).
   actual_margin_mode?: string | null;
+  // v9.9.3 — leverage AKTUAL dibaca dari positionRisk (bisa beda dari
+  // leverage request bila Binance menolak karena tier notional). UI pakai
+  // ini, fallback ke leverage lama untuk trade pre-v9.9.3.
+  actual_leverage?: number | null;
   // v9.9.2 — hasil verifikasi bracket aktif di openAlgoOrders. True =
   // SL+TP masih live di exchange. False = sudah tidak ada (kemungkinan
   // user cancel manual di Binance app) → tampilkan tombol REPAIR.

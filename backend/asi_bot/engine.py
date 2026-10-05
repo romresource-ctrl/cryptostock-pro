@@ -351,11 +351,18 @@ async def execute_trade(
                 "message": f"Gagal set margin mode {margin_mode.upper()}: {set_mt.get('msg')}",
             }
 
-    # (3) Set leverage (best effort — not fatal)
+    # (3) Set leverage. Binance bisa menolak bila melebihi tier notional
+    # (mis. request 50x tapi posisi $12k hanya boleh 20x) → error -4028.
+    # Tidak fatal: kita lanjut dan baca leverage AKTUAL dari positionRisk
+    # setelah entry; UI akan menampilkan angka asli + catatan.
+    lev_rejected: str | None = None
     try:
-        await br.set_leverage(api_key, api_secret, is_testnet,
-                              symbol=bin_sym, leverage=leverage)
+        lev_res = await br.set_leverage(api_key, api_secret, is_testnet,
+                                        symbol=bin_sym, leverage=leverage)
+        if not lev_res.get("ok"):
+            lev_rejected = str(lev_res.get("error"))[:160]
     except Exception as e:
+        lev_rejected = str(e)[:160]
         logger.debug("set_leverage %s: %s", bin_sym, e)
 
     # (4) Compute qty from balance & risk
@@ -418,6 +425,10 @@ async def execute_trade(
     actual_qty = abs(float(pos_final.get("positionAmt") or 0))
     actual_entry = float(pos_final.get("entryPrice") or entry)
     actual_mm = str(pos_final.get("marginType") or margin_mode).lower()
+    # v9.9.3 — Baca leverage AKTUAL dari Binance. Jika set_leverage gagal
+    # diam-diam (mis. request 50x tapi tier notional hanya izinkan 20x),
+    # simpan yang benar supaya UI tidak menampilkan angka request palsu.
+    actual_leverage = int(float(pos_final.get("leverage") or leverage))
 
     async def _emergency_close(reason: str, detail: str) -> dict[str, Any]:
         """Market-close posisi + batalkan semua algo. Dipanggil bila
@@ -545,6 +556,12 @@ async def execute_trade(
         "qty": actual_qty, "leverage": leverage, "risk_pct": risk_pct,
         "margin_mode": margin_mode,
         "actual_margin_mode": actual_mm,
+        "actual_leverage": actual_leverage,
+        # v9.9.3 — catatan bila leverage aktual berbeda dari permintaan.
+        "leverage_note": (
+            f"Requested {leverage}x tetapi Binance set {actual_leverage}x"
+            + (f" ({lev_rejected})" if lev_rejected else "")
+        ) if actual_leverage != leverage else None,
         "mode": mode, "status": "open", "pnl_usdt": 0.0,
         "soft_bracket": False, "soft_bracket_reason": None,
         "bracket_type": "hard",
@@ -675,6 +692,7 @@ async def _execute_ccxt_fallback(
         "qty": actual_qty, "leverage": leverage, "risk_pct": risk_pct,
         "margin_mode": margin_mode,
         "actual_margin_mode": margin_mode,
+        "actual_leverage": leverage,
         "mode": mode, "status": "open", "pnl_usdt": 0.0,
         "soft_bracket": soft_bracket,
         "soft_bracket_reason": (sl_err or tp_err) if soft_bracket else None,
@@ -710,6 +728,7 @@ async def attach_brackets(
         return {"ok": False, "symbol": symbol, "errors": ["no_open_position"]}
     qty = abs(float(pos.get("positionAmt") or 0))
     actual_mm = str(pos.get("marginType") or "").lower()
+    actual_lev = int(float(pos.get("leverage") or trade.get("leverage") or 0))
 
     # Filters for rounding
     filters = await binance_symbol_filters() or {}
@@ -791,6 +810,7 @@ async def attach_brackets(
         "soft_bracket_reason": None if hard else "; ".join(errors)[:220],
         "bracket_type": "hard" if hard else "soft",
         "actual_margin_mode": actual_mm or trade.get("margin_mode") or "cross",
+        "actual_leverage": actual_lev,
         "updated_at": now,
     }
     if hard:
@@ -967,6 +987,7 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
         unrealized = float(pos.get("unRealizedProfit") or 0)
         actual_mm = str(pos.get("marginType") or "").lower()
         mark = pos.get("markPrice")
+        actual_lev = int(float(pos.get("leverage") or trade.get("leverage") or 0))
         # Verify bracket still armed in openAlgoOrders
         try:
             openalgos = await br.open_algo_orders(api_key, api_secret, is_testnet, bin_sym)
@@ -985,6 +1006,7 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
             "pnl_usdt": round(unrealized, 2),
             "mark_price": float(mark) if mark else None,
             "actual_margin_mode": actual_mm,
+            "actual_leverage": actual_lev,
         }
         if bracket_live is not None:
             upd["bracket_live"] = bracket_live
