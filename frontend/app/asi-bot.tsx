@@ -254,18 +254,20 @@ export default function ASIBotScreen() {
                   onDec={() => saveBot({ leverage: Math.max(1, bot.leverage - 1) })}
                   onInc={() => saveBot({ leverage: Math.min(125, bot.leverage + 1) })}
                   colors={colors} testID="asi-lev" />
-        {/* v9.6.0 — Centang TP1/TP2/TP3 (dibawah leverage) */}
+        {/* v9.6.0 — Centang TP1/TP2/TP3 (dibawah leverage).
+            v9.7.4 — warna aktif mengikuti mode: Semi-Auto=hijau, Full-Auto=orange */}
         <View style={{ flexDirection: "row", gap: 8, marginBottom: 6 }}>
           {([1, 2, 3] as const).map((n) => {
             const active = (bot.tp_count ?? 3) === n;
+            const accent = bot.mode === "full" ? ORANGE : GOLD;
             const label = n === 1 ? t("asi_tp_1_label") : n === 2 ? t("asi_tp_2_label") : t("asi_tp_3_label");
             return (
               <TouchableOpacity
                 key={n}
                 onPress={() => saveBot({ tp_count: n })}
                 style={[s.tpChip, {
-                  borderColor: active ? GOLD : colors.border,
-                  backgroundColor: active ? GOLD : colors.surface,
+                  borderColor: active ? accent : colors.border,
+                  backgroundColor: active ? accent : colors.surface,
                 }]}
                 testID={`asi-tp-${n}`}
               >
