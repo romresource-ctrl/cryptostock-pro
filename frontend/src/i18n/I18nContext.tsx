@@ -551,19 +551,14 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     ru: "Сканируйте сильнейшие сетапы LONG/SHORT — с Entry, SL и TP",
     cn: "扫描最强 LONG/SHORT 机会 — 含入场、止损和止盈",
   },
-  ai_profile_required_title: {
-    id: "Pilih Trader Profile Dulu",
-    en: "Select a Trader Profile First",
-    ru: "Сначала выберите профиль трейдера",
-    cn: "请先选择交易者档案",
+  // v9.7.9 — Footer hint di TraderProfileModal: modal tetap terbuka setelah
+  // memilih profil agar user langsung bisa tap AI Suggestions.
+  ai_profile_footer_hint: {
+    id: "Modal tetap terbuka setelah memilih — langsung tap AI Suggestions. Ketuk profil aktif untuk melepas (mesin default: Confluence).",
+    en: "The modal stays open after selecting — tap AI Suggestions right away. Tap the active profile to unselect (default engine: Confluence).",
+    ru: "Окно остаётся открытым после выбора — сразу нажмите AI Suggestions. Нажмите активный профиль, чтобы снять выбор (движок по умолчанию: Confluence).",
+    cn: "选择后弹窗保持打开——可立即点击 AI 建议。再次点击已选档案可取消（默认引擎：Confluence）。",
   },
-  ai_profile_required_body: {
-    id: "AI Suggestions hanya bekerja dengan profil Scalper, Day Trader, atau Swing. Silakan pilih salah satu profil, lalu tekan tombol AI Suggestions lagi.",
-    en: "AI Suggestions only works with the Scalper, Day Trader, or Swing profile. Please select one of the profiles, then tap the AI Suggestions button again.",
-    ru: "AI Suggestions работает только с профилями «Скальпер», «Дейтрейдер» или «Свинг». Выберите один из профилей, затем снова нажмите кнопку AI Suggestions.",
-    cn: "AI 建议仅适用于“剥头皮”、“日内交易”或“波段”档案。请选择其中一个档案，然后再次点击 AI 建议按钮。",
-  },
-  ai_profile_required_btn: { id: "PILIH PROFILE", en: "SELECT PROFILE", ru: "ВЫБРАТЬ ПРОФИЛЬ", cn: "选择档案" },
   ai_sheet_sub: {
     id: "Peluang terkuat hasil pindaian formula — lengkap Entry · SL · TP",
     en: "Strongest setups from the formula scan — full Entry · SL · TP",

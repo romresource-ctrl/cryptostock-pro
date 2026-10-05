@@ -1443,3 +1443,48 @@ metadata_v978:
   version: "9.7.8"
   test_sequence: 37
   run_ui: false
+
+# ======================================================
+# v9.7.9 — TraderProfileModal UX fixes (user report)
+# ======================================================
+frontend_v979:
+  - task: "Modal TIDAK auto-close setelah pilih profil"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/TraderProfileModal.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          BUG: pick() memanggil setTimeout(onClose, 180) → modal langsung
+          menutup setelah pilih Scalper/Day/Swing. FIX: hapus auto-close;
+          modal tetap terbuka, user bisa langsung tap tombol AI SUGGESTIONS.
+          Verified Playwright: MODAL STILL OPEN AFTER PICK = True.
+  - task: "Long-term / default Confluence bisa buka AI Suggestions"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/TraderProfileModal.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          BUG: gate aiProfileReady hanya izinkan scalper/day/swing —
+          longterm & default (no profile) dapat popup "Select a Trader
+          Profile First". FIX: gate dihapus total; AI Suggestions selalu
+          membuka sheet. Backend sudah map profile non-VWAP → engine
+          CONFLUENCE (server.py:803 + skip daily fetch di :1090), jadi
+          aset Confluence selalu tersedia. Popup + style warn* dihapus;
+          i18n ai_profile_required_* diganti ai_profile_footer_hint.
+          Verified Playwright: WARN POPUP SHOWN = False; sheet terbuka
+          (premium lock muncul untuk device non-premium — by design).
+metadata_v979:
+  created_by: "main_agent"
+  version: "9.7.9"
+  test_sequence: 38
+  run_ui: false
