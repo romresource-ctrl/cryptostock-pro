@@ -879,6 +879,20 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     ru: "Недоступен на Binance Futures",
     cn: "Binance 合约不可用",
   },
+  // v9.8.5 — In-sheet execution result (Alert tidak tampil di web preview)
+  ats_exec_done: {
+    id: "✅ Order Berhasil Dieksekusi",
+    en: "✅ Order Successfully Executed",
+    ru: "✅ Ордер успешно исполнен",
+    cn: "✅ 订单已成功执行",
+  },
+  ats_executed_btn: {
+    id: "TEREKSEKUSI",
+    en: "EXECUTED",
+    ru: "ИСПОЛНЕНО",
+    cn: "已执行",
+  },
+  ats_try_again: { id: "Coba Lagi", en: "Try Again", ru: "Повторить", cn: "重试" },
 
   // v9.6.9 — Credential validation error codes (backend returns {code, message})
   asi_err_ip_or_key_invalid: {

@@ -7,7 +7,7 @@
  */
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  Alert, Modal, Pressable, ScrollView, StyleSheet, Text,
+  Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text,
   TouchableOpacity, View,
 } from "react-native";
 import { useRouter } from "expo-router";
@@ -25,6 +25,7 @@ const GOLD = "#F0B90B";
 const MINT = "#4ADE80"; // v9.4.3 — ASI-Bot accent (hijau muda + teks putih)
 const GREEN = "#22C55E";
 const RED = "#EF4444";
+const LIGHT_BLUE_BTN = "#38BDF8"; // v9.8.5 — tombol "Lihat Recent Trades"
 
 export type AsiTradeIntent = {
   symbol: string;              // e.g. "BTC", "ETH"
@@ -57,6 +58,12 @@ export default function AsiTradeSheet({ visible, onClose, intent }: Props) {
   const [preview, setPreview] = useState<AsiPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [executing, setExecuting] = useState(false);
+  // v9.8.5 — Hasil eksekusi ditampilkan sebagai panel di DALAM sheet
+  // (Alert.alert bawaan tidak tampil di web preview). null = belum eksekusi.
+  const [execResult, setExecResult] = useState<{ ok: boolean; title: string; body: string } | null>(null);
+
+  // Reset panel hasil tiap kali intent baru dibuka.
+  useEffect(() => { setExecResult(null); }, [intent, visible]);
 
   useEffect(() => {
     if (!visible || !intent) return;
@@ -106,29 +113,30 @@ export default function AsiTradeSheet({ visible, onClose, intent }: Props) {
     if (!intent || !preview?.ok) return;
     // v9.7.7 — Cek duplikat posisi terbuka pada symbol+exchange yang sama.
     // Jika sudah ada, konfirmasi dulu sebelum menambah posisi (pyramid).
+    // v9.8.5 — Alert.alert no-op di web → pakai window.confirm fallback
+    // (tanpa ini promise tidak pernah resolve dan eksekusi menggantung).
     try {
       const list = await api.asi.listTrades(deviceId);
       const sym = String(intent.symbol).toUpperCase();
       const dup = (list.items || []).find(
-        (tr) => tr.status === "open"
+        (tr) => String(tr.status || "").toLowerCase() === "open"
           && String(tr.symbol || "").toUpperCase() === sym
           && (tr.exchange || "") === exchange,
       );
       if (dup) {
-        const proceed = await new Promise<boolean>((resolve) => {
-          Alert.alert(
-            t("ats_dup_title"),
-            t("ats_dup_body")
-              .replace("{side}", String(dup.side))
-              .replace("{symbol}", sym)
-              .replace("{exchange}", exchange.toUpperCase())
-              .replace("{pnl}", (dup.pnl_usdt ?? 0).toFixed(2)),
-            [
-              { text: t("ats_dup_cancel"), style: "cancel", onPress: () => resolve(false) },
-              { text: t("ats_dup_add"), onPress: () => resolve(true) },
-            ],
-          );
-        });
+        const dupBody = t("ats_dup_body")
+          .replace("{side}", String(dup.side))
+          .replace("{symbol}", sym)
+          .replace("{exchange}", exchange.toUpperCase())
+          .replace("{pnl}", (dup.pnl_usdt ?? 0).toFixed(2));
+        const proceed = Platform.OS === "web"
+          ? window.confirm(`${t("ats_dup_title")}\n\n${dupBody}`)
+          : await new Promise<boolean>((resolve) => {
+              Alert.alert(t("ats_dup_title"), dupBody, [
+                { text: t("ats_dup_cancel"), style: "cancel", onPress: () => resolve(false) },
+                { text: t("ats_dup_add"), onPress: () => resolve(true) },
+              ]);
+            });
         if (!proceed) return;
       }
     } catch {}
@@ -141,24 +149,27 @@ export default function AsiTradeSheet({ visible, onClose, intent }: Props) {
         risk_pct: riskPct, leverage, mode: "semi",
         tp_count: tpCount, trailing_callback_rate: trailingCbRate,
       });
-      Alert.alert(
-        t("asi_exec_success_title"),
-        `${intent.side} ${intent.symbol} @ ${res.entry_price?.toFixed?.(6) ?? intent.entry}\n` +
-        `Qty: ${res.qty} · ${t("ats_leverage")}: ${res.leverage}x\n` +
-        `${res.testnet ? "TESTNET" : "MAINNET"}`,
-        [
-          { text: t("asi_exec_view_recent"),
-            onPress: () => { onClose(); router.push("/asi-bot" as never); } },
-          { text: t("common_close"), style: "cancel", onPress: () => onClose() },
-        ],
-      );
+      // v9.8.5 — Panel sukses in-sheet (bekerja di web & native).
+      setExecResult({
+        ok: true,
+        title: t("ats_exec_done"),
+        body:
+          `${intent.side} ${intent.symbol} @ ${res.entry_price?.toFixed?.(6) ?? intent.entry}\n` +
+          `Qty: ${res.qty} · ${t("ats_leverage")}: ${res.leverage}x\n` +
+          `${res.testnet ? "TESTNET" : "MAINNET"}`,
+      });
     } catch (e: any) {
-      Alert.alert(t("ats_exec_failed"), e?.message || String(e));
+      setExecResult({
+        ok: false,
+        title: t("ats_exec_failed"),
+        body: e?.message || String(e),
+      });
     } finally { setExecuting(false); }
   };
 
   if (!intent) return null;
   const sideColor = intent.side === "BUY" ? GREEN : RED;
+  const executed = !!execResult?.ok;
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -293,20 +304,83 @@ export default function AsiTradeSheet({ visible, onClose, intent }: Props) {
                   )}
                 </View>
 
-                {/* Execute button */}
+                {/* Execute button — v9.8.5: setelah SUKSES tombol berubah
+                    menjadi "✅ EXECUTED" dan TERKUNCI (tidak bisa ditekan
+                    lagi) supaya tidak ada order ganda tak sengaja. */}
                 <TouchableOpacity
                   onPress={execute}
-                  disabled={executing || !preview?.ok}
+                  disabled={executing || !preview?.ok || executed}
                   style={[s.cta, {
-                    backgroundColor: executing || !preview?.ok ? colors.textMuted : sideColor,
+                    backgroundColor: executed
+                      ? GREEN
+                      : (executing || !preview?.ok ? colors.textMuted : sideColor),
                     marginTop: 14,
+                    opacity: executed ? 0.85 : 1,
                   }]}
                   testID="asi-trade-execute">
-                  <Ionicons name="rocket" size={18} color="#FFFFFF" />
+                  <Ionicons name={executed ? "checkmark-circle" : "rocket"} size={18} color="#FFFFFF" />
                   <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.8 }}>
-                    {executing ? t("ats_sending") : `EXECUTE ${intent.side === "BUY" ? "LONG" : "SHORT"} ${activeCred?.testnet ? "(TESTNET)" : ""}`}
+                    {executed
+                      ? `✅ ${t("ats_executed_btn")}`
+                      : executing
+                        ? t("ats_sending")
+                        : `EXECUTE ${intent.side === "BUY" ? "LONG" : "SHORT"} ${activeCred?.testnet ? "(TESTNET)" : ""}`}
                   </Text>
                 </TouchableOpacity>
+
+                {/* v9.8.5 — Panel hasil eksekusi di dalam sheet (Alert.alert
+                    tidak tampil di web preview, jadi hasil harus in-app). */}
+                {execResult ? (
+                  <View style={{
+                    marginTop: 12, borderRadius: 12, padding: 12,
+                    borderWidth: 1.5,
+                    borderColor: execResult.ok ? GREEN : RED,
+                    backgroundColor: execResult.ok
+                      ? "rgba(34,197,94,0.08)" : "rgba(239,68,68,0.08)",
+                  }} testID="asi-exec-result">
+                    <Text style={{
+                      color: execResult.ok ? GREEN : RED,
+                      fontWeight: "900", fontSize: 13, letterSpacing: 0.3,
+                    }}>
+                      {execResult.title}
+                    </Text>
+                    <Text style={{ color: colors.textPrimary, fontSize: 12, marginTop: 6, lineHeight: 18 }}>
+                      {execResult.body}
+                    </Text>
+                    <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
+                      {execResult.ok ? (
+                        <TouchableOpacity
+                          onPress={() => { onClose(); router.push("/asi-bot" as never); }}
+                          style={{ flex: 1, backgroundColor: LIGHT_BLUE_BTN, borderRadius: 10, paddingVertical: 11, alignItems: "center" }}
+                          testID="asi-exec-view-recent"
+                        >
+                          <Text style={{ color: "#FFFFFF", fontWeight: "900", fontSize: 11.5 }}>
+                            {t("asi_exec_view_recent")}
+                          </Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <TouchableOpacity
+                          onPress={() => setExecResult(null)}
+                          style={{ flex: 1, backgroundColor: RED, borderRadius: 10, paddingVertical: 11, alignItems: "center" }}
+                          testID="asi-exec-retry"
+                        >
+                          <Text style={{ color: "#FFFFFF", fontWeight: "900", fontSize: 11.5 }}>
+                            {t("ats_try_again")}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                      <TouchableOpacity
+                        onPress={onClose}
+                        style={{ flex: 1, backgroundColor: colors.background, borderRadius: 10, paddingVertical: 11, alignItems: "center", borderWidth: 1, borderColor: colors.border }}
+                        testID="asi-exec-close"
+                      >
+                        <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 11.5 }}>
+                          {t("common_close")}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : null}
                 <Text style={{ color: colors.textMuted, fontSize: 10.5, textAlign: "center", marginTop: 8, lineHeight: 16 }}>
                   {t("ats_footer1")}{"\n"}
                   {t("ats_footer2")}

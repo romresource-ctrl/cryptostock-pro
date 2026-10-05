@@ -1711,3 +1711,36 @@ metadata_v984:
   version: "9.8.4"
   test_sequence: 42
   run_ui: false
+
+# ======================================================
+# v9.8.5 — EXECUTED button state + in-sheet result panel
+# ======================================================
+frontend_v985:
+  - task: "Pesan 'Order Successfully Executed' tidak muncul setelah EXECUTE"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/AsiTradeSheet.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          ROOT CAUSE: hasil eksekusi memakai Alert.alert yang TIDAK tampil
+          di web preview (RN Web no-op) → user tidak melihat konfirmasi apa
+          pun. Dialog konfirmasi pyramid juga menggantung di web (promise
+          tidak pernah resolve).
+          FIX: (1) Hasil eksekusi kini panel in-sheet (hijau sukses / merah
+          gagal) berisi judul terlokalisasi "Order Successfully Executed"
+          + detail order + tombol "View Recent Trades" (biru muda) /
+          "Try Again" (gagal) / "Close". (2) Tombol EXECUTE berubah jadi
+          "✅ EXECUTED" hijau TERKUNCI setelah sukses (sesuai permintaan
+          user — mencegah order ganda). (3) Dialog pyramid di web memakai
+          window.confirm fallback. (4) execResult di-reset tiap intent baru.
+          Keys i18n baru: ats_exec_done, ats_executed_btn, ats_try_again.
+metadata_v985:
+  created_by: "main_agent"
+  version: "9.8.5"
+  test_sequence: 43
+  run_ui: false
