@@ -183,18 +183,26 @@ export default function ASIBotScreen() {
   };
 
   const closeOneTrade = async (trade: AsiTradeResp) => {
+    // v9.8.4 — Kunci in-flight per (symbol|exchange) supaya fallback
+    // close-by-symbol (untuk row TANPA _id, mis. data dari backend lama)
+    // juga ter-dedupe dengan benar.
     const tid = (trade as any)._id as string | undefined;
-    if (!tid || closingIds[tid]) return;
-    setClosingIds((prev) => ({ ...prev, [tid]: true }));
+    const lockKey = tid || `${trade.exchange}:${trade.symbol}`;
+    if (closingIds[lockKey]) return;
+    setClosingIds((prev) => ({ ...prev, [lockKey]: true }));
     try {
-      await api.asi.closeTrade(deviceId, tid);
+      if (tid) {
+        await api.asi.closeTrade(deviceId, tid);
+      } else {
+        await api.asi.closeTradeBySymbol(deviceId, trade.symbol, trade.exchange);
+      }
       await refresh();
     } catch (e: any) {
       Alert.alert(t("asi_close_failed"), String(e?.message || e));
     } finally {
       setClosingIds((prev) => {
         const next = { ...prev };
-        delete next[tid];
+        delete next[lockKey];
         return next;
       });
     }
@@ -429,13 +437,17 @@ export default function ASIBotScreen() {
         ) : (
           <>
             {trades.map((tr, i) => {
-              const isOpen = tr.status === "open";
+              // v9.8.4 — Case-insensitive: beberapa row lama bisa menyimpan
+              // status "OPEN"/"Closed". Tombol CLOSE HARUS selalu muncul
+              // (dan aktif) untuk setiap posisi yang masih terbuka.
+              const isOpen = String(tr.status || "").toLowerCase() === "open";
               const margin = tr.margin_usdt
                 || ((tr.entry_price || 0) * (tr.qty || 0) / Math.max(1, tr.leverage || 1));
               const pct = margin > 0 ? ((tr.pnl_usdt ?? 0) / margin) * 100 : 0;
               const pos = (tr.pnl_usdt ?? 0) >= 0;
               const tid = (tr as any)._id as string | undefined;
-              const isClosing = !!(tid && closingIds[tid]);
+              const lockKey = tid || `${tr.exchange}:${tr.symbol}`;
+              const isClosing = !!closingIds[lockKey];
               const modeBadge = tr.mode === "full" ? "full" : "semi";
               const modeColor = modeBadge === "full" ? ORANGE : GOLD;
               const borderColor = isOpen ? modeColor : colors.border;
@@ -473,7 +485,7 @@ export default function ASIBotScreen() {
                   {isOpen ? (
                     <TouchableOpacity
                       onPress={() => closeOneTrade(tr)}
-                      disabled={isClosing || !tid}
+                      disabled={isClosing}
                       style={{
                         paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
                         backgroundColor: isClosing ? colors.border : RED,

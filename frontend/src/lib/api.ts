@@ -49,6 +49,10 @@ export interface AssetSignal {
   risk_level?: "Low" | "Medium" | "High" | null;
   reward_pct?: number | null;
   risk_pct?: number | null;
+  // v9.8.3 — Flag dari backend: false bila simbol TIDAK tradable sebagai
+  // USDT perpetual di Binance Futures (mis. aset delisted seperti OCEAN).
+  // undefined = belum dicek (anggap tradable).
+  futures_tradable?: boolean;
 }
 
 export type DashboardSort = "default" | "premium" | "confidence" | "wr";
@@ -413,6 +417,12 @@ export const api = {
         `/asi/trades/${encodeURIComponent(tradeId)}/close?device_id=${encodeURIComponent(deviceId)}`,
         "POST",
       ),
+    closeTradeBySymbol: (deviceId: string, symbol: string, exchange: string) =>
+      send<{ ok: boolean; closed: number; symbol: string; note?: string | null }>(
+        `/asi/trades/close-by-symbol?device_id=${encodeURIComponent(deviceId)}` +
+        `&symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange)}`,
+        "POST",
+      ),
     pnl: (deviceId: string) =>
       get<AsiPnl>(`/asi/pnl?device_id=${encodeURIComponent(deviceId)}`),
     leaderboard: (periodDays = 7) =>
@@ -463,6 +473,8 @@ export type AsiPreview = {
   est_loss_usdt: number;
   tp_estimations: { tp: number; qty_share: number; est_profit_usdt: number }[];
   message?: string;
+  // v9.8.3 — machine-readable error code untuk lokalisasi frontend
+  reason?: "not_listed" | "market_inactive" | string;
 };
 export type AsiTradeResp = {
   ok?: boolean; exchange: string; testnet: boolean; symbol: string;

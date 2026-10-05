@@ -89,7 +89,7 @@ export default function AsiTradeSheet({ visible, onClose, intent }: Props) {
         });
         setPreview(p);
       } catch (e: any) {
-        setPreview({ ok: false, message: e?.message || "Preview gagal",
+        setPreview({ ok: false, message: e?.message || t("ats_no_preview"),
                      balance_usdt: 0, margin_usdt: 0, size_usdt: 0, qty: 0,
                      leverage, risk_pct: riskPct, est_loss_usdt: 0, tp_estimations: [] });
       } finally { setLoading(false); }
@@ -117,11 +117,15 @@ export default function AsiTradeSheet({ visible, onClose, intent }: Props) {
       if (dup) {
         const proceed = await new Promise<boolean>((resolve) => {
           Alert.alert(
-            "Posisi Sudah Terbuka",
-            `Anda sudah punya posisi ${dup.side} ${sym} aktif di ${exchange.toUpperCase()} (PnL $${(dup.pnl_usdt ?? 0).toFixed(2)}).\n\nTambah posisi lagi (pyramid)?`,
+            t("ats_dup_title"),
+            t("ats_dup_body")
+              .replace("{side}", String(dup.side))
+              .replace("{symbol}", sym)
+              .replace("{exchange}", exchange.toUpperCase())
+              .replace("{pnl}", (dup.pnl_usdt ?? 0).toFixed(2)),
             [
-              { text: "Batal", style: "cancel", onPress: () => resolve(false) },
-              { text: "Ya, tambah", onPress: () => resolve(true) },
+              { text: t("ats_dup_cancel"), style: "cancel", onPress: () => resolve(false) },
+              { text: t("ats_dup_add"), onPress: () => resolve(true) },
             ],
           );
         });
@@ -138,18 +142,18 @@ export default function AsiTradeSheet({ visible, onClose, intent }: Props) {
         tp_count: tpCount, trailing_callback_rate: trailingCbRate,
       });
       Alert.alert(
-        t("asi_exec_success_title") || "✅ Order Terkirim",
+        t("asi_exec_success_title"),
         `${intent.side} ${intent.symbol} @ ${res.entry_price?.toFixed?.(6) ?? intent.entry}\n` +
-        `Qty: ${res.qty} · Leverage: ${res.leverage}x\n` +
+        `Qty: ${res.qty} · ${t("ats_leverage")}: ${res.leverage}x\n` +
         `${res.testnet ? "TESTNET" : "MAINNET"}`,
         [
-          { text: t("asi_exec_view_recent") || "Lihat Recent Trades",
+          { text: t("asi_exec_view_recent"),
             onPress: () => { onClose(); router.push("/asi-bot" as never); } },
-          { text: t("common_close") || "Tutup", style: "cancel", onPress: () => onClose() },
+          { text: t("common_close"), style: "cancel", onPress: () => onClose() },
         ],
       );
     } catch (e: any) {
-      Alert.alert("Gagal Eksekusi", e?.message || String(e));
+      Alert.alert(t("ats_exec_failed"), e?.message || String(e));
     } finally { setExecuting(false); }
   };
 
@@ -171,7 +175,7 @@ export default function AsiTradeSheet({ visible, onClose, intent }: Props) {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[s.title, { color: colors.textPrimary }]}>{intent.symbol}</Text>
-                <Text style={[s.caption, { color: colors.textMuted }]}>Trade dengan ASI-Bot (Semi-Auto)</Text>
+                <Text style={[s.caption, { color: colors.textMuted }]}>{t("ats_subtitle")}</Text>
               </View>
               <TouchableOpacity onPress={onClose} hitSlop={10}>
                 <Ionicons name="close" size={22} color={colors.textMuted} />
@@ -183,15 +187,15 @@ export default function AsiTradeSheet({ visible, onClose, intent }: Props) {
               <View style={[s.empty, { backgroundColor: colors.background }]}>
                 <Text style={{ fontSize: 36 }}>🔌</Text>
                 <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 14, marginTop: 10 }}>
-                  Belum terhubung ke exchange
+                  {t("ats_no_cred_title")}
                 </Text>
                 <Text style={{ color: colors.textMuted, fontSize: 12, textAlign: "center", lineHeight: 18, marginTop: 6 }}>
-                  Hubungkan API Binance / Bybit / OKX / Bitget di halaman ASI-Bot sebelum trade otomatis.
+                  {t("ats_no_cred_body")}
                 </Text>
                 <TouchableOpacity
                   style={[s.cta, { backgroundColor: MINT, marginTop: 14 }]}
                   onPress={() => { onClose(); router.push("/asi-bot" as never); }}>
-                  <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.6 }}>HUBUNGKAN EXCHANGE</Text>
+                  <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.6 }}>{t("ats_connect_cta")}</Text>
                 </TouchableOpacity>
               </View>
             ) : (
@@ -228,10 +232,10 @@ export default function AsiTradeSheet({ visible, onClose, intent }: Props) {
                 </View>
 
                 {/* Risk & Leverage */}
-                <StepperRow label="Risk per Trade" value={`${riskPct}%`} colors={colors}
+                <StepperRow label={t("ats_risk_per_trade")} value={`${riskPct}%`} colors={colors}
                   onDec={() => setRiskPct(Math.max(1, riskPct - 1))}
                   onInc={() => setRiskPct(Math.min(30, riskPct + 1))} />
-                <StepperRow label="Leverage" value={`${leverage}x`} colors={colors}
+                <StepperRow label={t("ats_leverage")} value={`${leverage}x`} colors={colors}
                   onDec={() => setLeverage(Math.max(1, leverage - 1))}
                   onInc={() => setLeverage(Math.min(125, leverage + 1))} />
 
@@ -249,7 +253,7 @@ export default function AsiTradeSheet({ visible, onClose, intent }: Props) {
                   })}
                 </View>
                 <StepperRow
-                  label="Trailing Callback (after TP1)"
+                  label={t("ats_trailing_cb")}
                   value={trailingCbRate === 0 ? "OFF" : `${trailingCbRate.toFixed(1)}%`}
                   colors={colors}
                   onDec={() => setTrailingCbRate(Math.max(0, Math.round((trailingCbRate - 0.5) * 10) / 10))}
@@ -259,21 +263,32 @@ export default function AsiTradeSheet({ visible, onClose, intent }: Props) {
                 {/* Preview */}
                 <View style={[s.preview, { backgroundColor: colors.background, borderColor: colors.border }]}>
                   {loading ? (
-                    <Text style={{ color: colors.textMuted, fontSize: 12 }}>Menghitung preview...</Text>
+                    <Text style={{ color: colors.textMuted, fontSize: 12 }}>{t("ats_calculating")}</Text>
                   ) : preview?.ok ? (
                     <>
-                      <PreviewRow label="Saldo USDT" value={`$${preview.balance_usdt.toFixed(2)}`} colors={colors} />
-                      <PreviewRow label="Margin Dipakai" value={`$${preview.margin_usdt.toFixed(2)}`} colors={colors} highlight />
-                      <PreviewRow label="Ukuran Posisi" value={`$${preview.size_usdt.toFixed(2)} (${preview.qty.toFixed(6)})`} colors={colors} />
-                      <PreviewRow label="Potensi Rugi (SL)" value={`-$${preview.est_loss_usdt.toFixed(2)}`} colors={colors} valueColor={RED} />
-                      {preview.tp_estimations.map((t, i) => (
-                        <PreviewRow key={i} label={`TP${i + 1} Profit (${Math.round(t.qty_share * 100)}%)`}
-                                    value={`+$${t.est_profit_usdt.toFixed(2)}`} colors={colors} valueColor={GREEN} />
+                      <PreviewRow label={t("ats_balance")} value={`$${preview.balance_usdt.toFixed(2)}`} colors={colors} />
+                      <PreviewRow label={t("ats_margin")} value={`$${preview.margin_usdt.toFixed(2)}`} colors={colors} highlight />
+                      <PreviewRow label={t("ats_size")} value={`$${preview.size_usdt.toFixed(2)} (${preview.qty.toFixed(6)})`} colors={colors} />
+                      <PreviewRow label={t("ats_est_loss")} value={`-$${preview.est_loss_usdt.toFixed(2)}`} colors={colors} valueColor={RED} />
+                      {preview.tp_estimations.map((tp, i) => (
+                        <PreviewRow key={i} label={`TP${i + 1} ${t("ats_profit")} (${Math.round(tp.qty_share * 100)}%)`}
+                                    value={`+$${tp.est_profit_usdt.toFixed(2)}`} colors={colors} valueColor={GREEN} />
                       ))}
                     </>
                   ) : (
                     <Text style={{ color: RED, fontSize: 12 }}>
-                      {preview?.message || "Preview belum tersedia."}
+                      {(() => {
+                        // v9.8.3 — Reason code dari backend dipetakan ke pesan
+                        // terlokalisasi. Fallback ke message mentah.
+                        const reason = (preview as any)?.reason as string | undefined;
+                        if (reason === "not_listed") {
+                          return t("ats_err_not_listed").replace("{symbol}", intent.symbol);
+                        }
+                        if (reason === "market_inactive") {
+                          return t("ats_err_inactive").replace("{symbol}", intent.symbol);
+                        }
+                        return preview?.message || t("ats_no_preview");
+                      })()}
                     </Text>
                   )}
                 </View>
@@ -289,12 +304,12 @@ export default function AsiTradeSheet({ visible, onClose, intent }: Props) {
                   testID="asi-trade-execute">
                   <Ionicons name="rocket" size={18} color="#FFFFFF" />
                   <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.8 }}>
-                    {executing ? "MENGIRIM ORDER..." : `EXECUTE ${intent.side === "BUY" ? "LONG" : "SHORT"} ${activeCred?.testnet ? "(TESTNET)" : ""}`}
+                    {executing ? t("ats_sending") : `EXECUTE ${intent.side === "BUY" ? "LONG" : "SHORT"} ${activeCred?.testnet ? "(TESTNET)" : ""}`}
                   </Text>
                 </TouchableOpacity>
                 <Text style={{ color: colors.textMuted, fontSize: 10.5, textAlign: "center", marginTop: 8, lineHeight: 16 }}>
-                  Bracket SL + TP1/TP2/TP3 (split 40/30/30) otomatis terpasang.{"\n"}
-                  Risiko slippage & kerugian pasar 100% tanggung jawab Anda.
+                  {t("ats_footer1")}{"\n"}
+                  {t("ats_footer2")}
                 </Text>
               </>
             )}

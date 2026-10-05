@@ -29,3 +29,50 @@ def is_allowed(symbol: str) -> bool:
     Eksekusi trade kini memakai engine._ensure_tradable (dinamis)."""
     base = symbol.upper().split("/")[0].split("USDT")[0].split("-")[0]
     return base in TOP_100_FUTURES
+
+
+# ---------------------------------------------------------------------------
+# v9.8.3 — Daftar simbol perpetual USDT yang TRADING di Binance (public API).
+# Dipakai untuk menandai sinyal AI yang BENAR-BENAR bisa dieksekusi di
+# Binance Futures (mis. OCEAN sudah delist → futures_tradable=False di UI,
+# tombol EXECUTE diganti note abu-abu, tidak ada lagi kegagalan setelah tap).
+# ---------------------------------------------------------------------------
+import os as _os
+import time as _time
+
+_PERPS_CACHE: tuple[float, set[str] | None] = (0.0, None)
+_PERPS_TTL = 600.0  # 10 menit
+
+
+async def binance_perp_tradable() -> set[str] | None:
+    """Return set base-symbols (BTC, STX, …) yang statusnya TRADING di
+    Binance USDT-M Futures. None bila fetch gagal (caller jangan filter)."""
+    global _PERPS_CACHE
+    now = _time.monotonic()
+    cached_at, cached = _PERPS_CACHE
+    if cached is not None and (now - cached_at) < _PERPS_TTL:
+        return cached
+    try:
+        import httpx  # noqa: PLC0415 — local import keeps startup light
+        proxy = _os.environ.get("ASI_PROXY_URL") or _os.environ.get("HTTPS_PROXY")
+        async with httpx.AsyncClient(proxy=proxy, timeout=15) as c:
+            r = await c.get("https://fapi.binance.com/fapi/v1/exchangeInfo")
+            r.raise_for_status()
+            data = r.json()
+        out: set[str] = set()
+        for s in data.get("symbols", []):
+            if (
+                s.get("quoteAsset") == "USDT"
+                and s.get("contractType") == "PERPETUAL"
+                and s.get("status") == "TRADING"
+            ):
+                base = (s.get("baseAsset") or "").upper()
+                if base:
+                    out.add(base)
+        if out:
+            _PERPS_CACHE = (now, out)
+            return out
+    except Exception:
+        pass
+    # Jangan timpa cache sukses dengan kegagalan; pakai cache lama bila ada.
+    return cached

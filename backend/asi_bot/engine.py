@@ -168,14 +168,16 @@ def _ccxt_symbol(exchange: str, base: str) -> str:
     return f"{base}/USDT"
 
 
-async def _ensure_tradable(client: Any, exch_sym: str, base: str) -> str | None:
+async def _ensure_tradable(client: Any, exch_sym: str, base: str) -> tuple[str, str] | None:
     """v9.8.2 — Validasi dinamis menggantikan whitelist statis Top-100.
 
     Simbol boleh dieksekusi SELAMA benar-benar terdaftar sebagai market
-    aktif di exchange user (Binance/Bybit/OKX/Bitget). Return pesan error
-    (str) bila tidak valid, None bila valid. Jika load_markets gagal
-    (network hiccup), kita TIDAK memblokir — biarkan order placement
-    exchange yang memvalidasi.
+    aktif di exchange user (Binance/Bybit/OKX/Bitget).
+
+    Return (reason_code, fallback_message) bila tidak valid, None bila valid.
+    reason_code: "not_listed" | "market_inactive" — dipetakan ke pesan
+    terlokalisasi di frontend. Jika load_markets gagal (network hiccup),
+    kita TIDAK memblokir — biarkan order placement exchange yang memvalidasi.
     """
     try:
         markets = await client.load_markets()
@@ -183,9 +185,11 @@ async def _ensure_tradable(client: Any, exch_sym: str, base: str) -> str | None:
         return None
     m = markets.get(exch_sym)
     if not m:
-        return f"{base} tidak tersedia sebagai perpetual USDT di exchange ini."
+        return ("not_listed",
+                f"{base} tidak tersedia sebagai perpetual USDT di exchange ini.")
     if m.get("active") is False:
-        return f"{base} sedang tidak aktif di exchange ini."
+        return ("market_inactive",
+                f"{base} sedang tidak aktif di exchange ini.")
     return None
 
 
@@ -202,9 +206,9 @@ async def preview_trade(
     client = await _get_client(doc)
     try:
         # v9.8.2 — validasi dinamis ke daftar pasar exchange (bukan whitelist statis)
-        err = await _ensure_tradable(client, _ccxt_symbol(doc["exchange"], symbol), symbol)
-        if err:
-            return {"ok": False, "message": err}
+        bad = await _ensure_tradable(client, _ccxt_symbol(doc["exchange"], symbol), symbol)
+        if bad:
+            return {"ok": False, "reason": bad[0], "message": bad[1]}
         bal = await _fetch_usdt_balance(client)
     finally:
         await client.close()
@@ -251,7 +255,7 @@ async def execute_trade(
             await client.close()
         except Exception:
             pass
-        return {"ok": False, "message": tradable_err}
+        return {"ok": False, "reason": tradable_err[0], "message": tradable_err[1]}
     entry_order_id = None
     sl_order_id = None
     tp_order_ids: list[str] = []

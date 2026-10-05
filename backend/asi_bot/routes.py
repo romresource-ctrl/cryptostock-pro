@@ -334,6 +334,54 @@ def _attach_trade_routes(db: Any) -> None:
                 errors.append({"symbol": t.get("symbol", "?"), "error": str(e)[:200]})
         return {"ok": not errors, "closed": closed_ok, "errors": errors}
 
+    @router.post("/trades/close-by-symbol")
+    async def close_by_symbol(
+        device_id: str = Query(..., min_length=4),
+        symbol: str = Query(..., min_length=1),
+        exchange: str = Query(..., min_length=2),
+    ):
+        """v9.8.4 — Fallback close ketika row trade tidak punya `_id`
+        (mis. response dari backend lama yang men-strip _id) ATAU posisi
+        masih terbuka di exchange walau row sudah bertanda closed.
+
+        Urutan:
+          1. Cari trade OPEN (case-insensitive) terbaru utk symbol+exchange.
+          2. Bila tidak ada, pakai trade TERAKHIR (status apa pun) untuk
+             mengambil side/qty — lalu tetap panggil close_position yang
+             membaca posisi REAL dari exchange (no-op bila memang kosong).
+          3. Tandai semua trade open utk symbol itu sebagai closed/manual.
+        """
+        sym = symbol.upper().split("/")[0].split("USDT")[0].split("-")[0]
+        trades = [
+            d async for d in db.asi_trades.find(
+                {"device_id": device_id, "symbol": sym, "exchange": exchange}
+            ).sort("created_at", -1).limit(10)
+        ]
+        if not trades:
+            raise HTTPException(404, f"Tidak ada trade {sym} di {exchange}.")
+        open_trades = [t for t in trades
+                       if str(t.get("status", "")).lower() == "open"]
+        ref = open_trades[0] if open_trades else trades[0]
+        cred = await db.asi_credentials.find_one({"_id": f"{device_id}:{exchange}"})
+        if not cred:
+            raise HTTPException(404, "Hubungkan API exchange terlebih dahulu.")
+        try:
+            await close_position(
+                cred, ref["symbol"], ref["side"], float(ref.get("qty") or 0),
+            )
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(500, str(e)[:200])
+        now = datetime.now(timezone.utc).isoformat()
+        ids = [t["_id"] for t in open_trades]
+        if ids:
+            await db.asi_trades.update_many(
+                {"_id": {"$in": ids}},
+                {"$set": {"status": "closed", "close_reason": "manual",
+                          "closed_at": now, "updated_at": now}},
+            )
+        return {"ok": True, "closed": len(ids), "symbol": sym,
+                "note": "db_row_missing" if not open_trades else None}
+
     @router.get("/trades")
     async def list_trades(device_id: str = Query(..., min_length=4), limit: int = 50):
         rows: list[dict[str, Any]] = []

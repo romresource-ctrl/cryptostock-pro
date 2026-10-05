@@ -804,13 +804,28 @@ async def ai_suggestions(
         {"scalper": "VWAP-SCALPER", "day": "VWAP-INTRADAY", "swing": "VWAP-SWING"}.get(profile or "", "CONFLUENCE")
         if profile else "CONFLUENCE"
     )
+    items = [a.model_dump() for a in picks]
+    # v9.8.3 — Tandai sinyal crypto yang BENAR-BENAR tradable di Binance
+    # USDT-M Futures. Sinyal untuk aset delisted (mis. OCEAN) diberi flag
+    # futures_tradable=False agar UI mengganti tombol EXECUTE dengan note,
+    # bukan gagal setelah user tap.
+    if market == "crypto":
+        try:
+            from asi_bot.whitelist import binance_perp_tradable
+            perps = await binance_perp_tradable()
+            if perps is not None:
+                for it in items:
+                    base = str(it.get("symbol") or "").upper().split("/")[0].split("USDT")[0]
+                    it["futures_tradable"] = base in perps
+        except Exception:
+            pass
     out = {
         "market": market,
         "timeframe": timeframe,
         "profile": profile,
         "engine": engine,
         "count": len(picks),
-        "suggestions": [a.model_dump() for a in picks],
+        "suggestions": items,
         "server_time": _now_iso(),
     }
     _ai_suggestions_cache[cache_key] = (time.time(), out)

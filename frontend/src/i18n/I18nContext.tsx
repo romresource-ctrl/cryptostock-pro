@@ -798,6 +798,88 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     cn: "两者可同时运行——各自状态独立更新。",
   },
 
+  // v9.8.3 — AsiTradeSheet full localization (id/en/ru/cn)
+  ats_subtitle: {
+    id: "Trade dengan ASI-Bot (Semi-Auto)",
+    en: "Trade with ASI-Bot (Semi-Auto)",
+    ru: "Сделка через ASI-Bot (Semi-Auto)",
+    cn: "使用 ASI-Bot 交易（半自动）",
+  },
+  ats_no_cred_title: {
+    id: "Belum terhubung ke exchange",
+    en: "Not connected to an exchange",
+    ru: "Нет подключения к бирже",
+    cn: "尚未连接交易所",
+  },
+  ats_no_cred_body: {
+    id: "Hubungkan API Binance / Bybit / OKX / Bitget di halaman ASI-Bot sebelum trade otomatis.",
+    en: "Connect your Binance / Bybit / OKX / Bitget API on the ASI-Bot page before auto-trading.",
+    ru: "Подключите API Binance / Bybit / OKX / Bitget на странице ASI-Bot перед автоторговлей.",
+    cn: "请先在 ASI-Bot 页面连接 Binance / Bybit / OKX / Bitget API，然后再进行自动交易。",
+  },
+  ats_connect_cta: {
+    id: "HUBUNGKAN EXCHANGE",
+    en: "CONNECT EXCHANGE",
+    ru: "ПОДКЛЮЧИТЬ БИРЖУ",
+    cn: "连接交易所",
+  },
+  ats_risk_per_trade: { id: "Risiko per Trade", en: "Risk per Trade", ru: "Риск на сделку", cn: "每笔交易风险" },
+  ats_leverage: { id: "Leverage", en: "Leverage", ru: "Плечо", cn: "杠杆" },
+  ats_trailing_cb: {
+    id: "Trailing Callback (setelah TP1)",
+    en: "Trailing Callback (after TP1)",
+    ru: "Трейлинг-колбэк (после TP1)",
+    cn: "追踪回调（TP1 之后）",
+  },
+  ats_calculating: { id: "Menghitung preview…", en: "Calculating preview…", ru: "Расчёт превью…", cn: "正在计算预览…" },
+  ats_balance: { id: "Saldo USDT", en: "USDT Balance", ru: "Баланс USDT", cn: "USDT 余额" },
+  ats_margin: { id: "Margin Dipakai", en: "Margin Used", ru: "Используемая маржа", cn: "已用保证金" },
+  ats_size: { id: "Ukuran Posisi", en: "Position Size", ru: "Размер позиции", cn: "仓位规模" },
+  ats_est_loss: { id: "Potensi Rugi (SL)", en: "Est. Loss (SL)", ru: "Оцен. убыток (SL)", cn: "预计亏损 (SL)" },
+  ats_profit: { id: "Profit", en: "Profit", ru: "Профит", cn: "盈利" },
+  ats_no_preview: { id: "Preview belum tersedia.", en: "Preview not available.", ru: "Превью недоступно.", cn: "预览不可用。" },
+  ats_sending: { id: "MENGIRIM ORDER…", en: "SENDING ORDER…", ru: "ОТПРАВКА ОРДЕРА…", cn: "正在发送订单…" },
+  ats_footer1: {
+    id: "Bracket SL + TP1/TP2/TP3 otomatis terpasang.",
+    en: "Bracket SL + TP1/TP2/TP3 is placed automatically.",
+    ru: "Скобка SL + TP1/TP2/TP3 выставляется автоматически.",
+    cn: "SL + TP1/TP2/TP3 括号单自动挂出。",
+  },
+  ats_footer2: {
+    id: "Risiko slippage & kerugian pasar 100% tanggung jawab Anda.",
+    en: "Slippage & market-loss risk is 100% your responsibility.",
+    ru: "Риск проскальзывания и убытков — полностью ваша ответственность.",
+    cn: "滑点与市场亏损风险 100% 由您自行承担。",
+  },
+  ats_dup_title: { id: "Posisi Sudah Terbuka", en: "Position Already Open", ru: "Позиция уже открыта", cn: "已有持仓" },
+  ats_dup_body: {
+    id: "Anda sudah punya posisi {side} {symbol} aktif di {exchange} (PnL ${pnl}).\n\nTambah posisi lagi (pyramid)?",
+    en: "You already have an open {side} {symbol} position on {exchange} (PnL ${pnl}).\n\nAdd another position (pyramid)?",
+    ru: "У вас уже есть открытая позиция {side} {symbol} на {exchange} (PnL ${pnl}).\n\nДобавить ещё позицию (пирамидинг)?",
+    cn: "您在 {exchange} 已有 {side} {symbol} 持仓（盈亏 ${pnl}）。\n\n要加仓（金字塔）吗？",
+  },
+  ats_dup_cancel: { id: "Batal", en: "Cancel", ru: "Отмена", cn: "取消" },
+  ats_dup_add: { id: "Ya, tambah", en: "Yes, add", ru: "Да, добавить", cn: "是，加仓" },
+  ats_exec_failed: { id: "Gagal Eksekusi", en: "Execution Failed", ru: "Ошибка исполнения", cn: "执行失败" },
+  ats_err_not_listed: {
+    id: "{symbol} tidak tersedia sebagai perpetual USDT di exchange ini.",
+    en: "{symbol} is not available as a USDT perpetual on this exchange.",
+    ru: "{symbol} недоступен как USDT-перпетуал на этой бирже.",
+    cn: "{symbol} 在该交易所没有 USDT 永续合约。",
+  },
+  ats_err_inactive: {
+    id: "{symbol} sedang tidak aktif di exchange ini.",
+    en: "{symbol} is currently inactive on this exchange.",
+    ru: "{symbol} сейчас неактивен на этой бирже.",
+    cn: "{symbol} 当前在该交易所不可用。",
+  },
+  ai_not_tradable: {
+    id: "Tidak tersedia di Binance Futures",
+    en: "Not available on Binance Futures",
+    ru: "Недоступен на Binance Futures",
+    cn: "Binance 合约不可用",
+  },
+
   // v9.6.9 — Credential validation error codes (backend returns {code, message})
   asi_err_ip_or_key_invalid: {
     id: "API Key/Secret salah ATAU IP server (143.198.197.107) belum di-whitelist di Binance.",

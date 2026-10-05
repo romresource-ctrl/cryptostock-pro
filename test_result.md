@@ -1619,3 +1619,95 @@ metadata_v982:
   version: "9.8.2"
   test_sequence: 41
   run_ui: false
+
+# ======================================================
+# v9.8.3 — Full i18n AsiTradeSheet + futures_tradable flag
+# ======================================================
+backend_v983:
+  - task: "engine._ensure_tradable return reason code + ai-suggestions annotate futures_tradable"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/engine.py, /app/backend/asi_bot/whitelist.py, /app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          _ensure_tradable kini return (reason, message): not_listed |
+          market_inactive. preview_trade/execute_trade menyertakan reason di
+          dict response. whitelist.py: tambah binance_perp_tradable() —
+          fetch public /fapi/v1/exchangeInfo via proxy, cache 10 menit,
+          return set base-symbols status TRADING. server.py ai-suggestions:
+          annotate tiap sinyal crypto dgn futures_tradable (None = jangan
+          filter). Verified curl: semua sinyal aktif futures_tradable=True.
+frontend_v983:
+  - task: "Lokalisasi penuh AsiTradeSheet (4 bahasa) + reason mapping"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/AsiTradeSheet.tsx, I18nContext.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          20+ string hardcoded diganti t(): subtitle, no-cred state, stepper
+          labels (Risk/Leverage/Trailing), preview rows (Saldo/Margin/Ukuran/
+          Potensi Rugi/TP Profit), footer, tombol EXECUTE/sending, dialog
+          duplikat pyramid, alert gagal, error not_listed/market_inactive
+          (pakai reason code backend + {symbol} placeholder).
+          AISuggestionsSheet: aset futures_tradable=false → note abu-abu
+          "ai_not_tradable" menggantikan tombol EXECUTE. Screenshot-verified:
+          sheet tampil "Not connected to an exchange / CONNECT EXCHANGE"
+          dalam English sesuai locale.
+
+# ======================================================
+# v9.8.4 — CLOSE button untuk SEMUA posisi open (user report)
+# ======================================================
+backend_v984:
+  - task: "POST /asi/trades/close-by-symbol fallback endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/routes.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          User report: sebagian posisi open tidak punya tombol CLOSE.
+          Penyebab: row tanpa _id (response backend lama men-strip _id)
+          membuat tombol disabled abu-abu; juga row yg keliru 'closed'
+          (phantom-close pra-v9.7.7 di produksi) padahal posisi masih
+          terbuka di exchange.
+          FIX backend: endpoint close-by-symbol — cari trade open
+          (case-insensitive) utk symbol+exchange; bila tidak ada, pakai
+          row terakhir utk side/qty lalu close_position tetap membaca
+          posisi REAL exchange (menutup residual yg DB-nya sudah closed).
+          Semua trade open utk symbol itu ditandai closed/manual.
+          Curl-verified: 404 benar utk symbol tanpa trade.
+frontend_v984:
+  - task: "CLOSE button selalu aktif utk open + fallback by-symbol"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/asi-bot.tsx, /app/frontend/src/lib/api.ts"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          isOpen kini case-insensitive ("open"/"OPEN"). Tombol CLOSE
+          tidak pernah disabled karena _id hilang: bila tid kosong →
+          fallback api.asi.closeTradeBySymbol. LockKey in-flight per
+          (exchange:symbol) saat tanpa tid agar dedupe benar.
+metadata_v984:
+  created_by: "main_agent"
+  version: "9.8.4"
+  test_sequence: 42
+  run_ui: false

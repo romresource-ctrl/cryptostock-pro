@@ -27,6 +27,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
 
 import { api, formatPrice, type AssetSignal, type Market } from "@/src/lib/api";
 import { getDeviceId } from "@/src/lib/deviceId";
@@ -257,6 +258,9 @@ export default function AISuggestionsSheet({ visible, onClose, onRequestSubscrib
                 && typeof a.stop_loss === "number"
                 && tps.length > 0
                 && (a.action === "BUY" || a.action === "SELL");
+              // v9.8.3 — false = aset tidak tradable di Binance Futures
+              // (delisted, mis. OCEAN). Jangan tampilkan tombol EXECUTE.
+              const tradable = (a as any).futures_tradable !== false;
               return (
                 <View
                   key={key}
@@ -302,7 +306,7 @@ export default function AISuggestionsSheet({ visible, onClose, onRequestSubscrib
                   {/* v9.8.0 — Tombol EXECUTE SEMI-AUTO selalu tampil di card
                       utama (tidak perlu expand). crypto-only, dan hanya saat
                       sinyal valid (entry/sl/tp lengkap). */}
-                  {canTrade ? (
+                  {canTrade && tradable ? (
                     <TouchableOpacity
                       style={[styles.detailBtn, {
                         backgroundColor: "#EC4899", borderColor: "#EC4899",
@@ -329,6 +333,20 @@ export default function AISuggestionsSheet({ visible, onClose, onRequestSubscrib
                         ⚡ {t("ai_trade_execute_semi")}
                       </Text>
                     </TouchableOpacity>
+                  ) : canTrade && !tradable ? (
+                    // v9.8.3 — Aset valid tapi TIDAK tradable di Binance Futures
+                    // (delisted). Tampilkan note abu-abu, bukan tombol mati.
+                    <View style={[styles.detailBtn, {
+                      backgroundColor: "transparent", borderColor: colors.border,
+                      marginHorizontal: 12, marginBottom: 10,
+                      flexDirection: "row", justifyContent: "center",
+                      alignItems: "center", gap: 6, opacity: 0.7,
+                    }]}>
+                      <Ionicons name="alert-circle-outline" size={14} color={colors.textMuted} />
+                      <Text style={{ color: colors.textMuted, fontWeight: "700", fontSize: 11 }}>
+                        {t("ai_not_tradable")}
+                      </Text>
+                    </View>
                   ) : null}
 
                   {isOpen && (
