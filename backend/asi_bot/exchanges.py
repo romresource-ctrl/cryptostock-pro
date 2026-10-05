@@ -112,6 +112,11 @@ async def validate_credentials(
             acct = await _binance_fapi_account(api_key, api_secret, testnet)
         except Exception as e:
             msg = str(e)
+            # v9.7.1 — Proxy / network layer failures are the #1 cause
+            # of "silent" validation failures. Classify them explicitly
+            # so the UI can display a clear, actionable message.
+            if any(x in msg.lower() for x in ("readtimeout", "connecttimeout", "connecttimeouterror", "connecterror", "read timeout", "connection refused", "proxyerror")):
+                return {"ok": False, "code": "proxy_down", "message": "Server IP relay is unreachable. Please contact admin."}
             if "-2015" in msg or "Invalid API-key" in msg:
                 return {"ok": False, "code": "ip_or_key_invalid", "message": "Invalid API key/secret OR server IP not whitelisted (IP: 143.198.197.107)."}
             if "-2014" in msg or "API-key format invalid" in msg:

@@ -708,6 +708,12 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     ru: "У API ключа нет разрешения на торговлю. Включите 'Futures' в Binance.",
     cn: "API 密钥没有交易权限，请在 Binance 启用 'Futures'。",
   },
+  asi_err_proxy_down: {
+    id: "Relay IP server tidak dapat dihubungi. Mohon hubungi admin aplikasi.",
+    en: "Server IP relay is unreachable. Please contact the app admin.",
+    ru: "Релей IP сервера недоступен. Свяжитесь с администратором приложения.",
+    cn: "服务器 IP 中继无法访问，请联系应用管理员。",
+  },
   asi_err_auth_failed: {
     id: "Autentikasi API key gagal.",
     en: "API key authentication failed.",
