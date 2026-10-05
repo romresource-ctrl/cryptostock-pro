@@ -680,3 +680,28 @@ Fase berikutnya (BELUM):
 - Handle trader tetap dianonimkan ("MNT***") — keputusan privasi &
   kepatuhan Play Store; JANGAN pernah tampilkan identitas/API credential
   user lain di leaderboard.
+
+## v9.7.6 — Independent Semi/Full State & Manual Close (Okt 2026)
+- State Semi-Auto dan Full-Auto dipisahkan (`semi_enabled` dan `full_enabled`).
+- Scheduler Full-Auto hanya berjalan jika `full_enabled=True`.
+- Endpoint `POST /api/asi/trades/{symbol}/close` untuk menutup posisi manual via UI.
+- UI Recent Trades: Badge "SEMI" / "FULL" per trade + tombol merah "CLOSE" untuk posisi OPEN.
+
+## v9.7.7 — Single-Card Mode Swapping & Semi-Auto Pick Signal (Okt 2026)
+- Desain box atas: 1 card dinamis yang berganti mengikuti mode chip (Semi = hijau, Full = oranye).
+- Semi-Auto: Mode READY tanpa STOP, tombol tunggal "🎯 PICK A SIGNAL" yang otomatis memindai AI Suggestions sesuai Trader Profile aktif dan membuka konfirmasi 1-tap.
+- Cek duplikat posisi (pyramid alert) sebelum mengeksekusi trade baru pada simbol yang sama.
+- Copy Trade Leaderboard: Menampilkan hanya posisi profit (hijau), diurutkan berdasarkan Unrealized PnL % tertinggi (font 20px).
+- Disclaimer acknowledgement disimpan permanen di database config backend (`disclaimer_ack: true`).
+- Fix bug Phantom Close pada `engine.refresh_trade_pnl`.
+
+## v9.7.8 — AI Suggestions Direct Execution Polish (Okt 2026)
+- Tombol eksekusi Semi-Auto di kartu AI Suggestions ("⚡ EXECUTE SEMI-AUTO") dengan badge pink SEMI.
+- Konfirmasi sukses kini menyediakan opsi langsung "Lihat Recent Trades" → navigasi ke `/asi-bot`.
+
+## v9.7.9 — Trader Profile Modal Fixes & Admin Code Unification (Okt 2026)
+- TraderProfileModal tidak lagi auto-close setelah memilih profil, sehingga user bisa langsung menekan tombol "AI SUGGESTIONS".
+- Profil Long-Term & default Confluence kini dapat membuka AI Suggestions (popup "Select a profile first" dihapus total).
+- Sinkronisasi verifikasi unlock code antara Preview dan Production host (`https://cryptostock-pro.emergent.host`).
+- Penyederhanaan otentikasi admin code generator.
+
