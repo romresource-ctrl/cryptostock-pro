@@ -107,8 +107,6 @@ export default function ASIBotScreen() {
     });
   };
 
-  const openTradesCount = trades.filter((t) => t.status === "open").length;
-
   const toggleBot = async (val: boolean) => {
     if (val && !canUseBot) {
       Alert.alert(
@@ -117,32 +115,9 @@ export default function ASIBotScreen() {
       );
       return;
     }
-    // v9.7.4 — Deactivating with open positions: SL/TP native tetap menjaga
-    // di exchange; user memilih biarkan berjalan atau tutup semua.
-    if (!val && openTradesCount > 0) {
-      Alert.alert(
-        t("asi_deactivate_title"),
-        t("asi_deactivate_body").replace("{n}", String(openTradesCount)),
-        [
-          { text: t("common_cancel"), style: "cancel" },
-          {
-            text: t("asi_deactivate_keep"),
-            onPress: () => saveBot({ enabled: false }),
-          },
-          {
-            text: t("asi_deactivate_close_all"),
-            style: "destructive",
-            onPress: async () => {
-              try { await api.asi.closeAllTrades(deviceId); } catch {}
-              await saveBot({ enabled: false });
-              await refresh();
-            },
-          },
-        ],
-      );
-      return;
-    }
-    // v9.4.1 — Clear auto-disabled flags when user manually re-enables.
+    // v9.7.4 — STOP tidak menutup posisi terbuka: SL/TP native tetap
+    // berjalan di Binance sampai posisi close sesuai parameternya.
+    // Stop hanya menghentikan auto-trade BARU.
     await saveBot(val
       ? { enabled: true, auto_disabled_reason: null, auto_disabled_at: null }
       : { enabled: false });
@@ -198,6 +173,11 @@ export default function ASIBotScreen() {
               <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.5 }}>{t("asi_stop_bot")}</Text>
             </TouchableOpacity>
           </View>
+          {bot.enabled ? (
+            <Text style={{ color: colors.textMuted, fontSize: 10.5, marginTop: 8, lineHeight: 15 }}>
+              {t("asi_stop_hint")}
+            </Text>
+          ) : null}
         </View>
 
         {/* Connect exchange */}

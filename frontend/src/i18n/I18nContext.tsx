@@ -680,6 +680,12 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   // v9.7.4 — START/STOP button + deactivation dialog
   asi_status_running: { id: "RUNNING", en: "RUNNING", ru: "РАБОТАЕТ", cn: "运行中" },
   asi_status_stopped: { id: "STOPPED", en: "STOPPED", ru: "ОСТАНОВЛЕН", cn: "已停止" },
+  asi_stop_hint: {
+    id: "Stop hanya menghentikan trade BARU — posisi terbuka tetap dijaga SL/TP native di Binance sampai close sesuai parameter.",
+    en: "Stop only halts NEW trades — open positions stay protected by native SL/TP on Binance until they close per their parameters.",
+    ru: "Стоп останавливает только НОВЫЕ сделки — открытые позиции защищены нативными SL/TP на Binance до закрытия по параметрам.",
+    cn: "停止仅阻止新开仓——未平仓头寸仍由币安原生 SL/TP 保护，直至按参数平仓。",
+  },
   asi_recent_empty: {
     id: "Belum ada trade. Bot akan mengeksekusi otomatis saat sinyal memenuhi syarat — posisi open/closed lengkap dengan PnL $ dan % akan tampil di sini.",
     en: "No trades yet. The bot will auto-execute when signals qualify — open/closed positions with full $ and % PnL will appear here.",
@@ -689,15 +695,6 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   asi_run_bot: { id: "▶ START BOT", en: "▶ START BOT", ru: "▶ ЗАПУСТИТЬ БОТА", cn: "▶ 启动机器人" },
   asi_stop_bot: { id: "■ STOP BOT", en: "■ STOP BOT", ru: "■ ОСТАНОВИТЬ", cn: "■ 停止机器人" },
   asi_running_hint: { id: "Bot aktif — memindai pasar tiap 5 menit & eksekusi otomatis saat sinyal lolos.", en: "Bot is running — scans the market every 5 minutes & auto-executes when signals qualify.", ru: "Бот работает — сканирует рынок каждые 5 минут и исполняет при подходящих сигналах.", cn: "机器人运行中——每 5 分钟扫描市场，信号合格时自动执行。" },
-  asi_deactivate_title: { id: "Nonaktifkan Bot?", en: "Deactivate Bot?", ru: "Отключить бота?", cn: "停用机器人？" },
-  asi_deactivate_body: {
-    id: "Anda punya {n} posisi terbuka. SL/TP native di Binance TETAP menjaga posisi Anda walau bot mati. Menonaktifkan hanya menghentikan trade BARU.",
-    en: "You have {n} open position(s). Native SL/TP on Binance KEEPS protecting them even when the bot is off. Deactivating only stops NEW trades.",
-    ru: "У вас {n} открытых позиций. Нативные SL/TP на Binance ПРОДОЛЖАТ защищать их даже при выключенном боте. Отключение остановит только НОВЫЕ сделки.",
-    cn: "您有 {n} 个未平仓头寸。即使机器人停止，币安的原生 SL/TP 仍会继续保护它们。停用只会停止新开仓。",
-  },
-  asi_deactivate_keep: { id: "Biarkan Berjalan", en: "Keep Positions", ru: "Оставить позиции", cn: "保留持仓" },
-  asi_deactivate_close_all: { id: "Tutup Semua & Stop", en: "Close All & Stop", ru: "Закрыть всё и стоп", cn: "全部平仓并停止" },
 
   // v9.6.9 — Credential validation error codes (backend returns {code, message})
   asi_err_ip_or_key_invalid: {
