@@ -103,7 +103,13 @@ def register(app_api: APIRouter, db: Any) -> None:
             payload.password, payload.testnet,
         )
         if not res["ok"]:
-            raise HTTPException(400, res["message"])
+            # v9.6.9 — Return JSON body with both `code` and `message` so
+            # the frontend can translate per-locale. HTTPException(detail=...)
+            # accepts dict and FastAPI serializes it as JSON.
+            raise HTTPException(400, detail={
+                "code": res.get("code") or "auth_failed",
+                "message": res["message"],
+            })
         enc_key = encrypt(payload.api_key)
         enc_sec = encrypt(payload.api_secret)
         enc_pwd = encrypt(payload.password) if payload.password else None

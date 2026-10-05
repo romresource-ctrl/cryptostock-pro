@@ -419,7 +419,16 @@ function ConnectExchangeModal({ visible, onClose, exchange, colors, onSaved, dev
       });
       setK(""); setS2(""); setP(""); setMainnetAck(false); onSaved();
     } catch (e: any) {
-      Alert.alert(t("asi_alert_fail_title"), e?.message || String(e));
+      // v9.6.9 — Backend returns {code, message} on validation failure.
+      // Fetch wrapper surfaces either `detail` (FastAPI JSON) or `message`.
+      const detail = e?.detail || e?.body?.detail || e?.data || {};
+      const code: string | undefined = detail?.code || e?.code;
+      const localized = code && t(`asi_err_${code}`);
+      // t() returns the key itself when missing — treat that as "no translation"
+      const human = (localized && localized !== `asi_err_${code}`)
+        ? localized
+        : (detail?.message || e?.message || String(e));
+      Alert.alert(t("asi_alert_fail_title"), human);
     } finally { setLoading(false); }
   };
 

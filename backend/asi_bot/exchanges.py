@@ -6,11 +6,16 @@ reject any API key that has withdrawal permission enabled.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import os
+import time
 from typing import Any, Literal
+from urllib.parse import urlencode
 
 import ccxt
 import ccxt.async_support as ccxt_async
+import httpx
 
 ExchangeId = Literal["binance", "bybit", "okx", "bitget"]
 EXCHANGES: tuple[ExchangeId, ...] = ("binance", "bybit", "okx", "bitget")
@@ -59,6 +64,37 @@ def _build(ex_id: ExchangeId, api_key: str, api_secret: str,
     return client
 
 
+async def _binance_fapi_account(api_key: str, api_secret: str, testnet: bool) -> dict[str, Any]:
+    """Signed GET /fapi/v2/account — Binance USDⓈ-M Futures only.
+
+    v9.6.9 — Bypasses CCXT entirely for credential validation. CCXT's
+    binanceusdm.fetchBalance() still fans out to /sapi/v1/capital/config/getall
+    (spot wallet) which requires 'Enable Spot & Margin Trading' permission
+    that users correctly don't tick. This endpoint touches ONLY /fapi so
+    an API key with just 'Enable Futures' validates cleanly.
+    """
+    base = "https://testnet.binancefuture.com" if testnet else "https://fapi.binance.com"
+    params = {"timestamp": int(time.time() * 1000), "recvWindow": 10000}
+    qs = urlencode(params)
+    sig = hmac.new(api_secret.encode(), qs.encode(), hashlib.sha256).hexdigest()
+    proxy = os.environ.get("ASI_PROXY_URL") or os.environ.get("HTTPS_PROXY")
+    async with httpx.AsyncClient(proxy=proxy, timeout=15) as c:
+        r = await c.get(
+            f"{base}/fapi/v2/account",
+            params={**params, "signature": sig},
+            headers={"X-MBX-APIKEY": api_key},
+        )
+    try:
+        data = r.json()
+    except Exception:
+        raise Exception(f"HTTP {r.status_code}: {r.text[:200]}")
+    if r.status_code != 200:
+        code = data.get("code") if isinstance(data, dict) else None
+        msg = data.get("msg") if isinstance(data, dict) else r.text[:200]
+        raise Exception(f"code={code} msg={msg}")
+    return data
+
+
 async def validate_credentials(
     ex_id: ExchangeId, api_key: str, api_secret: str,
     password: str | None, testnet: bool,
@@ -68,22 +104,41 @@ async def validate_credentials(
     Returns {ok, uid, permissions, message}. Caller treats ok=False as
     400 and refuses to persist the credential.
     """
+    # v9.6.9 — Binance validated via direct /fapi/v2/account signed call
+    # (bypasses CCXT spot/margin endpoint quirks). Other exchanges still
+    # go through CCXT since they don't have the same problem.
+    if ex_id == "binance":
+        try:
+            acct = await _binance_fapi_account(api_key, api_secret, testnet)
+        except Exception as e:
+            msg = str(e)
+            if "-2015" in msg or "Invalid API-key" in msg:
+                return {"ok": False, "code": "ip_or_key_invalid", "message": "Invalid API key/secret OR server IP not whitelisted (IP: 143.198.197.107)."}
+            if "-2014" in msg or "API-key format invalid" in msg:
+                return {"ok": False, "code": "key_format_invalid", "message": "Invalid API key format."}
+            if "451" in msg or "Restricted Location" in msg:
+                return {"ok": False, "code": "region_blocked", "message": "Binance rejected the server location (HTTP 451)."}
+            return {"ok": False, "code": "auth_failed", "message": f"Authentication failed: {msg}"}
+        perms = {
+            "trade": bool(acct.get("canTrade", False)),
+            "deposit": bool(acct.get("canDeposit", False)),
+            "withdraw": bool(acct.get("canWithdraw", False)),
+        }
+        if perms["withdraw"] is True:
+            return {"ok": False, "code": "withdraw_enabled", "permissions": perms,
+                    "message": "Your API key has WITHDRAW permission. For safety, ASI-Bot rejects such keys."}
+        if not perms["trade"]:
+            return {"ok": False, "code": "trade_disabled", "permissions": perms,
+                    "message": "API key has no trading permission. Enable 'Futures' in Binance API Management."}
+        return {"ok": True, "permissions": perms, "message": "OK"}
+
+    # Non-Binance (bybit, okx, bitget) — via CCXT.
     client = _build(ex_id, api_key, api_secret, password, testnet)
     try:
-        # v9.6.5 — Skip load_markets() during validation. For binanceusdm
-        # it also hits /sapi/v1/margin/allPairs which fails for API keys
-        # without "Enable Margin" permission (we only need "Enable Futures").
-        # fetch_balance alone is enough to prove auth + futures reach.
         try:
             bal = await client.fetch_balance()
         except Exception as e:
-            msg = str(e)
-            # Classify common root causes for a friendlier UI message.
-            if "-2015" in msg or "Invalid API-key" in msg:
-                return {"ok": False, "message": "API key atau secret salah, atau IP belum di-whitelist di Binance."}
-            if "451" in msg or "Restricted Location" in msg:
-                return {"ok": False, "message": "Binance menolak dari lokasi server (HTTP 451). Hubungi admin."}
-            return {"ok": False, "message": f"API key gagal autentikasi: {msg}"}
+            return {"ok": False, "message": f"API key gagal autentikasi: {e}"}
         perms = {"read": True, "trade": None, "withdraw": None}
         info = (bal or {}).get("info") or {}
         for k in ("permissions", "apiKeyPermissions", "permission"):

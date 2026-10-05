@@ -248,7 +248,18 @@ async function send<T>(path: string, method: "POST" | "PUT" | "DELETE", body?: u
   }
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status} on ${path}: ${txt.slice(0, 120)}`);
+    // v9.6.9 — Preserve structured error body so callers can read
+    // {code, message} and localize per-user. FastAPI wraps HTTPException
+    // in {detail: ...}; some endpoints throw plain strings.
+    let parsed: any = null;
+    try { parsed = txt ? JSON.parse(txt) : null; } catch {}
+    const detail = parsed?.detail ?? parsed;
+    const errMsg = (detail && typeof detail === "object" ? detail.message : detail) || `HTTP ${res.status}`;
+    const err: Error & { code?: string; detail?: any; status?: number } = new Error(String(errMsg));
+    err.status = res.status;
+    err.detail = (detail && typeof detail === "object") ? detail : undefined;
+    err.code = (detail && typeof detail === "object") ? detail.code : undefined;
+    throw err;
   }
   return (await res.json()) as T;
 }

@@ -677,6 +677,44 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   asi_save_testnet: { id: "SIMPAN KE TESTNET", en: "SAVE TO TESTNET", ru: "СОХРАНИТЬ В TESTNET", cn: "保存到测试网" },
   asi_alert_fail_title: { id: "Gagal", en: "Failed", ru: "Ошибка", cn: "失败" },
 
+  // v9.6.9 — Credential validation error codes (backend returns {code, message})
+  asi_err_ip_or_key_invalid: {
+    id: "API Key/Secret salah ATAU IP server (143.198.197.107) belum di-whitelist di Binance.",
+    en: "Invalid API Key/Secret OR server IP (143.198.197.107) not whitelisted in Binance.",
+    ru: "Неверный API Key/Secret ИЛИ IP сервера (143.198.197.107) не добавлен в whitelist Binance.",
+    cn: "API Key/Secret 错误，或服务器 IP (143.198.197.107) 未加入 Binance 白名单。",
+  },
+  asi_err_key_format_invalid: {
+    id: "Format API key tidak valid. Periksa salinan key Anda.",
+    en: "Invalid API key format. Please check your key.",
+    ru: "Неверный формат API key. Проверьте ключ.",
+    cn: "API key 格式无效，请检查。",
+  },
+  asi_err_region_blocked: {
+    id: "Binance menolak lokasi server (HTTP 451). Hubungi admin.",
+    en: "Binance rejected server location (HTTP 451). Contact admin.",
+    ru: "Binance отклонил локацию сервера (HTTP 451). Свяжитесь с администратором.",
+    cn: "Binance 拒绝服务器所在地区 (HTTP 451)，请联系管理员。",
+  },
+  asi_err_withdraw_enabled: {
+    id: "API key Anda MEMILIKI izin PENARIKAN. ASI-Bot MENOLAK key seperti ini. Buat key baru TANPA 'Enable Withdrawals'.",
+    en: "Your API key has WITHDRAW permission. ASI-Bot refuses such keys. Create a new key WITHOUT 'Enable Withdrawals'.",
+    ru: "Ваш API ключ имеет разрешение на ВЫВОД. ASI-Bot отклоняет такие ключи. Создайте новый ключ БЕЗ 'Enable Withdrawals'.",
+    cn: "您的 API 密钥已启用提现权限，ASI-Bot 拒绝使用此类密钥。请创建新密钥并关闭 'Enable Withdrawals'。",
+  },
+  asi_err_trade_disabled: {
+    id: "API key tidak punya izin trading. Centang 'Enable Futures' di Binance.",
+    en: "API key has no trading permission. Enable 'Futures' in Binance API Management.",
+    ru: "У API ключа нет разрешения на торговлю. Включите 'Futures' в Binance.",
+    cn: "API 密钥没有交易权限，请在 Binance 启用 'Futures'。",
+  },
+  asi_err_auth_failed: {
+    id: "Autentikasi API key gagal.",
+    en: "API key authentication failed.",
+    ru: "Ошибка авторизации API ключа.",
+    cn: "API 密钥认证失败。",
+  },
+
   // v9.5.0 — Copy Trade page
   copy_sub: { id: "10 trader yang SEDANG di posisi · hilang otomatis bila closed", en: "Top 10 traders CURRENTLY in positions · auto-removed when closed", ru: "Топ-10 трейдеров в позициях · исчезают при закрытии", cn: "当前持仓前 10 名交易者 · 平仓后自动消失" },
   copy_loading: { id: "Memuat posisi aktif…", en: "Loading active positions…", ru: "Загрузка активных позиций…", cn: "正在加载持仓…" },
