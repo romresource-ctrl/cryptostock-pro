@@ -739,6 +739,63 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     ru: "Не удалось закрыть позицию",
     cn: "平仓失败",
   },
+  // v9.7.7 — Semi tidak punya STOP; cukup READY + tombol PILIH SINYAL.
+  asi_semi_ready: { id: "SIAP", en: "READY", ru: "ГОТОВО", cn: "就绪" },
+  asi_card_semi_sub_ready: {
+    id: "Pilih sinyal dari AI Suggestions, lalu eksekusi 1-tap. Posisi langsung muncul di Recent Trades dengan SL/TP native aktif.",
+    en: "Pick a signal from AI Suggestions and execute in 1-tap. The position appears instantly in Recent Trades with native SL/TP armed.",
+    ru: "Выберите сигнал в AI Suggestions и исполните в 1 клик. Позиция сразу появится в Recent Trades с нативным SL/TP.",
+    cn: "从 AI 建议中选择信号并一键执行。持仓立即出现在最近交易中，原生 SL/TP 已激活。",
+  },
+  asi_pick_signal: {
+    id: "🎯 PILIH SINYAL",
+    en: "🎯 PICK A SIGNAL",
+    ru: "🎯 ВЫБРАТЬ СИГНАЛ",
+    cn: "🎯 选择信号",
+  },
+  asi_scanning: {
+    id: "🔎 Memindai sinyal…",
+    en: "🔎 Scanning signals…",
+    ru: "🔎 Поиск сигналов…",
+    cn: "🔎 正在扫描信号…",
+  },
+  asi_no_signal_title: {
+    id: "Belum Ada Sinyal",
+    en: "No Signal Available",
+    ru: "Сигналов пока нет",
+    cn: "暂无信号",
+  },
+  asi_no_signal_body: {
+    id: "Belum ada sinyal valid untuk profile {profile} saat ini. Coba lagi beberapa menit lagi atau ganti profile di bagian Mode.",
+    en: "No valid signal for the {profile} profile right now. Try again in a few minutes or switch profile in the Mode section.",
+    ru: "Сейчас нет валидных сигналов для профиля {profile}. Повторите через несколько минут или смените профиль в разделе Mode.",
+    cn: "当前没有 {profile} 配置的有效信号。请稍后再试，或在模式部分切换配置。",
+  },
+  // v9.7.8 — AI Suggestions one-tap execute button + success Alert.
+  ai_trade_execute_semi: {
+    id: "EKSEKUSI SEMI-AUTO",
+    en: "EXECUTE SEMI-AUTO",
+    ru: "ВЫПОЛНИТЬ SEMI-AUTO",
+    cn: "执行半自动",
+  },
+  asi_exec_success_title: {
+    id: "✅ Order Terkirim",
+    en: "✅ Order Submitted",
+    ru: "✅ Ордер отправлен",
+    cn: "✅ 订单已提交",
+  },
+  asi_exec_view_recent: {
+    id: "Lihat Recent Trades",
+    en: "View Recent Trades",
+    ru: "К последним сделкам",
+    cn: "查看最近交易",
+  },
+  common_close: {
+    id: "Tutup",
+    en: "Close",
+    ru: "Закрыть",
+    cn: "关闭",
+  },
   asi_hint_concurrent: {
     id: "Keduanya bisa dijalankan bersamaan — status masing-masing diperbarui independen.",
     en: "Both can run simultaneously — each status updates independently.",

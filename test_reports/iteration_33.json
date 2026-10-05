@@ -1,0 +1,44 @@
+{
+  "summary": "v9.7.7 ASI-Bot Semi-Auto 'PICK A SIGNAL' + persistent disclaimer + profit-only leaderboard + phantom-close fix — ALL VERIFIED. Backend pytest 10 passed, 1 skipped (test_iter33_v977_semi_pick_signal.py). Verified: (1) POST /api/asi/bot persists disclaimer_ack=true and GET returns it (also round-trips false→true); (2) GET /api/asi/leaderboard/live returns only unrealized_pct>0 items, sorted desc by %, rank 1 = highest % (live data: rank1=+103.75% / rank2=+8.38%); (3) GET /api/ai-suggestions skipped — endpoint returned 403 (premium-gated) for anonymous test device_id, which is the acceptable outcome per task spec; (4) Regression POST /api/asi/trades/{id}/close returns 404 for unknown trade; GET /api/asi/trades returns _id as string; (5) scheduler._run_full_auto_scanner source asserted to key on full_enabled with legacy $exists fallback (semi_enabled never triggers scan); (6) engine.refresh_trade_pnl phantom-close fix verified via asyncio monkey-patch — status='open' when fetch_positions raises, 'closed' only when fetch succeeds with empty positions. Frontend (web preview, 390x844): /asi-bot default state Semi-Auto chip active, top card has GREEN frame 'SEMI-AUTO · READY' + SEMI badge + ONE PINK '🎯 PICK A SIGNAL' button (verified text + testID asi-pick-signal, no asi-start-full present); tapping Full-Auto chip swaps top card to ORANGE 'FULL-AUTO · STOPPED' + FULL badge + START (pink) + STOP (light blue) buttons (asi-start-full + asi-stop-full present, asi-pick-signal gone); tapping PICK A SIGNAL w/ no connected exchange shows 'Need Connection' feedback (text found in DOM). Disclaimer section HIDDEN in default screenshot (backend disclaimer_ack=true path). /copy-trade leaderboard rows render % as fontSize 20px primary ('+103.75%', '+8.38%') and $ as fontSize 11px secondary ('+$8.30', '+$0.67') exactly per spec. i18n keys asi_semi_ready/asi_card_semi_sub_ready/asi_pick_signal/asi_scanning/asi_no_signal_title/asi_no_signal_body present in id/en/ru/cn (grep-confirmed in I18nContext.tsx lines 743-770). Version 9.7.7 in version.ts + app.json. No blocking issues found. 2 carryover minor items noted (deprecated shadow*/pointerEvents warnings).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "Styling (carryover)", "issue": "Deprecated shadow* style props (should use boxShadow) and props.pointerEvents (should use style.pointerEvents). Non-breaking web console warnings. Reference: multiple components across /app/frontend/app/*.tsx."},
+      {"component": "Alert.alert on react-native-web (carryover)", "issue": "Alert.alert used for 'Need Connection' / 'No signal' feedback is often a no-op on web preview; the text appears in DOM via inline fallback but a cross-platform toast would be more reliable. Reference: /app/frontend/app/asi-bot.tsx (PICK A SIGNAL handler, lines ~134-180)."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter33_v977_semi_pick_signal.py",
+    "/app/test_reports/pytest/iter33.xml",
+    "/app/test_reports/screenshots/iter33_semi_default.jpeg",
+    "/app/test_reports/screenshots/iter33_full_card.jpeg",
+    "/app/test_reports/screenshots/iter33_pick_no_cred.jpeg",
+    "/app/test_reports/screenshots/iter33_copytrade.jpeg"
+  ],
+  "action_items": [
+    "No fixes required — all v9.7.7 features VERIFIED on backend + frontend.",
+    "LOW (carryover from iter_32): replace deprecated shadow*/pointerEvents style props and consider cross-platform toast instead of Alert.alert for web-preview visibility of 'Need Connection' / 'No signal' alerts."
+  ],
+  "critical_code_review_comments": [
+    "engine.refresh_trade_pnl (engine.py:467-514): phantom-close fix is correctly implemented — fetch_positions is wrapped in try/except with fetch_ok flag; when fetch fails and no pos found, returns {status:'open', pnl_usdt:preserved}. Only marks closed when fetch_ok AND positions truly empty. Direct unit test (test_refresh_trade_pnl_returns_open_on_fetch_exception) PASSES.",
+    "pnl.live_leaderboard (pnl.py:69-152): correctly filters unrealized_usdt>0 in aggregation ($match stage line 99), additionally filters unrealized_pct<=0 after enrichment (line 109), sorts by unrealized_pct desc (line 148), assigns rank starting at 1 (line 150-151). Live endpoint verified rank1=+103.75% rank2=+8.38%.",
+    "scheduler._run_full_auto_scanner (scheduler.py:236-242): filter is `$or: [{full_enabled:True}, {enabled:True, mode:'full', full_enabled:{$exists:False}}]` — semi_enabled is NOT part of the scheduler filter; Semi-Auto cannot trigger background scans. VERIFIED by source assertion in test.",
+    "routes.set_bot (routes.py:386-393): persists disclaimer_ack via BotConfigPayload.model_dump(); get_bot (378-384) returns full doc with disclaimer_ack. VERIFIED round-trip.",
+    "File size nit (carryover): /app/frontend/app/asi-bot.tsx is 856 lines (>700 guideline) — StatusCard and ConnectExchangeModal are good candidates to extract into components/."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter33_v977_semi_pick_signal.py (new)"
+  ],
+  "success_rate": {"backend": "100% (10/10 executed, 1 skipped premium-gated)", "frontend": "100% of requested flows verified"},
+  "seed_data_creation": "No new seed data created. Existing leaderboard rows (handles ***) from prior iterations provide profit samples (rank1 +103.75%, rank2 +8.38%). Test device test-977-<random> created a transient asi_bot_config doc; module-teardown attempts cleanup via MONGO_URL+DB_NAME if available.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "v9.7.7 fully verified. Semi-Auto card now shows READY with ONE pink 'PICK A SIGNAL' button; Full-Auto card still has START/STOP; disclaimer persistent via backend bot.disclaimer_ack; copy-trade leaderboard profit-only + sorted by %; phantom-close bug fixed in engine.refresh_trade_pnl. For UI testing: localStorage keys '@ai-crypto-stock-pro:disclaimer-accepted'='1' and '@ai-crypto-stock-pro:legal-accepted'='1' set before navigation reliably bypass intro gates. Premium gate on /api/ai-suggestions remains for non-premium devices (403) — if a signal-picking end-to-end test is needed, seed a premium device_id or expect 403. Backend tests under /app/backend/tests/test_iter33_v977_semi_pick_signal.py are reusable regression suite.",
+  "rca_of_issue": "N/A — all v9.7.6 reported bugs (phantom-close in refresh_trade_pnl; disclaimer local-state dead-end) are confirmed fixed in this iteration. Phantom-close: engine.py now wraps fetch_positions in a try/except setting fetch_ok=False and short-circuits with status='open' + preserved pnl before the SL-fallback branch. Disclaimer: moved from AsyncStorage/local state to BotConfigPayload.disclaimer_ack persisted server-side; once ticked, GET /api/asi/bot returns true forever so the frontend hides the disclaimer card across sessions."
+}

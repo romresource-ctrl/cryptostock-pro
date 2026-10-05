@@ -92,6 +92,9 @@ class BotConfigPayload(BaseModel):
     # Set to null to CLEAR previous auto-disable (when user re-enables manually).
     auto_disabled_reason: str | None = None
     auto_disabled_at: str | None = None
+    # v9.7.7 — Disclaimer persistent: once ticked it stays acknowledged
+    # across sessions. Frontend hides disclaimer card forever when True.
+    disclaimer_ack: bool = False
 
 
 def register(app_api: APIRouter, db: Any) -> None:

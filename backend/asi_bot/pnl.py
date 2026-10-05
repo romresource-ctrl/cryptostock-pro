@@ -69,8 +69,9 @@ async def leaderboard(db: Any, period_days: int = 7, limit: int = 10) -> list[di
 async def live_leaderboard(db: Any, limit: int = 10) -> list[dict[str, Any]]:
     """v9.4.0 — Return traders that are CURRENTLY in open positions.
 
-    Ranked by UNREALIZED PnL (desc). Traders whose last open trade just
-    closed will fall off the list automatically — fully live.
+    v9.7.7 — Hanya tampilkan trader yang SEDANG PROFIT (hijau) dan diurutkan
+    dari UNREALIZED PnL % terbesar (bukan $). Trader loss (merah) dan
+    break-even disembunyikan — leaderboard khusus "who's crushing it right now".
     Each row includes the open trade snapshot so the UI can show what's
     being traded (symbol, side, entry) and the user can preview a copy.
     """
@@ -94,18 +95,21 @@ async def live_leaderboard(db: Any, limit: int = 10) -> list[dict[str, Any]]:
             "open_count": {"$sum": 1},
             "latest": {"$first": "$$ROOT"},
         }},
-        {"$sort": {"unrealized_usdt": -1}},
-        {"$limit": limit},
+        # v9.7.7 — hanya posisi profit sebelum sorting
+        {"$match": {"unrealized_usdt": {"$gt": 0}}},
     ]
-    rows = await db.asi_trades.aggregate(pipeline).to_list(limit)
-    out = []
-    for i, r in enumerate(rows):
+    # Grab a wider pool (3x limit) so after %-sort we still have ≥ `limit`.
+    rows = await db.asi_trades.aggregate(pipeline).to_list(limit * 3)
+    enriched: list[dict[str, Any]] = []
+    for r in rows:
         device_id = r["_id"]
-        cred = await db.asi_credentials.find_one({"device_id": device_id}, {"handle": 1})
-        handle = (cred or {}).get("handle") or "***"
         unrealized = round(r.get("unrealized_usdt") or 0.0, 2)
         margin = (r.get("margin_usdt") or 0.0) or (r.get("notional_margin") or 0.0)
         unrealized_pct = round(unrealized / margin * 100.0, 2) if margin > 0 else 0.0
+        if unrealized_pct <= 0:
+            continue
+        cred = await db.asi_credentials.find_one({"device_id": device_id}, {"handle": 1})
+        handle = (cred or {}).get("handle") or "***"
         # Realised 30-day Win Rate for extra context.
         hist = await db.asi_trades.aggregate([
             {"$match": {
@@ -122,8 +126,7 @@ async def live_leaderboard(db: Any, limit: int = 10) -> list[dict[str, Any]]:
         tr30 = int(h.get("trades") or 0)
         wr30 = round((h.get("wins") or 0) / tr30 * 100, 1) if tr30 else 0.0
         latest = r.get("latest") or {}
-        out.append({
-            "rank": i + 1,
+        enriched.append({
             "handle": handle,
             "unrealized_usdt": unrealized,
             "unrealized_pct": unrealized_pct,
@@ -141,4 +144,9 @@ async def live_leaderboard(db: Any, limit: int = 10) -> list[dict[str, Any]]:
                 "created_at": latest.get("created_at"),
             },
         })
+    # v9.7.7 — sort by percentage desc, assign rank, trim to limit
+    enriched.sort(key=lambda x: x["unrealized_pct"], reverse=True)
+    out: list[dict[str, Any]] = []
+    for i, row in enumerate(enriched[:limit]):
+        out.append({"rank": i + 1, **row})
     return out

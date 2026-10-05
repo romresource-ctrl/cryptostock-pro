@@ -522,6 +522,8 @@ export type AsiBotConfig = {
   // v9.7.6 — independent Semi/Full enable flags
   semi_enabled?: boolean;
   full_enabled?: boolean;
+  // v9.7.7 — persistent disclaimer acknowledgement
+  disclaimer_ack?: boolean;
   auto_disabled_reason?: string | null;
   auto_disabled_at?: string | null;
 };

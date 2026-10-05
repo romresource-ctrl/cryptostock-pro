@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
 import { useTheme } from "@/src/theme/ThemeContext";
+import { useI18n } from "@/src/i18n/I18nContext";
 import { getDeviceId } from "@/src/lib/deviceId";
 import {
   api, formatPrice, type AsiCredential, type AsiPreview,
@@ -43,6 +44,7 @@ type Props = {
 export default function AsiTradeSheet({ visible, onClose, intent }: Props) {
   const router = useRouter();
   const { colors } = useTheme();
+  const { t } = useI18n();
   const insets = useSafeAreaInsets();
 
   const [deviceId, setDeviceId] = useState("");
@@ -102,6 +104,30 @@ export default function AsiTradeSheet({ visible, onClose, intent }: Props) {
 
   const execute = async () => {
     if (!intent || !preview?.ok) return;
+    // v9.7.7 — Cek duplikat posisi terbuka pada symbol+exchange yang sama.
+    // Jika sudah ada, konfirmasi dulu sebelum menambah posisi (pyramid).
+    try {
+      const list = await api.asi.listTrades(deviceId);
+      const sym = String(intent.symbol).toUpperCase();
+      const dup = (list.items || []).find(
+        (tr) => tr.status === "open"
+          && String(tr.symbol || "").toUpperCase() === sym
+          && (tr.exchange || "") === exchange,
+      );
+      if (dup) {
+        const proceed = await new Promise<boolean>((resolve) => {
+          Alert.alert(
+            "Posisi Sudah Terbuka",
+            `Anda sudah punya posisi ${dup.side} ${sym} aktif di ${exchange.toUpperCase()} (PnL $${(dup.pnl_usdt ?? 0).toFixed(2)}).\n\nTambah posisi lagi (pyramid)?`,
+            [
+              { text: "Batal", style: "cancel", onPress: () => resolve(false) },
+              { text: "Ya, tambah", onPress: () => resolve(true) },
+            ],
+          );
+        });
+        if (!proceed) return;
+      }
+    } catch {}
     setExecuting(true);
     try {
       const res = await api.asi.executeTrade(deviceId, {
@@ -112,12 +138,16 @@ export default function AsiTradeSheet({ visible, onClose, intent }: Props) {
         tp_count: tpCount, trailing_callback_rate: trailingCbRate,
       });
       Alert.alert(
-        "✅ Order Terkirim",
+        t("asi_exec_success_title") || "✅ Order Terkirim",
         `${intent.side} ${intent.symbol} @ ${res.entry_price?.toFixed?.(6) ?? intent.entry}\n` +
         `Qty: ${res.qty} · Leverage: ${res.leverage}x\n` +
         `${res.testnet ? "TESTNET" : "MAINNET"}`,
+        [
+          { text: t("asi_exec_view_recent") || "Lihat Recent Trades",
+            onPress: () => { onClose(); router.push("/asi-bot" as never); } },
+          { text: t("common_close") || "Tutup", style: "cancel", onPress: () => onClose() },
+        ],
       );
-      onClose();
     } catch (e: any) {
       Alert.alert("Gagal Eksekusi", e?.message || String(e));
     } finally { setExecuting(false); }

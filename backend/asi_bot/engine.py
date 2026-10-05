@@ -458,22 +458,21 @@ async def _maybe_activate_trailing(
 async def refresh_trade_pnl(doc: dict[str, Any], trade: dict[str, Any]) -> dict[str, Any]:
     """Query exchange untuk status order & hitung PnL realized/unrealized.
 
-    Logika sederhana:
-      - Kalau SL terpenuhi → status=closed, pnl=(sl-entry)*qty signed.
-      - Kalau semua TP tereksekusi → status=closed.
-      - Kalau salah satu TP eksekusi → status=open, catat parsial.
-      - Default → check posisi aktif; PnL unrealized dari mark price.
-
-    v9.6.0 — Jika TP1 sudah fill dan `trailing_callback_rate > 0`:
-      cancel sisa TP + SL original, pasang TRAILING_STOP_MARKET native
-      Binance untuk sisa quantity. Idempotent via flag `trailing_activated`.
+    v9.7.7 — PHANTOM-CLOSE FIX. Jika `fetch_positions` MELEMPAR EXCEPTION
+    (API key invalid/expired/IP banned/rate-limited), kita TIDAK boleh
+    menandai trade "closed" dengan fallback SL — ini bikin posisi hantu.
+    Hanya tandai closed ketika fetch SUKSES dan hasilnya memang kosong
+    (artinya exchange mengkonfirmasi posisi benar-benar tertutup).
     """
     client = await _get_client(doc)
     try:
         exch_sym = trade["ccxt_symbol"]
+        fetch_ok = True
+        positions = []
         try:
             positions = await client.fetch_positions([exch_sym])
         except Exception:
+            fetch_ok = False
             positions = []
         pos = next((p for p in positions if (p or {}).get("contracts", 0)), None)
         extra_update: dict[str, Any] = {}
@@ -486,7 +485,10 @@ async def refresh_trade_pnl(doc: dict[str, Any], trade: dict[str, Any]) -> dict[
             unrealized = float(pos.get("unrealizedPnl") or 0)
             return {"status": "open", "pnl_usdt": round(unrealized, 2),
                     "mark_price": pos.get("markPrice"), **extra_update}
-        # Tidak ada posisi aktif → asumsikan tertutup. Hitung realized dari orders.
+        # v9.7.7 — Fetch gagal (bukan posisi kosong). JANGAN tandai closed.
+        if not fetch_ok:
+            return {"status": "open", "pnl_usdt": float(trade.get("pnl_usdt") or 0.0)}
+        # Fetch sukses & tidak ada posisi aktif → benar-benar tertutup.
         realized = 0.0
         qty = float(trade.get("qty") or 0)
         entry = float(trade.get("entry_price") or 0)

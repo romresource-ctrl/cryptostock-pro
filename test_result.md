@@ -1276,3 +1276,170 @@ frontend_v976a:
           semi_enabled + full_enabled independen sehingga kedua state
           tetap berjalan bersamaan walau UI hanya menampilkan salah satu.
           Verified via 2 screenshot: semi-active dan full-active berganti.
+
+# ======================================================
+# v9.7.7 — Semi READY mode + persistent disclaimer + fixes
+# ======================================================
+backend_v977:
+  - task: "disclaimer_ack persistent di BotConfigPayload"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/asi_bot/routes.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Field disclaimer_ack:bool default False ditambah ke BotConfigPayload.
+          Smoke test lokal: POST dgn disclaimer_ack=true tersimpan; GET mengembalikan true.
+  - task: "Fix phantom-close pada refresh_trade_pnl (engine.py)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/asi_bot/engine.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Sebelumnya: fetch_positions gagal → treat sebagai "closed" via SL fallback
+          (hasilkan phantom close & PnL palsu).
+          v9.7.7: hanya tandai closed jika fetch SUKSES & return list kosong.
+          Jika fetch gagal, status tetap "open", pnl_usdt tidak berubah.
+  - task: "live_leaderboard sort by unrealized_pct (hanya posisi profit)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/asi_bot/pnl.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Pipeline aggregate: match unrealized_usdt > 0, lalu enrich dgn
+          unrealized_pct (pnl/margin*100), filter pct > 0, sort desc by pct,
+          assign rank. Verified via curl: rank 1 = 103.75%, rank 2 = 8.38%.
+frontend_v977:
+  - task: "Semi-Auto READY mode (no STOP) + PICK A SIGNAL button"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/asi-bot.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Komponen StatusCard dirombak: untuk kind='semi' render SATU tombol
+          Pink "🎯 PICK A SIGNAL" yang membuka AISuggestionsSheet. Status
+          text selalu "READY" (hijau), tidak pernah STOPPED. Full-Auto tetap
+          2 tombol START (pink) + STOP (light blue).
+          Border card: Semi selalu hijau accent; Full border hijau-orange hanya saat running.
+          Screenshot verified: Semi menampilkan "SEMI-AUTO · READY" + 1 tombol pink;
+          Full menampilkan "FULL-AUTO · STOPPED" + 2 tombol START/STOP.
+  - task: "AsiTradeSheet duplicate-position confirm dialog"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/components/AsiTradeSheet.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Sebelum executeTrade, panggil api.asi.listTrades, cari OPEN trade
+          dengan symbol+exchange yang sama. Jika ketemu → Alert konfirmasi
+          "Posisi Sudah Terbuka — Anda sudah punya posisi SIDE SYMBOL aktif
+          di EXCHANGE (PnL $X). Tambah posisi lagi (pyramid)?" dengan Batal / Ya,tambah.
+  - task: "Disclaimer baca dari backend bot.disclaimer_ack (persistent)"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/asi-bot.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          State local `disclaimerAck` DIHAPUS. canUseBot = activeCred && bot.disclaimer_ack.
+          Box disclaimer hanya tampil jika !bot.disclaimer_ack. onPress checkbox
+          langsung memanggil saveBot({disclaimer_ack:true}) → tersembunyi selamanya.
+  - task: "AISuggestionsSheet mounted di asi-bot page"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/asi-bot.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Import AISuggestionsSheet, state suggestOpen, dirender di akhir
+          komponen setelah ConnectExchangeModal. onClose → setSuggestOpen(false) + refresh.
+  - task: "Copy-trade leaderboard: % jadi metrik utama (angka besar)"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/copy-trade.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Angka % font 20 (metrik utama), $ font 11 (sub-metrik di bawah).
+          Backend sudah filter + sort by % desc.
+metadata_v977:
+  created_by: "main_agent"
+  version: "9.7.7"
+  test_sequence: 36
+  run_ui: false
+
+# ======================================================
+# v9.7.8 — AI Suggestions one-tap EXECUTE SEMI-AUTO polish
+# ======================================================
+frontend_v978:
+  - task: "AI Suggestions trade button: pink Semi badge + localized text"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/components/AISuggestionsSheet.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Tombol "🤖 Trade with ASI-Bot" diganti jadi tombol pink (#EC4899)
+          dengan badge "SEMI" (translucent putih) + teks "⚡ EXECUTE SEMI-AUTO"
+          yang terlokalisasi (id/en/ru/cn via asi_badge_semi + ai_trade_execute_semi).
+          Flow tetap sama: tap → setTradeIntent → AsiTradeSheet → executeTrade(mode=semi)
+          → trade tersimpan ke /api/asi/trades dgn mode=semi.
+  - task: "AsiTradeSheet success Alert dengan 'Lihat Recent Trades' action"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/components/AsiTradeSheet.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Setelah executeTrade sukses, Alert menampilkan 2 tombol:
+          "Lihat Recent Trades" → router.push("/asi-bot") &
+          "Tutup" → onClose. Terlokalisasi via asi_exec_view_recent/common_close.
+          useI18n hook ditambah ke komponen.
+metadata_v978:
+  created_by: "main_agent"
+  version: "9.7.8"
+  test_sequence: 37
+  run_ui: false

@@ -9,6 +9,7 @@ import { useTheme } from "@/src/theme/ThemeContext";
 import { useI18n } from "@/src/i18n/I18nContext";
 import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
 import PremiumLocked from "@/src/components/PremiumLocked";
+import AsiTradeSheet, { type AsiTradeIntent } from "@/src/components/AsiTradeSheet";
 import { getDeviceId } from "@/src/lib/deviceId";
 import {
   api, type AsiBotConfig, type AsiCredential,
@@ -46,13 +47,18 @@ export default function ASIBotScreen() {
     tp_count: 3, trailing_callback_rate: 2,
     // v9.7.6 — independent toggles
     semi_enabled: false, full_enabled: false,
+    // v9.7.7 — persistent disclaimer
+    disclaimer_ack: false,
   });
   const [pnl, setPnl] = useState<AsiPnl | null>(null);
   const [trades, setTrades] = useState<AsiTradeResp[]>([]);
   const [connectOpen, setConnectOpen] = useState(false);
-  const [disclaimerAck, setDisclaimerAck] = useState(false);
   // v9.7.6 — track in-flight close requests per trade id
   const [closingIds, setClosingIds] = useState<Record<string, boolean>>({});
+  // v9.7.7 — AsiTradeSheet intent (dibuka dari tombol PILIH SINYAL)
+  const [tradeIntent, setTradeIntent] = useState<AsiTradeIntent | null>(null);
+  // v9.7.7 — Loading state saat memindai signal
+  const [scanning, setScanning] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -86,7 +92,8 @@ export default function ASIBotScreen() {
   };
 
   const activeCred = creds.find((c) => c.exchange === bot.exchange);
-  const canUseBot = !!activeCred && disclaimerAck;
+  // v9.7.7 — Disclaimer dibaca dari backend config (permanent, sekali centang)
+  const canUseBot = !!activeCred && !!bot.disclaimer_ack;
 
   // v9.6.4 — Premium gate: halaman ini khusus member premium.
   // (__DEV__ bypass membuat web preview tetap bisa diakses untuk testing.)
@@ -123,19 +130,51 @@ export default function ASIBotScreen() {
     });
   };
 
-  const toggleSemi = async (val: boolean) => {
-    if (val && !canUseBot) {
+  const pickTopSignal = async () => {
+    // v9.7.7 — Semi-Auto PICK A SIGNAL:
+    // Fetch sinyal dari AI Suggestions pakai Trader Profile aktif,
+    // ambil confidence tertinggi, buka konfirmasi AsiTradeSheet.
+    // Jika TIDAK ada sinyal valid untuk profile → notifikasi, tidak eksekusi.
+    if (!canUseBot) {
       Alert.alert(
         t("asi_alert_need_title"),
         !activeCred ? t("asi_alert_need_connect") : t("asi_alert_need_ack"),
       );
       return;
     }
-    // v9.7.6 — Semi-Auto independent toggle. Does NOT affect full_enabled.
-    await saveBot(val
-      ? { semi_enabled: true, enabled: true, mode: "semi",
-          auto_disabled_reason: null, auto_disabled_at: null }
-      : { semi_enabled: false, enabled: !!bot.full_enabled });
+    setScanning(true);
+    try {
+      const prof = bot.profile || "confluence";
+      const resp = await api.aiSuggestions("crypto", "1h", prof, deviceId);
+      const picks = (resp.suggestions || []).filter(
+        (a) => (a.action === "BUY" || a.action === "SELL")
+          && typeof a.entry === "number"
+          && typeof a.stop_loss === "number"
+          && Array.isArray(a.take_profits) && a.take_profits.length > 0,
+      );
+      if (picks.length === 0) {
+        Alert.alert(
+          t("asi_no_signal_title"),
+          t("asi_no_signal_body").replace("{profile}", prof.toUpperCase()),
+        );
+        return;
+      }
+      // Suggestions sudah tersortir confidence desc di backend; ambil #1.
+      picks.sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
+      const top = picks[0];
+      setTradeIntent({
+        symbol: top.symbol,
+        side: top.action as "BUY" | "SELL",
+        entry: top.entry!,
+        stop_loss: top.stop_loss!,
+        take_profits: top.take_profits || [],
+        source: "asi-bot-semi",
+      });
+    } catch (e: any) {
+      Alert.alert(t("asi_no_signal_title"), String(e?.message || e));
+    } finally {
+      setScanning(false);
+    }
   };
 
   const toggleFull = async (val: boolean) => {
@@ -193,12 +232,13 @@ export default function ASIBotScreen() {
         <StatusCard
           kind={bot.mode === "full" ? "full" : "semi"}
           running={bot.mode === "full" ? !!bot.full_enabled : !!bot.semi_enabled}
-          onStart={() => (bot.mode === "full" ? toggleFull(true) : toggleSemi(true))}
-          onStop={() => (bot.mode === "full" ? toggleFull(false) : toggleSemi(false))}
+          scanning={scanning}
+          onPrimary={() => (bot.mode === "full" ? toggleFull(true) : pickTopSignal())}
+          onStop={() => toggleFull(false)}
           colors={colors}
           t={t}
         />
-        {(bot.semi_enabled || bot.full_enabled) ? (
+        {(bot.full_enabled) ? (
           <Text style={{ color: colors.textMuted, fontSize: 10.5, marginTop: 6,
                          lineHeight: 15, textAlign: "center" }}>
             {t("asi_stop_hint")}
@@ -330,8 +370,10 @@ export default function ASIBotScreen() {
           </View>
         ) : null}
 
-        {/* Disclaimer — v9.7.6: hanya tampil saat KEDUA bot NONAKTIF. */}
-        {!(bot.semi_enabled || bot.full_enabled) ? (
+        {/* Disclaimer — v9.7.7: hanya tampil saat BELUM pernah di-ACK.
+            Sekali di-centang → tersimpan di backend (bot.disclaimer_ack=true)
+            dan box ini disembunyikan selamanya. */}
+        {!bot.disclaimer_ack ? (
           <>
             <SectionHeader title={t("asi_sec_disclaimer")} />
         <View style={[s.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -339,13 +381,11 @@ export default function ASIBotScreen() {
             {t("asi_disc_body")}
           </Text>
           <TouchableOpacity
-            onPress={() => setDisclaimerAck(!disclaimerAck)}
+            onPress={() => saveBot({ disclaimer_ack: true })}
             style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10 }}
             testID="asi-disc"
           >
-            <View style={[s.checkbox, { borderColor: GOLD, backgroundColor: disclaimerAck ? GOLD : "transparent" }]}>
-              {disclaimerAck ? <Ionicons name="checkmark" size={14} color={ACCENT_TEXT} /> : null}
-            </View>
+            <View style={[s.checkbox, { borderColor: GOLD, backgroundColor: "transparent" }]} />
             <Text style={{ color: colors.textPrimary, fontWeight: "700", fontSize: 12.5 }}>
               {t("asi_disc_ack")}
             </Text>
@@ -473,6 +513,14 @@ export default function ASIBotScreen() {
         onSaved={async () => { setConnectOpen(false); await refresh(); }}
         deviceId={deviceId}
       />
+
+      {/* v9.7.7 — AsiTradeSheet dibuka langsung dgn top-signal dari profile.
+          Trade sheet sudah ada duplicate-position check sebelum execute. */}
+      <AsiTradeSheet
+        visible={!!tradeIntent}
+        intent={tradeIntent}
+        onClose={() => { setTradeIntent(null); refresh(); }}
+      />
     </View>
   );
 }
@@ -486,67 +534,89 @@ function SectionHeader({ title }: { title: string }) {
   );
 }
 
-// v9.7.6 — Independent status card for Semi or Full. Keduanya bisa aktif
-// bersamaan: card Semi berbingkai hijau, card Full berbingkai orange.
-function StatusCard({ kind, running, onStart, onStop, colors, t }: {
+// v9.7.7 — Satu kartu status di atas. Berganti isi menurut `kind`:
+//   • semi: "READY" + SATU tombol "🎯 PILIH SINYAL" (buka AI Suggestions).
+//     Tidak ada STOP (eksekusi 1-tap, bukan proses kontinu).
+//   • full: START (pink) → scan 24/7. STOP (light blue) → henti scan baru,
+//     posisi lama tetap aman via native SL/TP.
+function StatusCard({ kind, running, scanning, onPrimary, onStop, colors, t }: {
   kind: "semi" | "full";
   running: boolean;
-  onStart: () => void;
+  scanning?: boolean;
+  onPrimary: () => void;
   onStop: () => void;
   colors: any;
   t: (k: string) => string;
 }) {
-  const accent = kind === "full" ? ORANGE : GREEN;
-  const title = kind === "full" ? t("asi_card_full_title") : t("asi_card_semi_title");
-  const sub = running
-    ? (kind === "full" ? t("asi_card_full_sub_on") : t("asi_card_semi_sub_on"))
-    : (kind === "full" ? t("asi_card_full_sub_off") : t("asi_card_semi_sub_off"));
-  const emoji = kind === "full" ? "🤖" : "🦾";
+  const isFull = kind === "full";
+  const accent = isFull ? ORANGE : GREEN;
+  const title = isFull ? t("asi_card_full_title") : t("asi_card_semi_title");
+  // Semi: "READY" (tidak pernah "stopped"). Full: STOPPED / RUNNING.
+  const statusLine = isFull
+    ? (running ? t("asi_status_running") : t("asi_status_stopped"))
+    : t("asi_semi_ready");
+  const sub = isFull
+    ? (running ? t("asi_card_full_sub_on") : t("asi_card_full_sub_off"))
+    : t("asi_card_semi_sub_ready");
+  const emoji = isFull ? "🤖" : "🦾";
   return (
     <View style={[s.card, {
-      borderColor: running ? accent : colors.border,
+      borderColor: (isFull ? running : true) ? accent : colors.border,
       backgroundColor: colors.surface,
-      borderWidth: running ? 2 : 1,
+      borderWidth: 2,
     }]} testID={`asi-card-${kind}`}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
         <Text style={{ fontSize: 20 }}>{emoji}</Text>
-        <View style={[s.dot, { backgroundColor: running ? accent : colors.textMuted }]} />
-        <Text style={[s.cardTitle, { color: running ? accent : colors.textPrimary }]}>
-          {title.toUpperCase()} · {running ? t("asi_status_running") : t("asi_status_stopped")}
+        <View style={[s.dot, { backgroundColor: accent }]} />
+        <Text style={[s.cardTitle, { color: accent }]}>
+          {title.toUpperCase()} · {statusLine}
         </Text>
         <View style={{ flex: 1 }} />
         <View style={{
           paddingHorizontal: 7, paddingVertical: 2, borderRadius: 5,
-          backgroundColor: running ? accent : "transparent",
-          borderWidth: 1, borderColor: accent,
+          backgroundColor: accent,
         }}>
           <Text style={{
-            color: running ? ACCENT_TEXT : accent,
-            fontWeight: "900", fontSize: 9.5, letterSpacing: 0.5,
+            color: ACCENT_TEXT, fontWeight: "900", fontSize: 9.5, letterSpacing: 0.5,
           }}>
-            {kind === "full" ? t("asi_badge_full") : t("asi_badge_semi")}
+            {isFull ? t("asi_badge_full") : t("asi_badge_semi")}
           </Text>
         </View>
       </View>
       <Text style={[s.cardSub, { color: colors.textMuted }]}>{sub}</Text>
-      <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
-        <TouchableOpacity
-          onPress={onStart}
-          disabled={running}
-          style={[s.bigBtn, { backgroundColor: running ? colors.border : PINK }]}
-          testID={`asi-start-${kind}`}
-        >
-          <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.5 }}>{t("asi_run_bot")}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={onStop}
-          disabled={!running}
-          style={[s.bigBtn, { backgroundColor: !running ? colors.border : LIGHT_BLUE }]}
-          testID={`asi-stop-${kind}`}
-        >
-          <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.5 }}>{t("asi_stop_bot")}</Text>
-        </TouchableOpacity>
-      </View>
+      {isFull ? (
+        <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
+          <TouchableOpacity
+            onPress={onPrimary}
+            disabled={running}
+            style={[s.bigBtn, { backgroundColor: running ? colors.border : PINK }]}
+            testID="asi-start-full"
+          >
+            <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.5 }}>{t("asi_run_bot")}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={onStop}
+            disabled={!running}
+            style={[s.bigBtn, { backgroundColor: !running ? colors.border : LIGHT_BLUE }]}
+            testID="asi-stop-full"
+          >
+            <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.5 }}>{t("asi_stop_bot")}</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={{ marginTop: 12 }}>
+          <TouchableOpacity
+            onPress={onPrimary}
+            disabled={!!scanning}
+            style={[s.bigBtn, { backgroundColor: scanning ? colors.border : PINK }]}
+            testID="asi-pick-signal"
+          >
+            <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.6, fontSize: 13 }}>
+              {scanning ? t("asi_scanning") : t("asi_pick_signal")}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }

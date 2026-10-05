@@ -350,12 +350,14 @@ export default function AISuggestionsSheet({ visible, onClose, onRequestSubscrib
                       >
                         <Text style={[styles.detailBtnText, { color: GOLD }]}>{t("ai_open_detail")}</Text>
                       </TouchableOpacity>
-                      {/* v9.3.0 — Satu tap trade via ASI-Bot (hanya untuk aset crypto). */}
+                      {/* v9.7.8 — Satu-tap EKSEKUSI SEMI-AUTO via ASI-Bot
+                          (crypto only). Trade otomatis muncul di Recent
+                          Trades setelah konfirmasi di AsiTradeSheet. */}
                       {a.market === "crypto" && typeof a.entry === "number"
                         && typeof a.stop_loss === "number"
                         && Array.isArray(a.take_profits) && a.take_profits.length > 0 ? (
                         <TouchableOpacity
-                          style={[styles.detailBtn, { backgroundColor: "#4ADE80", borderColor: "#4ADE80", marginTop: 6 }]}
+                          style={[styles.detailBtn, { backgroundColor: "#EC4899", borderColor: "#EC4899", marginTop: 6, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 6 }]}
                           onPress={() => {
                             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
                             setTradeIntent({
@@ -366,8 +368,13 @@ export default function AISuggestionsSheet({ visible, onClose, onRequestSubscrib
                           }}
                           testID={`ai-trade-${a.symbol}`}
                         >
-                          <Text style={[styles.detailBtnText, { color: "#FFFFFF" }]}>
-                            🤖 Trade with ASI-Bot
+                          <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.25)" }}>
+                            <Text style={{ color: "#FFFFFF", fontWeight: "900", fontSize: 9, letterSpacing: 0.4 }}>
+                              {t("asi_badge_semi")}
+                            </Text>
+                          </View>
+                          <Text style={[styles.detailBtnText, { color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.4 }]}>
+                            ⚡ {t("ai_trade_execute_semi")}
                           </Text>
                         </TouchableOpacity>
                       ) : null}

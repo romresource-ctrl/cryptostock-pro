@@ -147,11 +147,12 @@ export default function CopyTradeScreen() {
                   </View>
                   <View style={{ alignItems: "flex-end" }}>
                     <Text style={{ color: colors.textMuted, fontSize: 10, fontWeight: "700" }}>{t("copy_unrealized")}</Text>
-                    <Text style={{ color: row.unrealized_usdt >= 0 ? GREEN : RED, fontWeight: "900", fontSize: 18 }}>
-                      {row.unrealized_usdt >= 0 ? "+" : ""}${row.unrealized_usdt.toFixed(2)}
+                    {/* v9.7.7 — persentase jadi metrik utama (hijau = profit) */}
+                    <Text style={{ color: row.unrealized_pct && row.unrealized_pct >= 0 ? GREEN : RED, fontWeight: "900", fontSize: 20 }}>
+                      {row.unrealized_pct && row.unrealized_pct >= 0 ? "+" : ""}{(row.unrealized_pct ?? 0).toFixed(2)}%
                     </Text>
-                    <Text style={{ color: row.unrealized_usdt >= 0 ? GREEN : RED, fontWeight: "800", fontSize: 11 }}>
-                      {row.unrealized_usdt >= 0 ? "+" : ""}{(row.unrealized_pct ?? 0).toFixed(2)}%
+                    <Text style={{ color: row.unrealized_usdt >= 0 ? GREEN : RED, fontWeight: "700", fontSize: 11 }}>
+                      {row.unrealized_usdt >= 0 ? "+" : ""}${row.unrealized_usdt.toFixed(2)}
                     </Text>
                   </View>
                 </View>
