@@ -1744,3 +1744,28 @@ metadata_v985:
   version: "9.8.5"
   test_sequence: 43
   run_ui: false
+
+# ======================================================
+# v9.8.6 — Recent Trades: LONG/SHORT bukan BUY/SELL
+# ======================================================
+frontend_v986:
+  - task: "Label side di Recent Trades diganti LONG/SHORT"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/asi-bot.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          User: futures position harus tampil LONG/SHORT, bukan BUY/SELL.
+          FIX: render side di row Recent Trades diganti
+          tr.side === "BUY" ? "LONG" : "SHORT". Warna tetap hijau/merah.
+          Copy-trade leaderboard sudah pakai LONG/SHORT (isLong) — konsisten.
+metadata_v986:
+  created_by: "main_agent"
+  version: "9.8.6"
+  test_sequence: 44
+  run_ui: false

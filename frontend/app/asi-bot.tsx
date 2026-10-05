@@ -471,7 +471,11 @@ export default function ASIBotScreen() {
                       {isOpen ? t("asi_status_active") : "CLOSED"}
                     </Text>
                   </View>
-                  <Text style={{ color: tr.side === "BUY" ? GREEN : RED, fontWeight: "900", width: 40 }}>{tr.side}</Text>
+                  <Text style={{ color: tr.side === "BUY" ? GREEN : RED, fontWeight: "900", width: 46 }}>
+                    {/* v9.8.6 — Futures convention: tampilkan LONG/SHORT,
+                        bukan BUY/SELL (permintaan user). */}
+                    {tr.side === "BUY" ? "LONG" : "SHORT"}
+                  </Text>
                   <Text style={{ color: colors.textPrimary, fontWeight: "700" }}>{tr.symbol}</Text>
                   <View style={{ flex: 1 }} />
                   <View style={{ alignItems: "flex-end" }}>
