@@ -613,3 +613,21 @@ Fase berikutnya (BELUM):
   layar terkunci.
 - Catatan: gate saat ini UI-side (mengikuti pola app). Endpoint /api/asi/*
   belum 403-gated per-device; pertimbangkan hardening backend bila perlu.
+
+
+## v9.7.0 — Root Cause Koneksi Binance DITEMUKAN & DIPERBAIKI (Okt 2026)
+- Akar masalah sebenarnya BUKAN kode: VPS Tinyproxy open-to-world
+  (Allow 0.0.0.0/0) → scanner internet menghabiskan MaxClients=100 →
+  koneksi backend hang di TCP accept (timeout, pesan error kosong).
+- Fix di VPS (oleh user via console): config dibatasi
+  Allow 35.193.209.116 (IP egress backend) + 127.0.0.1, BasicAuth asi,
+  MaxClients 500. Diverifikasi fapi ping 200 via proxy dalam 1.5s.
+- ASI_PROXY_URL kini berisi kredensial: http://asi:***@143.198.197.107:8888
+- exchanges.py: validasi Binance bypass CCXT → signed GET /fapi/v2/account
+  (zero sentuhan endpoint spot/margin); klasifikasi error code
+  (proxy_down, ip_or_key_invalid, region_blocked, withdraw_enabled,
+  trade_disabled, auth_failed) → frontend terjemahkan via i18n 4 bahasa.
+- PENTING: IP egress backend saat ini 35.193.209.116. Jika backend
+  redeploy ke node lain, IP bisa berubah → proxy harus di-update.
+  TODO: monitor /api/asi/server-ip atau buat alert jika egress berubah.
+- Credential lama (mainnet-e2e, Yrbx...) sudah dihapus user → -2015 valid.
