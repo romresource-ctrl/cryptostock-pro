@@ -1378,7 +1378,7 @@ export default function AssetDetail() {
                   }}>
                   <Text style={{ fontSize: 18 }}>🤖</Text>
                   <Text style={{ color: "#0B0E11", fontWeight: "900", letterSpacing: 0.6 }}>
-                    Trade {analysis.consensus.action === "BUY" ? "LONG" : "SHORT"} dengan ASI-Bot
+                    {t("asi_trade_cta").replace("{side}", analysis.consensus.action === "BUY" ? "LONG" : "SHORT")}
                   </Text>
                 </TouchableOpacity>
               ) : null}

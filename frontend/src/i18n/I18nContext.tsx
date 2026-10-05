@@ -708,6 +708,7 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     ru: "Live-таблица Copy Trade доступна только Premium-участникам. Обновите, чтобы следить и копировать позиции топ-трейдеров в реальном времени.",
     cn: "Copy Trade 实时排行榜仅限高级会员使用。升级以实时查看并复制顶级交易者的持仓。",
   },
+  asi_trade_cta: { id: "Trade {side} dengan ASI-Bot", en: "Trade {side} with ASI-Bot", ru: "Сделка {side} с ASI-Bot", cn: "用 ASI-Bot 交易 {side}" },
   premium_locked_cta: { id: "UPGRADE KE PREMIUM", en: "UPGRADE TO PREMIUM", ru: "ОБНОВИТЬ ДО PREMIUM", cn: "升级到高级版" },
 };
 
