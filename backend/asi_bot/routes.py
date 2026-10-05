@@ -178,6 +178,23 @@ async def _get_whitelist() -> dict[str, Any]:
     return {"top_100": TOP_100_FUTURES, "count": len(TOP_100_FUTURES)}
 
 
+@router.get("/egress-ip")
+async def _get_egress_ip() -> dict[str, Any]:
+    """v9.7.1 — Diagnostic: report THIS backend's DIRECT egress IP
+    (no proxy). Used to populate the Tinyproxy Allow list on the VPS.
+    """
+    import httpx
+    ip = None
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:  # NO proxy
+            r = await client.get("https://api.ipify.org")
+            if r.status_code == 200:
+                ip = r.text.strip()
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}
+    return {"ok": True, "egress_ip": ip}
+
+
 @router.get("/server-ip")
 async def _get_server_ip() -> dict[str, Any]:
     """v9.4.3 — Return the IP that exchange APIs ACTUALLY see.
