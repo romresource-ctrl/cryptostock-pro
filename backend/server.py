@@ -2987,6 +2987,13 @@ def _start_push_scheduler() -> None:
 
 # --------------- ASI-Bot scheduler (v9.4.0) ---------------
 
+# v9.7.3 — Full-Auto fetcher cache: scanning N symbols must NOT rebuild the
+# whole dashboard N times. Cache the full response per (market, profile)
+# for 60s and extract per-symbol signals from it.
+_asi_fetch_cache: dict[str, tuple[float, dict]] = {}
+ASI_FETCH_TTL = float(os.environ.get("ASI_FETCH_TTL_SEC", "60"))
+
+
 async def _asi_signal_fetcher(market: str, symbol: str, profile: str | None = None) -> dict[str, Any] | None:
     """Return a dashboard-grade signal for Full-Auto execution.
 
@@ -2999,11 +3006,17 @@ async def _asi_signal_fetcher(market: str, symbol: str, profile: str | None = No
     Confluence default.
     """
     try:
-        resp = await _build_dashboard_response(
-            market=market, timeframe="1h", sort="confidence",
-            full=True, min_confidence=70, min_wr=70.0, region=None,
-            profile=profile,
-        )
+        key = f"{market}|{profile or 'none'}"
+        hit = _asi_fetch_cache.get(key)
+        if hit and time.time() - hit[0] < ASI_FETCH_TTL:
+            resp = hit[1]
+        else:
+            resp = await _build_dashboard_response(
+                market=market, timeframe="1h", sort="confidence",
+                full=True, min_confidence=70, min_wr=70.0, region=None,
+                profile=profile,
+            )
+            _asi_fetch_cache[key] = (time.time(), resp)
         for a in resp.assets:
             if a.symbol.upper() != symbol.upper():
                 continue

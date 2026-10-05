@@ -27,7 +27,7 @@ from typing import Any, Awaitable, Callable
 from .crypto import decrypt
 from .engine import close_position, execute_trade, refresh_trade_pnl
 from .exchanges import _build
-from .whitelist import is_allowed
+from .whitelist import TOP_100_FUTURES, is_allowed
 
 logger = logging.getLogger("asi_bot.scheduler")
 
@@ -238,7 +238,10 @@ async def _run_full_auto_scanner(
             placed = await _trades_today_count(db, device_id)
             if placed >= max_tr:
                 continue
-            whitelist = cfg.get("whitelist") or []
+            # v9.7.3 — BUG FIX: empty whitelist silently disabled the bot
+            # ("ACTIVE" tapi tidak pernah scan). Default ke Top-100 futures
+            # agar Full-Auto langsung bekerja tanpa konfigurasi tambahan.
+            whitelist = cfg.get("whitelist") or list(TOP_100_FUTURES)
             if not whitelist:
                 continue
             exchange = cfg.get("exchange") or "binance"
