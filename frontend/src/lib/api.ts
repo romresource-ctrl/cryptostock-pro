@@ -509,6 +509,10 @@ export type AsiTradeResp = {
   // leverage request bila Binance menolak karena tier notional). UI pakai
   // ini, fallback ke leverage lama untuk trade pre-v9.9.3.
   actual_leverage?: number | null;
+  // v9.9.4 — layering (averaging): true bila ini eksekusi ke-2+ simbol
+  // yang sama; layer_count = total layer pada posisi gabungan.
+  layered?: boolean;
+  layer_count?: number;
   // v9.9.2 — hasil verifikasi bracket aktif di openAlgoOrders. True =
   // SL+TP masih live di exchange. False = sudah tidak ada (kemungkinan
   // user cancel manual di Binance app) → tampilkan tombol REPAIR.

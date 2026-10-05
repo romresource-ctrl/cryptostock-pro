@@ -326,6 +326,7 @@ async def execute_trade(
     existing_amt = float((pos or {}).get("positionAmt") or 0)
     current_mt = str((pos or {}).get("marginType") or "").lower()  # "cross"|"isolated"
     desired_mt_upper = "ISOLATED" if margin_mode == "isolated" else "CROSSED"
+    layering = False
     if abs(existing_amt) > 0:
         # Posisi SUDAH ADA → tidak bisa ganti margin mode. HARUS cocok.
         if current_mt and current_mt != margin_mode:
@@ -338,6 +339,20 @@ async def execute_trade(
                     "Tutup posisi dulu atau pilih margin mode yang sama."
                 ),
             }
+        # v9.9.4 — LAYERING (averaging): hanya boleh searah. Sinyal
+        # berlawanan arah pada posisi terbuka akan mengurangi/menutup
+        # posisi user secara tidak terduga di one-way mode → TOLAK.
+        existing_side = "BUY" if existing_amt > 0 else "SELL"
+        if existing_side != side:
+            return {
+                "ok": False, "reason": "opposite_position",
+                "message": (
+                    f"Posisi {'LONG' if existing_side == 'BUY' else 'SHORT'} {bin_sym} "
+                    "masih aktif. Eksekusi berlawanan arah akan MENGURANGI posisi Anda "
+                    "(one-way mode). Tutup posisi dulu bila ingin ganti arah."
+                ),
+            }
+        layering = True
     else:
         # Posisi kosong → set margin type sesuai permintaan user.
         set_mt = await br.set_margin_type(
@@ -430,6 +445,16 @@ async def execute_trade(
     # simpan yang benar supaya UI tidak menampilkan angka request palsu.
     actual_leverage = int(float(pos_final.get("leverage") or leverage))
 
+    # v9.9.4 — AUTO-REBALANCE BRACKET saat layering: batalkan SL/TP lama
+    # dari layer sebelumnya (qty-nya sudah usang), lalu pasang ulang di
+    # bawah ini untuk TOTAL posisi gabungan dengan average entry baru.
+    if layering:
+        try:
+            await br.cancel_all_algo(api_key, api_secret, is_testnet, bin_sym)
+            logger.info("layering %s: cancelled old brackets before rebalance", bin_sym)
+        except Exception as e:
+            logger.warning("cancel old algos %s: %s", bin_sym, e)
+
     async def _emergency_close(reason: str, detail: str) -> dict[str, Any]:
         """Market-close posisi + batalkan semua algo. Dipanggil bila
         SL/TP tidak dapat terpasang & terverifikasi. User minta: TIDAK
@@ -459,7 +484,9 @@ async def execute_trade(
             "ok": False, "reason": reason,
             "message": (
                 f"Bracket SL/TP tidak dapat terpasang di Binance ({detail}). "
-                "Posisi otomatis ditutup — balance Anda aman. Silakan coba lagi."
+                + ("Seluruh posisi gabungan (termasuk layer sebelumnya) otomatis ditutup. "
+                   if layering else "Posisi otomatis ditutup. ")
+                + "Balance Anda aman. Silakan coba lagi."
             ),
             "rollback_done": True,
         }
@@ -557,7 +584,9 @@ async def execute_trade(
         "margin_mode": margin_mode,
         "actual_margin_mode": actual_mm,
         "actual_leverage": actual_leverage,
-        # v9.9.3 — catatan bila leverage aktual berbeda dari permintaan.
+        # v9.9.4 — true bila ini eksekusi ke-2+ pada simbol yang sama
+        # (averaging). Routes akan melebur row trade lama ke row ini.
+        "layered": layering,
         "leverage_note": (
             f"Requested {leverage}x tetapi Binance set {actual_leverage}x"
             + (f" ({lev_rejected})" if lev_rejected else "")
@@ -840,6 +869,22 @@ async def close_position(doc: dict[str, Any], symbol: str, side: Side,
             )
         except Exception:
             pass
+        # v9.9.4 — Baca qty LIVE dari positionRisk. Setelah layering, qty
+        # di DB row lama bisa lebih kecil dari posisi fisik gabungan —
+        # close harus menutup SELURUH posisi.
+        try:
+            bin_sym = symbol.upper().split("/")[0].split("USDT")[0].split("-")[0] + "USDT"
+            pos = await br.position_risk(
+                decrypt(doc["api_key_enc"]), decrypt(doc["api_secret_enc"]),
+                bool(doc.get("testnet", True)), bin_sym,
+            )
+            live = abs(float((pos or {}).get("positionAmt") or 0))
+            if live > 0:
+                qty = live
+        except Exception:
+            pass
+        if qty <= 0:
+            return {"ok": True, "id": None, "avg": None, "note": "no_position"}
     client = await _get_client(doc)
     try:
         exch_sym = _ccxt_symbol(doc["exchange"], symbol)

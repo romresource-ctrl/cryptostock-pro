@@ -2045,3 +2045,40 @@ agent_communication:
       itu akun sandbox tanpa risiko. Setelah backend ok, tidak perlu
       frontend testing berat (yang penting user bisa langsung tes di
       APK Mainnet build mereka).
+
+# ======================================================
+# v9.9.4 — Smart Layering + Auto-Rebalance Brackets
+# ======================================================
+backend_v994:
+  - task: "Layering detection + auto-rebalance SL/TP + merge DB rows"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/engine.py /app/backend/asi_bot/routes.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          E2E testnet PASS: layer1 ETH 0.16 + layer2 → combined 0.319,
+          avg entry 2719.14. SL lama auto-cancelled, SL+3TP baru live utk
+          full qty (total TP qty == positionAmt). Opposite-side ditolak
+          (reason=opposite_position). Rollback saat layering menutup
+          seluruh posisi gabungan (user requirement: no unprotected).
+          routes merge row lama → status="layered", layer_count di row baru.
+frontend_v994:
+  - task: "Layering dialog + badge + success note"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/AsiTradeSheet.tsx /app/frontend/app/asi-bot.tsx /app/frontend/src/i18n/I18nContext.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Dialog duplikat kini menjelaskan averaging + auto-rebalance SL/TP
+          (4 bahasa). Panel sukses menampilkan catatan layer. Recent Trades
+          badge "Layer ×n". Lint pass. Version 9.9.4.

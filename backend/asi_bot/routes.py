@@ -279,6 +279,33 @@ def _attach_trade_routes(db: Any) -> None:
         rec["_id"] = f"{device_id}:{res['entry_order_id']}" if res.get("entry_order_id") else None
         if rec["_id"]:
             await db.asi_trades.replace_one({"_id": rec["_id"]}, rec, upsert=True)
+        # v9.9.4 — LAYERING: lebur row trade lama pada simbol yang sama
+        # ke row baru (Binance one-way mode menggabungkan posisi fisik;
+        # DB harus mencerminkan hal yang sama agar PnL tidak ganda).
+        if res.get("layered") and rec.get("_id"):
+            base_sym = payload.symbol.upper().split("/")[0].split("USDT")[0].split("-")[0]
+            now = datetime.now(timezone.utc).isoformat()
+            old_rows = [
+                d async for d in db.asi_trades.find({
+                    "device_id": device_id, "exchange": payload.exchange,
+                    "symbol": base_sym, "status": "open",
+                    "_id": {"$ne": rec["_id"]},
+                })
+            ]
+            if old_rows:
+                await db.asi_trades.update_many(
+                    {"_id": {"$in": [d["_id"] for d in old_rows]}},
+                    {"$set": {
+                        "status": "layered",
+                        "close_reason": "merged_into_layer",
+                        "merged_into": rec["_id"],
+                        "closed_at": now, "updated_at": now,
+                    }},
+                )
+                await db.asi_trades.update_one(
+                    {"_id": rec["_id"]},
+                    {"$set": {"layer_count": len(old_rows) + 1}},
+                )
         return res
 
     @router.post("/trades/{trade_id}/close")

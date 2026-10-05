@@ -536,6 +536,17 @@ export default function ASIBotScreen() {
                       {modeBadge === "full" ? t("asi_badge_full") : t("asi_badge_semi")}
                     </Text>
                   </View>
+                  {/* v9.9.4 — Badge layering (berapa kali averaging). */}
+                  {(tr as any).layer_count && (tr as any).layer_count > 1 ? (
+                    <View style={{
+                      paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4,
+                      backgroundColor: GOLD,
+                    }}>
+                      <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 8.5 }}>
+                        {t("ats_layer_badge").replace("{n}", String((tr as any).layer_count))}
+                      </Text>
+                    </View>
+                  ) : null}
                   {/* v9.9.2 — Margin mode badge pakai actual_margin_mode
                       dari Binance (bukan request). Fallback ke margin_mode
                       lama bila trade pre-v9.9.2. */}

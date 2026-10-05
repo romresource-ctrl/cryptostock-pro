@@ -699,6 +699,34 @@ Fase berikutnya (BELUM):
 - Tombol eksekusi Semi-Auto di kartu AI Suggestions ("⚡ EXECUTE SEMI-AUTO") dengan badge pink SEMI.
 - Konfirmasi sukses kini menyediakan opsi langsung "Lihat Recent Trades" → navigasi ke `/asi-bot`.
 
+## v9.9.4 — Smart Layering (Averaging) + Auto-Rebalance Brackets
+
+User request: trader profesional menambah muatan (layering/DCA) beberapa kali
+saat posisi berlawanan arah sementara, supaya average entry & liquidation
+price bergeser. Binance one-way mode menggabungkan posisi menjadi 1 dengan
+average entry — bot harus mengikuti perilaku itu.
+
+**Implementasi (Binance path di engine.execute_trade):**
+- Deteksi posisi existing searah → `layered=True`. Eksekusi market layer baru.
+- Setelah fill, baca positionRisk: qty gabungan + average entry aktual.
+- **Auto-rebalance**: cancel semua algo lama → pasang SL (closePosition) +
+  TP split untuk TOTAL posisi gabungan, trigger dari sinyal terbaru.
+  Diverifikasi via openAlgoOrders seperti biasa (rollback bila gagal).
+- Guard arah berlawanan: SELL pada posisi LONG aktif → DITOLAK
+  (reason=opposite_position) karena akan mengurangi posisi tanpa disadari.
+- routes.execute: row trade lama simbol sama ditandai `status="layered"`
+  (close_reason=merged_into_layer, merged_into=<id baru>) agar tidak
+  dihitung ganda di PnL/leaderboard; row baru mendapat `layer_count`.
+- close_position Binance: baca qty LIVE dari positionRisk sebelum market
+  close (qty row lama bisa lebih kecil dari posisi gabungan).
+- UI: dialog duplikat AsiTradeSheet diubah menjadi penjelasan averaging +
+  auto-rebalance; panel sukses menampilkan catatan layer; Recent Trades
+  menampilkan badge "Layer ×n".
+
+**E2E Testnet PASS:** layer1 ETH 0.16 → layer2 0.319 gabungan avg 2719.14,
+SL lama cancelled, SL+3TP baru live untuk full qty, TP qty total == posisi,
+opposite-side ditolak. Versi 9.9.4 (version.ts + app.json).
+
 ## v9.9.3 — Leverage AKTUAL (user temukan 50x request → 20x real di Binance)
 
 User buka SOL long 103.8 SOL @121.06 via app (request leverage 50x), tapi

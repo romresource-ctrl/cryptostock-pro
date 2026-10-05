@@ -177,14 +177,17 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
       // tidak lagi dibuat untuk trade baru — rollback otomatis dilakukan
       // bila gagal. Jadi panel sukses selalu bersih tanpa warning.
       const actualMM = (res as any).actual_margin_mode || marginMode;
+      const layerNote = (res as any).layered
+        ? `\n${t("ats_layered_note").replace("{n}", "2+")}`
+        : "";
       setExecResult({
         ok: true,
         title: t("ats_exec_done"),
         body:
           `${intent.side} ${intent.symbol} @ ${res.entry_price?.toFixed?.(6) ?? intent.entry}\n` +
-          `Qty: ${res.qty} · ${t("ats_leverage")}: ${res.leverage}x · ${String(actualMM).toUpperCase()}\n` +
+          `Qty: ${res.qty} · ${t("ats_leverage")}: ${(res as any).actual_leverage ?? res.leverage}x · ${String(actualMM).toUpperCase()}\n` +
           `${res.testnet ? "TESTNET" : "MAINNET"}\n` +
-          `${t("asi_bracket_native_ok")}`,
+          `${t("asi_bracket_native_ok")}` + layerNote,
       });
     } catch (e: any) {
       // v9.9.2 — api.ts sudah menempelkan e.code dan e.detail dari
