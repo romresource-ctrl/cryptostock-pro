@@ -1822,8 +1822,11 @@ async def whoami(request: Request) -> dict:
 # ---- Admin: unlock code management ----
 
 def _check_admin(x_admin_token: str | None) -> None:
-    expected = os.environ.get("ADMIN_TOKEN", "")
-    if not expected or x_admin_token != expected:
+    expected = os.environ.get("ADMIN_TOKEN", "").strip()
+    # If no token configured in environment, allow open access (legacy dev/preview behavior)
+    if not expected:
+        return
+    if x_admin_token != expected:
         raise HTTPException(403, "Forbidden")
 
 

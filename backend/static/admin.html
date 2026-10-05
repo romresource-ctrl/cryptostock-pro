@@ -121,7 +121,17 @@
 <script>
   // ==== CONFIG ====
   const BACKEND_URL = window.location.origin;  // same origin as admin tool
-  const ADMIN_TOKEN = (typeof window !== "undefined" && window.prompt) ? (window.__admin_token || (window.__admin_token = prompt("Admin token:") || "")) : "";
+  let ADMIN_TOKEN = "";
+  try {
+    ADMIN_TOKEN = localStorage.getItem("emergent_admin_token") || "";
+  } catch (e) {}
+  if (!ADMIN_TOKEN && typeof window !== "undefined" && window.prompt) {
+    const entered = prompt("Admin token (tekan Enter/OK jika kosong):");
+    if (entered) {
+      ADMIN_TOKEN = entered.trim();
+      try { localStorage.setItem("emergent_admin_token", ADMIN_TOKEN); } catch (e) {}
+    }
+  }
 
   // ==== BACKEND FINGERPRINT (whoami) ====
   (async () => {
@@ -172,9 +182,11 @@
     const btn = document.getElementById("gen-btn");
     btn.disabled = true; btn.textContent = "Generating...";
     try {
+      const headers = { "Content-Type": "application/json" };
+      if (ADMIN_TOKEN) headers["X-Admin-Token"] = ADMIN_TOKEN;
       const res = await fetch(`${BACKEND_URL}/api/admin/generate-code`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-Admin-Token": ADMIN_TOKEN },
+        headers,
         body: JSON.stringify({ email, duration }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -248,7 +260,9 @@
     const btn = document.getElementById("refresh-btn");
     btn.textContent = "Memuat..."; btn.disabled = true;
     try {
-      const res = await fetch(`${BACKEND_URL}/api/admin/codes`, { headers: { "X-Admin-Token": ADMIN_TOKEN } });
+      const headers = {};
+      if (ADMIN_TOKEN) headers["X-Admin-Token"] = ADMIN_TOKEN;
+      const res = await fetch(`${BACKEND_URL}/api/admin/codes`, { headers });
       if (!res.ok) throw new Error("HTTP " + res.status);
       const data = await res.json();
       allCodes = data.codes || [];
@@ -322,8 +336,10 @@
   async function resetDevice(code) {
     if (!confirm("Reset device binding untuk code " + code + "?\nUser bisa login lagi di HP baru.")) return;
     try {
+      const headers = {};
+      if (ADMIN_TOKEN) headers["X-Admin-Token"] = ADMIN_TOKEN;
       const res = await fetch(`${BACKEND_URL}/api/admin/codes/${encodeURIComponent(code)}/reset-device`, {
-        method: "POST", headers: { "X-Admin-Token": ADMIN_TOKEN },
+        method: "POST", headers,
       });
       if (!res.ok) throw new Error("HTTP " + res.status);
       showToast("Device binding di-reset");
@@ -334,8 +350,10 @@
   async function revokeCode(code) {
     if (!confirm("Revoke code " + code + "?\nUser tidak bisa login lagi dengan code ini.")) return;
     try {
+      const headers = {};
+      if (ADMIN_TOKEN) headers["X-Admin-Token"] = ADMIN_TOKEN;
       const res = await fetch(`${BACKEND_URL}/api/admin/codes/${encodeURIComponent(code)}/revoke`, {
-        method: "POST", headers: { "X-Admin-Token": ADMIN_TOKEN },
+        method: "POST", headers,
       });
       if (!res.ok) throw new Error("HTTP " + res.status);
       showToast("Code revoked");
@@ -346,8 +364,10 @@
   async function deleteCode(code, email) {
     if (!confirm("HAPUS PERMANEN code " + code + " untuk " + email + "?\nCode tidak bisa di-recover.")) return;
     try {
+      const headers = {};
+      if (ADMIN_TOKEN) headers["X-Admin-Token"] = ADMIN_TOKEN;
       const res = await fetch(`${BACKEND_URL}/api/admin/codes/${encodeURIComponent(code)}`, {
-        method: "DELETE", headers: { "X-Admin-Token": ADMIN_TOKEN },
+        method: "DELETE", headers,
       });
       if (!res.ok) throw new Error("HTTP " + res.status);
       showToast("Code deleted");

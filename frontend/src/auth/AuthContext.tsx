@@ -64,7 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else {
           // Re-verify with backend to catch: revoke, device change, secret rotation
           try {
-            const res = await fetch(`${backendBase()}/auth/verify`, {
+            let res = await fetch(`${backendBase()}/auth/verify`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -74,7 +74,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 device_name: getDeviceName(),
               }),
             });
-            const data = await res.json();
+            let data = await res.json();
+            if (!data?.ok && (data?.reason === "invalid_code" || res.status >= 400)) {
+              try {
+                const prodRes = await fetch("https://cryptostock-pro.emergent.host/api/auth/verify", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    email: saved.email,
+                    code: saved.code,
+                    device_id: saved.deviceId,
+                    device_name: getDeviceName(),
+                  }),
+                });
+                const prodData = await prodRes.json();
+                if (prodData?.ok) data = prodData;
+              } catch {
+                /* non-fatal */
+              }
+            }
             if (data?.ok) {
               // Refresh expiry/duration from server (in case admin extended it)
               setAuth({
@@ -119,7 +137,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const deviceId = await getDeviceId();
     const deviceName = getDeviceName();
     try {
-      const res = await fetch(`${backendBase()}/auth/verify`, {
+      // v9.7.9 — Fallback verify: coba backend saat ini dulu (preview/prod),
+      // jika 404 / code not found, fallback coba ke production host
+      // (https://cryptostock-pro.emergent.host) agar kode yang di-generate
+      // di admin-tool production TETAP BISA dipakai di preview!
+      let res = await fetch(`${backendBase()}/auth/verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -129,7 +151,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           device_name: deviceName,
         }),
       });
-      const data = await res.json();
+      let data = await res.json();
+      if (!data?.ok && (data?.reason === "invalid_code" || res.status >= 400)) {
+        try {
+          const prodRes = await fetch("https://cryptostock-pro.emergent.host/api/auth/verify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: cleanEmail,
+              code: cleanCode,
+              device_id: deviceId,
+              device_name: deviceName,
+            }),
+          });
+          const prodData = await prodRes.json();
+          if (prodData?.ok) {
+            data = prodData;
+          }
+        } catch {
+          /* non-fatal */
+        }
+      }
       if (!data?.ok) {
         const reason = data?.reason as LoginResult["reason"];
         const msg: Record<string, string> = {
@@ -152,7 +194,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await storage.setItem(STORAGE_KEY, next);
       setAuth(next);
       return { ok: true };
-    } catch (e) {
+    } catch {
       return { ok: false, reason: "network", error: "Tidak bisa terhubung ke server." };
     }
   };
