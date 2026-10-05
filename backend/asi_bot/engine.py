@@ -1,7 +1,9 @@
 """ASI-Bot — Execution Engine (Phase 2).
 
 Flow per order:
-  1. Pastikan symbol di whitelist Top-100.
+  1. Validasi simbol secara dinamis terhadap daftar pasar exchange
+     (v9.8.2 — whitelist statis Top-100 DIHAPUS; semua perpetual USDT
+     yang benar-benar listed boleh dieksekusi).
   2. Ambil balance USDT dari exchange.
   3. Set leverage.
   4. Place MARKET entry (reduce_only=False), posisi: BUY→long, SELL→short.
@@ -20,7 +22,6 @@ from typing import Any, Literal
 
 from .crypto import decrypt
 from .exchanges import _build
-from .whitelist import is_allowed
 from .algo import (
     cancel_all_conditional,
     cancel_conditional_order,  # noqa: F401 — reserved for future per-TP cancel
@@ -167,6 +168,27 @@ def _ccxt_symbol(exchange: str, base: str) -> str:
     return f"{base}/USDT"
 
 
+async def _ensure_tradable(client: Any, exch_sym: str, base: str) -> str | None:
+    """v9.8.2 — Validasi dinamis menggantikan whitelist statis Top-100.
+
+    Simbol boleh dieksekusi SELAMA benar-benar terdaftar sebagai market
+    aktif di exchange user (Binance/Bybit/OKX/Bitget). Return pesan error
+    (str) bila tidak valid, None bila valid. Jika load_markets gagal
+    (network hiccup), kita TIDAK memblokir — biarkan order placement
+    exchange yang memvalidasi.
+    """
+    try:
+        markets = await client.load_markets()
+    except Exception:
+        return None
+    m = markets.get(exch_sym)
+    if not m:
+        return f"{base} tidak tersedia sebagai perpetual USDT di exchange ini."
+    if m.get("active") is False:
+        return f"{base} sedang tidak aktif di exchange ini."
+    return None
+
+
 async def preview_trade(
     doc: dict[str, Any], symbol: str, side: Side,
     entry: float, stop_loss: float, tps: list[float],
@@ -174,13 +196,15 @@ async def preview_trade(
     tp_count: int = 3,
 ) -> dict[str, Any]:
     """Hitung besaran margin & qty TANPA eksekusi — untuk Semi-Auto preview."""
-    if not is_allowed(symbol):
-        return {"ok": False, "message": f"{symbol} tidak ada di whitelist Top-100."}
     risk_pct = max(1.0, min(30.0, float(risk_pct)))
     leverage = max(1, min(125, int(leverage)))
     tp_count = max(1, min(3, int(tp_count)))
     client = await _get_client(doc)
     try:
+        # v9.8.2 — validasi dinamis ke daftar pasar exchange (bukan whitelist statis)
+        err = await _ensure_tradable(client, _ccxt_symbol(doc["exchange"], symbol), symbol)
+        if err:
+            return {"ok": False, "message": err}
         bal = await _fetch_usdt_balance(client)
     finally:
         await client.close()
@@ -214,14 +238,20 @@ async def execute_trade(
     trailing_callback_rate: float = 2.0,
 ) -> dict[str, Any]:
     """Place entry + bracket SL/TP1..TPn. Return record for asi_trades."""
-    if not is_allowed(symbol):
-        return {"ok": False, "message": f"{symbol} tidak ada di whitelist Top-100."}
     risk_pct = max(1.0, min(30.0, float(risk_pct)))
     leverage = max(1, min(125, int(leverage)))
     tp_count = max(1, min(3, int(tp_count)))
     tps = list(tps or [])[:tp_count]
     client = await _get_client(doc)
     exch_sym = _ccxt_symbol(doc["exchange"], symbol)
+    # v9.8.2 — validasi dinamis ke daftar pasar exchange (bukan whitelist statis)
+    tradable_err = await _ensure_tradable(client, exch_sym, symbol)
+    if tradable_err:
+        try:
+            await client.close()
+        except Exception:
+            pass
+        return {"ok": False, "message": tradable_err}
     entry_order_id = None
     sl_order_id = None
     tp_order_ids: list[str] = []

@@ -1,9 +1,15 @@
-"""ASI-Bot — Top-100 crypto futures whitelist.
+"""ASI-Bot — Top-100 crypto futures (default scan universe).
 
 Daftar perpetual futures USDT-margined paling liquid di 4 exchange.
-Dipakai sebagai whitelist Semi/Full-Auto ASI-Bot. User BISA mengurangi,
-TIDAK bisa menambah di luar daftar ini (demi perlindungan terhadap koin
-rug-pull / likuiditas tipis).
+
+v9.8.2 — PERAN BERUBAH: daftar ini BUKAN LAGI batasan eksekusi. Preview
+dan execute memvalidasi simbol secara dinamis terhadap daftar pasar asli
+exchange (engine._ensure_tradable) sehingga SEMUA perpetual USDT yang
+listed (mis. STX, dll di luar daftar ini) boleh ditradingkan.
+
+Daftar ini hanya dipakai sebagai default SCAN UNIVERSE untuk Full-Auto
+background scanner (scheduler) ketika user belum mengatur whitelist sendiri
+— supaya scanner tidak perlu memindai 400+ pair tiap siklus.
 """
 TOP_100_FUTURES: list[str] = [
     "BTC", "ETH", "SOL", "XRP", "BNB", "DOGE", "ADA", "AVAX", "TRX", "LINK",
@@ -19,5 +25,7 @@ TOP_100_FUTURES: list[str] = [
 ]
 
 def is_allowed(symbol: str) -> bool:
+    """DEPRECATED v9.8.2 — hanya dipakai scheduler untuk scan-universe check.
+    Eksekusi trade kini memakai engine._ensure_tradable (dinamis)."""
     base = symbol.upper().split("/")[0].split("USDT")[0].split("-")[0]
     return base in TOP_100_FUTURES

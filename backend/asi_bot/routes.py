@@ -23,7 +23,7 @@ from .crypto import decrypt, encrypt, mask
 from .engine import close_position, execute_trade, preview_trade, refresh_trade_pnl
 from .exchanges import EXCHANGE_DISPLAY, EXCHANGES, ExchangeId, validate_credentials
 from .pnl import leaderboard, live_leaderboard, pnl_summary
-from .whitelist import TOP_100_FUTURES, is_allowed
+from .whitelist import TOP_100_FUTURES
 
 router = APIRouter(prefix="/asi", tags=["asi-bot"])
 
@@ -233,8 +233,8 @@ async def _get_server_ip() -> dict[str, Any]:
 def _attach_trade_routes(db: Any) -> None:
     @router.post("/trades/preview")
     async def preview(payload: TradePayload, device_id: str = Query(..., min_length=4)):
-        if not is_allowed(payload.symbol):
-            raise HTTPException(400, f"{payload.symbol} tidak di whitelist Top-100.")
+        # v9.8.2 — whitelist statis Top-100 DIHAPUS. Engine memvalidasi
+        # simbol secara dinamis terhadap daftar pasar exchange user.
         doc = await db.asi_credentials.find_one({"_id": f"{device_id}:{payload.exchange}"})
         if not doc:
             raise HTTPException(404, "Hubungkan API exchange terlebih dahulu.")
@@ -247,8 +247,7 @@ def _attach_trade_routes(db: Any) -> None:
 
     @router.post("/trades/execute")
     async def execute(payload: TradePayload, device_id: str = Query(..., min_length=4)):
-        if not is_allowed(payload.symbol):
-            raise HTTPException(400, f"{payload.symbol} tidak di whitelist Top-100.")
+        # v9.8.2 — whitelist statis Top-100 DIHAPUS (lihat engine._ensure_tradable).
         doc = await db.asi_credentials.find_one({"_id": f"{device_id}:{payload.exchange}"})
         if not doc:
             raise HTTPException(404, "Hubungkan API exchange terlebih dahulu.")

@@ -1585,3 +1585,37 @@ metadata_v981:
   version: "9.8.1"
   test_sequence: 40
   run_ui: false
+
+# ======================================================
+# v9.8.2 — Whitelist Top-100 DIHAPUS (user report: STX blocked)
+# ======================================================
+backend_v982:
+  - task: "Hapus batasan whitelist Top-100 dari preview/execute"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/engine.py, routes.py, whitelist.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          USER REPORT: tombol EXECUTE abu-abu dengan error
+          "STX tidak di whitelist Top-100" — user minta tidak dibatasi 100 aset.
+          FIX: gate statis is_allowed() DIHAPUS dari routes preview/execute
+          dan engine.preview_trade/execute_trade. Diganti validasi DINAMIS
+          _ensure_tradable(client, exch_sym, base): load_markets dari
+          exchange user → simbol boleh dieksekusi SELAMA benar-benar listed
+          & aktif sebagai perpetual USDT (STX di Binance = valid).
+          Jika load_markets gagal (network), tidak memblokir — biarkan
+          exchange yang memvalidasi saat order placement.
+          TOP_100_FUTURES tetap dipakai scheduler sebagai default scan
+          universe (bukan batasan trade).
+          Curl-verified: STX preview tidak lagi 400 whitelist → 404 connect
+          (perilaku benar untuk device tanpa kredensial).
+metadata_v982:
+  created_by: "main_agent"
+  version: "9.8.2"
+  test_sequence: 41
+  run_ui: false
