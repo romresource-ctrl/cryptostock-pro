@@ -80,6 +80,17 @@ async def live_leaderboard(db: Any, limit: int = 10) -> list[dict[str, Any]]:
         {"$group": {
             "_id": "$device_id",
             "unrealized_usdt": {"$sum": "$pnl_usdt"},
+            "margin_usdt": {"$sum": {"$ifNull": ["$margin_usdt", 0]}},
+            # Fallback margin from notional/leverage for older records.
+            "notional_margin": {"$sum": {
+                "$divide": [
+                    {"$multiply": [
+                        {"$ifNull": ["$entry_price", 0]},
+                        {"$ifNull": ["$qty", 0]},
+                    ]},
+                    {"$max": [{"$ifNull": ["$leverage", 1]}, 1]},
+                ],
+            }},
             "open_count": {"$sum": 1},
             "latest": {"$first": "$$ROOT"},
         }},
@@ -92,6 +103,9 @@ async def live_leaderboard(db: Any, limit: int = 10) -> list[dict[str, Any]]:
         device_id = r["_id"]
         cred = await db.asi_credentials.find_one({"device_id": device_id}, {"handle": 1})
         handle = (cred or {}).get("handle") or "***"
+        unrealized = round(r.get("unrealized_usdt") or 0.0, 2)
+        margin = (r.get("margin_usdt") or 0.0) or (r.get("notional_margin") or 0.0)
+        unrealized_pct = round(unrealized / margin * 100.0, 2) if margin > 0 else 0.0
         # Realised 30-day Win Rate for extra context.
         hist = await db.asi_trades.aggregate([
             {"$match": {
@@ -111,7 +125,8 @@ async def live_leaderboard(db: Any, limit: int = 10) -> list[dict[str, Any]]:
         out.append({
             "rank": i + 1,
             "handle": handle,
-            "unrealized_usdt": round(r.get("unrealized_usdt") or 0.0, 2),
+            "unrealized_usdt": unrealized,
+            "unrealized_pct": unrealized_pct,
             "open_count": int(r.get("open_count") or 0),
             "wr30d": wr30,
             "trades30d": tr30,

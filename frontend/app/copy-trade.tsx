@@ -150,6 +150,9 @@ export default function CopyTradeScreen() {
                     <Text style={{ color: row.unrealized_usdt >= 0 ? GREEN : RED, fontWeight: "900", fontSize: 18 }}>
                       {row.unrealized_usdt >= 0 ? "+" : ""}${row.unrealized_usdt.toFixed(2)}
                     </Text>
+                    <Text style={{ color: row.unrealized_usdt >= 0 ? GREEN : RED, fontWeight: "800", fontSize: 11 }}>
+                      {row.unrealized_usdt >= 0 ? "+" : ""}{(row.unrealized_pct ?? 0).toFixed(2)}%
+                    </Text>
                   </View>
                 </View>
 

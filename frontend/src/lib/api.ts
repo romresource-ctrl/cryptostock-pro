@@ -482,6 +482,7 @@ export type AsiLiveRow = {
   rank: number;
   handle: string;
   unrealized_usdt: number;
+  unrealized_pct?: number;
   open_count: number;
   wr30d: number;
   trades30d: number;
