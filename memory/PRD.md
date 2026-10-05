@@ -670,3 +670,13 @@ Fase berikutnya (BELUM):
   berbeda). Bot user berjalan di produksi; test di container ini tidak
   menyentuh akun produksi.
 - Perlu NEW BUILD 9.7.4 karena perubahan frontend.
+
+
+## v9.7.5 — Copy Trade: PnL $ + % (Okt 2026)
+- live_leaderboard kini menghitung unrealized_pct per trader:
+  sum(pnl)/sum(margin)*100, fallback margin dari notional/leverage untuk
+  record lama tanpa margin_usdt. Terverifikasi $2.5/$10 = 25.0%.
+- Urutan tetap PnL tertinggi dulu (sort unrealized_usdt desc).
+- Handle trader tetap dianonimkan ("MNT***") — keputusan privasi &
+  kepatuhan Play Store; JANGAN pernah tampilkan identitas/API credential
+  user lain di leaderboard.
