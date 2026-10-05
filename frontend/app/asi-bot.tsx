@@ -57,6 +57,15 @@ export default function ASIBotScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // v9.7.4 — Saat bot RUNNING, refresh daftar trade berkala agar posisi
+  // open/closed + PnL terbaru langsung tampil tanpa buka-tutup halaman.
+  useEffect(() => {
+    if (!bot.enabled || !deviceId) return;
+    const id = setInterval(() => refresh(), 20_000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bot.enabled, deviceId]);
+
   const refresh = async (did?: string) => {
     const id = did || deviceId; if (!id) return;
     try {
