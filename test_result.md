@@ -1956,3 +1956,92 @@ metadata_v991:
   version: "9.9.1"
   test_sequence: 48
   run_ui: false
+
+# ======================================================
+# v9.9.2 — FIX KRITIS: SL/TP Native yang BENAR + Auto-Rollback
+# ======================================================
+backend_v992:
+  - task: "Direct signed Binance REST + verified SL/TP + auto-rollback"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/binance_rest.py /app/backend/asi_bot/engine.py"
+    stuck_count: 0
+    priority: "critical"
+    needs_retesting: true
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Root cause ditemukan: (1) CCXT.set_margin_mode gagal dibungkus
+          except pass → margin mode user DIAM-DIAM diabaikan, UI klaim
+          ISOLATED padahal Binance Cross. (2) Response algo order tidak
+          diverifikasi via GET /openAlgoOrders → status "hard" bisa muncul
+          palsu kalau Binance return 200 tanpa benar-benar persist order.
+          
+          FIX: modul baru binance_rest.py (direct HMAC-SHA256 signed REST
+          via proxy SG). engine.execute_trade Binance path ditulis ulang:
+          - Baca positionRisk real → margin mismatch? ABORT entry.
+          - set_margin_type via REST (bukan CCXT) + handle -4046.
+          - Entry MARKET, poll positionRisk sampai positionAmt > 0.
+          - SL + TP placement dengan retry 3× + VERIFY via openAlgoOrders.
+          - Jika SL atau TP (verified) < expected → AUTO-ROLLBACK: cancel
+            semua algo + MARKET close reduceOnly. Trade TIDAK disimpan.
+          - Hanya SL+TP full-verified yang disimpan dengan bracket_type=hard.
+          - Simpan actual_margin_mode (dari positionRisk) bukan request.
+          
+          E2E Testnet (user key, ~$5k USDT):
+            ✓ Happy ETH BUY ISO: hard, 4 algo live (SL+3 TP).
+            ✓ Margin mismatch SOL (cross pre-exist): REJECTED clean.
+            ✓ XRP cross entry: actual_margin_mode=cross tersimpan.
+            ✓ Rollback DOGE invalid SL: -2021 3× retry → auto market close,
+              positionAmt=0, 0 algo sisa, pesan "balance aman — coba lagi".
+          
+          Juga di-upgrade:
+          - engine.attach_brackets (repair) verify via openAlgoOrders.
+          - engine.refresh_trade_pnl Binance pakai REST, update
+            actual_margin_mode live + bracket_live flag.
+          - routes.execute propagate code/message/rollback_done ke frontend.
+frontend_v992:
+  - task: "UI reflects verified bracket + actual margin + rollback dialogs"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/asi-bot.tsx /app/frontend/src/components/AsiTradeSheet.tsx /app/frontend/src/lib/api.ts /app/frontend/src/i18n/I18nContext.tsx"
+    stuck_count: 0
+    priority: "critical"
+    needs_retesting: true
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          AsiTradeSheet menampilkan dialog kontekstual per error code:
+            - bracket_sl_failed / tp_incomplete → "Entry Dibatalkan — SL/TP Gagal"
+            - margin_mode_mismatch → "Margin Mode Tidak Cocok"
+            - rollback_failed → "🚨 PERLU TINDAKAN MANUAL"
+          Recent Trades: badge margin mode & label native pakai 
+          actual_margin_mode + bracket_live (bukan field request-only). 
+          Banner REPAIR hanya muncul untuk trade LAMA soft atau
+          bracket_live=false. Version bump 9.9.1 → 9.9.2.
+
+agent_communication:
+  - agent: "main"
+    message: |
+      v9.9.2 FIX KRITIS SELESAI. Masalah utama: UI klaim SL/TP terpasang
+      padahal Binance kosong. Root cause: CCXT silent error swallow +
+      tidak ada verifikasi order post-placement.
+      
+      Testing agent: harap verifikasi di SIDE BACKEND dengan testnet key
+      yang sama (sudah di test_credentials.md):
+        - POST /api/asi/trades/execute → happy path simbol ETH/BTC/XRP.
+        - Verifikasi response: bracket_type MUST BE "hard", 
+          actual_margin_mode MUST match request (atau explicit reject).
+        - Test rollback: kirim SL di sisi "salah" (SL atas entry utk LONG)
+          → MUST return 400 dengan code=bracket_sl_failed, 
+          rollback_done=true, position closed di Binance.
+        - Test margin mismatch: buka posisi cross dulu via API, lalu
+          POST execute dengan margin_mode=isolated → MUST return 400 
+          code=margin_mode_mismatch.
+      
+      Testing agent: jangan ragu memakai testnet key yg disediakan;
+      itu akun sandbox tanpa risiko. Setelah backend ok, tidak perlu
+      frontend testing berat (yang penting user bisa langsung tes di
+      APK Mainnet build mereka).

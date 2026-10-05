@@ -139,6 +139,17 @@ def round_to_tick(price: float, tick: float) -> float:
     return float(d.normalize())
 
 
+def round_to_step(qty: float, step: float) -> float:
+    """Floor qty ke stepSize (LOT_SIZE Binance). step<=0 → qty apa adanya."""
+    if step <= 0:
+        return qty
+    import math
+    units = math.floor(qty / step + 1e-9)
+    from decimal import Decimal
+    d = Decimal(units) * Decimal(str(step))
+    return float(d.normalize())
+
+
 def fmt_decimal(x: float) -> str:
     """Format float → string desimal polos (tanpa notasi ilmiah) agar
     diterima Binance (mis. 5.9e-05 → '0.000059')."""

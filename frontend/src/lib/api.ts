@@ -501,6 +501,15 @@ export type AsiTradeResp = {
   // v9.9.0 — alasan bracket native gagal (ditampilkan saat tap badge ⚠️)
   soft_bracket_reason?: string | null;
   margin_mode?: string | null;
+  // v9.9.2 — actual margin mode read from Binance positionRisk (bisa
+  // berbeda dari margin_mode yang diminta kalau posisi sudah terbuka
+  // di mode berbeda). UI pakai field ini (bukan margin_mode request).
+  actual_margin_mode?: string | null;
+  // v9.9.2 — hasil verifikasi bracket aktif di openAlgoOrders. True =
+  // SL+TP masih live di exchange. False = sudah tidak ada (kemungkinan
+  // user cancel manual di Binance app) → tampilkan tombol REPAIR.
+  bracket_live?: boolean | null;
+  bracket_verified_at?: string | null;
   // v9.7.6 — mode badge (SEMI / FULL) + stable id for manual close
   mode?: "semi" | "full" | null;
   _id?: string | null;

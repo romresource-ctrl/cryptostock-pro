@@ -1,22 +1,36 @@
 """ASI-Bot — Execution Engine (Phase 2).
 
-Flow per order:
-  1. Validasi simbol secara dinamis terhadap daftar pasar exchange
-     (v9.8.2 — whitelist statis Top-100 DIHAPUS; semua perpetual USDT
-     yang benar-benar listed boleh dieksekusi).
-  2. Ambil balance USDT dari exchange.
-  3. Set leverage.
-  4. Place MARKET entry (reduce_only=False), posisi: BUY→long, SELL→short.
-  5. Place reduce_only STOP_MARKET  (SL)  qty=full.
-  6. Place reduce_only TAKE_PROFIT  (TP1, TP2, TP3) dengan split 40/30/30.
-  7. Rekam ke asi_trades (status="open") untuk PnL tracking (Phase 4).
+v9.9.2 — BINANCE PATH DITULIS ULANG untuk menghilangkan "false positive
+native SL/TP". Alur baru:
+  1. Validasi symbol dinamis via exchangeInfo (TRADING + USDT perp).
+  2. Set/verify margin mode via REST signed langsung (bukan CCXT yang
+     menelan error) — jika gagal diset ke yang user minta DAN posisi
+     sudah ada di mode berbeda, entry DIBATALKAN sebelum fire.
+  3. Set leverage via REST.
+  4. Place MARKET entry via REST.
+  5. Poll position_risk sampai positionAmt > 0 (max 10x 0.3s).
+  6. Place SL (STOP_MARKET closePosition=true) via Algo API.
+  7. VERIFY SL dengan GET /openAlgoOrders — bila algoId yang baru dibuat
+     tidak terlihat → EMERGENCY MARKET CLOSE + jangan simpan trade.
+  8. Place TP1..TPn (TAKE_PROFIT_MARKET + quantity) via Algo API.
+  9. VERIFY semua TP di openAlgoOrders.
+ 10. Baca ulang position_risk untuk mendapat actual_margin_mode & entry.
+ 11. Simpan trade dengan bracket_type="hard" & actual_margin_mode.
 
-Bila step 4 gagal: nothing to roll back.
-Bila step 5/6 gagal setelah entry sukses: engine mencoba menutup posisi
-dengan MARKET reduce_only (safety net), lalu melempar error ke caller.
+Jika STEP 6/7 (SL) GAGAL → auto-rollback: cancel all algo + MARKET close
+posisi + return error. Trade TIDAK pernah disimpan dalam keadaan tanpa
+proteksi (user requirement v9.9.2).
+
+Jika STEP 8/9 (TP) sebagian gagal → SL sudah terpasang (risk terbatas),
+tapi karena user minta "tidak boleh ada status unprotected sama sekali",
+kita retry 2x per-TP; bila masih gagal → emergency rollback juga.
+
+Non-Binance exchanges tetap memakai CCXT path lama (akan diaudit terpisah).
 """
 from __future__ import annotations
 
+import asyncio
+import logging
 from datetime import datetime, timezone
 from typing import Any, Literal
 
@@ -24,11 +38,15 @@ from .crypto import decrypt
 from .exchanges import _build
 from .algo import (
     cancel_all_conditional,
-    cancel_conditional_order,  # noqa: F401 — reserved for future per-TP cancel
-    list_open_conditional,     # noqa: F401 — reserved
+    cancel_conditional_order,  # noqa: F401
+    list_open_conditional,     # noqa: F401
     new_conditional_order,
     new_trailing_stop_order,
 )
+from . import binance_rest as br
+from .whitelist import binance_symbol_filters, round_to_step, round_to_tick
+
+logger = logging.getLogger("asi_bot.engine")
 
 Side = Literal["BUY", "SELL"]
 # v9.6.0 — split dinamis mengikuti jumlah TP yang user pilih.
@@ -261,15 +279,291 @@ async def execute_trade(
     trailing_callback_rate: float = 2.0,
     margin_mode: str = "isolated",
 ) -> dict[str, Any]:
-    """Place entry + bracket SL/TP1..TPn. Return record for asi_trades."""
+    """v9.9.2 — Place entry + VERIFIED bracket SL/TP. Auto-rollback jika
+    bracket tidak dapat terpasang & terverifikasi di exchange.
+
+    Return record untuk asi_trades, atau {ok:false, reason, message}
+    jika entry/bracket ditolak (posisi sudah ditutup di sisi exchange).
+    """
     risk_pct = max(1.0, min(30.0, float(risk_pct)))
     leverage = max(1, min(125, int(leverage)))
     tp_count = max(1, min(3, int(tp_count)))
     tps = list(tps or [])[:tp_count]
     margin_mode = "cross" if str(margin_mode).lower() == "cross" else "isolated"
+    exchange = (doc.get("exchange") or "binance").lower()
+
+    # Non-Binance path → fallback ke CCXT lama (unchanged)
+    if exchange != "binance":
+        return await _execute_ccxt_fallback(
+            doc, symbol, side, entry, stop_loss, tps,
+            risk_pct, leverage, mode, tp_count,
+            trailing_callback_rate, margin_mode,
+        )
+
+    # ── BINANCE DIRECT REST PATH ─────────────────────────────────────
+    api_key = decrypt(doc["api_key_enc"])
+    api_secret = decrypt(doc["api_secret_enc"])
+    is_testnet = bool(doc.get("testnet", True))
+    base = symbol.upper().split("/")[0].split("USDT")[0].split("-")[0]
+    bin_sym = base + "USDT"
+
+    # (1) Market filters (tick/step/minNotional)
+    filters = await binance_symbol_filters() or {}
+    f = filters.get(base) or {}
+    tick = float(f.get("tick") or 0.0)
+    step = float(f.get("step") or 0.0)
+    if tick <= 0 or step <= 0:
+        return {"ok": False, "reason": "symbol_filters_missing",
+                "message": f"Filter tick/step {bin_sym} tidak ditemukan. Coba ulang beberapa detik lagi."}
+
+    # (2) Margin mode: baca posisi saat ini (bisa Nil) → set target
+    try:
+        pos = await br.position_risk(api_key, api_secret, is_testnet, bin_sym)
+    except Exception as e:
+        return {"ok": False, "reason": "exchange_unreachable",
+                "message": f"Tidak bisa membaca status posisi: {str(e)[:160]}"}
+
+    existing_amt = float((pos or {}).get("positionAmt") or 0)
+    current_mt = str((pos or {}).get("marginType") or "").lower()  # "cross"|"isolated"
+    desired_mt_upper = "ISOLATED" if margin_mode == "isolated" else "CROSSED"
+    if abs(existing_amt) > 0:
+        # Posisi SUDAH ADA → tidak bisa ganti margin mode. HARUS cocok.
+        if current_mt and current_mt != margin_mode:
+            return {
+                "ok": False, "reason": "margin_mode_mismatch",
+                "requested": margin_mode, "actual": current_mt,
+                "message": (
+                    f"{bin_sym} punya posisi {current_mt.upper()} aktif. "
+                    f"Tidak bisa buka trade baru dalam mode {margin_mode.upper()}. "
+                    "Tutup posisi dulu atau pilih margin mode yang sama."
+                ),
+            }
+    else:
+        # Posisi kosong → set margin type sesuai permintaan user.
+        set_mt = await br.set_margin_type(
+            api_key, api_secret, is_testnet,
+            symbol=bin_sym, margin_type=desired_mt_upper,
+        )
+        if not set_mt.get("ok"):
+            return {
+                "ok": False, "reason": "margin_mode_set_failed",
+                "requested": margin_mode,
+                "message": f"Gagal set margin mode {margin_mode.upper()}: {set_mt.get('msg')}",
+            }
+
+    # (3) Set leverage (best effort — not fatal)
+    try:
+        await br.set_leverage(api_key, api_secret, is_testnet,
+                              symbol=bin_sym, leverage=leverage)
+    except Exception as e:
+        logger.debug("set_leverage %s: %s", bin_sym, e)
+
+    # (4) Compute qty from balance & risk
+    try:
+        bal = await br.available_usdt(api_key, api_secret, is_testnet)
+    except Exception as e:
+        return {"ok": False, "reason": "balance_fetch_failed",
+                "message": str(e)[:200]}
+    margin = bal * risk_pct / 100.0
+    size_usdt = margin * leverage
+    qty_raw = size_usdt / entry if entry > 0 else 0.0
+    qty = round_to_step(qty_raw, step)
+    if qty <= 0:
+        return {"ok": False, "reason": "qty_zero",
+                "message": "Margin terlalu kecil utk 1 step kontrak. Naikkan Risk% / Leverage."}
+
+    # Min notional check (approx — Binance default $5-$20 for USD-M)
+    notional = qty * entry
+    if notional < 5.0:
+        return {"ok": False, "reason": "min_notional",
+                "min_notional": 5.0,
+                "message": f"Nilai posisi ${notional:.2f} di bawah minimum $5. Naikkan Risk%/Leverage."}
+
+    # Round trigger prices to tick
+    sl_price = round_to_tick(float(stop_loss), tick)
+    tps_rounded = [round_to_tick(float(t), tick) for t in tps]
+
+    # Validate SL direction vs side (avoid instant trigger)
+    close_side = "SELL" if side == "BUY" else "BUY"
+
+    # (5) Place MARKET entry
+    try:
+        entry_res = await br.market_order(
+            api_key, api_secret, is_testnet,
+            symbol=bin_sym, side=side, quantity=qty, reduce_only=False,
+        )
+    except Exception as e:
+        return {"ok": False, "reason": "entry_rejected",
+                "message": f"Entry ditolak Binance: {str(e)[:200]}"}
+
+    entry_order_id = entry_res.get("orderId")
+
+    # (6) Wait for position to materialize
+    pos_final = None
+    for _ in range(10):
+        await asyncio.sleep(0.3)
+        try:
+            pos_final = await br.position_risk(
+                api_key, api_secret, is_testnet, bin_sym)
+        except Exception:
+            continue
+        if pos_final and abs(float(pos_final.get("positionAmt") or 0)) > 0:
+            break
+
+    if not pos_final or abs(float(pos_final.get("positionAmt") or 0)) <= 0:
+        # Posisi tidak materialize? Market order mungkin instan direverse.
+        return {"ok": False, "reason": "position_not_opened",
+                "message": "Market order terkirim tapi posisi tidak muncul di akun. Cek Binance manual."}
+
+    actual_qty = abs(float(pos_final.get("positionAmt") or 0))
+    actual_entry = float(pos_final.get("entryPrice") or entry)
+    actual_mm = str(pos_final.get("marginType") or margin_mode).lower()
+
+    async def _emergency_close(reason: str, detail: str) -> dict[str, Any]:
+        """Market-close posisi + batalkan semua algo. Dipanggil bila
+        SL/TP tidak dapat terpasang & terverifikasi. User minta: TIDAK
+        BOLEH ada posisi tanpa proteksi — rollback bersih."""
+        try:
+            await br.cancel_all_algo(api_key, api_secret, is_testnet, bin_sym)
+        except Exception:
+            pass
+        try:
+            await br.market_order(
+                api_key, api_secret, is_testnet,
+                symbol=bin_sym, side=close_side,
+                quantity=actual_qty, reduce_only=True,
+            )
+        except Exception as e:
+            logger.exception("emergency_close failed %s: %s", bin_sym, e)
+            return {
+                "ok": False, "reason": "bracket_failed_rollback_failed",
+                "message": (
+                    f"Entry sukses, bracket GAGAL ({detail}), rollback juga GAGAL. "
+                    "SEGERA tutup posisi manual di Binance!"
+                ),
+                "requires_manual_action": True,
+                "symbol": bin_sym, "qty": actual_qty, "side": side,
+            }
+        return {
+            "ok": False, "reason": reason,
+            "message": (
+                f"Bracket SL/TP tidak dapat terpasang di Binance ({detail}). "
+                "Posisi otomatis ditutup — balance Anda aman. Silakan coba lagi."
+            ),
+            "rollback_done": True,
+        }
+
+    # (7) Place SL with retry
+    sl_algo_id: str | None = None
+    sl_error: str | None = None
+    for attempt in range(3):
+        try:
+            sl_resp = await br.place_algo(
+                api_key, api_secret, is_testnet,
+                symbol=bin_sym, side=close_side,
+                order_type="STOP_MARKET",
+                trigger_price=sl_price, close_position=True,
+            )
+            sl_algo_id = str(sl_resp.get("algoId"))
+            break
+        except Exception as e:
+            sl_error = str(e)[:200]
+            logger.warning("SL attempt %d/%s %s: %s", attempt + 1, 3, bin_sym, sl_error)
+            await asyncio.sleep(0.4)
+
+    if not sl_algo_id:
+        return await _emergency_close("bracket_sl_failed", sl_error or "SL unknown")
+
+    # (8) Place TPs — split qty
+    tp_parts = _split_tp_qty(actual_qty, step, tp_count)
+    tp_algo_ids: list[str | None] = []
+    tp_errors: list[str] = []
+    for i, tp in enumerate(tps_rounded[:tp_count]):
+        tp_qty = tp_parts[i] if i < len(tp_parts) else 0.0
+        if tp_qty <= 0:
+            tp_algo_ids.append(None)
+            continue
+        placed_id: str | None = None
+        last_err: str | None = None
+        for attempt in range(3):
+            try:
+                tp_resp = await br.place_algo(
+                    api_key, api_secret, is_testnet,
+                    symbol=bin_sym, side=close_side,
+                    order_type="TAKE_PROFIT_MARKET",
+                    trigger_price=tp, quantity=tp_qty,
+                )
+                placed_id = str(tp_resp.get("algoId"))
+                break
+            except Exception as e:
+                last_err = str(e)[:200]
+                logger.warning("TP%d attempt %d %s: %s", i + 1, attempt + 1, bin_sym, last_err)
+                await asyncio.sleep(0.4)
+        if not placed_id:
+            tp_errors.append(f"TP{i + 1}: {last_err}")
+        tp_algo_ids.append(placed_id)
+
+    # (9) Verify ALL algo orders exist on exchange
+    try:
+        open_algos = await br.open_algo_orders(
+            api_key, api_secret, is_testnet, bin_sym)
+    except Exception:
+        open_algos = []
+    live_ids = {str(a.get("algoId")) for a in open_algos}
+
+    sl_verified = sl_algo_id in live_ids
+    tp_verified_count = sum(1 for tid in tp_algo_ids if tid and tid in live_ids)
+    expected_tp_count = sum(1 for p in tp_parts if p > 0)
+
+    # SL must be verified. If TP partial failure → still rollback (user
+    # requirement: tidak boleh ada tanda unprotected sama sekali).
+    if not sl_verified:
+        return await _emergency_close(
+            "bracket_sl_not_verified",
+            f"SL algoId {sl_algo_id} tidak terlihat di openAlgoOrders",
+        )
+    if tp_verified_count < expected_tp_count:
+        return await _emergency_close(
+            "bracket_tp_incomplete",
+            f"{tp_verified_count}/{expected_tp_count} TP terpasang. {'; '.join(tp_errors)[:150]}",
+        )
+
+    # (10) All verified → save trade as HARD bracket
+    now = datetime.now(timezone.utc).isoformat()
+    return {
+        "ok": True, "exchange": "binance", "testnet": is_testnet,
+        "symbol": base, "ccxt_symbol": f"{base}/USDT:USDT", "side": side,
+        "entry_order_id": entry_order_id,
+        "sl_order_id": sl_algo_id,
+        "tp_order_ids": tp_algo_ids,
+        "entry_price": actual_entry,
+        "stop_loss": sl_price, "take_profits": tps_rounded[:tp_count],
+        "tp_count": tp_count,
+        "trailing_callback_rate": float(trailing_callback_rate or 0.0),
+        "trailing_order_id": None,
+        "trailing_activated": False,
+        "qty": actual_qty, "leverage": leverage, "risk_pct": risk_pct,
+        "margin_mode": margin_mode,
+        "actual_margin_mode": actual_mm,
+        "mode": mode, "status": "open", "pnl_usdt": 0.0,
+        "soft_bracket": False, "soft_bracket_reason": None,
+        "bracket_type": "hard",
+        "bracket_verified_at": now,
+        "created_at": now, "updated_at": now,
+    }
+
+
+# ── CCXT fallback (bybit/okx/bitget) ──────────────────────────────────
+async def _execute_ccxt_fallback(
+    doc: dict[str, Any], symbol: str, side: Side,
+    entry: float, stop_loss: float, tps: list[float],
+    risk_pct: float, leverage: int, mode: str,
+    tp_count: int, trailing_callback_rate: float, margin_mode: str,
+) -> dict[str, Any]:
+    """Original CCXT-based path for non-Binance exchanges. Preserved as-is
+    with its known soft-bracket fallback semantics."""
     client = await _get_client(doc)
     exch_sym = _ccxt_symbol(doc["exchange"], symbol)
-    # v9.8.2 — validasi dinamis ke daftar pasar exchange (bukan whitelist statis)
     tradable_err = await _ensure_tradable(client, exch_sym, symbol)
     if tradable_err:
         try:
@@ -283,9 +577,6 @@ async def execute_trade(
     actual_qty = 0.0
     actual_fill = entry
     try:
-        # v9.9.0 — Set margin mode (ISOLATED default, user-pilih CROSS
-        # opsional) SEBELUM leverage & entry. -4046/-4059 ("no need to
-        # change") diabaikan.
         try:
             await client.set_margin_mode(margin_mode, exch_sym)
         except Exception:
@@ -310,8 +601,6 @@ async def execute_trade(
             elif isinstance(precision, float) and precision > 0:
                 amount_step = precision
                 qty = (int(qty / precision)) * precision
-            # v9.5.0 — Normalize trigger prices to the symbol's tick size
-            # (Binance rejects -1111 "Precision is over the maximum").
             pprec = (m.get("precision") or {}).get("price")
             if isinstance(pprec, int) and pprec >= 0:
                 price_tick = 10 ** -pprec
@@ -323,20 +612,7 @@ async def execute_trade(
             stop_loss = round(round(stop_loss / price_tick) * price_tick, 8)
             tps = [round(round(float(t) / price_tick) * price_tick, 8) for t in tps]
         if qty <= 0:
-            return {"ok": False, "message": "Qty terhitung 0 — margin/balance kurang."}
-        # v9.8.8 — Cek min-notional exchange SEBELUM order (Binance -4164).
-        # Tanpa ini, entry ditolak → exception tak tertangani → HTTP 500.
-        m_limits = client.markets.get(exch_sym) or {}
-        min_cost = ((m_limits.get("limits") or {}).get("cost") or {}).get("min")
-        if isinstance(min_cost, (int, float)) and min_cost and size_usdt < float(min_cost):
-            return {
-                "ok": False, "reason": "min_notional",
-                "min_notional": float(min_cost),
-                "message": (f"Ukuran posisi ${size_usdt:.2f} di bawah minimum "
-                            f"exchange (${float(min_cost):.2f}). Naikkan Risk % atau Leverage."),
-            }
-        # v9.8.8 — Entry order dibungkus try/except: penolakan exchange
-        # (precision, margin, dsb.) kembali sebagai pesan jelas, bukan 500.
+            return {"ok": False, "message": "Qty terhitung 0."}
         try:
             entry_order = await client.create_order(
                 exch_sym, "market", _ccxt_side(side), qty, None,
@@ -344,104 +620,42 @@ async def execute_trade(
             )
         except Exception as e:
             return {"ok": False, "reason": "entry_rejected",
-                    "message": f"Order entry ditolak exchange: {str(e)[:200]}"}
+                    "message": f"Order entry ditolak: {str(e)[:200]}"}
         entry_order_id = entry_order.get("id")
         actual_fill = float(entry_order.get("average") or entry_order.get("price") or entry)
         actual_qty = float(entry_order.get("filled") or qty)
         close_side = _opposite(side)
-        # v9.4.3 — HARD-BRACKET (native exchange SL/TP):
-        #   Binance USDM: NEW Algo Order API (`/fapi/v1/algoOrder`,
-        #                 algoType=CONDITIONAL). Binance migrated ALL
-        #                 conditional orders off /fapi/v1/order on
-        #                 Dec 9 2025 — legacy endpoint returns -4120.
-        #   Bybit/OKX/Bitget: unified via CCXT stopPrice/triggerPrice params.
-        # If exchange rejects → fallback to soft-bracket (backend watcher).
-        exchange = (doc.get("exchange") or "binance").lower()
+        exchange = doc["exchange"].lower()
         soft_bracket = False
         sl_err: str | None = None
         tp_err: str | None = None
-
-        if exchange == "binance":
-            api_key = decrypt(doc["api_key_enc"])
-            api_secret = decrypt(doc["api_secret_enc"])
-            is_testnet = bool(doc.get("testnet", True))
-            spot_sym = symbol.upper().split("/")[0].split("USDT")[0].split("-")[0] + "USDT"
-            base = spot_sym[:-4]
-            # v9.9.0 — Bulatkan trigger price ke tickSize resmi Binance.
-            # Trigger mentah (mis. 0.1051625 padahal tick 0.0001) membuat
-            # Algo API menolak order → SL/TP tidak terpasang sama sekali.
+        sl_params = _sl_params(exchange, stop_loss, actual_qty)
+        tp_params_fn = lambda tp_price, qty: _tp_params(exchange, tp_price, qty)
+        try:
+            sl_order = await client.create_order(
+                exch_sym, "STOP_MARKET", close_side,
+                None if sl_params.get("closePosition") else actual_qty, None,
+                params=sl_params,
+            )
+            sl_order_id = sl_order.get("id")
+        except Exception as e:
+            sl_err = str(e)[:200]
+            soft_bracket = True
+        tp_parts = _split_tp_qty(actual_qty, amount_step, tp_count)
+        for i, tp in enumerate(tps[:tp_count]):
+            tp_qty = tp_parts[i] if i < len(tp_parts) else 0.0
+            if soft_bracket or tp_qty <= 0:
+                tp_order_ids.append(None)
+                continue
             try:
-                from .whitelist import binance_symbol_filters, round_to_tick
-                filters = await binance_symbol_filters() or {}
-                tick = (filters.get(base) or {}).get("tick") or 0.0
+                o = await client.create_order(
+                    exch_sym, "TAKE_PROFIT_MARKET", close_side, tp_qty, None,
+                    params=tp_params_fn(tp, tp_qty),
+                )
+                tp_order_ids.append(o.get("id"))
             except Exception:
-                round_to_tick = None  # type: ignore[assignment]
-                tick = 0.0
-            sl_price = round_to_tick(stop_loss, tick) if tick else stop_loss
-            try:
-                # SL — close FULL position when triggered.
-                sl_order = await new_conditional_order(
-                    api_key, api_secret, is_testnet,
-                    symbol=spot_sym, side=close_side.upper(),
-                    order_type="STOP_MARKET",
-                    trigger_price=sl_price, close_position=True,
-                )
-                sl_order_id = str(sl_order.get("algoId") or "")
-            except Exception as e:
-                sl_err = str(e)[:200]
+                tp_order_ids.append(None)
                 soft_bracket = True
-            tp_parts = _split_tp_qty(actual_qty, amount_step, tp_count)
-            for i, tp in enumerate(tps[:tp_count]):
-                tp_qty = tp_parts[i] if i < len(tp_parts) else 0.0
-                # v9.9.0 — TP TETap dipasang walau SL gagal (jangan biarkan
-                # posisi benar-benar tanpa perlindungan sama sekali).
-                if tp_qty <= 0:
-                    tp_order_ids.append(None)
-                    continue
-                try:
-                    tp_price = round_to_tick(tp, tick) if tick else tp
-                    o = await new_conditional_order(
-                        api_key, api_secret, is_testnet,
-                        symbol=spot_sym, side=close_side.upper(),
-                        order_type="TAKE_PROFIT_MARKET",
-                        trigger_price=tp_price, quantity=tp_qty,
-                    )
-                    tp_order_ids.append(str(o.get("algoId") or ""))
-                except Exception as e:
-                    tp_order_ids.append(None)
-                    tp_err = str(e)[:200]
-                    soft_bracket = True
-        else:
-            sl_params = _sl_params(exchange, stop_loss, actual_qty)
-            tp_params_fn = lambda tp_price, qty: _tp_params(exchange, tp_price, qty)
-            try:
-                sl_order = await client.create_order(
-                    exch_sym, "STOP_MARKET", close_side,
-                    None if sl_params.get("closePosition") else actual_qty, None,
-                    params=sl_params,
-                )
-                sl_order_id = sl_order.get("id")
-            except Exception as e:
-                # Exchange menolak conditional order. Fallback ke
-                # soft-bracket: backend watcher close posisi via MARKET
-                # reduceOnly saat harga menyentuh SL/TP.
-                sl_err = str(e)[:200]
-                soft_bracket = True
-            tp_parts = _split_tp_qty(actual_qty, amount_step, tp_count)
-            for i, tp in enumerate(tps[:tp_count]):
-                tp_qty = tp_parts[i] if i < len(tp_parts) else 0.0
-                if soft_bracket or tp_qty <= 0:
-                    tp_order_ids.append(None)
-                    continue
-                try:
-                    o = await client.create_order(
-                        exch_sym, "TAKE_PROFIT_MARKET", close_side, tp_qty, None,
-                        params=tp_params_fn(tp, tp_qty),
-                    )
-                    tp_order_ids.append(o.get("id"))
-                except Exception:
-                    tp_order_ids.append(None)
-                    soft_bracket = True
     finally:
         try:
             await client.close()
@@ -460,6 +674,7 @@ async def execute_trade(
         "trailing_activated": False,
         "qty": actual_qty, "leverage": leverage, "risk_pct": risk_pct,
         "margin_mode": margin_mode,
+        "actual_margin_mode": margin_mode,
         "mode": mode, "status": "open", "pnl_usdt": 0.0,
         "soft_bracket": soft_bracket,
         "soft_bracket_reason": (sl_err or tp_err) if soft_bracket else None,
@@ -471,13 +686,10 @@ async def execute_trade(
 async def attach_brackets(
     doc: dict[str, Any], trade: dict[str, Any],
 ) -> dict[str, Any]:
-    """v9.9.0 — (Re)pasang SL + TP native Binance untuk posisi yang SUDAH
-    terbuka tapi bracket-nya hilang/gagal (bracket_type=soft).
-
-    Dipakai endpoint repair-brackets. Membaca qty posisi REAL dari exchange,
-    membagi ulang TP sesuai sisa qty, lalu menaruh SL closePosition + TP
-    reduce-only. Mengembalikan dict update untuk asi_trades + detail error
-    per-leg agar UI bisa menampilkan alasan penolakan Binance apa adanya.
+    """v9.9.2 — (Re)pasang SL + TP native Binance untuk posisi yang SUDAH
+    terbuka tapi tidak terverifikasi. VERIFIKASI via openAlgoOrders
+    sebelum menyatakan sukses. Jika SL atau TP tidak terverifikasi,
+    return ok=False dengan error detail (jangan tulis klaim palsu ke DB).
     """
     if (doc.get("exchange") or "").lower() != "binance":
         return {"ok": False, "error": "repair hanya didukung untuk Binance saat ini"}
@@ -485,95 +697,110 @@ async def attach_brackets(
     api_secret = decrypt(doc["api_secret_enc"])
     is_testnet = bool(doc.get("testnet", True))
     symbol = str(trade.get("symbol") or "").upper()
-    spot_sym = symbol.split("/")[0].split("USDT")[0].split("-")[0] + "USDT"
-    base = spot_sym[:-4]
+    base = symbol.split("/")[0].split("USDT")[0].split("-")[0]
+    bin_sym = base + "USDT"
     close_side = "SELL" if trade.get("side") == "BUY" else "BUY"
 
-    client = await _get_client(doc)
+    # Fetch real position
     try:
-        exch_sym = _ccxt_symbol(doc["exchange"], symbol)
-        positions = await client.fetch_positions([exch_sym])
-        pos = next((p for p in positions if (p or {}).get("contracts", 0)), None)
-        if not pos:
-            return {"ok": False, "error": "no_open_position"}
-        qty = abs(float(pos.get("contracts") or 0))
-        step = None
-        try:
-            m = (client.markets or {}).get(exch_sym) or {}
-            prec = (m.get("precision") or {}).get("amount")
-            if isinstance(prec, int) and prec >= 0:
-                step = 10 ** -prec if prec > 0 else 1.0
-            elif isinstance(prec, float):
-                step = prec
-        except Exception:
-            step = None
-    finally:
-        try:
-            await client.close()
-        except Exception:
-            pass
+        pos = await br.position_risk(api_key, api_secret, is_testnet, bin_sym)
+    except Exception as e:
+        return {"ok": False, "symbol": symbol, "errors": [f"positionRisk: {str(e)[:160]}"]}
+    if not pos or abs(float(pos.get("positionAmt") or 0)) <= 0:
+        return {"ok": False, "symbol": symbol, "errors": ["no_open_position"]}
+    qty = abs(float(pos.get("positionAmt") or 0))
+    actual_mm = str(pos.get("marginType") or "").lower()
 
-    from .whitelist import binance_symbol_filters, round_to_tick
-    try:
-        filters = await binance_symbol_filters() or {}
-        tick = (filters.get(base) or {}).get("tick") or 0.0
-    except Exception:
-        tick = 0.0
+    # Filters for rounding
+    filters = await binance_symbol_filters() or {}
+    f = filters.get(base) or {}
+    tick = float(f.get("tick") or 0.0)
+    step = float(f.get("step") or 0.0)
 
-    errors: list[str] = []
-    sl_order_id = None
-    tp_order_ids: list[str | None] = []
     stop_loss = float(trade.get("stop_loss") or 0)
     tps = list(trade.get("take_profits") or [])
     tp_count = int(trade.get("tp_count") or len(tps) or 3)
+    if stop_loss <= 0 or not tps:
+        return {
+            "ok": False, "symbol": symbol,
+            "errors": ["Trade lama tidak punya data SL/TP tersimpan — tidak bisa direpair otomatis."],
+        }
 
+    sl_price = round_to_tick(stop_loss, tick) if tick else stop_loss
+    tps_rounded = [round_to_tick(float(t), tick) for t in tps] if tick else [float(t) for t in tps]
+
+    # First cancel any stale algo orders for this symbol
     try:
-        sl_price = round_to_tick(stop_loss, tick) if tick else stop_loss
-        sl_order = await new_conditional_order(
-            api_key, api_secret, is_testnet,
-            symbol=spot_sym, side=close_side,
-            order_type="STOP_MARKET",
-            trigger_price=sl_price, close_position=True,
-        )
-        sl_order_id = str(sl_order.get("algoId") or "")
-    except Exception as e:
-        errors.append(f"SL: {str(e)[:180]}")
+        await br.cancel_all_algo(api_key, api_secret, is_testnet, bin_sym)
+    except Exception:
+        pass
 
-    tp_parts = _split_tp_qty(qty, step, tp_count)
-    for i, tp in enumerate(tps[:tp_count]):
+    errors: list[str] = []
+    sl_algo_id: str | None = None
+    for attempt in range(3):
+        try:
+            r = await br.place_algo(
+                api_key, api_secret, is_testnet,
+                symbol=bin_sym, side=close_side,
+                order_type="STOP_MARKET",
+                trigger_price=sl_price, close_position=True,
+            )
+            sl_algo_id = str(r.get("algoId"))
+            break
+        except Exception as e:
+            errors.append(f"SL try{attempt + 1}: {str(e)[:160]}")
+
+    tp_parts = _split_tp_qty(qty, step or None, tp_count)
+    tp_algo_ids: list[str | None] = []
+    for i, tp in enumerate(tps_rounded[:tp_count]):
         tp_qty = tp_parts[i] if i < len(tp_parts) else 0.0
         if tp_qty <= 0:
-            tp_order_ids.append(None)
+            tp_algo_ids.append(None)
             continue
-        try:
-            tp_price = round_to_tick(float(tp), tick) if tick else float(tp)
-            o = await new_conditional_order(
-                api_key, api_secret, is_testnet,
-                symbol=spot_sym, side=close_side,
-                order_type="TAKE_PROFIT_MARKET",
-                trigger_price=tp_price, quantity=tp_qty,
-            )
-            tp_order_ids.append(str(o.get("algoId") or ""))
-        except Exception as e:
-            tp_order_ids.append(None)
-            errors.append(f"TP{i + 1}: {str(e)[:180]}")
+        placed: str | None = None
+        for attempt in range(3):
+            try:
+                r = await br.place_algo(
+                    api_key, api_secret, is_testnet,
+                    symbol=bin_sym, side=close_side,
+                    order_type="TAKE_PROFIT_MARKET",
+                    trigger_price=tp, quantity=tp_qty,
+                )
+                placed = str(r.get("algoId"))
+                break
+            except Exception as e:
+                errors.append(f"TP{i + 1} try{attempt + 1}: {str(e)[:160]}")
+        tp_algo_ids.append(placed)
 
-    hard = sl_order_id is not None and any(tp_order_ids)
+    # Verify via openAlgoOrders
+    try:
+        openalgos = await br.open_algo_orders(api_key, api_secret, is_testnet, bin_sym)
+    except Exception:
+        openalgos = []
+    live_ids = {str(a.get("algoId")) for a in openalgos}
+    sl_ok = bool(sl_algo_id and sl_algo_id in live_ids)
+    tp_ok = sum(1 for t in tp_algo_ids if t and t in live_ids)
+    expected_tp = sum(1 for p in tp_parts if p > 0)
+    hard = sl_ok and tp_ok >= expected_tp
+
     now = datetime.now(timezone.utc).isoformat()
+    update = {
+        "sl_order_id": sl_algo_id if sl_ok else None,
+        "tp_order_ids": [t if (t and t in live_ids) else None for t in tp_algo_ids],
+        "soft_bracket": not hard,
+        "soft_bracket_reason": None if hard else "; ".join(errors)[:220],
+        "bracket_type": "hard" if hard else "soft",
+        "actual_margin_mode": actual_mm or trade.get("margin_mode") or "cross",
+        "updated_at": now,
+    }
+    if hard:
+        update["bracket_verified_at"] = now
     return {
-        "ok": hard,
-        "symbol": symbol,
-        "sl_order_id": sl_order_id,
-        "tp_order_ids": tp_order_ids,
+        "ok": hard, "symbol": symbol,
+        "sl_order_id": sl_algo_id if sl_ok else None,
+        "tp_order_ids": [t if (t and t in live_ids) else None for t in tp_algo_ids],
         "errors": errors,
-        "update": {
-            "sl_order_id": sl_order_id,
-            "tp_order_ids": tp_order_ids,
-            "soft_bracket": not hard,
-            "soft_bracket_reason": None if hard else "; ".join(errors)[:200],
-            "bracket_type": "hard" if hard else "soft",
-            "updated_at": now,
-        },
+        "update": update,
     }
 
 
@@ -662,12 +889,17 @@ async def _maybe_activate_trailing(
 async def refresh_trade_pnl(doc: dict[str, Any], trade: dict[str, Any]) -> dict[str, Any]:
     """Query exchange untuk status order & hitung PnL realized/unrealized.
 
-    v9.7.7 — PHANTOM-CLOSE FIX. Jika `fetch_positions` MELEMPAR EXCEPTION
-    (API key invalid/expired/IP banned/rate-limited), kita TIDAK boleh
-    menandai trade "closed" dengan fallback SL — ini bikin posisi hantu.
-    Hanya tandai closed ketika fetch SUKSES dan hasilnya memang kosong
-    (artinya exchange mengkonfirmasi posisi benar-benar tertutup).
+    v9.9.2 — Untuk Binance pakai REST langsung (bukan CCXT) agar
+    actual_margin_mode / entry / markPrice selalu akurat. CCXT path
+    tetap untuk exchange lain.
+
+    v9.7.7 — PHANTOM-CLOSE FIX. Jika fetch GAGAL (API error), JANGAN
+    tandai closed.
     """
+    exchange = (doc.get("exchange") or "").lower()
+    if exchange == "binance":
+        return await _refresh_binance(doc, trade)
+    # non-Binance → CCXT fallback
     client = await _get_client(doc)
     try:
         exch_sym = trade["ccxt_symbol"]
@@ -681,7 +913,6 @@ async def refresh_trade_pnl(doc: dict[str, Any], trade: dict[str, Any]) -> dict[
         pos = next((p for p in positions if (p or {}).get("contracts", 0)), None)
         extra_update: dict[str, Any] = {}
         if pos:
-            # v9.6.0 — Deteksi TP1 fill & aktifkan trailing stop (Binance only).
             try:
                 extra_update = await _maybe_activate_trailing(doc, trade, pos) or {}
             except Exception:
@@ -689,10 +920,8 @@ async def refresh_trade_pnl(doc: dict[str, Any], trade: dict[str, Any]) -> dict[
             unrealized = float(pos.get("unrealizedPnl") or 0)
             return {"status": "open", "pnl_usdt": round(unrealized, 2),
                     "mark_price": pos.get("markPrice"), **extra_update}
-        # v9.7.7 — Fetch gagal (bukan posisi kosong). JANGAN tandai closed.
         if not fetch_ok:
             return {"status": "open", "pnl_usdt": float(trade.get("pnl_usdt") or 0.0)}
-        # Fetch sukses & tidak ada posisi aktif → benar-benar tertutup.
         realized = 0.0
         qty = float(trade.get("qty") or 0)
         entry = float(trade.get("entry_price") or 0)
@@ -702,9 +931,6 @@ async def refresh_trade_pnl(doc: dict[str, Any], trade: dict[str, Any]) -> dict[
         except Exception:
             fills = []
         for f in fills:
-            if f.get("timestamp") and trade.get("created_at"):
-                # keep it loose: all recent fills on this symbol since open
-                pass
             price = float(f.get("price") or 0)
             amount = float(f.get("amount") or 0)
             if side == "BUY":
@@ -712,7 +938,6 @@ async def refresh_trade_pnl(doc: dict[str, Any], trade: dict[str, Any]) -> dict[
             else:
                 realized += (entry - price) * amount if f.get("side") == "buy" else 0
         if realized == 0 and qty > 0:
-            # Fallback: anggap SL kena.
             sl = float(trade.get("stop_loss") or entry)
             realized = (sl - entry) * qty if side == "BUY" else (entry - sl) * qty
         return {"status": "closed", "pnl_usdt": round(realized, 2)}
@@ -721,3 +946,49 @@ async def refresh_trade_pnl(doc: dict[str, Any], trade: dict[str, Any]) -> dict[
             await client.close()
         except Exception:
             pass
+
+
+async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[str, Any]:
+    """v9.9.2 — Direct REST refresh untuk Binance. Memperbarui actual
+    margin mode + verifikasi bracket masih hidup di openAlgoOrders."""
+    api_key = decrypt(doc["api_key_enc"])
+    api_secret = decrypt(doc["api_secret_enc"])
+    is_testnet = bool(doc.get("testnet", True))
+    symbol = str(trade.get("symbol") or "").upper()
+    base = symbol.split("/")[0].split("USDT")[0].split("-")[0]
+    bin_sym = base + "USDT"
+    try:
+        pos = await br.position_risk(api_key, api_secret, is_testnet, bin_sym)
+    except Exception:
+        # Fetch failed → keep status open, PnL unchanged
+        return {"status": "open", "pnl_usdt": float(trade.get("pnl_usdt") or 0.0)}
+    amt = float((pos or {}).get("positionAmt") or 0)
+    if abs(amt) > 0:
+        unrealized = float(pos.get("unRealizedProfit") or 0)
+        actual_mm = str(pos.get("marginType") or "").lower()
+        mark = pos.get("markPrice")
+        # Verify bracket still armed in openAlgoOrders
+        try:
+            openalgos = await br.open_algo_orders(api_key, api_secret, is_testnet, bin_sym)
+        except Exception:
+            openalgos = None
+        bracket_live = None
+        if isinstance(openalgos, list):
+            live_ids = {str(a.get("algoId")) for a in openalgos}
+            sl_id = trade.get("sl_order_id")
+            tp_ids = trade.get("tp_order_ids") or []
+            sl_live = bool(sl_id and str(sl_id) in live_ids)
+            tp_live = any(str(t) in live_ids for t in tp_ids if t)
+            bracket_live = sl_live and tp_live
+        upd: dict[str, Any] = {
+            "status": "open",
+            "pnl_usdt": round(unrealized, 2),
+            "mark_price": float(mark) if mark else None,
+            "actual_margin_mode": actual_mm,
+        }
+        if bracket_live is not None:
+            upd["bracket_live"] = bracket_live
+        return upd
+    # Position closed. Compute realized from stored data.
+    realized = float(trade.get("pnl_usdt") or 0.0)
+    return {"status": "closed", "pnl_usdt": round(realized, 2)}

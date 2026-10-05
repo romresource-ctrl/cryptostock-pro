@@ -172,27 +172,37 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
         tp_count: tpCount, trailing_callback_rate: trailingCbRate,
         margin_mode: marginMode,
       });
-      // v9.8.5 — Panel sukses in-sheet (bekerja di web & native).
-      // v9.9.0 — Bila bracket native gagal (soft), tampilkan peringatan
-      // + alasan mentah dari Binance supaya bisa dilaporkan/di-repair.
-      const bracketWarn = (res as any).bracket_type === "soft";
+      // v9.9.2 — Backend sekarang GARANSI: res.ok === true berarti SL+TP
+      // sudah TERVERIFIKASI di Binance (via openAlgoOrders). Bracket soft
+      // tidak lagi dibuat untuk trade baru — rollback otomatis dilakukan
+      // bila gagal. Jadi panel sukses selalu bersih tanpa warning.
+      const actualMM = (res as any).actual_margin_mode || marginMode;
       setExecResult({
         ok: true,
         title: t("ats_exec_done"),
         body:
           `${intent.side} ${intent.symbol} @ ${res.entry_price?.toFixed?.(6) ?? intent.entry}\n` +
-          `Qty: ${res.qty} · ${t("ats_leverage")}: ${res.leverage}x\n` +
-          `${res.testnet ? "TESTNET" : "MAINNET"}` +
-          (bracketWarn
-            ? `\n\n⚠️ ${t("asi_soft_warn_title")}\n${(res as any).soft_bracket_reason || t("asi_soft_warn_body")}`
-            : ""),
+          `Qty: ${res.qty} · ${t("ats_leverage")}: ${res.leverage}x · ${String(actualMM).toUpperCase()}\n` +
+          `${res.testnet ? "TESTNET" : "MAINNET"}\n` +
+          `${t("asi_bracket_native_ok")}`,
       });
     } catch (e: any) {
-      setExecResult({
-        ok: false,
-        title: t("ats_exec_failed"),
-        body: e?.message || String(e),
-      });
+      // v9.9.2 — api.ts sudah menempelkan e.code dan e.detail dari
+      // response body JSON {code, message, rollback_done, ...}.
+      const code: string | undefined = e?.code;
+      const msg: string = e?.detail?.message || e?.message || String(e);
+      let title = t("ats_exec_failed");
+      if (code === "bracket_sl_failed" || code === "bracket_tp_incomplete"
+          || code === "bracket_sl_not_verified") {
+        title = t("ats_bracket_rollback_title");
+      } else if (code === "margin_mode_mismatch"
+                 || code === "margin_mode_set_failed") {
+        title = t("ats_margin_mismatch_title");
+      } else if (code === "bracket_failed_rollback_failed"
+                 || e?.detail?.requires_manual_action) {
+        title = t("ats_rollback_failed_title");
+      }
+      setExecResult({ ok: false, title, body: msg });
     } finally { setExecuting(false); }
   };
 

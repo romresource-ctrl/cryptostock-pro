@@ -265,7 +265,15 @@ def _attach_trade_routes(db: Any) -> None:
             margin_mode=payload.margin_mode,
         )
         if not res.get("ok"):
-            raise HTTPException(400, res.get("message") or "Execute failed")
+            # v9.9.2 — Pass through structured reason & message so frontend
+            # can show user-friendly dialog (rollback vs margin mismatch
+            # vs min notional, etc.). HTTPException(detail=dict) → JSON.
+            raise HTTPException(400, detail={
+                "code": res.get("reason") or "execute_failed",
+                "message": res.get("message") or "Execute failed",
+                "rollback_done": bool(res.get("rollback_done")),
+                "requires_manual_action": bool(res.get("requires_manual_action")),
+            })
         margin_usdt = round(float(res["qty"]) * float(res["entry_price"]) / max(1, int(res["leverage"])), 2)
         rec = {**res, "device_id": device_id, "margin_usdt": margin_usdt}
         rec["_id"] = f"{device_id}:{res['entry_order_id']}" if res.get("entry_order_id") else None

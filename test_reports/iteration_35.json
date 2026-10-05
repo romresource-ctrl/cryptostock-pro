@@ -1,0 +1,32 @@
+{
+  "summary": "ASI-Bot v9.9.2 bracket-SL/TP + auto-rollback: BACKEND E2E PASS (8/8). Verified against Binance Futures Testnet via public backend http://localhost:8001. All 4 scenarios from the review request pass end-to-end with real exchange calls (no mocks). Credentials save/persist OK; ETH happy path yields bracket_type='hard', actual_margin_mode='isolated', sl_order_id + tp_order_ids live on Binance (verified by direct GET /openAlgoOrders); inverted-SL on DOGE returns HTTP 400 with detail.code='bracket_sl_failed', rollback_done=True, 'balance Anda aman' phrase, position & algos cleaned, trade NOT persisted; CROSS→ISOLATED margin mismatch on SOL returns 400 with detail.code='margin_mode_mismatch' and leaves the original cross position untouched.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter35_v992_bracket_rollback.py",
+    "/app/test_reports/pytest/iter35.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "engine.py execute_trade: good — rejects margin mismatch BEFORE touching leverage/entry, so original position is provably untouched (confirmed by test).",
+    "engine.py _emergency_close: cancel_all_algo + reduce-only MARKET close in sequence; both wrapped. Return payload exposes requires_manual_action when rollback itself fails — frontend already surfaces this.",
+    "binance_rest.place_algo: strict — raises RuntimeError unless algoStatus ∈ {NEW, WORKING} AND algoId is set. This is what makes the SL-reject path deterministic (contrasts with CCXT swallowing).",
+    "routes.execute: pass-through of structured detail (code / message / rollback_done / requires_manual_action) via HTTPException(detail=dict) works correctly — frontend can i18n per code.",
+    "Minor: engine.execute_trade saves `rec` with _id=None when entry_order_id missing — won't be written but silent; acceptable since this path is already an error branch. No fix needed.",
+    "Minor code quality: `tp_params_fn = lambda ...` in engine._execute_ccxt_fallback is non-Binance only; still works. Not in v9.9.2 scope."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter35_v992_bracket_rollback.py (new)"
+  ],
+  "success_rate": {"backend": "100% (8/8)", "frontend": "not tested per request"},
+  "seed_data_creation": "Used device_id=test-v992-dev with Binance testnet credentials from /app/memory/test_credentials.md. Each test cleans up its own symbol (ETHUSDT / DOGEUSDT / SOLUSDT) via direct binance_rest helpers before AND after, so suite is re-runnable with no residue.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Pytest file test_iter35_v992_bracket_rollback.py is the regression suite for the v9.9.2 safety fix. It talks to the real Binance Futures Testnet (requires ASI_PROXY_URL in backend/.env to be reachable from this container — currently 143.198.197.107:8888 is live). Runtime ~95s. If re-running: just invoke `pytest backend/tests/test_iter35_v992_bracket_rollback.py -v`. Setup/teardown already handle leftover positions. If a test flakes due to transient Binance -5021/503, re-run once before escalating. The margin-mismatch test opens a 0.1 SOL CROSS position (~$2-3 margin at 1× then it reuses existing leverage) — guaranteed above min notional on testnet.",
+  "rca_of_issue": "Pre-v9.9.2 CCXT path silently swallowed Binance's -2021/-2022 rejections on STOP_MARKET / TAKE_PROFIT_MARKET placement, so the engine persisted trades with sl_order_id=null while UI reported 'SL/TP installed'. Fix: direct signed REST (binance_rest.py) that raises on non-200 OR missing algoId OR algoStatus not NEW/WORKING, followed by post-placement verification via GET /openAlgoOrders. Any failure triggers _emergency_close (cancel_all_algo + reduce-only MARKET close) and the trade is never written. Tests TestRollbackInvertedSL::* reproduce the original failure mode (SL above entry on LONG) and prove: (a) 400 returned with code='bracket_sl_failed', (b) position/algos actually cleaned on exchange, (c) nothing written to asi_trades. TestMarginModeMismatch proves the new pre-flight margin check does NOT disturb an existing position in the opposing mode."
+}

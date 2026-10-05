@@ -699,6 +699,76 @@ Fase berikutnya (BELUM):
 - Tombol eksekusi Semi-Auto di kartu AI Suggestions ("⚡ EXECUTE SEMI-AUTO") dengan badge pink SEMI.
 - Konfirmasi sukses kini menyediakan opsi langsung "Lihat Recent Trades" → navigasi ke `/asi-bot`.
 
+## v9.9.2 — Fix Kritis: SL/TP Native yang BENAR + Auto-Rollback (Jun 2026)
+
+**Masalah user (sangat kritis):** UI ASI-Bot menyatakan SL/TP terpasang native
+di Binance, padahal di Binance posisi SEBENARNYA tidak punya SL/TP. Posisi
+Cross tidak bisa diubah ke Isolated setelah entry.
+
+**Root cause ditemukan:**
+1. `CCXT.set_margin_mode()` dibungkus `except: pass` → kegagalan set margin
+   mode DIAM-DIAM diabaikan, UI klaim "ISOLATED" padahal Binance Cross.
+2. Response algo order dari Binance tidak diverifikasi dengan
+   `GET /openAlgoOrders` — hanya mengandalkan response POST yang bisa
+   lolos tanpa benar-benar membuat order di buku.
+3. CCXT path menelan error exchange, engine kehilangan visibilitas.
+
+**Perbaikan v9.9.2:**
+- Modul baru `/app/backend/asi_bot/binance_rest.py` — direct signed REST
+  (HMAC-SHA256) untuk account, positionRisk, leverage, marginType, market
+  order, algo order, openAlgoOrders, cancel. Semua lewat proxy Singapore.
+- `engine.execute_trade` ditulis ulang khusus Binance path:
+  1. Baca positionRisk real → jika posisi exist dengan margin mode berbeda
+     dari request user → **ABORT entry** (reason=`margin_mode_mismatch`).
+  2. Set margin type via REST signed (bukan CCXT) + handle -4046 (no change).
+     Jika gagal → ABORT (reason=`margin_mode_set_failed`).
+  3. Entry MARKET → poll positionRisk 10×0.3s sampai positionAmt > 0.
+  4. SL placement dengan retry 3× → VERIFY via openAlgoOrders list.
+  5. TP placement per-leg dengan retry 3× → VERIFY juga.
+  6. Jika SL atau TP (verified) < expected → **AUTO-ROLLBACK**:
+     cancel semua algo + MARKET close reduceOnly → trade TIDAK disimpan.
+     Return `{ok:false, reason, message, rollback_done:true}`.
+  7. Hanya trade yang SL+TP full-verified yang disimpan sebagai
+     `bracket_type="hard"`, `bracket_verified_at=<ts>`,
+     `actual_margin_mode=<binance real>`.
+- `engine.attach_brackets` (repair) juga memverifikasi via openAlgoOrders;
+  hanya tulis `hard` ke DB bila SL+TP benar-benar live.
+- `engine.refresh_trade_pnl` untuk Binance pakai REST langsung:
+  menyimpan `actual_margin_mode` live + `bracket_live` boolean
+  (true=algo masih tersisa di exchange, false=user cancel manual).
+- Routes `trades/execute` propagasi `code/message/rollback_done` sebagai
+  JSON detail ke frontend (bukan string generik).
+- Frontend `AsiTradeSheet.tsx` menampilkan dialog kontekstual:
+  - "Entry Dibatalkan — SL/TP Gagal" (rollback bersih)
+  - "Margin Mode Tidak Cocok" (mismatch posisi lama)
+  - "🚨 PERLU TINDAKAN MANUAL" (rollback gagal — perlu close manual)
+- Frontend `asi-bot.tsx` Recent Trades:
+  - Badge margin mode pakai `actual_margin_mode` (bukan request).
+  - "✓ Native SL/TP armed" hanya hijau bila `bracket_type=hard`
+    DAN `bracket_live !== false`.
+- Scheduler Full-Auto sudah meneruskan `margin_mode` ke engine (v9.9.0),
+  sekarang juga akan mendapat verifikasi + rollback yang sama otomatis.
+
+**Verifikasi E2E Testnet (Binance Futures Testnet, user-provided keys):**
+- ✓ Happy path (ETH BUY ISO): SL + 3 TP terverifikasi di openAlgoOrders.
+  Response: `bracket_type=hard`, `actual_margin_mode=isolated`.
+- ✓ Margin mismatch: posisi SOL Cross aktif → request Isolated DITOLAK
+  dengan pesan jelas, posisi lama tidak terganggu.
+- ✓ Cross mode entry: `actual_margin_mode=cross` tersimpan apa adanya.
+- ✓ Rollback: SL ditolak (-2021 immediate trigger) → setelah 3× retry,
+  posisi otomatis ditutup, 0 algo order sisa, trade tidak disimpan,
+  user dapat pesan "balance Anda aman — silakan coba lagi".
+
+**Version:** 9.9.1 → 9.9.2 (version.ts + app.json).
+
+**CATATAN KE USER:** v9.9.2 masih perlu Anda verifikasi langsung di akun
+Binance Anda setelah rebuild APK — testnet mengkonfirmasi behavior, tapi
+akun mainnet Anda mungkin punya posisi warisan v9.9.1 yang perlu dirapihkan
+manual sekali. Setelah itu semua trade baru akan 100% hard-bracket atau
+tidak dieksekusi sama sekali (no more silent fake SL/TP).
+
+## v9.9.1 — (dilewati — digabung ke 9.9.2)
+
 ## v9.7.9 — Trader Profile Modal Fixes & Admin Code Unification (Okt 2026)
 - TraderProfileModal tidak lagi auto-close setelah memilih profil, sehingga user bisa langsung menekan tombol "AI SUGGESTIONS".
 - Profil Long-Term & default Confluence kini dapat membuka AI Suggestions (popup "Select a profile first" dihapus total).

@@ -468,10 +468,12 @@ export default function ASIBotScreen() {
 
         {/* Recent trades — v9.7.6: selalu tampil; SEMI/FULL badge + tombol CLOSE untuk posisi open */}
         <SectionHeader title={t("asi_sec_recent")} />
-        {/* v9.9.0 — Banner REPAIR bila ada posisi open tanpa SL/TP native
-            (bracket_type=soft). Satu tap memasang ulang bracket Binance. */}
+        {/* v9.9.2 — Banner REPAIR hanya untuk trade LAMA (pre-v9.9.2) yang
+            masih berstatus soft, ATAU trade baru di mana bracket_live=false
+            (user mungkin cancel manual algo order di Binance app). Trade
+            baru v9.9.2 selalu hard-verified atau tidak tersimpan. */}
         {trades.some((tr) => String(tr.status).toLowerCase() === "open"
-          && (tr.bracket_type === "soft" || !tr.sl_order_id)) ? (
+          && (tr.bracket_type === "soft" || tr.bracket_live === false || !tr.sl_order_id)) ? (
           <TouchableOpacity
             onPress={async () => {
               try {
@@ -534,18 +536,20 @@ export default function ASIBotScreen() {
                       {modeBadge === "full" ? t("asi_badge_full") : t("asi_badge_semi")}
                     </Text>
                   </View>
-                  {/* v9.9.0 — Margin mode badge (ISO / CROSS) */}
-                  {tr.margin_mode ? (
+                  {/* v9.9.2 — Margin mode badge pakai actual_margin_mode
+                      dari Binance (bukan request). Fallback ke margin_mode
+                      lama bila trade pre-v9.9.2. */}
+                  {(tr.actual_margin_mode || tr.margin_mode) ? (
                     <View style={{
                       paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4,
                       borderWidth: 1,
-                      borderColor: tr.margin_mode === "cross" ? PURPLE : TEAL,
+                      borderColor: ((tr.actual_margin_mode || tr.margin_mode) === "cross") ? PURPLE : TEAL,
                     }}>
                       <Text style={{
-                        color: tr.margin_mode === "cross" ? PURPLE : TEAL,
+                        color: ((tr.actual_margin_mode || tr.margin_mode) === "cross") ? PURPLE : TEAL,
                         fontWeight: "900", fontSize: 8.5, letterSpacing: 0.3,
                       }}>
-                        {tr.margin_mode === "cross" ? "CRS" : "ISO"}
+                        {((tr.actual_margin_mode || tr.margin_mode) === "cross") ? "CRS" : "ISO"}
                       </Text>
                     </View>
                   ) : null}
@@ -563,8 +567,10 @@ export default function ASIBotScreen() {
                         bukan BUY/SELL (permintaan user). */}
                     {tr.side === "BUY" ? "LONG" : "SHORT"}
                   </Text>
-                  {/* v9.9.0 — Peringatan bracket native hilang (soft). */}
-                  {isOpen && (tr.bracket_type === "soft" || !tr.sl_order_id) ? (
+                  {/* v9.9.2 — Peringatan bracket tidak lagi aktif di
+                      exchange (user mungkin cancel di Binance app, atau
+                      trade lama soft). */}
+                  {isOpen && (tr.bracket_type === "soft" || tr.bracket_live === false || !tr.sl_order_id) ? (
                     <TouchableOpacity
                       onPress={() => Alert.alert(
                         t("asi_soft_warn_title"),
@@ -602,10 +608,10 @@ export default function ASIBotScreen() {
                     </TouchableOpacity>
                   ) : null}
                 </View>
-                {/* v9.9.1 — Baris verifikasi proteksi untuk posisi OPEN:
-                    user bisa langsung yakin SL / TP / margin mode terpasang.
-                    Hijau ✓ = native di Binance; ⚠️ = soft watcher (tap
-                    banner REPAIR di atas untuk pasang ulang). */}
+                {/* v9.9.2 — Baris verifikasi proteksi untuk posisi OPEN.
+                    Tampilkan SL, TP, margin mode AKTUAL + status native.
+                    "Native OK" hanya hijau bila bracket_type=hard DAN
+                    (bracket_live tidak false). */}
                 {isOpen ? (
                   <View style={{ marginTop: 6, gap: 2 }}>
                     <Text style={{ color: colors.textMuted, fontSize: 10, lineHeight: 15 }} numberOfLines={2}>
@@ -616,18 +622,18 @@ export default function ASIBotScreen() {
                       </Text>
                       {"  ·  "}
                       <Text style={{
-                        color: (tr.margin_mode ?? "isolated") === "cross" ? PURPLE : TEAL,
+                        color: ((tr.actual_margin_mode || tr.margin_mode) === "cross") ? PURPLE : TEAL,
                         fontWeight: "800",
                       }}>
-                        {(tr.margin_mode ?? "isolated").toUpperCase()}
+                        {String(tr.actual_margin_mode || tr.margin_mode || "isolated").toUpperCase()}
                       </Text>
                       {`  ·  ${tr.leverage ?? "?"}x`}
                     </Text>
                     <Text style={{
                       fontSize: 10, fontWeight: "800",
-                      color: tr.bracket_type === "hard" ? GREEN : ORANGE,
+                      color: (tr.bracket_type === "hard" && tr.bracket_live !== false) ? GREEN : ORANGE,
                     }}>
-                      {tr.bracket_type === "hard"
+                      {(tr.bracket_type === "hard" && tr.bracket_live !== false)
                         ? t("asi_bracket_native_ok")
                         : t("asi_bracket_soft_short")}
                     </Text>

@@ -942,6 +942,25 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     ru: "Размер позиции ${size} ниже минимума биржи (${min}). Увеличьте риск % или плечо.",
     cn: "仓位规模 ${size} 低于交易所最小值（${min}）。请提高风险 % 或杠杆。",
   },
+  // v9.9.2 — Auto-rollback & margin mismatch dialogs
+  ats_bracket_rollback_title: {
+    id: "⚠️ Entry Dibatalkan — SL/TP Gagal",
+    en: "⚠️ Entry Rolled Back — SL/TP Failed",
+    ru: "⚠️ Вход отменён — SL/TP не выставлены",
+    cn: "⚠️ 入场已回滚 — SL/TP 失败",
+  },
+  ats_margin_mismatch_title: {
+    id: "Margin Mode Tidak Cocok",
+    en: "Margin Mode Mismatch",
+    ru: "Несовпадение режима маржи",
+    cn: "保证金模式不匹配",
+  },
+  ats_rollback_failed_title: {
+    id: "🚨 PERLU TINDAKAN MANUAL",
+    en: "🚨 MANUAL ACTION REQUIRED",
+    ru: "🚨 ТРЕБУЕТСЯ РУЧНОЕ ДЕЙСТВИЕ",
+    cn: "🚨 需要手动操作",
+  },
 
   // v9.6.9 — Credential validation error codes (backend returns {code, message})
   asi_err_ip_or_key_invalid: {
