@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -94,16 +94,51 @@ export default function ASIBotScreen() {
   }
 
   const saveBot = async (next: Partial<AsiBotConfig>) => {
-    const merged = { ...bot, ...next };
-    setBot(merged);
-    try { await api.asi.saveBot(deviceId, merged); } catch {}
+    // v9.7.4 — Functional setState: always merge from the LATEST state so
+    // rapid successive taps (toggle + risk +/-) can never overwrite each
+    // other with a stale snapshot (this silently re-disabled the bot).
+    return new Promise<void>((resolve) => {
+      setBot((prev) => {
+        const merged = { ...prev, ...next };
+        api.asi.saveBot(deviceId, merged).catch(() => {});
+        return merged;
+      });
+      resolve();
+    });
   };
+
+  const openTradesCount = trades.filter((t) => t.status === "open").length;
 
   const toggleBot = async (val: boolean) => {
     if (val && !canUseBot) {
       Alert.alert(
         t("asi_alert_need_title"),
         !activeCred ? t("asi_alert_need_connect") : t("asi_alert_need_ack"),
+      );
+      return;
+    }
+    // v9.7.4 — Deactivating with open positions: SL/TP native tetap menjaga
+    // di exchange; user memilih biarkan berjalan atau tutup semua.
+    if (!val && openTradesCount > 0) {
+      Alert.alert(
+        t("asi_deactivate_title"),
+        t("asi_deactivate_body").replace("{n}", String(openTradesCount)),
+        [
+          { text: t("common_cancel"), style: "cancel" },
+          {
+            text: t("asi_deactivate_keep"),
+            onPress: () => saveBot({ enabled: false }),
+          },
+          {
+            text: t("asi_deactivate_close_all"),
+            style: "destructive",
+            onPress: async () => {
+              try { await api.asi.closeAllTrades(deviceId); } catch {}
+              await saveBot({ enabled: false });
+              await refresh();
+            },
+          },
+        ],
       );
       return;
     }
@@ -128,19 +163,41 @@ export default function ASIBotScreen() {
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}>
-        {/* Big status card */}
+        {/* Big status card — v9.7.4: status Running/Stopped + tombol START/STOP */}
         <View style={[s.card, { borderColor: bot.enabled ? GREEN : colors.border, backgroundColor: colors.surface }]}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
             <View style={[s.dot, { backgroundColor: bot.enabled ? GREEN : colors.textMuted }]} />
-            <Text style={[s.cardTitle, { color: colors.textPrimary }]}>
-              {bot.enabled ? t("asi_status_active") : t("asi_status_inactive")}
+            <Text style={[s.cardTitle, { color: bot.enabled ? GREEN : colors.textPrimary }]}>
+              {bot.enabled ? t("asi_status_running") : t("asi_status_stopped")}
             </Text>
             <View style={{ flex: 1 }} />
-            <Switch value={bot.enabled} onValueChange={toggleBot} trackColor={{ true: GOLD }} testID="asi-toggle" />
+            {bot.mode === "full" ? (
+              <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: "rgba(249,115,22,0.15)", borderWidth: 1, borderColor: ORANGE }}>
+                <Text style={{ color: ORANGE, fontWeight: "900", fontSize: 10 }}>FULL-AUTO</Text>
+              </View>
+            ) : null}
           </View>
           <Text style={[s.cardSub, { color: colors.textMuted }]}>
-            {bot.enabled ? t("asi_status_on_sub") : t("asi_status_off_sub")}
+            {bot.enabled ? t("asi_running_hint") : t("asi_status_off_sub")}
           </Text>
+          <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
+            <TouchableOpacity
+              onPress={() => toggleBot(true)}
+              disabled={bot.enabled}
+              style={[s.bigBtn, { backgroundColor: bot.enabled ? colors.border : GREEN }]}
+              testID="asi-start"
+            >
+              <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.5 }}>{t("asi_run_bot")}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => toggleBot(false)}
+              disabled={!bot.enabled}
+              style={[s.bigBtn, { backgroundColor: !bot.enabled ? colors.border : RED }]}
+              testID="asi-stop"
+            >
+              <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.5 }}>{t("asi_stop_bot")}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Connect exchange */}
@@ -266,8 +323,12 @@ export default function ASIBotScreen() {
           </View>
         ) : null}
 
-        {/* Disclaimer */}
-        <SectionHeader title={t("asi_sec_disclaimer")} />
+        {/* Disclaimer — v9.7.4: hanya tampil saat bot NONAKTIF. Setelah
+            disclaimer di-centang + koneksi tersambung + bot ACTIVE, box ini
+            disembunyikan dan digantikan posisinya oleh Recent Trades. */}
+        {!bot.enabled ? (
+          <>
+            <SectionHeader title={t("asi_sec_disclaimer")} />
         <View style={[s.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <Text style={{ color: colors.textPrimary, fontSize: 12.5, lineHeight: 19 }}>
             {t("asi_disc_body")}
@@ -294,6 +355,8 @@ export default function ASIBotScreen() {
             </Text>
           </TouchableOpacity>
         </View>
+          </>
+        ) : null}
 
         {/* PnL */}
         <SectionHeader title={t("asi_sec_pnl")} />
@@ -322,22 +385,48 @@ export default function ASIBotScreen() {
 
         {/* Leaderboard — hidden on this screen; pindah ke /copy-trade */}
 
-        {/* Recent trades */}
-        {trades.length ? (
+        {/* Recent trades — v9.7.4: selalu tampil; open & closed dengan PnL $ dan % */}
+        <SectionHeader title={t("asi_sec_recent")} />
+        {trades.length === 0 ? (
+          <View style={[s.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={{ color: colors.textMuted, fontSize: 12, lineHeight: 18 }}>
+              {t("asi_recent_empty")}
+            </Text>
+          </View>
+        ) : (
           <>
-            <SectionHeader title={t("asi_sec_recent")} />
-            {trades.map((tr, i) => (
-              <View key={i} style={[s.leaderRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Text style={{ color: tr.side === "BUY" ? GREEN : RED, fontWeight: "900", width: 46 }}>{tr.side}</Text>
-                <Text style={{ color: colors.textPrimary, fontWeight: "700" }}>{tr.symbol}</Text>
-                <View style={{ flex: 1 }} />
-                <Text style={{ color: tr.pnl_usdt >= 0 ? GREEN : RED, fontWeight: "800" }}>
-                  {tr.pnl_usdt >= 0 ? "+" : ""}${(tr.pnl_usdt ?? 0).toFixed(2)}
-                </Text>
-              </View>
-            ))}
+            {trades.map((tr, i) => {
+              const isOpen = tr.status === "open";
+              const margin = tr.margin_usdt
+                || ((tr.entry_price || 0) * (tr.qty || 0) / Math.max(1, tr.leverage || 1));
+              const pct = margin > 0 ? ((tr.pnl_usdt ?? 0) / margin) * 100 : 0;
+              const pos = (tr.pnl_usdt ?? 0) >= 0;
+              return (
+                <View key={i} style={[s.leaderRow, { backgroundColor: colors.surface, borderColor: isOpen ? GOLD : colors.border }]}>
+                  <View style={{
+                    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
+                    backgroundColor: isOpen ? GOLD : colors.border,
+                  }}>
+                    <Text style={{ color: isOpen ? ACCENT_TEXT : colors.textMuted, fontWeight: "900", fontSize: 9 }}>
+                      {isOpen ? t("asi_status_active") : "CLOSED"}
+                    </Text>
+                  </View>
+                  <Text style={{ color: tr.side === "BUY" ? GREEN : RED, fontWeight: "900", width: 44 }}>{tr.side}</Text>
+                  <Text style={{ color: colors.textPrimary, fontWeight: "700" }}>{tr.symbol}</Text>
+                  <View style={{ flex: 1 }} />
+                  <View style={{ alignItems: "flex-end" }}>
+                    <Text style={{ color: pos ? GREEN : RED, fontWeight: "800" }}>
+                      {pos ? "+" : ""}${(tr.pnl_usdt ?? 0).toFixed(2)}
+                    </Text>
+                    <Text style={{ color: pos ? GREEN : RED, fontSize: 10, fontWeight: "700" }}>
+                      {pos ? "+" : ""}{pct.toFixed(1)}%
+                    </Text>
+                  </View>
+                </View>
+              );
+            })}
           </>
-        ) : null}
+        )}
       </ScrollView>
 
       <ConnectExchangeModal
@@ -555,6 +644,7 @@ const s = StyleSheet.create({
   title: { fontSize: 20, fontWeight: "900", letterSpacing: 0.3 },
   sub: { fontSize: 11, marginTop: 2 },
   card: { borderWidth: 1, borderRadius: 14, padding: 14, marginBottom: 4 },
+  bigBtn: { flex: 1, paddingVertical: 13, borderRadius: 12, alignItems: "center" },
   cardTitle: { fontWeight: "900", fontSize: 13, letterSpacing: 0.5 },
   cardSub: { marginTop: 6, fontSize: 12, lineHeight: 18 },
   dot: { width: 10, height: 10, borderRadius: 5 },

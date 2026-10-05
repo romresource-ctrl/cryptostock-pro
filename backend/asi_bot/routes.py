@@ -20,7 +20,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from .crypto import decrypt, encrypt, mask
-from .engine import execute_trade, preview_trade, refresh_trade_pnl
+from .engine import close_position, execute_trade, preview_trade, refresh_trade_pnl
 from .exchanges import EXCHANGE_DISPLAY, EXCHANGES, ExchangeId, validate_credentials
 from .pnl import leaderboard, live_leaderboard, pnl_summary
 from .whitelist import TOP_100_FUTURES, is_allowed
@@ -260,6 +260,49 @@ def _attach_trade_routes(db: Any) -> None:
         if rec["_id"]:
             await db.asi_trades.replace_one({"_id": rec["_id"]}, rec, upsert=True)
         return res
+
+    @router.post("/trades/close-all")
+    async def close_all_trades(device_id: str = Query(..., min_length=4)):
+        """v9.7.4 — Close ALL open positions for this device.
+
+        Dipakai saat user menonaktifkan bot dan memilih menutup posisi.
+        Native SL/TP orders di exchange ikut dibatalkan lewat
+        engine.close_position (cancel_all_conditional di dalamnya).
+        """
+        open_trades = [
+            d async for d in db.asi_trades.find(
+                {"device_id": device_id, "status": "open"}
+            )
+        ]
+        if not open_trades:
+            return {"ok": True, "closed": 0, "errors": []}
+        closed_ok = 0
+        errors: list[dict[str, str]] = []
+        for t in open_trades:
+            try:
+                cred = await db.asi_credentials.find_one(
+                    {"_id": f"{device_id}:{t['exchange']}"}
+                )
+                if not cred:
+                    errors.append({"symbol": t.get("symbol", "?"), "error": "credential missing"})
+                    continue
+                await close_position(cred, t["symbol"], t["side"], float(t.get("qty") or 0))
+                upd = await refresh_trade_pnl(cred, t)
+                now = datetime.now(timezone.utc).isoformat()
+                await db.asi_trades.update_one(
+                    {"_id": t["_id"]},
+                    {"$set": {
+                        "status": "closed",
+                        "close_reason": "manual_close_all",
+                        "closed_at": now,
+                        "updated_at": now,
+                        **{k: v for k, v in upd.items() if k in ("pnl_usdt", "mark_price")},
+                    }},
+                )
+                closed_ok += 1
+            except Exception as e:  # noqa: BLE001
+                errors.append({"symbol": t.get("symbol", "?"), "error": str(e)[:200]})
+        return {"ok": not errors, "closed": closed_ok, "errors": errors}
 
     @router.get("/trades")
     async def list_trades(device_id: str = Query(..., min_length=4), limit: int = 50):

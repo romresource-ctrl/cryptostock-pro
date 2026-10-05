@@ -404,6 +404,10 @@ export const api = {
       ),
     listTrades: (deviceId: string) =>
       get<{ items: AsiTradeResp[] }>(`/asi/trades?device_id=${encodeURIComponent(deviceId)}`),
+    closeAllTrades: (deviceId: string) =>
+      send<{ ok: boolean; closed: number; errors: { symbol: string; error: string }[] }>(
+        `/asi/trades/close-all?device_id=${encodeURIComponent(deviceId)}`, "POST",
+      ),
     pnl: (deviceId: string) =>
       get<AsiPnl>(`/asi/pnl?device_id=${encodeURIComponent(deviceId)}`),
     leaderboard: (periodDays = 7) =>
@@ -461,6 +465,12 @@ export type AsiTradeResp = {
   take_profits: number[]; qty: number; leverage: number; risk_pct: number;
   status: "open" | "closed"; pnl_usdt: number; created_at: string;
   entry_order_id?: string | null;
+  // v9.7.4 — enriched fields for the Recent Trades panel
+  margin_usdt?: number | null;
+  mark_price?: number | null;
+  bracket_type?: string | null;
+  close_reason?: string | null;
+  closed_at?: string | null;
 };
 export type AsiPnl = Record<"daily" | "weekly" | "monthly", {
   pnl_usdt: number; pnl_pct: number; trades: number; wins: number; losses: number;
