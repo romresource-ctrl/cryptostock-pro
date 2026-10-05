@@ -81,6 +81,10 @@ class BotConfigPayload(BaseModel):
     min_confidence: int = Field(75, ge=50, le=100)
     # v9.4.1 — Daily loss limit (USDT, absolute). 0 = disabled.
     daily_loss_limit_usdt: float = Field(0.0, ge=0.0, le=100_000.0)
+    # v9.7.5 — Semi & Full are independent on/off states. The scheduler only
+    # cares about full_enabled. Semi-Auto is a user-trigger flag.
+    semi_enabled: bool = False
+    full_enabled: bool = False
     # v9.6.0 — TP strategy. 1=TP1 100%, 2=TP1/TP2 50/50, 3=TP1/TP2/TP3 33/33/34.
     tp_count: Literal[1, 2, 3] = 3
     # v9.6.0 — Trailing stop callback rate %. 0 = disabled. Active after TP1.
@@ -261,6 +265,30 @@ def _attach_trade_routes(db: Any) -> None:
             await db.asi_trades.replace_one({"_id": rec["_id"]}, rec, upsert=True)
         return res
 
+    @router.post("/trades/{trade_id}/close")
+    async def close_one_trade(trade_id: str, device_id: str = Query(..., min_length=4)):
+        """v9.7.5 — Close ONE open position by trade _id."""
+        t = await db.asi_trades.find_one({"_id": trade_id, "device_id": device_id})
+        if not t:
+            raise HTTPException(404, "trade not found")
+        if t.get("status") != "open":
+            return {"ok": True, "already_closed": True}
+        cred = await db.asi_credentials.find_one({"_id": f"{device_id}:{t['exchange']}"})
+        if not cred:
+            raise HTTPException(400, "credential missing")
+        try:
+            await close_position(cred, t["symbol"], t["side"], float(t.get("qty") or 0))
+            upd = await refresh_trade_pnl(cred, t)
+            now = datetime.now(timezone.utc).isoformat()
+            await db.asi_trades.update_one({"_id": t["_id"]}, {"$set": {
+                "status": "closed", "close_reason": "manual",
+                "closed_at": now, "updated_at": now,
+                **{k: v for k, v in upd.items() if k in ("pnl_usdt", "mark_price")},
+            }})
+            return {"ok": True}
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(500, str(e)[:200])
+
     @router.post("/trades/close-all")
     async def close_all_trades(device_id: str = Query(..., min_length=4)):
         """v9.7.4 — Close ALL open positions for this device.
@@ -308,7 +336,10 @@ def _attach_trade_routes(db: Any) -> None:
     async def list_trades(device_id: str = Query(..., min_length=4), limit: int = 50):
         rows: list[dict[str, Any]] = []
         async for d in db.asi_trades.find({"device_id": device_id}).sort("created_at", -1).limit(limit):
-            d.pop("_id", None)
+            # v9.7.6 — keep `_id` so frontend can call POST /trades/{id}/close
+            tid = d.pop("_id", None)
+            if tid is not None:
+                d["_id"] = str(tid)
             rows.append(d)
         return {"items": rows}
 

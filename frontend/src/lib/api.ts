@@ -408,6 +408,11 @@ export const api = {
       send<{ ok: boolean; closed: number; errors: { symbol: string; error: string }[] }>(
         `/asi/trades/close-all?device_id=${encodeURIComponent(deviceId)}`, "POST",
       ),
+    closeTrade: (deviceId: string, tradeId: string) =>
+      send<{ ok: boolean; already_closed?: boolean }>(
+        `/asi/trades/${encodeURIComponent(tradeId)}/close?device_id=${encodeURIComponent(deviceId)}`,
+        "POST",
+      ),
     pnl: (deviceId: string) =>
       get<AsiPnl>(`/asi/pnl?device_id=${encodeURIComponent(deviceId)}`),
     leaderboard: (periodDays = 7) =>
@@ -471,6 +476,9 @@ export type AsiTradeResp = {
   bracket_type?: string | null;
   close_reason?: string | null;
   closed_at?: string | null;
+  // v9.7.6 — mode badge (SEMI / FULL) + stable id for manual close
+  mode?: "semi" | "full" | null;
+  _id?: string | null;
 };
 export type AsiPnl = Record<"daily" | "weekly" | "monthly", {
   pnl_usdt: number; pnl_pct: number; trades: number; wins: number; losses: number;
@@ -511,6 +519,9 @@ export type AsiBotConfig = {
   // v9.6.0 — TP flexibility & trailing stop
   tp_count?: 1 | 2 | 3;
   trailing_callback_rate?: number;
+  // v9.7.6 — independent Semi/Full enable flags
+  semi_enabled?: boolean;
+  full_enabled?: boolean;
   auto_disabled_reason?: string | null;
   auto_disabled_at?: string | null;
 };

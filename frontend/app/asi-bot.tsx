@@ -44,11 +44,15 @@ export default function ASIBotScreen() {
     max_trades_per_day: 5, risk_pct: 5, leverage: 10, whitelist: [], profile: "confluence",
     min_confidence: 75, daily_loss_limit_usdt: 0,
     tp_count: 3, trailing_callback_rate: 2,
+    // v9.7.6 — independent toggles
+    semi_enabled: false, full_enabled: false,
   });
   const [pnl, setPnl] = useState<AsiPnl | null>(null);
   const [trades, setTrades] = useState<AsiTradeResp[]>([]);
   const [connectOpen, setConnectOpen] = useState(false);
   const [disclaimerAck, setDisclaimerAck] = useState(false);
+  // v9.7.6 — track in-flight close requests per trade id
+  const [closingIds, setClosingIds] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     (async () => {
@@ -59,14 +63,15 @@ export default function ASIBotScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // v9.7.4 — Saat bot RUNNING, refresh daftar trade berkala agar posisi
-  // open/closed + PnL terbaru langsung tampil tanpa buka-tutup halaman.
+  // v9.7.6 — Saat SALAH SATU bot RUNNING (semi atau full), refresh daftar
+  // trade berkala agar PnL & status terbuka/tertutup tetap live.
   useEffect(() => {
-    if (!bot.enabled || !deviceId) return;
+    const anyRunning = !!(bot.semi_enabled || bot.full_enabled || bot.enabled);
+    if (!anyRunning || !deviceId) return;
     const id = setInterval(() => refresh(), 20_000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bot.enabled, deviceId]);
+  }, [bot.semi_enabled, bot.full_enabled, bot.enabled, deviceId]);
 
   const refresh = async (did?: string) => {
     const id = did || deviceId; if (!id) return;
@@ -118,7 +123,7 @@ export default function ASIBotScreen() {
     });
   };
 
-  const toggleBot = async (val: boolean) => {
+  const toggleSemi = async (val: boolean) => {
     if (val && !canUseBot) {
       Alert.alert(
         t("asi_alert_need_title"),
@@ -126,12 +131,45 @@ export default function ASIBotScreen() {
       );
       return;
     }
-    // v9.7.4 — STOP tidak menutup posisi terbuka: SL/TP native tetap
-    // berjalan di Binance sampai posisi close sesuai parameternya.
-    // Stop hanya menghentikan auto-trade BARU.
+    // v9.7.6 — Semi-Auto independent toggle. Does NOT affect full_enabled.
     await saveBot(val
-      ? { enabled: true, auto_disabled_reason: null, auto_disabled_at: null }
-      : { enabled: false });
+      ? { semi_enabled: true, enabled: true, mode: "semi",
+          auto_disabled_reason: null, auto_disabled_at: null }
+      : { semi_enabled: false, enabled: !!bot.full_enabled });
+  };
+
+  const toggleFull = async (val: boolean) => {
+    if (val && !canUseBot) {
+      Alert.alert(
+        t("asi_alert_need_title"),
+        !activeCred ? t("asi_alert_need_connect") : t("asi_alert_need_ack"),
+      );
+      return;
+    }
+    // v9.7.6 — Full-Auto independent toggle. Scheduler scans ONLY when
+    // full_enabled is true. STOP leaves open positions alive (native SL/TP).
+    await saveBot(val
+      ? { full_enabled: true, enabled: true, mode: "full",
+          auto_disabled_reason: null, auto_disabled_at: null }
+      : { full_enabled: false, enabled: !!bot.semi_enabled });
+  };
+
+  const closeOneTrade = async (trade: AsiTradeResp) => {
+    const tid = (trade as any)._id as string | undefined;
+    if (!tid || closingIds[tid]) return;
+    setClosingIds((prev) => ({ ...prev, [tid]: true }));
+    try {
+      await api.asi.closeTrade(deviceId, tid);
+      await refresh();
+    } catch (e: any) {
+      Alert.alert(t("asi_close_failed"), String(e?.message || e));
+    } finally {
+      setClosingIds((prev) => {
+        const next = { ...prev };
+        delete next[tid];
+        return next;
+      });
+    }
   };
 
   return (
@@ -149,49 +187,23 @@ export default function ASIBotScreen() {
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}>
-        {/* Big status card — v9.7.4: status Running/Stopped + tombol START/STOP */}
-        <View style={[s.card, { borderColor: bot.enabled ? GREEN : colors.border, backgroundColor: colors.surface }]}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-            <View style={[s.dot, { backgroundColor: bot.enabled ? GREEN : colors.textMuted }]} />
-            <Text style={[s.cardTitle, { color: bot.enabled ? GREEN : colors.textPrimary }]}>
-              {bot.enabled ? t("asi_status_running") : t("asi_status_stopped")}
-            </Text>
-            <View style={{ flex: 1 }} />
-            {bot.mode === "full" ? (
-              <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: "rgba(249,115,22,0.15)", borderWidth: 1, borderColor: ORANGE }}>
-                <Text style={{ color: ORANGE, fontWeight: "900", fontSize: 10 }}>FULL-AUTO</Text>
-              </View>
-            ) : null}
-          </View>
-          <Text style={[s.cardSub, { color: colors.textMuted }]}>
-            {bot.enabled
-              ? (bot.mode === "full" ? t("asi_running_hint") : t("asi_running_hint_semi"))
-              : t("asi_status_off_sub")}
+        {/* v9.7.6 — SATU kartu status di atas. Isinya berganti mengikuti
+            tombol mode (chip Semi-Auto / Full-Auto) yang user tekan.
+            Backend tetap punya semi_enabled + full_enabled independen. */}
+        <StatusCard
+          kind={bot.mode === "full" ? "full" : "semi"}
+          running={bot.mode === "full" ? !!bot.full_enabled : !!bot.semi_enabled}
+          onStart={() => (bot.mode === "full" ? toggleFull(true) : toggleSemi(true))}
+          onStop={() => (bot.mode === "full" ? toggleFull(false) : toggleSemi(false))}
+          colors={colors}
+          t={t}
+        />
+        {(bot.semi_enabled || bot.full_enabled) ? (
+          <Text style={{ color: colors.textMuted, fontSize: 10.5, marginTop: 6,
+                         lineHeight: 15, textAlign: "center" }}>
+            {t("asi_stop_hint")}
           </Text>
-          <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
-            <TouchableOpacity
-              onPress={() => toggleBot(true)}
-              disabled={bot.enabled}
-              style={[s.bigBtn, { backgroundColor: bot.enabled ? colors.border : PINK }]}
-              testID="asi-start"
-            >
-              <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.5 }}>{t("asi_run_bot")}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => toggleBot(false)}
-              disabled={!bot.enabled}
-              style={[s.bigBtn, { backgroundColor: !bot.enabled ? colors.border : LIGHT_BLUE }]}
-              testID="asi-stop"
-            >
-              <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.5 }}>{t("asi_stop_bot")}</Text>
-            </TouchableOpacity>
-          </View>
-          {bot.enabled ? (
-            <Text style={{ color: colors.textMuted, fontSize: 10.5, marginTop: 8, lineHeight: 15 }}>
-              {t("asi_stop_hint")}
-            </Text>
-          ) : null}
-        </View>
+        ) : null}
 
         {/* Connect exchange */}
         <SectionHeader title={t("asi_sec_exchange")} />
@@ -318,10 +330,8 @@ export default function ASIBotScreen() {
           </View>
         ) : null}
 
-        {/* Disclaimer — v9.7.4: hanya tampil saat bot NONAKTIF. Setelah
-            disclaimer di-centang + koneksi tersambung + bot ACTIVE, box ini
-            disembunyikan dan digantikan posisinya oleh Recent Trades. */}
-        {!bot.enabled ? (
+        {/* Disclaimer — v9.7.6: hanya tampil saat KEDUA bot NONAKTIF. */}
+        {!(bot.semi_enabled || bot.full_enabled) ? (
           <>
             <SectionHeader title={t("asi_sec_disclaimer")} />
         <View style={[s.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -380,7 +390,7 @@ export default function ASIBotScreen() {
 
         {/* Leaderboard — hidden on this screen; pindah ke /copy-trade */}
 
-        {/* Recent trades — v9.7.4: selalu tampil; open & closed dengan PnL $ dan % */}
+        {/* Recent trades — v9.7.6: selalu tampil; SEMI/FULL badge + tombol CLOSE untuk posisi open */}
         <SectionHeader title={t("asi_sec_recent")} />
         {trades.length === 0 ? (
           <View style={[s.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -396,17 +406,32 @@ export default function ASIBotScreen() {
                 || ((tr.entry_price || 0) * (tr.qty || 0) / Math.max(1, tr.leverage || 1));
               const pct = margin > 0 ? ((tr.pnl_usdt ?? 0) / margin) * 100 : 0;
               const pos = (tr.pnl_usdt ?? 0) >= 0;
+              const tid = (tr as any)._id as string | undefined;
+              const isClosing = !!(tid && closingIds[tid]);
+              const modeBadge = tr.mode === "full" ? "full" : "semi";
+              const modeColor = modeBadge === "full" ? ORANGE : GOLD;
+              const borderColor = isOpen ? modeColor : colors.border;
               return (
-                <View key={i} style={[s.leaderRow, { backgroundColor: colors.surface, borderColor: isOpen ? GOLD : colors.border }]}>
+                <View key={tid || i} style={[s.leaderRow, { backgroundColor: colors.surface, borderColor }]}>
+                  {/* MODE badge (SEMI / FULL) */}
                   <View style={{
                     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
-                    backgroundColor: isOpen ? GOLD : colors.border,
+                    backgroundColor: modeColor,
+                  }}>
+                    <Text style={{ color: ACCENT_TEXT, fontWeight: "900", fontSize: 9, letterSpacing: 0.4 }}>
+                      {modeBadge === "full" ? t("asi_badge_full") : t("asi_badge_semi")}
+                    </Text>
+                  </View>
+                  {/* OPEN / CLOSED badge */}
+                  <View style={{
+                    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
+                    backgroundColor: isOpen ? GREEN : colors.border,
                   }}>
                     <Text style={{ color: isOpen ? ACCENT_TEXT : colors.textMuted, fontWeight: "900", fontSize: 9 }}>
                       {isOpen ? t("asi_status_active") : "CLOSED"}
                     </Text>
                   </View>
-                  <Text style={{ color: tr.side === "BUY" ? GREEN : RED, fontWeight: "900", width: 44 }}>{tr.side}</Text>
+                  <Text style={{ color: tr.side === "BUY" ? GREEN : RED, fontWeight: "900", width: 40 }}>{tr.side}</Text>
                   <Text style={{ color: colors.textPrimary, fontWeight: "700" }}>{tr.symbol}</Text>
                   <View style={{ flex: 1 }} />
                   <View style={{ alignItems: "flex-end" }}>
@@ -417,6 +442,22 @@ export default function ASIBotScreen() {
                       {pos ? "+" : ""}{pct.toFixed(1)}%
                     </Text>
                   </View>
+                  {isOpen ? (
+                    <TouchableOpacity
+                      onPress={() => closeOneTrade(tr)}
+                      disabled={isClosing || !tid}
+                      style={{
+                        paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
+                        backgroundColor: isClosing ? colors.border : RED,
+                        marginLeft: 6, minWidth: 56, alignItems: "center",
+                      }}
+                      testID={`asi-close-${tr.symbol}`}
+                    >
+                      <Text style={{ color: "#fff", fontWeight: "900", fontSize: 10, letterSpacing: 0.4 }}>
+                        {isClosing ? t("asi_recent_closing") : t("asi_recent_close")}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
               );
             })}
@@ -442,6 +483,71 @@ function SectionHeader({ title }: { title: string }) {
     <Text style={[{ color: colors.textPrimary, fontWeight: "900", fontSize: 13, marginTop: 20, marginBottom: 10, letterSpacing: 0.3 }]}>
       {title}
     </Text>
+  );
+}
+
+// v9.7.6 — Independent status card for Semi or Full. Keduanya bisa aktif
+// bersamaan: card Semi berbingkai hijau, card Full berbingkai orange.
+function StatusCard({ kind, running, onStart, onStop, colors, t }: {
+  kind: "semi" | "full";
+  running: boolean;
+  onStart: () => void;
+  onStop: () => void;
+  colors: any;
+  t: (k: string) => string;
+}) {
+  const accent = kind === "full" ? ORANGE : GREEN;
+  const title = kind === "full" ? t("asi_card_full_title") : t("asi_card_semi_title");
+  const sub = running
+    ? (kind === "full" ? t("asi_card_full_sub_on") : t("asi_card_semi_sub_on"))
+    : (kind === "full" ? t("asi_card_full_sub_off") : t("asi_card_semi_sub_off"));
+  const emoji = kind === "full" ? "🤖" : "🦾";
+  return (
+    <View style={[s.card, {
+      borderColor: running ? accent : colors.border,
+      backgroundColor: colors.surface,
+      borderWidth: running ? 2 : 1,
+    }]} testID={`asi-card-${kind}`}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <Text style={{ fontSize: 20 }}>{emoji}</Text>
+        <View style={[s.dot, { backgroundColor: running ? accent : colors.textMuted }]} />
+        <Text style={[s.cardTitle, { color: running ? accent : colors.textPrimary }]}>
+          {title.toUpperCase()} · {running ? t("asi_status_running") : t("asi_status_stopped")}
+        </Text>
+        <View style={{ flex: 1 }} />
+        <View style={{
+          paddingHorizontal: 7, paddingVertical: 2, borderRadius: 5,
+          backgroundColor: running ? accent : "transparent",
+          borderWidth: 1, borderColor: accent,
+        }}>
+          <Text style={{
+            color: running ? ACCENT_TEXT : accent,
+            fontWeight: "900", fontSize: 9.5, letterSpacing: 0.5,
+          }}>
+            {kind === "full" ? t("asi_badge_full") : t("asi_badge_semi")}
+          </Text>
+        </View>
+      </View>
+      <Text style={[s.cardSub, { color: colors.textMuted }]}>{sub}</Text>
+      <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
+        <TouchableOpacity
+          onPress={onStart}
+          disabled={running}
+          style={[s.bigBtn, { backgroundColor: running ? colors.border : PINK }]}
+          testID={`asi-start-${kind}`}
+        >
+          <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.5 }}>{t("asi_run_bot")}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={onStop}
+          disabled={!running}
+          style={[s.bigBtn, { backgroundColor: !running ? colors.border : LIGHT_BLUE }]}
+          testID={`asi-stop-${kind}`}
+        >
+          <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.5 }}>{t("asi_stop_bot")}</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 

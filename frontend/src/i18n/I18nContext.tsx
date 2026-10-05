@@ -702,6 +702,50 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     cn: "机器人已激活（半自动）——打开 AI 建议，选择信号后确认执行。持仓由原生 SL/TP 保护。",
   },
 
+  // v9.7.6 — Independent Semi / Full status cards + manual close
+  asi_card_semi_title: { id: "Semi-Auto", en: "Semi-Auto", ru: "Semi-Auto", cn: "半自动" },
+  asi_card_full_title: { id: "Full-Auto", en: "Full-Auto", ru: "Full-Auto", cn: "全自动" },
+  asi_card_semi_sub_on: {
+    id: "Siap eksekusi 1-tap dari AI Suggestions. SL/TP native aktif.",
+    en: "Ready for 1-tap execution from AI Suggestions. Native SL/TP armed.",
+    ru: "Готов к 1-клик исполнению из AI Suggestions. Нативный SL/TP активен.",
+    cn: "可从 AI 建议一键执行。原生 SL/TP 已激活。",
+  },
+  asi_card_semi_sub_off: {
+    id: "Nyalakan untuk membuka eksekusi 1-tap pada sinyal baru.",
+    en: "Turn on to unlock 1-tap execution on new signals.",
+    ru: "Включите, чтобы разблокировать 1-клик исполнение на новых сигналах.",
+    cn: "开启以解锁对新信号的一键执行。",
+  },
+  asi_card_full_sub_on: {
+    id: "Pemindai berjalan di background tiap 5 menit — eksekusi otomatis saat sinyal lolos.",
+    en: "Scanner running in background every 5 minutes — auto-executes when signals qualify.",
+    ru: "Сканер работает в фоне каждые 5 минут — автоисполнение при подходящих сигналах.",
+    cn: "后台扫描每 5 分钟运行一次——信号合格时自动执行。",
+  },
+  asi_card_full_sub_off: {
+    id: "Nyalakan untuk membiarkan ASI memindai & trading otomatis selama 24/7.",
+    en: "Turn on to let ASI scan & auto-trade 24/7 in the background.",
+    ru: "Включите, чтобы ASI сканировал и торговал автоматически 24/7.",
+    cn: "开启以让 ASI 全天候后台扫描并自动交易。",
+  },
+  asi_recent_close: { id: "TUTUP", en: "CLOSE", ru: "ЗАКРЫТЬ", cn: "平仓" },
+  asi_recent_closing: { id: "menutup…", en: "closing…", ru: "закрытие…", cn: "平仓中…" },
+  asi_badge_semi: { id: "SEMI", en: "SEMI", ru: "SEMI", cn: "半自动" },
+  asi_badge_full: { id: "FULL", en: "FULL", ru: "FULL", cn: "全自动" },
+  asi_close_failed: {
+    id: "Gagal menutup posisi",
+    en: "Failed to close position",
+    ru: "Не удалось закрыть позицию",
+    cn: "平仓失败",
+  },
+  asi_hint_concurrent: {
+    id: "Keduanya bisa dijalankan bersamaan — status masing-masing diperbarui independen.",
+    en: "Both can run simultaneously — each status updates independently.",
+    ru: "Оба могут работать одновременно — статусы обновляются независимо.",
+    cn: "两者可同时运行——各自状态独立更新。",
+  },
+
   // v9.6.9 — Credential validation error codes (backend returns {code, message})
   asi_err_ip_or_key_invalid: {
     id: "API Key/Secret salah ATAU IP server (143.198.197.107) belum di-whitelist di Binance.",

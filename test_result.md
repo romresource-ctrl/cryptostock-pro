@@ -1135,3 +1135,144 @@ metadata:
   version: "9.1.5"
   test_sequence: 34
   run_ui: false
+
+# ======================================================
+# v9.7.6 — Independent Semi/Full State + Manual Close
+# ======================================================
+backend_v976:
+  - task: "Independent semi_enabled / full_enabled flags on BotConfig"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/asi_bot/routes.py, /app/backend/asi_bot/scheduler.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          BotConfigPayload sudah memiliki semi_enabled/full_enabled (v9.7.5).
+          v9.7.6 — scheduler.py _run_full_auto_scanner diupdate: query
+          sekarang {"$or":[{"full_enabled":True},{"enabled":True,"mode":"full",
+          "full_enabled":{"$exists":False}}]} agar scanner HANYA jalan jika
+          full_enabled True, dan tetap backward-compat utk doc lama.
+          _enforce_daily_loss_limit juga sudah pakai $or (semua tetap bekerja).
+  - task: "POST /asi/trades/{trade_id}/close manual close endpoint"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/asi_bot/routes.py (sudah ada), engine.py (close_position + cancel_all_conditional)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Endpoint sudah ada (v9.7.5). v9.7.6 — list_trades sekarang
+          mengembalikan _id (str) agar frontend bisa memanggil close.
+          Verifikasi smoke test lokal: POST ke trade non-exist → 404 "trade not found".
+  - task: "list_trades mengembalikan _id string untuk CLOSE button"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/asi_bot/routes.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          GET /asi/trades sekarang menyertakan _id (sebelumnya di-pop)
+          sehingga tombol CLOSE di Recent Trades punya identifier.
+frontend_v976:
+  - task: "Dua StatusCard independen (Semi hijau / Full orange)"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/asi-bot.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Komponen StatusCard baru menampilkan kartu Semi dan Full secara
+          independen. Masing-masing punya START (pink) + STOP (light blue)
+          sendiri. Dapat aktif bersamaan. Border aktif = hijau (semi) /
+          orange (full). Verified screenshot: dua kartu tampil STOPPED.
+  - task: "Recent Trades: badge SEMI/FULL + tombol CLOSE merah"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/asi-bot.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Tiap row trade menampilkan 2 badge (mode SEMI/FULL warna hijau/orange
+          + status OPEN/CLOSED). Tombol CLOSE merah muncul HANYA untuk trade
+          status=open; onPress langsung memanggil api.asi.closeTrade (tanpa
+          dialog konfirmasi sesuai permintaan user), menampilkan state
+          "closing…" selama request berjalan, lalu refresh daftar trade.
+          Error ditangkap dan Alert dengan i18n "asi_close_failed".
+  - task: "closeTrade() helper + types updated"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/lib/api.ts"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          api.asi.closeTrade(deviceId, tradeId) ditambah. AsiBotConfig +
+          AsiTradeResp diperluas dengan semi_enabled/full_enabled/mode/_id.
+  - task: "i18n keys baru (EN/ID/RU/CN) utk kartu + close button"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/i18n/I18nContext.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Keys baru: asi_card_semi_title, asi_card_full_title,
+          asi_card_(semi|full)_sub_(on|off), asi_recent_close,
+          asi_recent_closing, asi_badge_semi, asi_badge_full,
+          asi_close_failed, asi_hint_concurrent.
+metadata_v976:
+  created_by: "main_agent"
+  version: "9.7.6"
+  test_sequence: 35
+  run_ui: false
+
+# ======================================================
+# v9.7.6a — SATU kartu status di atas (pivot user)
+# ======================================================
+frontend_v976a:
+  - task: "Satu box di atas yang berganti mengikuti tombol mode"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/asi-bot.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          User menolak 2 kartu berdampingan. v9.7.6a — hanya SATU
+          StatusCard dirender di paling atas; properti `kind` digerakkan
+          oleh `bot.mode` yang berubah saat user menekan chip Semi-Auto /
+          Full-Auto di seksi Mode di bawahnya. Border aktif = hijau
+          (semi) / orange (full); badge SEMI / FULL di pojok kanan;
+          START (pink) + STOP (light blue) per-mode tapi hanya SATU yang
+          kelihatan sesuai mode terpilih. Backend tetap simpan
+          semi_enabled + full_enabled independen sehingga kedua state
+          tetap berjalan bersamaan walau UI hanya menampilkan salah satu.
+          Verified via 2 screenshot: semi-active dan full-active berganti.

@@ -184,7 +184,7 @@ async def _enforce_daily_loss_limit(db: Any) -> None:
     so the UI can show WHY the bot stopped. Users must manually re-enable.
     """
     cursor = db.asi_bot_config.find({
-        "enabled": True,
+        "$or": [{"enabled": True}, {"full_enabled": True}],
         "daily_loss_limit_usdt": {"$gt": 0},
     })
     async for cfg in cursor:
@@ -228,7 +228,18 @@ async def _run_full_auto_scanner(
       side ("BUY"|"SELL"), entry, stop_loss, take_profits[], confidence
     Must return None/missing fields to skip.
     """
-    cursor = db.asi_bot_config.find({"enabled": True, "mode": "full"})
+    # v9.7.6 — Semi & Full are independent toggles now. Scheduler only
+    # cares about `full_enabled=True` (background scanner). `semi_enabled`
+    # is a UI gate for 1-tap manual executes and does NOT trigger scans.
+    # Fallback to legacy single flag `{enabled: True, mode: "full"}` for
+    # pre-v9.7.6 docs that have not been resaved yet.
+    cursor = db.asi_bot_config.find({
+        "$or": [
+            {"full_enabled": True},
+            {"enabled": True, "mode": "full",
+             "full_enabled": {"$exists": False}},
+        ],
+    })
     async for cfg in cursor:
         try:
             device_id = cfg.get("device_id") or cfg.get("_id")

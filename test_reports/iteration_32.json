@@ -1,0 +1,52 @@
+{
+  "summary": "v9.7.6 ASI-Bot independent Semi/Full toggles + manual CLOSE — VERIFIED. Backend pytest 11/11 PASS (test_iter32_v976_asibot_concurrent.py): POST/GET /api/asi/bot persists semi_enabled & full_enabled independently incl. BOTH true concurrently; GET /trades preserves _id as string; POST /trades/{id}/close returns 404 unknown, {ok, already_closed:true} for closed, 400 'credential missing' for open w/o creds; close-all + egress/server-ip regressions pass. scheduler.py verified by code review: _run_full_auto_scanner queries $or[full_enabled=True, legacy {enabled,mode=full, full_enabled missing}] — semi_enabled never triggers scans. Frontend (web preview, 390x844): ONE top StatusCard swaps SEMI (green frame rgb(34,197,94), SEMI badge) <-> FULL (orange rgb(249,115,22), FULL badge) on chip tap; START(pink)/STOP(light blue) per selected mode; semi+full run CONCURRENTLY and stop INDEPENDENTLY (verified via GET /api/asi/bot after every tap); disclaimer card shows only when BOTH off and hides when either runs; Recent Trades show SEMI/FULL + ACTIVE/CLOSED badges, BUY green/SELL red, symbol, PnL $ and %; red CLOSE only on OPEN trades, no confirmation dialog, request hits /api/asi/trades/{id}/close, button recovers after error. i18n keys asi_card_*/asi_badge_*/asi_recent_close/asi_recent_closing/asi_close_failed present in id/en/ru/cn. Version 9.7.6 in version.ts + app.json. TWO findings below (1 HIGH UX dead-end, 1 HIGH backend correctness) + 1 minor PnL formatting nit.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "scheduler _refresh_open_pnl -> engine.refresh_trade_pnl (engine.py:474-512)", "issue": "HIGH correctness: if fetch_positions THROWS (expired/invalid API key, exchange outage), the exception is swallowed -> positions=[] -> treated as 'no open position' -> trade marked status=closed with FAKE SL-fallback PnL (realized=(sl-entry)*qty) while the real position may still be open on the exchange. Reproduced with seeded open trades + dummy credential: both auto-closed with pnl_usdt=-1.0 within ~60s. A user whose key is revoked loses open-position tracking and gets phantom losses in PnL summary. Fix: distinguish fetch error (skip update, keep open) from genuinely empty positions.", "priority": "HIGH"}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "asi-bot.tsx toggleSemi/toggleFull (lines 126-155)", "issue": "HIGH UX dead-end: START is gated by canUseBot = activeCred && disclaimerAck, but the disclaimer card containing the ack checkbox (testID asi-disc) is HIDDEN whenever semi_enabled OR full_enabled is true (line 334). On a fresh app launch with one bot already running (persisted state), disclaimerAck=false, so tapping START on the other mode is blocked with an alert telling the user to ack a disclaimer they cannot see. Only escape is stopping the running bot first. Verified in run 2: START FULL was a silent no-op (Alert.alert is also a no-op on RN web, so web users get zero feedback).", "testID": "asi-start-full", "priority": "HIGH"},
+      {"component": "asi-bot.tsx Recent Trades PnL (line 438-443)", "issue": "Negative PnL renders '$-4.20' (minus AFTER the $) while positive renders '+$12.50' — inconsistent sign placement.", "testID": "asi-close-ETHUSDT", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "Styling", "issue": "Carried-over web warnings: deprecated shadow* props (use boxShadow) and props.pointerEvents (use style.pointerEvents). Non-breaking. Reference: multiple components."},
+      {"component": "Alert", "issue": "Alert.alert used for close-failure and START gating feedback is a NO-OP on react-native-web — web users get no visible error when close fails (e.g. 400 credential missing). Consider a cross-platform toast. Reference: /app/frontend/app/asi-bot.tsx:165,128-131."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter32_v976_asibot_concurrent.py",
+    "/app/test_reports/pytest/iter32.xml",
+    "/app/test_reports/screenshots/iter32_full_running.jpeg",
+    "/app/test_reports/screenshots/iter32_both_running.jpeg",
+    "/app/test_reports/screenshots/iter32_recent_trades.jpeg",
+    "/app/test_reports/screenshots/iter32_after_close.jpeg"
+  ],
+  "action_items": [
+    "HIGH: Fix START dead-end — when one bot is running, either keep the disclaimer/ack accessible or treat persisted ack (AsyncStorage) across sessions so toggleSemi/toggleFull are not silently blocked on fresh launches while the disclaimer card is hidden.",
+    "HIGH: engine.refresh_trade_pnl — do NOT mark a trade closed when fetch_positions throws; only close on a confirmed empty position list (or require N consecutive empty reads). Prevents phantom SL-loss PnL on revoked keys/exchange errors.",
+    "LOW: Recent Trades PnL formatting — render '-$4.20' instead of '$-4.20' for losses.",
+    "LOW: replace Alert.alert with a web-visible toast for close failures; clean up deprecated shadow*/pointerEvents props.",
+    "REFACTOR: asi-bot.tsx is 786 lines (>700 guideline) — split ConnectExchangeModal/StatusCard into components/. Also refresh() interval uses stale closure setBot({...bot, ...b}) — use functional setState to avoid clobbering in-flight mode changes during the 20s poll."
+  ],
+  "critical_code_review_comments": [
+    "scheduler.py:236-242 correctly implements the v9.7.6 requirement ($or full_enabled + legacy fallback) — semi_enabled never triggers the scanner. VERIFIED.",
+    "routes.py list_trades (339-343) pops _id and re-adds as str — safe, close endpoint needs it. close_one_trade idempotent (already_closed) and scoped to device_id. VERIFIED.",
+    "Race risk: asi-bot.tsx refresh() called every 20s uses a stale `bot` closure and non-functional setBot — a poll landing between a chip tap and its POST completion can revert local mode/config. Use setBot(prev => ({...prev, ...b})) and/or skip merge while a saveBot is in flight.",
+    "App-level DisclaimerModal (@ai-crypto-stock-pro:disclaimer-accepted, versioned) overlays /asi-bot and intercepts taps until checkbox+I Agree — expected legal gate, but note tests must pre-set the key or accept first."
+  ],
+  "updated_files": [
+    "/app/backend/tests/seed_iter32_ui.py",
+    "/app/backend/tests/seed_iter32_ui2.py"
+  ],
+  "success_rate": {"backend": "100% (11/11 pytest)", "frontend": "100% of requested flows verified (23 scripted checks; 2 'failures' were test-assertion artifacts: '$-4.20' sign placement nit + in-flight label resolving <400ms on the fast 400 error path)"},
+  "seed_data_creation": "Mongo seed for UI tests: device web:t1976-ui976 (binance credential w/ encrypted DUMMY keys, bot config reset to both-stopped, its 3 trades auto-closed by pnl loop); device web:t1976-ui977 (NO credential, 3 trades: open BTC semi, open ETH full, closed SOL) — kept for retest; delete asi_trades/asi_credentials/asi_bot_config docs for both devices when done. NOTE: open trades for a device WITH an invalid credential get auto-closed by the pnl loop within ~60s (see HIGH backend issue) — use a credential-less device to keep trades open in future UI tests.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "v9.7.6 feature set VERIFIED working: independent semi/full toggles (concurrent run + independent stop), single swapping status card, mode badges, manual close wiring, disclaimer gating, i18n 4 locales, version 9.7.6. Open items needing fix+retest: (1) START dead-end when one bot running + disclaimer hidden + fresh session (disclaimerAck=false); (2) refresh_trade_pnl marks trades closed on fetch_positions EXCEPTION (phantom SL loss) — my seeded open trades on credentialed device were auto-closed with pnl -1.0, this is how I found it. Test env gotchas: set localStorage 'cryptostock.device_fingerprint' AND '@ai-crypto-stock-pro:disclaimer-accepted'='1' AFTER first goto then reload; wait for EITHER asi-card-semi OR asi-card-full (top card follows saved mode); premium gate bypassed in web preview via __DEV__.",
+  "rca_of_issue": "Issue A (START dead-end): asi-bot.tsx:334 hides disclaimer section when semi_enabled||full_enabled; disclaimerAck is component-local state initialized false on every mount; toggleSemi/toggleFull:127,142 require disclaimerAck when starting. Fresh launch + one bot running => other mode can never be started. Reproduced: run 2 START FULL tap produced no POST and no state change. Mitigation: persist ack per device or show inline ack when blocked. Issue B (phantom close): engine.py:475-477 `try: positions = await client.fetch_positions(...) except: positions=[]` — exception indistinguishable from empty result; line 480 `if pos:` falls through to the no-position branch that computes realized PnL from SL fallback and returns status=closed; scheduler._refresh_open_pnl persists it every 60s. Reproduced: seeded 2 open trades with dummy credential; within one pnl cycle both were status=closed, pnl_usdt=-1.0, updated_at bumped. Mitigation: re-raise/flag fetch errors and skip the update."
+}
