@@ -893,6 +893,12 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     cn: "已执行",
   },
   ats_try_again: { id: "Coba Lagi", en: "Try Again", ru: "Повторить", cn: "重试" },
+  ats_err_min_notional: {
+    id: "Ukuran posisi ${size} di bawah minimum exchange (${min}). Naikkan Risk % atau Leverage.",
+    en: "Position size ${size} is below the exchange minimum (${min}). Raise Risk % or Leverage.",
+    ru: "Размер позиции ${size} ниже минимума биржи (${min}). Увеличьте риск % или плечо.",
+    cn: "仓位规模 ${size} 低于交易所最小值（${min}）。请提高风险 % 或杠杆。",
+  },
 
   // v9.6.9 — Credential validation error codes (backend returns {code, message})
   asi_err_ip_or_key_invalid: {

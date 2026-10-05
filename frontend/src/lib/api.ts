@@ -474,7 +474,9 @@ export type AsiPreview = {
   tp_estimations: { tp: number; qty_share: number; est_profit_usdt: number }[];
   message?: string;
   // v9.8.3 — machine-readable error code untuk lokalisasi frontend
-  reason?: "not_listed" | "market_inactive" | string;
+  reason?: "not_listed" | "market_inactive" | "min_notional" | string;
+  // v9.8.8 — detail utk reason=min_notional
+  min_notional?: number;
 };
 export type AsiTradeResp = {
   ok?: boolean; exchange: string; testnet: boolean; symbol: string;

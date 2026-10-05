@@ -204,12 +204,31 @@ async def preview_trade(
     leverage = max(1, min(125, int(leverage)))
     tp_count = max(1, min(3, int(tp_count)))
     client = await _get_client(doc)
+    exch_sym = _ccxt_symbol(doc["exchange"], symbol)
     try:
         # v9.8.2 — validasi dinamis ke daftar pasar exchange (bukan whitelist statis)
-        bad = await _ensure_tradable(client, _ccxt_symbol(doc["exchange"], symbol), symbol)
+        bad = await _ensure_tradable(client, exch_sym, symbol)
         if bad:
             return {"ok": False, "reason": bad[0], "message": bad[1]}
         bal = await _fetch_usdt_balance(client)
+        margin = round(bal * risk_pct / 100.0, 2)
+        size_usdt = round(margin * leverage, 2)
+        # v9.8.8 — Tolak sejak PREVIEW bila ukuran posisi di bawah
+        # min-notional exchange (Binance -4164). User langsung tahu harus
+        # menaikkan Risk % / Leverage, bukan gagal 500 saat EXECUTE.
+        m = client.markets.get(exch_sym) or {}
+        min_cost = ((m.get("limits") or {}).get("cost") or {}).get("min")
+        if isinstance(min_cost, (int, float)) and min_cost and size_usdt < float(min_cost):
+            return {
+                "ok": False, "reason": "min_notional",
+                "min_notional": float(min_cost),
+                "balance_usdt": round(bal, 2), "margin_usdt": margin,
+                "size_usdt": size_usdt, "qty": 0,
+                "leverage": leverage, "risk_pct": risk_pct,
+                "est_loss_usdt": 0, "tp_estimations": [],
+                "message": (f"Ukuran posisi ${size_usdt:.2f} di bawah minimum "
+                            f"exchange (${float(min_cost):.2f}). Naikkan Risk % atau Leverage."),
+            }
     finally:
         await client.close()
     margin = round(bal * risk_pct / 100.0, 2)
@@ -296,10 +315,27 @@ async def execute_trade(
             tps = [round(round(float(t) / price_tick) * price_tick, 8) for t in tps]
         if qty <= 0:
             return {"ok": False, "message": "Qty terhitung 0 — margin/balance kurang."}
-        entry_order = await client.create_order(
-            exch_sym, "market", _ccxt_side(side), qty, None,
-            params={"reduceOnly": False},
-        )
+        # v9.8.8 — Cek min-notional exchange SEBELUM order (Binance -4164).
+        # Tanpa ini, entry ditolak → exception tak tertangani → HTTP 500.
+        m_limits = client.markets.get(exch_sym) or {}
+        min_cost = ((m_limits.get("limits") or {}).get("cost") or {}).get("min")
+        if isinstance(min_cost, (int, float)) and min_cost and size_usdt < float(min_cost):
+            return {
+                "ok": False, "reason": "min_notional",
+                "min_notional": float(min_cost),
+                "message": (f"Ukuran posisi ${size_usdt:.2f} di bawah minimum "
+                            f"exchange (${float(min_cost):.2f}). Naikkan Risk % atau Leverage."),
+            }
+        # v9.8.8 — Entry order dibungkus try/except: penolakan exchange
+        # (precision, margin, dsb.) kembali sebagai pesan jelas, bukan 500.
+        try:
+            entry_order = await client.create_order(
+                exch_sym, "market", _ccxt_side(side), qty, None,
+                params={"reduceOnly": False},
+            )
+        except Exception as e:
+            return {"ok": False, "reason": "entry_rejected",
+                    "message": f"Order entry ditolak exchange: {str(e)[:200]}"}
         entry_order_id = entry_order.get("id")
         actual_fill = float(entry_order.get("average") or entry_order.get("price") or entry)
         actual_qty = float(entry_order.get("filled") or qty)

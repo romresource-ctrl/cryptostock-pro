@@ -1801,3 +1801,50 @@ metadata_v987:
   version: "9.8.7"
   test_sequence: 45
   run_ui: false
+
+# ======================================================
+# v9.8.8 — HTTP 500 pada GALA/INJ: min-notional + entry try/except
+# ======================================================
+backend_v988:
+  - task: "Fix HTTP 500 execute GALA/INJ (min notional Binance $5)"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/engine.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          ROOT CAUSE (dari screenshot user): balance $9.62 x risk 5% x
+          leverage 10x = size $4.80-4.81 < $5 minimum notional Binance
+          Futures → entry order ditolak (-4164) → exception tak tertangani
+          di execute_trade (try tanpa except) → HTTP 500 polos.
+          FIX: (1) preview_trade kini load market limits dan menolak sejak
+          PREVIEW dengan reason="min_notional" + field min_notional &
+          size_usdt → tombol EXECUTE abu-abu dengan penjelasan localized.
+          (2) execute_trade: cek min-notional sebelum order + entry
+          create_order dibungkus try/except → return ok=False
+          reason="entry_rejected" dengan pesan error exchange (route
+          mengubah jadi HTTP 400 dengan pesan jelas, bukan 500).
+frontend_v988:
+  - task: "Mapping reason min_notional → pesan terlokalisasi"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/AsiTradeSheet.tsx, api.ts, I18nContext.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          AsiPreview type + min_notional field. Preview error IIFE menambah
+          cabang min_notional → ats_err_min_notional (4 bahasa) dengan
+          placeholder {size} {min}. Saran actionable: naikkan Risk/Leverage.
+metadata_v988:
+  created_by: "main_agent"
+  version: "9.8.8"
+  test_sequence: 46
+  run_ui: false

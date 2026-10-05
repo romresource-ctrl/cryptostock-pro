@@ -310,6 +310,12 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
                         if (reason === "market_inactive") {
                           return t("ats_err_inactive").replace("{symbol}", intent.symbol);
                         }
+                        if (reason === "min_notional") {
+                          // v9.8.8 — posisi di bawah minimum notional exchange
+                          return t("ats_err_min_notional")
+                            .replace("{size}", (preview?.size_usdt ?? 0).toFixed(2))
+                            .replace("{min}", (preview?.min_notional ?? 0).toFixed(2));
+                        }
                         return preview?.message || t("ats_no_preview");
                       })()}
                     </Text>
