@@ -8,6 +8,7 @@ import * as Clipboard from "expo-clipboard";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { useI18n } from "@/src/i18n/I18nContext";
 import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
+import { useTraderProfile } from "@/src/lib/useTraderProfile";
 import PremiumLocked from "@/src/components/PremiumLocked";
 import AsiTradeSheet, { type AsiTradeIntent } from "@/src/components/AsiTradeSheet";
 import { getDeviceId } from "@/src/lib/deviceId";
@@ -38,8 +39,14 @@ export default function ASIBotScreen() {
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
   const { hasAccess, loaded: accessLoaded } = usePremiumAccess();
+  // v9.8.0 — Baca Trader Profile aktif dari hook global (bukan dari
+  // bot.profile backend). Sinkron dengan ikon header & modal picker.
+  const { profile: traderProfile, explicit: traderExplicit } = useTraderProfile();
   const [deviceId, setDeviceId] = useState<string>("");
   const [creds, setCreds] = useState<AsiCredential[]>([]);
+  // v9.8.0 — flag yang menandakan refresh pertama selesai, agar PICK A
+  // SIGNAL tidak keliru menampilkan "need_connect" saat state belum terisi.
+  const [credsLoaded, setCredsLoaded] = useState(false);
   const [bot, setBot] = useState<AsiBotConfig>({
     enabled: false, exchange: "binance", mode: "semi",
     max_trades_per_day: 5, risk_pct: 5, leverage: 10, whitelist: [], profile: "confluence",
@@ -79,6 +86,20 @@ export default function ASIBotScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bot.semi_enabled, bot.full_enabled, bot.enabled, deviceId]);
 
+  // v9.8.0 — Sinkronkan Trader Profile global ke bot.profile saat berubah.
+  // Full-Auto scanner akan membaca field ini di scheduler → sinyal yang
+  // dieksekusi otomatis mengikuti profil yang user pilih di header.
+  useEffect(() => {
+    if (!deviceId || !credsLoaded) return;
+    const target: "scalper" | "day" | "swing" | "confluence" =
+      traderExplicit && (traderProfile === "scalper" || traderProfile === "day" || traderProfile === "swing")
+        ? traderProfile
+        : "confluence";
+    if (bot.profile === target) return;
+    saveBot({ profile: target }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [traderProfile, traderExplicit, deviceId, credsLoaded]);
+
   const refresh = async (did?: string) => {
     const id = did || deviceId; if (!id) return;
     try {
@@ -89,6 +110,7 @@ export default function ASIBotScreen() {
       const p = await api.asi.pnl(id); setPnl(p);
       const t2 = await api.asi.listTrades(id); setTrades(t2.items.slice(0, 10));
     } catch {}
+    finally { setCredsLoaded(true); }
   };
 
   const activeCred = creds.find((c) => c.exchange === bot.exchange);
@@ -131,23 +153,40 @@ export default function ASIBotScreen() {
   };
 
   const pickTopSignal = async () => {
-    // v9.7.7 — Semi-Auto PICK A SIGNAL:
-    // Fetch sinyal dari AI Suggestions pakai Trader Profile aktif,
-    // ambil confidence tertinggi, buka konfirmasi AsiTradeSheet.
-    // Jika TIDAK ada sinyal valid untuk profile → notifikasi, tidak eksekusi.
-    if (!canUseBot) {
+    // v9.8.0 — Semi-Auto PICK A SIGNAL (fix 3 bug):
+    //   1. Profile aktif dibaca dari useTraderProfile hook — bukan
+    //      bot.profile. User yang pilih Scalper / Intraday / Swing di
+    //      modal profile akan BENAR-BENAR kirim profile itu.
+    //      "longterm" & default → confluence (engine CONFLUENCE).
+    //   2. "need_connect" alert hanya tampil setelah refresh pertama
+    //      selesai (credsLoaded) — tidak lagi muncul karena race.
+    //   3. Jika tidak ada sinyal untuk profile X, pesan menyebut
+    //      profile X yang BENAR, bukan selalu "CONFLUENCE".
+    if (credsLoaded && !canUseBot) {
       Alert.alert(
         t("asi_alert_need_title"),
         !activeCred ? t("asi_alert_need_connect") : t("asi_alert_need_ack"),
       );
       return;
     }
+    // Map traderProfile → API profile accepted by /api/ai-suggestions
+    //   scalper → scalper, day → day, swing → swing, longterm/default → confluence
+    const apiProfile: "scalper" | "day" | "swing" | "confluence" =
+      traderExplicit && (traderProfile === "scalper" || traderProfile === "day" || traderProfile === "swing")
+        ? traderProfile
+        : "confluence";
     setScanning(true);
     try {
-      const prof = bot.profile || "confluence";
-      const resp = await api.aiSuggestions("crypto", "1h", prof, deviceId);
-      const picks = (resp.suggestions || []).filter(
-        (a) => (a.action === "BUY" || a.action === "SELL")
+      const resp = await api.aiSuggestions("crypto", "1h", apiProfile, deviceId);
+      const normalized = (resp.suggestions || []).map((a: any) => {
+        // v9.8.0 — Backend kirim take_profit (singular) + take_profit_2/_3.
+        // Build array take_profits agar kondisi filter + eksekusi benar.
+        const tps = [a.take_profit, a.take_profit_2, a.take_profit_3]
+          .filter((x: any) => typeof x === "number" && !Number.isNaN(x));
+        return { ...a, take_profits: tps };
+      });
+      const picks = normalized.filter(
+        (a: any) => (a.action === "BUY" || a.action === "SELL")
           && typeof a.entry === "number"
           && typeof a.stop_loss === "number"
           && Array.isArray(a.take_profits) && a.take_profits.length > 0,
@@ -155,12 +194,11 @@ export default function ASIBotScreen() {
       if (picks.length === 0) {
         Alert.alert(
           t("asi_no_signal_title"),
-          t("asi_no_signal_body").replace("{profile}", prof.toUpperCase()),
+          t("asi_no_signal_body").replace("{profile}", apiProfile.toUpperCase()),
         );
         return;
       }
-      // Suggestions sudah tersortir confidence desc di backend; ambil #1.
-      picks.sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
+      picks.sort((a: any, b: any) => (b.confidence || 0) - (a.confidence || 0));
       const top = picks[0];
       setTradeIntent({
         symbol: top.symbol,

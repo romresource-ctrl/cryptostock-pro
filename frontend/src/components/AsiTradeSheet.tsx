@@ -32,7 +32,7 @@ export type AsiTradeIntent = {
   entry: number;
   stop_loss: number;
   take_profits: number[];      // [tp1, tp2, tp3]
-  source?: "ai-suggestions" | "asset-detail";
+  source?: "ai-suggestions" | "asset-detail" | "asi-bot-semi";
 };
 
 type Props = {

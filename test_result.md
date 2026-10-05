@@ -1488,3 +1488,65 @@ metadata_v979:
   version: "9.7.9"
   test_sequence: 38
   run_ui: false
+
+# ======================================================
+# v9.8.0 — THREE user-reported bugs FIXED (iter 34 ALL PASS)
+# ======================================================
+frontend_v980:
+  - task: "Bug 1: AI Suggestions missing EXECUTE SEMI-AUTO button"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/AISuggestionsSheet.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          ROOT CAUSE: filter cek a.take_profits (plural array) tapi backend
+          kirim a.take_profit / take_profit_2 / take_profit_3 (singular 3 field).
+          FIX: normalize ke tps[] array; button pindah ke card body utama
+          (tidak perlu tap expand); testID ai-trade-{symbol}.
+          Verified iter34: 6 tombol pink muncul di semua crypto cards.
+  - task: "Bug 2: PICK A SIGNAL selalu kirim profile=confluence"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/asi-bot.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          ROOT CAUSE: pickTopSignal baca bot.profile (backend config, default
+          confluence), bukan useTraderProfile() hook yang user pilih di header.
+          FIX: import useTraderProfile; map scalper/day/swing explicit → kirim
+          apa adanya; longterm/default → confluence. useEffect auto-sync
+          bot.profile ke backend saat traderProfile berubah (sehingga Full-Auto
+          scheduler juga pakai profil yang benar). Pesan error "No valid signal"
+          kini menampilkan nama profile yang BENAR, bukan selalu CONFLUENCE.
+          Verified iter34: engine=VWAP-SCALPER saat trader-profile=scalper.
+  - task: "Bug 3: Alert 'need_connect' muncul walau Binance tersambung"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/asi-bot.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          ROOT CAUSE: race condition — user tap PICK A SIGNAL sebelum
+          refresh() selesai mengisi state creds. activeCred undefined →
+          alert menyesatkan.
+          FIX: tambah credsLoaded flag di-set true di finally{} refresh().
+          pickTopSignal: `if (credsLoaded && !canUseBot)` — hanya tampilkan
+          alert setelah fetch kredensial pertama selesai.
+metadata_v980:
+  created_by: "main_agent"
+  version: "9.8.0"
+  test_sequence: 39
+  run_ui: false

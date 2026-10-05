@@ -247,6 +247,16 @@ export default function AISuggestionsSheet({ visible, onClose, onRequestSubscrib
                 a.entry != null && a.stop_loss != null && a.take_profit != null
                   ? Math.abs(a.take_profit - a.entry) / Math.max(Math.abs(a.entry - a.stop_loss), 1e-12)
                   : null;
+              // v9.8.0 — Backend kirim take_profit / take_profit_2 / take_profit_3
+              // (singular). Normalisasi jadi array take_profits agar flow Semi-Auto
+              // + Trade sheet selalu bisa membaca. Null-safe.
+              const tps: number[] = [a.take_profit, (a as any).take_profit_2, (a as any).take_profit_3]
+                .filter((x) => typeof x === "number" && !Number.isNaN(x)) as number[];
+              const canTrade = a.market === "crypto"
+                && typeof a.entry === "number"
+                && typeof a.stop_loss === "number"
+                && tps.length > 0
+                && (a.action === "BUY" || a.action === "SELL");
               return (
                 <View
                   key={key}
@@ -288,6 +298,38 @@ export default function AISuggestionsSheet({ visible, onClose, onRequestSubscrib
                       <Text style={[styles.confLabel, { color: colors.textMuted }]}>CONF</Text>
                     </View>
                   </TouchableOpacity>
+
+                  {/* v9.8.0 — Tombol EXECUTE SEMI-AUTO selalu tampil di card
+                      utama (tidak perlu expand). crypto-only, dan hanya saat
+                      sinyal valid (entry/sl/tp lengkap). */}
+                  {canTrade ? (
+                    <TouchableOpacity
+                      style={[styles.detailBtn, {
+                        backgroundColor: "#EC4899", borderColor: "#EC4899",
+                        marginHorizontal: 12, marginBottom: 10,
+                        flexDirection: "row", justifyContent: "center",
+                        alignItems: "center", gap: 6,
+                      }]}
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+                        setTradeIntent({
+                          symbol: a.symbol, side: a.action as "BUY" | "SELL",
+                          entry: a.entry!, stop_loss: a.stop_loss!,
+                          take_profits: tps, source: "ai-suggestions",
+                        });
+                      }}
+                      testID={`ai-trade-${a.symbol}`}
+                    >
+                      <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.25)" }}>
+                        <Text style={{ color: "#FFFFFF", fontWeight: "900", fontSize: 9, letterSpacing: 0.4 }}>
+                          {t("asi_badge_semi")}
+                        </Text>
+                      </View>
+                      <Text style={[styles.detailBtnText, { color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.4 }]}>
+                        ⚡ {t("ai_trade_execute_semi")}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
 
                   {isOpen && (
                     <View style={[styles.detailBox, { borderTopColor: colors.border }]}>
@@ -350,34 +392,6 @@ export default function AISuggestionsSheet({ visible, onClose, onRequestSubscrib
                       >
                         <Text style={[styles.detailBtnText, { color: GOLD }]}>{t("ai_open_detail")}</Text>
                       </TouchableOpacity>
-                      {/* v9.7.8 — Satu-tap EKSEKUSI SEMI-AUTO via ASI-Bot
-                          (crypto only). Trade otomatis muncul di Recent
-                          Trades setelah konfirmasi di AsiTradeSheet. */}
-                      {a.market === "crypto" && typeof a.entry === "number"
-                        && typeof a.stop_loss === "number"
-                        && Array.isArray(a.take_profits) && a.take_profits.length > 0 ? (
-                        <TouchableOpacity
-                          style={[styles.detailBtn, { backgroundColor: "#EC4899", borderColor: "#EC4899", marginTop: 6, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 6 }]}
-                          onPress={() => {
-                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-                            setTradeIntent({
-                              symbol: a.symbol, side: a.action as "BUY" | "SELL",
-                              entry: a.entry!, stop_loss: a.stop_loss!,
-                              take_profits: a.take_profits || [], source: "ai-suggestions",
-                            });
-                          }}
-                          testID={`ai-trade-${a.symbol}`}
-                        >
-                          <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.25)" }}>
-                            <Text style={{ color: "#FFFFFF", fontWeight: "900", fontSize: 9, letterSpacing: 0.4 }}>
-                              {t("asi_badge_semi")}
-                            </Text>
-                          </View>
-                          <Text style={[styles.detailBtnText, { color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.4 }]}>
-                            ⚡ {t("ai_trade_execute_semi")}
-                          </Text>
-                        </TouchableOpacity>
-                      ) : null}
                     </View>
                   )}
                 </View>

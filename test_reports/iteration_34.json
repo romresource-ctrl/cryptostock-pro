@@ -1,0 +1,45 @@
+{
+  "summary": "v9.8.0 three-bug fixes VERIFIED on backend + frontend. Backend: 14/14 pytest passed (test_iter34_v980_three_bugs.py). Bug 1 (missing EXECUTE SEMI-AUTO on crypto cards): fixed — AISuggestionsSheet now renders 6x pink '⚡ EXECUTE SEMI-AUTO' buttons in card body (testID ai-trade-APT/MANA/AR/EGLD/KAVA/… observed, no expand required). Tapping opens AsiTradeSheet (observed APT LONG sheet with 'Trade dengan ASI-Bot (Semi-Auto)' header and HUBUNGKAN EXCHANGE CTA since test device has no exchange — valid non-error branch; take_profits array populated from singular take_profit/_2/_3 via normaliser at /app/frontend/src/components/AISuggestionsSheet.tsx:253 + canTrade gate at :255). Bug 2 (PICK A SIGNAL always said CONFLUENCE): fixed — with trader-profile:v1='scalper' in storage, AI Suggestions engine chip shows 'VWAP-SCALPER' (was always 'CONFLUENCE' pre-fix); asi-bot.tsx now imports useTraderProfile and maps traderProfile→apiProfile (lines 174-177) and auto-saves bot.profile when traderProfile changes (lines 92-101). Backend engine routing verified via parametrised tests: scalper→VWAP-SCALPER, day→VWAP-INTRADAY (NOTE: review request wrote 'VWAP-DAY' but backend label is VWAP-INTRADAY — intentional, see server.py:804), swing→VWAP-SWING, confluence/no-profile→CONFLUENCE. Bug 3 (false need_connect alert race): fixed — credsLoaded flag added (asi-bot.tsx:49, set true in refresh() finally at :113), pickTopSignal gates alert behind `credsLoaded && !canUseBot` (:165) so alert only fires after first refresh completes. ASI-Bot profile round-trip persistence verified for all 4 values (scalper/day/swing/confluence) via POST→GET. Frontend asi-bot top card still shows green SEMI-AUTO · READY frame with pink PICK A SIGNAL button and SEMI badge (iter33 regression intact). Regression: close unknown trade→404; GET /asi/trades _id is string; GET /asi/leaderboard/live sorted desc by unrealized_pct (profit-only invariant preserved).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/ai-suggestions?profile=day", "issue": "Engine label returned is 'VWAP-INTRADAY' while review request documented it as 'VWAP-DAY'. Verify with main agent if this is just a wording slip in the task spec or if the label should be renamed to 'VWAP-DAY'. Source: /app/backend/server.py:804."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "Styling (carryover)", "issue": "Deprecated 'shadow*' style props console warning on web. Non-breaking. Reference: multiple files across /app/frontend/app/ and /app/frontend/src/components/."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter34_v980_three_bugs.py",
+    "/app/test_reports/pytest/iter34.xml",
+    "/app/test_reports/screenshots/iter34_asibot_semi.jpeg",
+    "/app/test_reports/screenshots/iter34_ai_sheet_crypto.jpeg",
+    "/app/test_reports/screenshots/iter34_trade_sheet.jpeg"
+  ],
+  "action_items": [
+    "No fixes required — all three v9.8.0 bugs are verified fixed on backend + frontend.",
+    "LOW: confirm the engine label 'VWAP-INTRADAY' for profile=day matches the intended UI copy; review request mentioned 'VWAP-DAY' which may be a shorthand in the spec rather than a required change."
+  ],
+  "critical_code_review_comments": [
+    "/app/frontend/src/components/AISuggestionsSheet.tsx:253 — tps normaliser builds take_profits[] from singular backend fields safely with NaN filter; canTrade gate (:255) requires crypto+entry+stop_loss+tps.length>0+BUY/SELL. EXECUTE SEMI-AUTO button rendered at :305 in the card BODY (outside expand) so bug 1 cannot regress. Also preserves source='ai-suggestions' marker on trade intent (:318).",
+    "/app/frontend/app/asi-bot.tsx:155-216 pickTopSignal — correctly (a) gates alert behind credsLoaded (:165), (b) maps traderProfile→apiProfile explicitly for scalper/day/swing else confluence (:174-177), (c) normalises take_profits[] identically to AISuggestionsSheet (:181-187), (d) picks top by confidence (:201). Robust against bug 2 and bug 3 reproductions.",
+    "/app/frontend/app/asi-bot.tsx:92-101 — auto-saveBot({profile:target}) when traderProfile changes ensures Full-Auto scanner sees the user's chosen profile; gated behind credsLoaded to avoid overwriting during initial boot.",
+    "/app/backend/server.py:803-806 — engine label dict routes scalper/day/swing explicitly; falls through to CONFLUENCE otherwise. Note: label for 'day' is 'VWAP-INTRADAY' (not 'VWAP-DAY').",
+    "File-size nit (carryover): /app/frontend/app/asi-bot.tsx is now ~894 lines (>700 guideline). Candidates to extract: StatusCard, ConnectExchangeModal.",
+    "AISuggestionsSheet.tsx now imports useTraderProfile and sends apiProfile to backend (:72, :88) — matches the asi-bot wiring, both single-source-of-truth via module-level store in useTraderProfile.ts."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter34_v980_three_bugs.py (new)"
+  ],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "100% of requested flows verified"},
+  "seed_data_creation": "Transient asi_bot_config docs created under test-980-<uuid> device ids for profile round-trip tests (4 inserts total). No cleanup fixture — these are harmless orphan configs; delete via `db.asi_bot_config.deleteMany({device_id: /^test-980-/})` if desired.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "v9.8.0 fully verified. Three repro recipes for future regressions: (1) Bug 1 — set localStorage['cryptostock.device_fingerprint']='test-judge-device-001' (lifetime unlock), open home → Trader Profile icon → 'AI Suggestions' button → chip 'Crypto'; expect 6 cards each with pink ai-trade-<SYMBOL> button visible WITHOUT expanding. (2) Bug 2 — set localStorage['@ai-crypto-stock-pro:trader-profile:v1']='scalper' before load; AI Suggestions engine chip should read 'VWAP-SCALPER' (not 'CONFLUENCE'). (3) Bug 3 — asi-bot.tsx pickTopSignal must check credsLoaded before Alert; the Alert IS expected to fire when the device has no connected exchange, but ONLY after the first refresh completes. Device test-judge-device-001 reaches /api/ai-suggestions as premium. Engine label for profile=day is 'VWAP-INTRADAY' (not 'VWAP-DAY' as review request wording suggested) — update spec if this is incorrect. Backend regression suite reusable at /app/backend/tests/test_iter34_v980_three_bugs.py.",
+  "rca_of_issue": "Bug 1 RCA: AISuggestionsSheet.tsx previously filtered on asset.take_profits (plural array) but backend AssetSignal model exposes take_profit + take_profit_2 + take_profit_3 (singular). canTrade therefore evaluated false for every crypto card → EXECUTE SEMI-AUTO button never rendered. Fix: build tps[] = [take_profit, take_profit_2, take_profit_3].filter(number) and gate canTrade on tps.length>0. Button is now rendered in the card main body (outside the expand toggle) so even collapsed cards expose the Semi-Auto 1-tap entry. Bug 2 RCA: asi-bot.tsx pickTopSignal passed bot.profile (backend config, default 'confluence') to api.aiSuggestions instead of reading the global useTraderProfile() store that drives the header icon and modal picker. Fix: map traderProfile (scalper/day/swing/longterm) → apiProfile (scalper/day/swing/confluence) with explicit guard on traderExplicit; also auto-save bot.profile so Full-Auto scheduler mirrors Semi-Auto. Bug 3 RCA: 'Butuh Koneksi + Persetujuan' alert fired synchronously inside pickTopSignal before refresh() populated creds state — tapping PICK before the first list fetch returned a race. Fix: credsLoaded flag flipped true in refresh() finally; alert only fires once credsLoaded && !canUseBot."
+}
