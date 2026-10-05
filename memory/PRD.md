@@ -631,3 +631,23 @@ Fase berikutnya (BELUM):
   redeploy ke node lain, IP bisa berubah → proxy harus di-update.
   TODO: monitor /api/asi/server-ip atau buat alert jika egress berubah.
 - Credential lama (mainnet-e2e, Yrbx...) sudah dihapus user → -2015 valid.
+
+
+## v9.7.3 — BUG Full-Auto Diam-Diam Tidak Pernah Eksekusi (Okt 2026)
+- User: bot ACTIVE + Binance MAINNET terkoneksi (key baru 5wZL...AGZ7 sukses
+  tersimpan setelah fix case-sensitivity paste) tapi Full-Auto tidak pernah
+  buka posisi. UI tidak menampilkan error apa pun.
+- ROOT CAUSE: scheduler `_run_full_auto_scanner` skip config jika
+  `whitelist` kosong (`if not whitelist: continue`), padahal UI ASI-Bot
+  TIDAK punya kontrol whitelist → semua user Full-Auto punya whitelist []
+  → bot tidak pernah scan simbol apa pun, tanpa pesan error.
+- FIX: whitelist kosong → default ke TOP_100_FUTURES.
+- PERF: `_asi_signal_fetcher` kini cache response dashboard penuh per
+  (market, profile) TTL 60s — sebelumnya tiap simbol membangun ulang
+  seluruh dashboard (787 ticker). Terverifikasi: cold 2.5s, warm 0.00s.
+- Format simbol whitelist ("BTC") cocok dengan format dashboard ✓.
+- Kondisi pasar saat test: 9 sinyal actionable conf≥75 (LTC/INJ/AAVE/UNI/
+  JASMY/PEOPLE/ROSE/CAKE/ARKM) → bot akan menemukan kandidat.
+- Scanner interval 5 menit; watcher 20s; PnL 60s.
+- CATATAN: min_confidence default 75 belum ada kontrol UI di asi-bot.tsx
+  (state ada, ParamRow belum) — kandidat fitur berikutnya jika user minta.
