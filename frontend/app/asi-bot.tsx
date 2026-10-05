@@ -17,6 +17,8 @@ import {
 
 const GOLD = "#4ADE80"; // v9.4.1 — primary ASI-Bot accent (hijau muda)
 const ORANGE = "#F97316"; // v9.6.3 — Full-Auto active accent
+const PINK = "#EC4899"; // v9.7.4 — START BOT button
+const LIGHT_BLUE = "#38BDF8"; // v9.7.4 — STOP BOT button
 const GREEN = "#22C55E";
 const RED = "#EF4444";
 const ACCENT_TEXT = "#FFFFFF"; // teks di atas tombol primary
@@ -170,7 +172,7 @@ export default function ASIBotScreen() {
             <TouchableOpacity
               onPress={() => toggleBot(true)}
               disabled={bot.enabled}
-              style={[s.bigBtn, { backgroundColor: bot.enabled ? colors.border : GREEN }]}
+              style={[s.bigBtn, { backgroundColor: bot.enabled ? colors.border : PINK }]}
               testID="asi-start"
             >
               <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.5 }}>{t("asi_run_bot")}</Text>
@@ -178,7 +180,7 @@ export default function ASIBotScreen() {
             <TouchableOpacity
               onPress={() => toggleBot(false)}
               disabled={!bot.enabled}
-              style={[s.bigBtn, { backgroundColor: !bot.enabled ? colors.border : RED }]}
+              style={[s.bigBtn, { backgroundColor: !bot.enabled ? colors.border : LIGHT_BLUE }]}
               testID="asi-stop"
             >
               <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.5 }}>{t("asi_stop_bot")}</Text>
