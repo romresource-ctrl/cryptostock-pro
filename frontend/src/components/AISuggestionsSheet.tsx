@@ -424,6 +424,9 @@ export default function AISuggestionsSheet({ visible, onClose, onRequestSubscrib
       visible={!!tradeIntent}
       intent={tradeIntent}
       onClose={() => setTradeIntent(null)}
+      // v9.8.7 — "View Recent Trades" harus menutup trade sheet DAN popup
+      // suggestions ini, bukan meninggalkan daftar aset terbuka.
+      onCloseAll={() => { setTradeIntent(null); onClose(); }}
     />
     </>
   );

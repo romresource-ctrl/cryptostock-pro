@@ -40,13 +40,25 @@ type Props = {
   visible: boolean;
   onClose: () => void;
   intent: AsiTradeIntent | null;
+  // v9.8.7 — Dipakai saat sheet dibuka dari dalam AISuggestionsSheet:
+  // menutup trade sheet DAN popup suggestions sekaligus (mis. tombol
+  // "View Recent Trades" setelah eksekusi sukses).
+  onCloseAll?: () => void;
 };
 
-export default function AsiTradeSheet({ visible, onClose, intent }: Props) {
+export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: Props) {
   const router = useRouter();
   const { colors } = useTheme();
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
+
+  // v9.8.7 — Tutup SEMUA layer (trade sheet + suggestions popup) lalu
+  // kembali ke ASI-Bot. router.replace (bukan push) supaya tidak menumpuk
+  // route yang sama ketika user memang sudah di /asi-bot.
+  const goToRecentTrades = () => {
+    if (onCloseAll) onCloseAll(); else onClose();
+    router.replace("/asi-bot" as never);
+  };
 
   const [deviceId, setDeviceId] = useState("");
   const [creds, setCreds] = useState<AsiCredential[]>([]);
@@ -205,7 +217,7 @@ export default function AsiTradeSheet({ visible, onClose, intent }: Props) {
                 </Text>
                 <TouchableOpacity
                   style={[s.cta, { backgroundColor: MINT, marginTop: 14 }]}
-                  onPress={() => { onClose(); router.push("/asi-bot" as never); }}>
+                  onPress={() => { if (onCloseAll) onCloseAll(); else onClose(); router.replace("/asi-bot" as never); }}>
                   <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.6 }}>{t("ats_connect_cta")}</Text>
                 </TouchableOpacity>
               </View>
@@ -350,7 +362,7 @@ export default function AsiTradeSheet({ visible, onClose, intent }: Props) {
                     <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
                       {execResult.ok ? (
                         <TouchableOpacity
-                          onPress={() => { onClose(); router.push("/asi-bot" as never); }}
+                          onPress={goToRecentTrades}
                           style={{ flex: 1, backgroundColor: LIGHT_BLUE_BTN, borderRadius: 10, paddingVertical: 11, alignItems: "center" }}
                           testID="asi-exec-view-recent"
                         >

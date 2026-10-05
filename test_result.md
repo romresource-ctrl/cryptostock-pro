@@ -1769,3 +1769,35 @@ metadata_v986:
   version: "9.8.6"
   test_sequence: 44
   run_ui: false
+
+# ======================================================
+# v9.8.7 — View Recent Trades menutup SEMUA layer sheet
+# ======================================================
+frontend_v987:
+  - task: "Tombol 'View Recent Trades' setelah EXECUTED salah kembali ke popup AI Suggestions"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/AsiTradeSheet.tsx, AISuggestionsSheet.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          ROOT CAUSE: flow bersarang — ASI-Bot → PICK A SIGNAL membuka
+          AISuggestionsSheet → EXECUTE membuka AsiTradeSheet di dalamnya.
+          Tombol "View Recent Trades" hanya memanggil onClose() (menutup
+          trade sheet) + router.push("/asi-bot") yang NO-OP karena user
+          sudah di /asi-bot → popup AI Suggestions tetap terbuka di depan.
+          FIX: prop baru onCloseAll di AsiTradeSheet; helper
+          goToRecentTrades() menutup trade sheet + suggestions popup
+          (onCloseAll) lalu router.replace("/asi-bot") (replace agar tidak
+          menumpuk route sama). AISuggestionsSheet meneruskan
+          onCloseAll = tutup tradeIntent + sheet. Tombol CONNECT EXCHANGE
+          (no-cred state) juga diperbaiki dengan pola sama.
+metadata_v987:
+  created_by: "main_agent"
+  version: "9.8.7"
+  test_sequence: 45
+  run_ui: false
