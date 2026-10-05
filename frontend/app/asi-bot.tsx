@@ -13,7 +13,7 @@ import PremiumLocked from "@/src/components/PremiumLocked";
 import AISuggestionsSheet from "@/src/components/AISuggestionsSheet";
 import { getDeviceId } from "@/src/lib/deviceId";
 import {
-  api, type AsiBotConfig, type AsiCredential,
+  api, formatPrice, type AsiBotConfig, type AsiCredential,
   type AsiPnl, type AsiTradeResp,
 } from "@/src/lib/api";
 
@@ -524,6 +524,7 @@ export default function ASIBotScreen() {
               const borderColor = isOpen ? modeColor : colors.border;
               return (
                 <View key={tid || i} style={[s.leaderRow, { backgroundColor: colors.surface, borderColor }]}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                   {/* MODE badge (SEMI / FULL) */}
                   <View style={{
                     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
@@ -600,6 +601,38 @@ export default function ASIBotScreen() {
                       </Text>
                     </TouchableOpacity>
                   ) : null}
+                </View>
+                {/* v9.9.1 — Baris verifikasi proteksi untuk posisi OPEN:
+                    user bisa langsung yakin SL / TP / margin mode terpasang.
+                    Hijau ✓ = native di Binance; ⚠️ = soft watcher (tap
+                    banner REPAIR di atas untuk pasang ulang). */}
+                {isOpen ? (
+                  <View style={{ marginTop: 6, gap: 2 }}>
+                    <Text style={{ color: colors.textMuted, fontSize: 10, lineHeight: 15 }} numberOfLines={2}>
+                      <Text style={{ color: RED, fontWeight: "800" }}>SL {formatPrice(tr.stop_loss, "crypto")}</Text>
+                      {"  ·  "}
+                      <Text style={{ color: GREEN, fontWeight: "800" }}>
+                        TP {(tr.take_profits || []).map((x) => formatPrice(x, "crypto")).join(" / ") || "—"}
+                      </Text>
+                      {"  ·  "}
+                      <Text style={{
+                        color: (tr.margin_mode ?? "isolated") === "cross" ? PURPLE : TEAL,
+                        fontWeight: "800",
+                      }}>
+                        {(tr.margin_mode ?? "isolated").toUpperCase()}
+                      </Text>
+                      {`  ·  ${tr.leverage ?? "?"}x`}
+                    </Text>
+                    <Text style={{
+                      fontSize: 10, fontWeight: "800",
+                      color: tr.bracket_type === "hard" ? GREEN : ORANGE,
+                    }}>
+                      {tr.bracket_type === "hard"
+                        ? t("asi_bracket_native_ok")
+                        : t("asi_bracket_soft_short")}
+                    </Text>
+                  </View>
+                ) : null}
                 </View>
               );
             })}
@@ -933,7 +966,7 @@ const s = StyleSheet.create({
   pnlCard: { flex: 1, padding: 12, borderRadius: 12, borderWidth: 1 },
   pnlLabel: { fontSize: 10, fontWeight: "700", letterSpacing: 0.5, textTransform: "uppercase" },
   pnlValue: { fontSize: 16, fontWeight: "900", marginTop: 4 },
-  leaderRow: { flexDirection: "row", alignItems: "center", gap: 10, padding: 10, borderWidth: 1, borderRadius: 10 },
+  leaderRow: { gap: 6, padding: 10, borderWidth: 1, borderRadius: 10 },
   rank: { fontWeight: "900", width: 32 },
   handle: { fontWeight: "900", letterSpacing: 1 },
 });

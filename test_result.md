@@ -1927,3 +1927,32 @@ metadata_v990:
   version: "9.9.0"
   test_sequence: 47
   run_ui: false
+
+# ======================================================
+# v9.9.1 — Verifikasi proteksi per posisi open di Recent Trades
+# ======================================================
+frontend_v991:
+  - task: "Tampilkan SL, TP, margin mode & status bracket di posisi open"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/asi-bot.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          User: posisi OPEN di Recent Trades harus menampilkan SL, TP, dan
+          Iso/Cross supaya user yakin proteksi terpasang.
+          FIX: tiap row open kini punya baris verifikasi:
+          "SL <merah> · TP a/b/c <hijau> · ISOLATED|CROSS <teal/ungu> · 10x"
+          + baris status bracket: "✓ SL/TP native aktif di Binance" (hijau)
+          atau "⚠ SL/TP watcher soft — tap banner REPAIR" (oranye).
+          leaderRow diubah jadi kolom (row utama + sub-baris). Harga pakai
+          formatPrice crypto (presisi adaptif). Keys i18n baru 4 bahasa.
+metadata_v991:
+  created_by: "main_agent"
+  version: "9.9.1"
+  test_sequence: 48
+  run_ui: false

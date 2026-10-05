@@ -923,6 +923,19 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     ru: "Нативная скобка не выставлена. Позицию отслеживает бэкенд-наблюдатель (soft). Нажмите красный баннер выше, чтобы перевыставить.",
     cn: "原生括号单未能挂出。该持仓由后台监控器（软）看护。点击上方红色横幅重新挂出。",
   },
+  // v9.9.1 — Label status bracket di baris Recent Trades
+  asi_bracket_native_ok: {
+    id: "✓ SL/TP native aktif di Binance",
+    en: "✓ Native SL/TP armed on Binance",
+    ru: "✓ Нативные SL/TP активны на Binance",
+    cn: "✓ 原生 SL/TP 已在 Binance 生效",
+  },
+  asi_bracket_soft_short: {
+    id: "⚠ SL/TP watcher soft — tap banner REPAIR",
+    en: "⚠ SL/TP on soft watcher — tap REPAIR banner",
+    ru: "⚠ SL/TP на soft-наблюдателе — нажмите REPAIR",
+    cn: "⚠ SL/TP 由软监控看护——点击 REPAIR 横幅",
+  },
   ats_err_min_notional: {
     id: "Ukuran posisi ${size} di bawah minimum exchange (${min}). Naikkan Risk % atau Leverage.",
     en: "Position size ${size} is below the exchange minimum (${min}). Raise Risk % or Leverage.",
