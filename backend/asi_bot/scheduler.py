@@ -544,6 +544,7 @@ async def _run_full_auto_scanner(
                         margin_mode=str(cfg.get("margin_mode") or "isolated"),
                         profile=bot_profile,
                         formula_tag=sig.get("formula_tag"),
+                        entry_mode=str(cfg.get("entry_mode") or "limit"),
                     )
                 except Exception as e:
                     logger.warning("full-auto execute failed %s/%s: %s", device_id, sym, e)

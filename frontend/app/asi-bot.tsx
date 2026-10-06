@@ -461,6 +461,41 @@ export default function ASIBotScreen() {
             {t("ats_bracket_native")}
           </Text>
         </View>
+        {/* v10.0.1 — Tipe eksekusi entry: MARKET PRICE (ungu muda, instan)
+            vs LIMIT PRICE (kuning, entry moderate -0.5/-0.3 ATR). Dipakai
+            Semi-Auto sheet & Full-Auto scheduler via bot config. */}
+        <View style={{ marginBottom: 8 }}>
+          <Text style={{ color: colors.textMuted, fontSize: 11, fontWeight: "700", marginBottom: 6 }}>
+            {t("ats_entry_mode")}
+          </Text>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            {(["market", "limit"] as const).map((em) => {
+              const active = (bot.entry_mode ?? "limit") === em;
+              const accent = em === "market" ? PURPLE : GOLD;
+              return (
+                <TouchableOpacity
+                  key={em}
+                  onPress={() => saveBot({ entry_mode: em })}
+                  style={{
+                    flex: 1, paddingVertical: 10, borderRadius: 10,
+                    borderWidth: 1.5,
+                    borderColor: active ? accent : colors.border,
+                    backgroundColor: active ? accent : colors.surface,
+                    alignItems: "center",
+                  }}
+                  testID={`asi-bot-entry-${em}`}
+                >
+                  <Text style={{
+                    color: active ? "#0B0E11" : colors.textPrimary,
+                    fontWeight: "900", fontSize: 11.5, letterSpacing: 0.4,
+                  }}>
+                    {em === "market" ? t("ats_entry_market") : t("ats_entry_limit")}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
         {/* v9.6.0 — Centang TP1/TP2/TP3 (dibawah leverage).
             v9.7.4 — warna aktif mengikuti mode: Semi-Auto=hijau, Full-Auto=orange */}
         <View style={{ flexDirection: "row", gap: 8, marginBottom: 6 }}>

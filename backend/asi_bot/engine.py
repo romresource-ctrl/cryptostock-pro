@@ -328,6 +328,7 @@ async def execute_trade(
     margin_mode: str = "isolated",
     profile: str | None = None,
     formula_tag: str | None = None,
+    entry_mode: str = "limit",
 ) -> dict[str, Any]:
     """v9.9.2 — Place entry + VERIFIED bracket SL/TP. Auto-rollback jika
     bracket tidak dapat terpasang & terverifikasi di exchange.
@@ -471,38 +472,50 @@ async def execute_trade(
     # Validate SL direction vs side (avoid instant trigger)
     close_side = "SELL" if side == "BUY" else "BUY"
 
-    # (5) Place LIMIT entry di harga sinyal MODERATE (v9.9.14). Bot tidak
-    # eksekusi MARKET — entry limit di -0.5xATR (Confluence) / -0.3xATR
-    # (VWAP) dari harga; expire 2 candle bila tidak terisi. SL/TP sudah
-    # di-shift oleh signal fetcher ke anchor moderate → R:R & ladder utuh.
-    limit_px = round_to_tick(float(entry), tick)
-    try:
-        entry_res = await br.limit_order(
-            api_key, api_secret, is_testnet,
-            symbol=bin_sym, side=side, quantity=qty, price=limit_px,
-        )
-    except Exception as e:
-        return {"ok": False, "reason": "entry_rejected",
-                "message": f"Entry LIMIT ditolak Binance: {str(e)[:200]}"}
-
-    entry_order_id = entry_res.get("orderId")
-
-    # (6) Poll singkat status order: limit "marketable" (harga sudah
-    # melewati level sinyal) terisi instan → lanjut pasang bracket di
-    # bawah. Bila belum FILLED → simpan sebagai pending_entry; scheduler
-    # memantau fill/expiry dan memasang bracket setelah fill.
-    filled_now = False
-    for _ in range(6):
-        await asyncio.sleep(0.4)
+    # (5) Place entry — v10.0.1: entry_mode "limit" (harga moderate,
+    # expire 2 candle bila tidak terisi) atau "market" (eksekusi instan;
+    # SL/TP di-anchor ke fill aktual via anchor_shift di bawah).
+    if entry_mode == "market":
         try:
-            st = await br.order_status(
+            entry_res = await br.market_order(
                 api_key, api_secret, is_testnet,
-                symbol=bin_sym, order_id=entry_order_id)
-            filled_now = str(st.get("status")) == "FILLED"
-        except Exception:
-            filled_now = False
-        if filled_now:
-            break
+                symbol=bin_sym, side=side, quantity=qty, reduce_only=False,
+            )
+        except Exception as e:
+            return {"ok": False, "reason": "entry_rejected",
+                    "message": f"Entry MARKET ditolak Binance: {str(e)[:200]}"}
+        entry_order_id = entry_res.get("orderId")
+        filled_now = True
+        limit_px = float(entry)
+    else:
+        limit_px = round_to_tick(float(entry), tick)
+        try:
+            entry_res = await br.limit_order(
+                api_key, api_secret, is_testnet,
+                symbol=bin_sym, side=side, quantity=qty, price=limit_px,
+            )
+        except Exception as e:
+            return {"ok": False, "reason": "entry_rejected",
+                    "message": f"Entry LIMIT ditolak Binance: {str(e)[:200]}"}
+
+        entry_order_id = entry_res.get("orderId")
+
+        # (6) Poll singkat status order: limit "marketable" (harga sudah
+        # melewati level sinyal) terisi instan → lanjut pasang bracket di
+        # bawah. Bila belum FILLED → simpan sebagai pending_entry; scheduler
+        # memantau fill/expiry dan memasang bracket setelah fill.
+        filled_now = False
+        for _ in range(6):
+            await asyncio.sleep(0.4)
+            try:
+                st = await br.order_status(
+                    api_key, api_secret, is_testnet,
+                    symbol=bin_sym, order_id=entry_order_id)
+                filled_now = str(st.get("status")) == "FILLED"
+            except Exception:
+                filled_now = False
+            if filled_now:
+                break
 
     if not filled_now:
         now_p = datetime.now(timezone.utc)
@@ -526,6 +539,7 @@ async def execute_trade(
             "actual_leverage": None,
             "layered": layering,
             "anchor_shift": 0,
+            "entry_mode": entry_mode,
             "profile": profile,
             "formula_tag": formula_tag,
             "mode": mode, "status": "pending_entry", "pnl_usdt": 0.0,
@@ -751,6 +765,7 @@ async def execute_trade(
         # (averaging). Routes akan melebur row trade lama ke row ini.
         "layered": layering,
         "anchor_shift": round(anchor_shift, 10),
+        "entry_mode": entry_mode,
         "leverage_note": (
             f"Requested {leverage}x tetapi Binance set {actual_leverage}x"
             + (f" ({lev_rejected})" if lev_rejected else "")

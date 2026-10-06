@@ -506,6 +506,8 @@ export type AsiTradeBody = {
   profile?: string | null;
   // Tag singkat modul pemicu (mis. "John Wick Candle Stick")
   formula_tag?: string | null;
+  // v10.0.1 — Tipe eksekusi: limit (moderate) / market (instan)
+  entry_mode?: "limit" | "market";
 };
 export type AsiPreview = {
   ok: boolean; balance_usdt: number; margin_usdt: number;
@@ -611,6 +613,8 @@ export type AsiBotConfig = {
   disclaimer_ack?: boolean;
   // v9.9.0 — default margin mode bot
   margin_mode?: "isolated" | "cross";
+  // v10.0.1 — tipe eksekusi entry bot (limit moderate / market instan)
+  entry_mode?: "limit" | "market";
   // v9.9.5 — network aktif (testnet/mainnet). Credential per jaringan
   // disimpan di slot terpisah; switching tidak meminta API key ulang.
   active_testnet?: boolean;

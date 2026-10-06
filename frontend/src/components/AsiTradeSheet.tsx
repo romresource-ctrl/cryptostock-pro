@@ -27,6 +27,7 @@ const MINT = "#4ADE80"; // v9.4.3 — ASI-Bot accent (hijau muda + teks putih)
 const BLUE = "#3B82F6"; // v9.9.9 — chip DEMO (testnet)
 const GREEN = "#22C55E";
 const RED = "#EF4444";
+const PURPLE = "#C084FC"; // v10.0.1 — tombol Market Price (ungu muda)
 const LIGHT_BLUE_BTN = "#38BDF8"; // v9.8.5 — tombol "Lihat Recent Trades"
 
 export type AsiTradeIntent = {
@@ -100,6 +101,8 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
   const [credsLoaded, setCredsLoaded] = useState(false);
   // v9.9.0 — Margin mode wajib dipilih sebelum eksekusi (default ISOLATED).
   const [marginMode, setMarginMode] = useState<"isolated" | "cross">("isolated");
+  // v10.0.1 — Tipe eksekusi: LIMIT (moderate, default) vs MARKET (instan).
+  const [entryMode, setEntryMode] = useState<"limit" | "market">("limit");
   // v9.9.5 — Network aktif dari bot config (testnet = demo).
   const [activeTestnet, setActiveTestnet] = useState(true);
   // v9.9.9 — simpan bot config utk persist active_testnet saat user
@@ -124,6 +127,10 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
         const b = await api.asi.getBot(did);
         if (b.exists && (b as any).margin_mode) {
           setMarginMode((b as any).margin_mode as "isolated" | "cross");
+        }
+        // v10.0.1 — Default tipe eksekusi dari bot config.
+        if (b.exists && (b as any).entry_mode) {
+          setEntryMode((b as any).entry_mode as "limit" | "market");
         }
         // v9.9.5 — Network aktif dari bot config (switch di halaman
         // ASI-Bot). Credential tiap jaringan slot terpisah.
@@ -236,6 +243,7 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
         // v9.9.13 — label formula di kartu Recent Trades
         profile: apiProfile ?? "confluence",
         formula_tag: intent.formula_tag ?? formulaTagFromSignal(null, null, apiProfile),
+        entry_mode: entryMode,
       });
       // v9.9.13 — Entry LIMIT deep: order dipasang di harga sinyal dan
       // MENUNGGU terisi (maks 1 candle). Belum ada posisi terbuka.
@@ -467,6 +475,49 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
                   <Text style={{ color: colors.textMuted, fontSize: 10, lineHeight: 14, marginTop: 6 }}>
                     {t("ats_bracket_native")}
                   </Text>
+                </View>
+
+                {/* v10.0.1 — Tipe eksekusi entry: MARKET PRICE (ungu muda,
+                    instan) vs LIMIT PRICE (kuning, entry moderate).
+                    Persist ke bot config (dipakai juga Full-Auto). */}
+                <View style={{ marginTop: 4 }}>
+                  <Text style={{ color: colors.textMuted, fontSize: 11, fontWeight: "700", marginBottom: 6 }}>
+                    {t("ats_entry_mode")}
+                  </Text>
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    {(["market", "limit"] as const).map((em) => {
+                      const active = entryMode === em;
+                      const col = em === "market" ? PURPLE : GOLD;
+                      return (
+                        <TouchableOpacity
+                          key={em}
+                          onPress={() => {
+                            setEntryMode(em);
+                            if (deviceId && botCfg) {
+                              const next = { ...(botCfg as any), entry_mode: em };
+                              setBotCfg(next);
+                              api.asi.saveBot(deviceId, next).catch(() => {});
+                            }
+                          }}
+                          style={{
+                            flex: 1, paddingVertical: 10, borderRadius: 10,
+                            borderWidth: 1.5,
+                            borderColor: active ? col : colors.border,
+                            backgroundColor: active ? col : "transparent",
+                            alignItems: "center",
+                          }}
+                          testID={`asi-entry-${em}`}
+                        >
+                          <Text style={{
+                            color: active ? "#0B0E11" : colors.textPrimary,
+                            fontWeight: "900", fontSize: 11.5, letterSpacing: 0.4,
+                          }}>
+                            {em === "market" ? t("ats_entry_market") : t("ats_entry_limit")}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
                 </View>
 
                 {/* v9.6.0 — TP Strategy selector */}

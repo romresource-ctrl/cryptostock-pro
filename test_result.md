@@ -2643,3 +2643,41 @@ frontend_v9914:
           Teks pending diubah ke "2 candle (±2 jam)" 4 bahasa. Detail page
           (AI consensus) tidak berlaku moderate (bukan level mesin
           indikator). Lint bersih.
+
+# ======================================================
+# v10.0.1 — Tombol Market Price / Limit Price (Semi & Full-Auto)
+# ======================================================
+backend_v1001:
+  - task: "entry_mode limit|market di TradePayload + BotConfigPayload + engine + scheduler"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/engine.py, /app/backend/asi_bot/routes.py, /app/backend/asi_bot/scheduler.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          E2E Testnet diverifikasi: entry_mode='market' -> ETH posisi
+          open instan, bracket hard terverifikasi, anchor_shift 0.05,
+          close bersih. entry_mode='limit' -> pending_entry + cancel OK.
+          Full-Auto scheduler meneruskan cfg.entry_mode. Field tersimpan
+          di trade record (entry_mode).
+frontend_v1001:
+  - task: "Tombol Market Price (ungu muda) / Limit Price (kuning) di sheet + halaman ASI-Bot"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/AsiTradeSheet.tsx, /app/frontend/app/asi-bot.tsx, /app/frontend/src/lib/api.ts"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Sheet: selector di bawah Isolated/Cross, persist ke bot config.
+          Halaman ASI-Bot: selector 'Execution Type' di Risk Parameters
+          (dipakai Semi & Full via config bersama). Default: Limit Price.
+          Screenshot-verified. Versi bump 10.0.1 (version.ts, app.json,
+          APP_LATEST_VERSION + release notes update popup).

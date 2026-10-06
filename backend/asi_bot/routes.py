@@ -149,6 +149,9 @@ class TradePayload(BaseModel):
     profile: str | None = None
     # Tag singkat modul yang memicu (mis. "John Wick Candle Stick").
     formula_tag: str | None = None
+    # v10.0.1 — Tipe eksekusi entry: "limit" (moderate, default) atau
+    # "market" (instan, SL/TP di-anchor ke fill aktual).
+    entry_mode: Literal["limit", "market"] = "limit"
     # v9.6.0 — TP strategy & trailing stop
     tp_count: Literal[1, 2, 3] = 3
     trailing_callback_rate: float = Field(2.0, ge=0.0, le=10.0)
@@ -184,6 +187,8 @@ class BotConfigPayload(BaseModel):
     trailing_callback_rate: float = Field(2.0, ge=0.0, le=10.0)
     # Set to null to CLEAR previous auto-disable (when user re-enables manually).
     auto_disabled_reason: str | None = None
+    # v10.0.1 — Tipe eksekusi entry bot: limit (moderate) / market.
+    entry_mode: Literal["limit", "market"] = "limit"
     auto_disabled_at: str | None = None
     # v9.7.7 — Disclaimer persistent: once ticked it stays acknowledged
     # across sessions. Frontend hides disclaimer card forever when True.
@@ -436,6 +441,7 @@ def _attach_trade_routes(db: Any) -> None:
             margin_mode=payload.margin_mode,
             profile=payload.profile,
             formula_tag=payload.formula_tag,
+            entry_mode=payload.entry_mode,
         )
         if not res.get("ok"):
             # v9.9.2 — Pass through structured reason & message so frontend
