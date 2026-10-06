@@ -19,6 +19,7 @@ import {
 } from "@/src/lib/api";
 
 const GOLD = "#4ADE80"; // v9.4.1 — primary ASI-Bot accent (hijau muda)
+const YELLOW = "#F0B90B"; // v10.0.1 — kuning asli utk Limit Price / chip LIMIT
 const ORANGE = "#F97316"; // v9.6.3 — Full-Auto active accent
 const PINK = "#EC4899"; // v9.7.4 — START BOT button
 const LIGHT_BLUE = "#38BDF8"; // v9.7.4 — STOP BOT button
@@ -471,7 +472,7 @@ export default function ASIBotScreen() {
           <View style={{ flexDirection: "row", gap: 8 }}>
             {(["market", "limit"] as const).map((em) => {
               const active = (bot.entry_mode ?? "limit") === em;
-              const accent = em === "market" ? PURPLE : GOLD;
+              const accent = em === "market" ? PURPLE : YELLOW;
               return (
                 <TouchableOpacity
                   key={em}
@@ -795,7 +796,7 @@ export default function ASIBotScreen() {
                   {(tr as any).entry_mode ? (
                     <View style={{
                       paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
-                      backgroundColor: (tr as any).entry_mode === "market" ? PURPLE : GOLD,
+                      backgroundColor: (tr as any).entry_mode === "market" ? PURPLE : YELLOW,
                     }}>
                       <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 9, letterSpacing: 0.4 }}>
                         {String((tr as any).entry_mode).toUpperCase()}
@@ -816,7 +817,7 @@ export default function ASIBotScreen() {
                   {/* OPEN / CLOSED badge */}
                   <View style={{
                     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
-                    backgroundColor: isOpen ? GREEN : isPending ? GOLD : colors.border,
+                    backgroundColor: isOpen ? GREEN : isPending ? YELLOW : colors.border,
                   }}>
                     <Text style={{ color: isOpen ? ACCENT_TEXT : isPending ? "#0B0E11" : colors.textMuted, fontWeight: "900", fontSize: 9 }}>
                       {isOpen ? t("asi_status_active") : isPending ? t("asi_status_pending") : "CLOSED"}
