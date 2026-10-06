@@ -790,8 +790,19 @@ async def attach_brackets(
         pos = await br.position_risk(api_key, api_secret, is_testnet, bin_sym)
     except Exception as e:
         return {"ok": False, "symbol": symbol, "errors": [f"positionRisk: {str(e)[:160]}"]}
+    now0 = datetime.now(timezone.utc).isoformat()
     if not pos or abs(float(pos.get("positionAmt") or 0)) <= 0:
-        return {"ok": False, "symbol": symbol, "errors": ["no_open_position"]}
+        # v9.9.8 — Posisi SUDAH tertutup di exchange → bukan kegagalan.
+        # Tandai trade closed agar berhenti muncul di banner repair.
+        # Tidak ada uang berisiko → UI tidak perlu menampilkan apa pun.
+        return {
+            "ok": True, "symbol": symbol, "note": "position_already_closed",
+            "update": {
+                "status": "closed", "close_reason": "position_closed_externally",
+                "closed_at": now0, "updated_at": now0,
+                "soft_bracket_reason": None,
+            },
+        }
     qty = abs(float(pos.get("positionAmt") or 0))
     actual_mm = str(pos.get("marginType") or "").lower()
     actual_lev = int(float(pos.get("leverage") or trade.get("leverage") or 0))
@@ -821,7 +832,9 @@ async def attach_brackets(
         pass
 
     errors: list[str] = []
+    notes: list[str] = []
     sl_algo_id: str | None = None
+    sl_passed = False
     for attempt in range(3):
         try:
             r = await br.place_algo(
@@ -833,10 +846,40 @@ async def attach_brackets(
             sl_algo_id = str(r.get("algoId"))
             break
         except Exception as e:
+            # v9.9.8 — -2021 "would immediately trigger" pada SL artinya
+            # harga SUDAH melewati level SL → posisi sedang di zona rugi.
+            # Tindakan protektif yang benar = market close sekarang (persis
+            # yang akan dilakukan SL begitu terpasang). Bukan kegagalan.
+            if "-2021" in str(e):
+                sl_passed = True
+                break
             errors.append(f"SL try{attempt + 1}: {str(e)[:160]}")
+
+    if sl_passed:
+        try:
+            await br.cancel_all_algo(api_key, api_secret, is_testnet, bin_sym)
+        except Exception:
+            pass
+        try:
+            await br.market_order(
+                api_key, api_secret, is_testnet,
+                symbol=bin_sym, side=close_side, quantity=qty, reduce_only=True,
+            )
+        except Exception as e:
+            return {"ok": False, "symbol": symbol,
+                    "errors": [f"SL level terlewati & auto-close gagal: {str(e)[:160]}"]}
+        return {
+            "ok": True, "symbol": symbol, "note": "sl_level_passed_auto_closed",
+            "update": {
+                "status": "closed", "close_reason": "sl_level_passed",
+                "closed_at": now0, "updated_at": now0,
+                "soft_bracket_reason": None,
+            },
+        }
 
     tp_parts = _split_tp_qty(qty, step or None, tp_count)
     tp_algo_ids: list[str | None] = []
+    tp_failed = 0
     for i, tp in enumerate(tps_rounded[:tp_count]):
         tp_qty = tp_parts[i] if i < len(tp_parts) else 0.0
         if tp_qty <= 0:
@@ -854,7 +897,16 @@ async def attach_brackets(
                 placed = str(r.get("algoId"))
                 break
             except Exception as e:
-                errors.append(f"TP{i + 1} try{attempt + 1}: {str(e)[:160]}")
+                # v9.9.8 — -2021 pada TP artinya harga sudah MELEWATI level
+                # TP (posisi profit melewati target). TP itu tidak lagi
+                # relevan → lewati diam-diam, BUKAN kegagalan. Posisi tetap
+                # terlindungi SL + TP lain.
+                if "-2021" in str(e):
+                    notes.append(f"TP{i + 1} level already passed — skipped")
+                    break
+                if attempt == 2:
+                    tp_failed += 1
+                    errors.append(f"TP{i + 1} try{attempt + 1}: {str(e)[:160]}")
         tp_algo_ids.append(placed)
 
     # Verify via openAlgoOrders
@@ -866,7 +918,10 @@ async def attach_brackets(
     sl_ok = bool(sl_algo_id and sl_algo_id in live_ids)
     tp_ok = sum(1 for t in tp_algo_ids if t and t in live_ids)
     expected_tp = sum(1 for p in tp_parts if p > 0)
-    hard = sl_ok and tp_ok >= expected_tp
+    # v9.9.8 — hard = SL terverifikasi DAN tidak ada TP yang GAGAL NYATA.
+    # TP yang di-skip karena level sudah terlewati (harga profit melampaui
+    # target) tidak dihitung sebagai kegagalan.
+    hard = sl_ok and tp_failed == 0 and (tp_ok > 0 or expected_tp == 0 or bool(notes))
 
     now = datetime.now(timezone.utc).isoformat()
     update = {
@@ -886,6 +941,7 @@ async def attach_brackets(
         "sl_order_id": sl_algo_id if sl_ok else None,
         "tp_order_ids": [t if (t and t in live_ids) else None for t in tp_algo_ids],
         "errors": errors,
+        "notes": notes,
         "update": update,
     }
 

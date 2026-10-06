@@ -2179,3 +2179,25 @@ backend_v998:
           group per (device, testnet); field testnet di response; limit 25.
           curl verified: entry demo & real sama-sama tampil. Badge DEMO
           biru / REAL hijau di copy-trade.tsx. PnL summary tetap terpisah.
+
+# ======================================================
+# v9.9.8 patch — Repair bracket senyap utk kasus tanpa risiko uang
+# ======================================================
+backend_v998_patch:
+  - task: "attach_brackets: no_open_position / SL-2021 auto-close / TP-2021 skip bukan kegagalan"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/engine.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          User: popup error mentah utk eksekusi gagal yg tidak merugikan
+          uang tidak perlu tampil. Fix: posisi sudah tertutup → ok=True +
+          mark closed; SL -2021 → auto market close (tindakan protektif
+          yang sama dgn SL); TP -2021 → skip senyap (level terlewati).
+          Frontend: popup hanya utk kegagalan nyata (posisi open & bracket
+          tetap gagal). Tanpa bump versi (tetap 9.9.8) sesuai permintaan.

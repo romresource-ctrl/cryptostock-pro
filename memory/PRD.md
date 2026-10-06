@@ -699,6 +699,26 @@ Fase berikutnya (BELUM):
 - Tombol eksekusi Semi-Auto di kartu AI Suggestions ("⚡ EXECUTE SEMI-AUTO") dengan badge pink SEMI.
 - Konfirmasi sukses kini menyediakan opsi langsung "Lihat Recent Trades" → navigasi ke `/asi-bot`.
 
+## v9.9.8 (patch, tanpa bump) — Repair Bracket Senyap untuk Kasus Tidak Berisiko
+
+User: popup "Bracket Repair" menampilkan error mentah (-2021 dst) untuk
+eksekusi yang tidak merugikan uang — tidak perlu ditampilkan apa pun.
+
+**Backend `attach_brackets`:**
+- Posisi sudah tertutup di exchange → BUKAN kegagalan: ok=True, trade
+  ditandai closed (close_reason=position_closed_externally) agar berhenti
+  muncul di banner repair.
+- SL kena -2021 (level sudah terlewati = harga sudah di zona rugi) → bot
+  langsung market-close posisi (persis yang akan dilakukan SL), trade
+  ditandai closed (close_reason=sl_level_passed). ok=True.
+- TP kena -2021 (harga sudah profit melewati target) → TP itu di-skip
+  diam-diam, dicatat di `notes`, TIDAK dihitung kegagalan. Posisi tetap
+  terlindungi SL + TP lain.
+
+**Frontend banner repair:** popup HANYA muncul bila ada kegagalan nyata
+(posisi masih terbuka & bracket tetap gagal = uang berisiko). Semua hasil
+benign diproses senyap + refresh. Popup sukses juga dihapus.
+
 ## v9.9.8 — Leaderboard Copy Trade: DEMO + REAL dengan Badge (maks 25)
 
 User: 2 posisi demo yang profit tidak tampil di leaderboard (kosong) karena

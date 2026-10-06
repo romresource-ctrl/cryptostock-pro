@@ -534,13 +534,18 @@ export default function ASIBotScreen() {
             onPress={async () => {
               try {
                 const res = await api.asi.repairBrackets(deviceId, bot.exchange);
+                // v9.9.8 — HANYA tampilkan popup bila ada kegagalan NYATA
+                // (posisi masih terbuka & bracket tetap gagal terpasang =
+                // uang berisiko). Hasil benign (posisi sudah tertutup,
+                // level TP terlewati, auto-close sukses) diproses diam-diam
+                // — tidak ada uang berkurang, tidak perlu popup.
                 const failed = (res.results || []).filter((r) => !r.ok);
-                Alert.alert(
-                  t("asi_repair_title"),
-                  failed.length === 0
-                    ? t("asi_repair_ok").replace("{n}", String(res.repaired))
-                    : failed.map((f) => `${f.symbol}: ${(f.errors || []).join(" | ")}`).join("\n"),
-                );
+                if (failed.length > 0) {
+                  Alert.alert(
+                    t("asi_repair_title"),
+                    failed.map((f) => `${f.symbol}: ${(f.errors || []).join(" | ")}`).join("\n"),
+                  );
+                }
                 await refresh();
               } catch (e: any) {
                 Alert.alert(t("asi_close_failed"), String(e?.message || e));
