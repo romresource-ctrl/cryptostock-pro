@@ -699,6 +699,17 @@ Fase berikutnya (BELUM):
 - Tombol eksekusi Semi-Auto di kartu AI Suggestions ("⚡ EXECUTE SEMI-AUTO") dengan badge pink SEMI.
 - Konfirmasi sukses kini menyediakan opsi langsung "Lihat Recent Trades" → navigasi ke `/asi-bot`.
 
+## v9.9.10 — Bump versi (rilis kumulatif v9.9.2–v9.9.10)
+
+Nomor versi dinaikkan ke 9.9.10 (version.ts + app.json + APP_LATEST_VERSION
+backend, sehingga popup update muncul untuk semua build lama). Mengemas:
+verifikasi SL/TP native berlapis + auto-rollback, layering auto-rebalance,
+dual-slot API key, badge DEMO + PnL terpisah, leaderboard 25 demo+real,
+layout Recent Trades (CLOSE baris 2, toggle 10→20, margin USDT, detail
+closed lengkap, "Closed on {exchange}"), 2 chip jaringan DEMO/REAL di
+trade sheet, saldo demo+real live, fix false-positive SL/TP (-4130) +
+konsolidasi row duplikat, popup update dengan release notes terlokalisasi.
+
 ## v9.9.9 (patch 10) — Margin USDT di Setiap Baris Open/Closed
 
 User: setiap posisi open/closed di Recent Trades wajib menampilkan besaran
