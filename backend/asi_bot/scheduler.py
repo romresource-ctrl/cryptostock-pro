@@ -93,6 +93,9 @@ async def _close_soft_trade(db: Any, trade: dict[str, Any], reason: str) -> None
             "closed_at": datetime.now(timezone.utc).isoformat(),
             "close_reason": reason,
             "exit_price": exit_px,
+            # v9.9.9 — samakan field dgn refresh path agar UI history
+            # selalu punya closed_price.
+            "closed_price": exit_px,
             "pnl_usdt": round(pnl, 2),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }},

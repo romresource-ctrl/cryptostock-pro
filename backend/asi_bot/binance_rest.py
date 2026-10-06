@@ -229,3 +229,20 @@ async def cancel_all_algo(
         {"symbol": symbol.upper()},
     )
     return data if isinstance(data, dict) else {"code": code, "data": data}
+
+
+async def last_fill_price(
+    api_key: str, api_secret: str, testnet: bool, symbol: str,
+) -> float | None:
+    """v9.9.9 — Harga fill TERAKHIR user pada simbol (dipakai untuk merekam
+    closed_price saat posisi tertutup oleh SL/TP/trailing di exchange)."""
+    code, data = await _request(
+        "GET", "/fapi/v1/userTrades", api_key, api_secret, testnet,
+        {"symbol": symbol.upper(), "limit": 5},
+    )
+    if code != 200 or not isinstance(data, list) or not data:
+        return None
+    try:
+        return float(data[-1].get("price") or 0) or None
+    except Exception:
+        return None

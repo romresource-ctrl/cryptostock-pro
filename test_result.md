@@ -2223,3 +2223,25 @@ frontend_v999:
           "+N posisi lain" bila open_count>1. Subtitle Top 10 → Top 25.
           Mock rows BTC@50k/TP999999 dihapus dari DB preview (4 row).
           Screenshot-verified. Tetap v9.9.9 (tidak bump).
+
+# ======================================================
+# v9.9.9 patch 2 — Detail lengkap pada trade CLOSED + closed_price
+# ======================================================
+frontend_backend_v999p2:
+  - task: "Closed trades show Entry/SL/TP/Lev/ClosePrice/PnL in Recent Trades"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/asi-bot.tsx /app/backend/asi_bot/binance_rest.py engine.py scheduler.py routes.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          closed_price direkam: refresh Binance ambil last fill
+          (/fapi/v1/userTrades via last_fill_price), soft-close salin
+          exit_price, manual close ikut simpan. UI render baris detail
+          untuk trade closed: chip DEMO/REAL + Entry·SL·TP·margin·lev +
+          "Closed @ harga · ALASAN". Screenshot-verified (SOL demo +
+          ARB real closed). Legacy rows tanpa closed_price → "—".

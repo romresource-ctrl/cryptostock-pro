@@ -750,7 +750,52 @@ export default function ASIBotScreen() {
                         : t("asi_bracket_soft_short")}
                     </Text>
                   </View>
-                ) : null}
+                ) : (
+                  /* v9.9.9 — Trade CLOSED menampilkan detail lengkap yang
+                     sama: chip DEMO/REAL + Entry · SL · TP1/2/3 · margin ·
+                     leverage + baris Close Price (permintaan user: history
+                     tidak boleh kehilangan detail). */
+                  <View style={{ marginTop: 6, gap: 2 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <View style={{
+                        paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 4,
+                        backgroundColor: tr.testnet ? LIGHT_BLUE : GREEN,
+                      }}>
+                        <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 8.5, letterSpacing: 0.4 }}>
+                          {tr.testnet ? t("asi_demo_badge") : "REAL"}
+                        </Text>
+                      </View>
+                      <Text style={{ color: colors.textMuted, fontSize: 10, lineHeight: 15, flex: 1 }} numberOfLines={2}>
+                        <Text style={{ color: colors.textPrimary, fontWeight: "800" }}>
+                          Entry {formatPrice(tr.entry_price, "crypto")}
+                        </Text>
+                        {"  ·  "}
+                        <Text style={{ color: RED, fontWeight: "800" }}>SL {formatPrice(tr.stop_loss, "crypto")}</Text>
+                        {"  ·  "}
+                        <Text style={{ color: GREEN, fontWeight: "800" }}>
+                          TP {(tr.take_profits || []).map((x) => formatPrice(x, "crypto")).join(" / ") || "—"}
+                        </Text>
+                        {"  ·  "}
+                        <Text style={{
+                          color: ((tr.actual_margin_mode || tr.margin_mode) === "cross") ? PURPLE : TEAL,
+                          fontWeight: "800",
+                        }}>
+                          {String(tr.actual_margin_mode || tr.margin_mode || "isolated").toUpperCase()}
+                        </Text>
+                        {"  ·  "}
+                        <Text style={{ color: GREEN, fontWeight: "900", fontSize: 11 }}>
+                          {`${(tr as any).actual_leverage ?? tr.leverage ?? "?"}x`}
+                        </Text>
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 10, fontWeight: "800", color: colors.textMuted }}>
+                      <Text style={{ color: pos ? GREEN : RED }}>
+                        {t("asi_closed_at_price")} {formatPrice(tr.closed_price ?? tr.exit_price, "crypto")}
+                      </Text>
+                      {tr.close_reason ? `  ·  ${String(tr.close_reason).toUpperCase()}` : ""}
+                    </Text>
+                  </View>
+                )}
                 </View>
               );
             })}

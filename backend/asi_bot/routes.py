@@ -377,7 +377,7 @@ def _attach_trade_routes(db: Any) -> None:
             await db.asi_trades.update_one({"_id": t["_id"]}, {"$set": {
                 "status": "closed", "close_reason": "manual",
                 "closed_at": now, "updated_at": now,
-                **{k: v for k, v in upd.items() if k in ("pnl_usdt", "mark_price")},
+                **{k: v for k, v in upd.items() if k in ("pnl_usdt", "mark_price", "closed_price")},
             }})
             return {"ok": True}
         except Exception as e:  # noqa: BLE001
@@ -417,7 +417,7 @@ def _attach_trade_routes(db: Any) -> None:
                         "close_reason": "manual_close_all",
                         "closed_at": now,
                         "updated_at": now,
-                        **{k: v for k, v in upd.items() if k in ("pnl_usdt", "mark_price")},
+                        **{k: v for k, v in upd.items() if k in ("pnl_usdt", "mark_price", "closed_price")},
                     }},
                 )
                 closed_ok += 1

@@ -1151,4 +1151,13 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
         return upd
     # Position closed. Compute realized from stored data.
     realized = float(trade.get("pnl_usdt") or 0.0)
-    return {"status": "closed", "pnl_usdt": round(realized, 2)}
+    # v9.9.9 — Rekam harga close aktual (fill terakhir) untuk history.
+    closed_px = None
+    try:
+        closed_px = await br.last_fill_price(api_key, api_secret, is_testnet, bin_sym)
+    except Exception:
+        pass
+    upd_closed: dict[str, Any] = {"status": "closed", "pnl_usdt": round(realized, 2)}
+    if closed_px:
+        upd_closed["closed_price"] = closed_px
+    return upd_closed

@@ -508,6 +508,9 @@ export type AsiTradeResp = {
   bracket_type?: string | null;
   close_reason?: string | null;
   closed_at?: string | null;
+  // v9.9.9 — harga close aktual (fill terakhir) untuk history detail
+  closed_price?: number | null;
+  exit_price?: number | null;  // legacy soft-close field
   // v9.9.0 — alasan bracket native gagal (ditampilkan saat tap badge ⚠️)
   soft_bracket_reason?: string | null;
   margin_mode?: string | null;

@@ -699,6 +699,27 @@ Fase berikutnya (BELUM):
 - Tombol eksekusi Semi-Auto di kartu AI Suggestions ("⚡ EXECUTE SEMI-AUTO") dengan badge pink SEMI.
 - Konfirmasi sukses kini menyediakan opsi langsung "Lihat Recent Trades" → navigasi ke `/asi-bot`.
 
+## v9.9.9 (patch 2) — History Closed Menampilkan Detail Lengkap + Closed Price
+
+User: trade CLOSED di Recent Trades harus menampilkan detail lengkap
+sama seperti posisi open: Entry Price, SL, TP1/2/3, Leverage, Close
+Price, dan PnL.
+
+**Backend:** field `closed_price` kini direkam saat posisi tertutup —
+refresh Binance mengambil fill terakhir via `last_fill_price()`
+(/fapi/v1/userTrades); soft-close watcher menyalin `exit_price` →
+`closed_price`; close manual & close-all ikut menyimpan. Trade legacy
+tanpa closed_price menampilkan "—".
+
+**Frontend:** baris detail yang sebelumnya hanya untuk posisi OPEN kini
+juga dirender untuk CLOSED: chip DEMO/REAL + Entry · SL · TP1/2/3 ·
+ISOLATED/CROSS · leverage hijau + baris "Closed @ <harga> · <alasan
+TP/SL/MANUAL>". PnL tetap di kanan atas ($ besar + %).
+
+Screenshot-verified: SOL DEMO closed menampilkan Entry 118.50 · SL 115.00
+· TP 121.00/123.50/126.00 · ISOLATED 20x · Closed @ 121.00 · TP · +$5.00
+(+42.2%). ARB REAL cross tampil setara. Lint pass. Tetap v9.9.9.
+
 ## v9.9.9 (patch) — Copy Trade: EXECUTE Fungsional + Detail Lengkap + Bersih Mock
 
 **Masalah 1:** Tombol EXECUTE di leaderboard tidak bisa diklik — memang
