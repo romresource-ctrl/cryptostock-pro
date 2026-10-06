@@ -699,6 +699,40 @@ Fase berikutnya (BELUM):
 - Tombol eksekusi Semi-Auto di kartu AI Suggestions ("⚡ EXECUTE SEMI-AUTO") dengan badge pink SEMI.
 - Konfirmasi sukses kini menyediakan opsi langsung "Lihat Recent Trades" → navigasi ke `/asi-bot`.
 
+## v9.9.9 (patch 9) — FIX False-Positive "Tanpa SL/TP" + Error -4130 + Row Duplikat
+
+**Temuan dari screenshot user (kritis):**
+1. Posisi XRP/BCH demo user SEBENARNYA terproteksi — SL & TP algo ada di
+   Binance (diverifikasi langsung: XRP SL 1.5155 + 3 TP, BCH SL 318.17 +
+   2 TP), tapi UI menandai "tanpa SL/TP / soft watcher".
+2. Repair gagal -4130 "closePosition order is existing" karena mencoba
+   memasang SL kedua padahal sudah ada.
+3. Dua row XRP SHORT identik (warisan kode pra-v9.9.4 layering).
+
+**Root cause:** verifikasi hanya mencocokkan `sl_order_id` tersimpan vs
+openAlgoOrders. Bila ID basi/tidak cocok (trade dari kode lama, layering,
+atau SL/TP dipasang manual user di app Binance), posisi terproteksi salah
+ditandai tanpa proteksi.
+
+**Fix (engine + scheduler):**
+- `_refresh_binance`: verifikasi berlapis — (1) ID cocok, (2) karakteristik
+  algo (ada STOP_MARKET closePosition searah = SL armed; TAKE_PROFIT_MARKET
+  searah = TP armed), (3) legacy openOrders. Terverifikasi → bracket_type
+  otomatis "hard", label soft dihapus.
+- `attach_brackets`: cek proteksi existing (algo + legacy) SEBELUM pasang;
+  bila sudah ada → ok=True dengan note, TIDAK membatalkan/mengganggu order
+  yang ada. -4130 kini diverifikasi & dianggap armed, bukan error.
+  cancel_all_algo hanya dijalankan bila memang akan memasang SL baru.
+- Scheduler `_refresh_open_pnl`: auto-konsolidasi row open duplikat
+  (device+simbol+exchange+jaringan sama) → row lama status "layered".
+- Frontend: ⚠️ & banner repair hanya muncul bila bracket_live === false
+  atau soft yang belum terverifikasi — bukan lagi berdasar sl_order_id null.
+
+**E2E testnet PASS:** repair XRP dengan SL+TP existing → ok=True, notes
+"sudah terpasang", 0 errors, 4 order tidak tersentuh. Posisi demo user
+(XRP short -2565.3) sempat tereduksi 30 XRP oleh order tes — sudah
+dikembalikan persis.
+
 ## v9.9.9 (patch 8) — Kotak Angka Mengikuti Chip Jaringan (Demo/Real)
 
 User: bila chip DEMO dipilih, kotak bawah (USDT Balance, Margin Used,

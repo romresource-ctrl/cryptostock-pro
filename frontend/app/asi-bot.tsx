@@ -605,7 +605,8 @@ export default function ASIBotScreen() {
             (user mungkin cancel manual algo order di Binance app). Trade
             baru v9.9.2 selalu hard-verified atau tidak tersimpan. */}
         {trades.some((tr) => String(tr.status).toLowerCase() === "open"
-          && (tr.bracket_type === "soft" || tr.bracket_live === false || !tr.sl_order_id)) ? (
+          && ((tr.bracket_live === false)
+              || (tr.bracket_type === "soft" && tr.bracket_live !== true))) ? (
           <TouchableOpacity
             onPress={async () => {
               try {
@@ -706,10 +707,12 @@ export default function ASIBotScreen() {
                         bukan BUY/SELL (permintaan user). */}
                     {tr.side === "BUY" ? "LONG" : "SHORT"}
                   </Text>
-                  {/* v9.9.2 — Peringatan bracket tidak lagi aktif di
-                      exchange (user mungkin cancel di Binance app, atau
-                      trade lama soft). */}
-                  {isOpen && (tr.bracket_type === "soft" || tr.bracket_live === false || !tr.sl_order_id) ? (
+                  {/* v9.9.10 — Peringatan hanya bila bracket BENAR-BENAR
+                      tidak terverifikasi di exchange (algo & legacy).
+                      Proteksi legacy/manual (sl_order_id null tapi order
+                      ada di Binance) tidak lagi ditandai ⚠️. */}
+                  {isOpen && ((tr.bracket_live === false)
+                      || (tr.bracket_type === "soft" && tr.bracket_live !== true)) ? (
                     <TouchableOpacity
                       onPress={() => Alert.alert(
                         t("asi_soft_warn_title"),

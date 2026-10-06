@@ -143,8 +143,41 @@ async def _watch_soft_brackets(db: Any) -> None:
             logger.warning("watcher error on %s: %s", t.get("_id"), e)
 
 
+async def _consolidate_duplicate_open(db: Any) -> None:
+    """v9.9.10 — Row open GANDA untuk (device, simbol, exchange, jaringan)
+    yang sama adalah warisan kode lama (Binance one-way mode hanya punya
+    SATU posisi fisik). Gabungkan: row terbaru dipertahankan, sisanya
+    ditandai 'layered' agar history rapi & PnL tidak tampil dobel."""
+    groups: dict[tuple, list[dict[str, Any]]] = {}
+    cursor = db.asi_trades.find({"status": "open"})
+    async for t in cursor:
+        key = (t.get("device_id"), t.get("symbol"), t.get("exchange"),
+               bool(t.get("testnet", True)))
+        groups.setdefault(key, []).append(t)
+    now = datetime.now(timezone.utc).isoformat()
+    for rows in groups.values():
+        if len(rows) <= 1:
+            continue
+        rows.sort(key=lambda r: r.get("created_at") or "")
+        keep = rows[-1]
+        try:
+            await db.asi_trades.update_many(
+                {"_id": {"$in": [r["_id"] for r in rows[:-1]]}},
+                {"$set": {
+                    "status": "layered", "close_reason": "merged_duplicate",
+                    "merged_into": keep["_id"],
+                    "closed_at": now, "updated_at": now,
+                }},
+            )
+            logger.info("consolidated %d duplicate open rows into %s",
+                        len(rows) - 1, keep["_id"])
+        except Exception as e:
+            logger.warning("consolidate failed %s: %s", key, e)
+
+
 async def _refresh_open_pnl(db: Any) -> None:
     """Keep unrealized PnL fresh for all open trades (hard & soft)."""
+    await _consolidate_duplicate_open(db)
     cursor = db.asi_trades.find({"status": "open"})
     async for t in cursor:
         try:

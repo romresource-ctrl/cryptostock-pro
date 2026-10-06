@@ -832,35 +832,97 @@ async def attach_brackets(
     sl_price = round_to_tick(stop_loss, tick) if tick else stop_loss
     tps_rounded = [round_to_tick(float(t), tick) for t in tps] if tick else [float(t) for t in tps]
 
-    # First cancel any stale algo orders for this symbol
+    # v9.9.10 — JANGAN cancel dulu: proteksi existing (algo/legacy) sah
+    # dan akan terdeteksi di bawah. Cancel hanya dilakukan tepat sebelum
+    # memasang SL baru (bila memang belum ada proteksi).
+
+    # v9.9.10 — EXISTING-PROTECTION-AWARE: cek DUA sumber sebelum pasang:
+    # (1) Algo API (order yang dibuat v9.9.2+), (2) legacy openOrders
+    # (kode lama / manual user di app Binance). closePosition SL yang
+    # sudah ada membuat Binance menolak SL baru dengan -4130 — dan
+    # proteksi yang sudah ada itu SAH, jangan diganggu.
     try:
-        await br.cancel_all_algo(api_key, api_secret, is_testnet, bin_sym)
+        legacy_orders = await br.open_orders_legacy(
+            api_key, api_secret, is_testnet, bin_sym)
     except Exception:
-        pass
+        legacy_orders = []
+    try:
+        existing_algos = await br.open_algo_orders(
+            api_key, api_secret, is_testnet, bin_sym)
+    except Exception:
+        existing_algos = []
+    existing_sl = (
+        any(bool(o.get("closePosition"))
+            and str(o.get("type", "")).startswith("STOP")
+            and o.get("side") == close_side for o in legacy_orders)
+        or any(a.get("orderType") == "STOP_MARKET"
+               and a.get("side") == close_side
+               and a.get("closePosition") in (True, "true", "True")
+               for a in existing_algos)
+    )
+    existing_tp = (
+        any(str(o.get("type", "")).startswith("TAKE_PROFIT")
+            and o.get("side") == close_side for o in legacy_orders)
+        or any(a.get("orderType") == "TAKE_PROFIT_MARKET"
+               and a.get("side") == close_side for a in existing_algos)
+    )
+    legacy_sl = existing_sl
+    legacy_tp_close = existing_tp
 
     errors: list[str] = []
     notes: list[str] = []
     sl_algo_id: str | None = None
     sl_passed = False
-    for attempt in range(3):
+    if legacy_sl:
+        notes.append("SL sudah terpasang (order existing di Binance)")
+    else:
+        # Belum ada proteksi → bersihkan algo usang lalu pasang baru.
         try:
-            r = await br.place_algo(
-                api_key, api_secret, is_testnet,
-                symbol=bin_sym, side=close_side,
-                order_type="STOP_MARKET",
-                trigger_price=sl_price, close_position=True,
-            )
-            sl_algo_id = str(r.get("algoId"))
-            break
-        except Exception as e:
-            # v9.9.8 — -2021 "would immediately trigger" pada SL artinya
-            # harga SUDAH melewati level SL → posisi sedang di zona rugi.
-            # Tindakan protektif yang benar = market close sekarang (persis
-            # yang akan dilakukan SL begitu terpasang). Bukan kegagalan.
-            if "-2021" in str(e):
-                sl_passed = True
+            await br.cancel_all_algo(api_key, api_secret, is_testnet, bin_sym)
+        except Exception:
+            pass
+        for attempt in range(3):
+            try:
+                r = await br.place_algo(
+                    api_key, api_secret, is_testnet,
+                    symbol=bin_sym, side=close_side,
+                    order_type="STOP_MARKET",
+                    trigger_price=sl_price, close_position=True,
+                )
+                sl_algo_id = str(r.get("algoId"))
                 break
-            errors.append(f"SL try{attempt + 1}: {str(e)[:160]}")
+            except Exception as e:
+                # v9.9.8 — -2021 "would immediately trigger" pada SL artinya
+                # harga SUDAH melewati level SL → posisi sedang di zona rugi.
+                # Tindakan protektif yang benar = market close sekarang (persis
+                # yang akan dilakukan SL begitu terpasang). Bukan kegagalan.
+                if "-2021" in str(e):
+                    sl_passed = True
+                    break
+                # v9.9.10 — -4130: closePosition SL SUDAH ADA di Binance
+                # (algo maupun legacy/manual). Verifikasi & anggap armed —
+                # jangan laporkan sebagai kegagalan.
+                if "-4130" in str(e):
+                    try:
+                        legacy_orders = await br.open_orders_legacy(
+                            api_key, api_secret, is_testnet, bin_sym)
+                        algos_now = await br.open_algo_orders(
+                            api_key, api_secret, is_testnet, bin_sym)
+                        legacy_sl = (
+                            any(bool(o.get("closePosition"))
+                                and str(o.get("type", "")).startswith("STOP")
+                                and o.get("side") == close_side for o in legacy_orders)
+                            or any(a.get("orderType") == "STOP_MARKET"
+                                   and a.get("side") == close_side
+                                   and a.get("closePosition") in (True, "true", "True")
+                                   for a in algos_now)
+                        )
+                    except Exception:
+                        pass
+                    if legacy_sl:
+                        notes.append("SL sudah terpasang (existing)")
+                        break
+                errors.append(f"SL try{attempt + 1}: {str(e)[:160]}")
 
     if sl_passed:
         try:
@@ -887,34 +949,42 @@ async def attach_brackets(
     tp_parts = _split_tp_qty(qty, step or None, tp_count)
     tp_algo_ids: list[str | None] = []
     tp_failed = 0
-    for i, tp in enumerate(tps_rounded[:tp_count]):
-        tp_qty = tp_parts[i] if i < len(tp_parts) else 0.0
-        if tp_qty <= 0:
-            tp_algo_ids.append(None)
-            continue
-        placed: str | None = None
-        for attempt in range(3):
-            try:
-                r = await br.place_algo(
-                    api_key, api_secret, is_testnet,
-                    symbol=bin_sym, side=close_side,
-                    order_type="TAKE_PROFIT_MARKET",
-                    trigger_price=tp, quantity=tp_qty,
-                )
-                placed = str(r.get("algoId"))
-                break
-            except Exception as e:
-                # v9.9.8 — -2021 pada TP artinya harga sudah MELEWATI level
-                # TP (posisi profit melewati target). TP itu tidak lagi
-                # relevan → lewati diam-diam, BUKAN kegagalan. Posisi tetap
-                # terlindungi SL + TP lain.
-                if "-2021" in str(e):
-                    notes.append(f"TP{i + 1} level already passed — skipped")
+    if legacy_tp_close:
+        # v9.9.10 — TP closePosition legacy sudah menutupi SELURUH posisi.
+        notes.append("TP sudah terpasang (existing closePosition di Binance)")
+    else:
+        for i, tp in enumerate(tps_rounded[:tp_count]):
+            tp_qty = tp_parts[i] if i < len(tp_parts) else 0.0
+            if tp_qty <= 0:
+                tp_algo_ids.append(None)
+                continue
+            placed: str | None = None
+            for attempt in range(3):
+                try:
+                    r = await br.place_algo(
+                        api_key, api_secret, is_testnet,
+                        symbol=bin_sym, side=close_side,
+                        order_type="TAKE_PROFIT_MARKET",
+                        trigger_price=tp, quantity=tp_qty,
+                    )
+                    placed = str(r.get("algoId"))
                     break
-                if attempt == 2:
-                    tp_failed += 1
-                    errors.append(f"TP{i + 1} try{attempt + 1}: {str(e)[:160]}")
-        tp_algo_ids.append(placed)
+                except Exception as e:
+                    # v9.9.8 — -2021 pada TP artinya harga sudah MELEWATI level
+                    # TP (posisi profit melewati target). TP itu tidak lagi
+                    # relevan → lewati diam-diam, BUKAN kegagalan. Posisi tetap
+                    # terlindungi SL + TP lain.
+                    if "-2021" in str(e):
+                        notes.append(f"TP{i + 1} level already passed — skipped")
+                        break
+                    if "-4130" in str(e):
+                        # TP closePosition legacy sudah ada → sudah ter-cover.
+                        notes.append(f"TP{i + 1} covered by existing order")
+                        break
+                    if attempt == 2:
+                        tp_failed += 1
+                        errors.append(f"TP{i + 1} try{attempt + 1}: {str(e)[:160]}")
+            tp_algo_ids.append(placed)
 
     # Verify via openAlgoOrders
     try:
@@ -922,7 +992,8 @@ async def attach_brackets(
     except Exception:
         openalgos = []
     live_ids = {str(a.get("algoId")) for a in openalgos}
-    sl_ok = bool(sl_algo_id and sl_algo_id in live_ids)
+    # v9.9.10 — SL/TP existing legacy juga dihitung sebagai terpasang.
+    sl_ok = bool(sl_algo_id and sl_algo_id in live_ids) or legacy_sl
     tp_ok = sum(1 for t in tp_algo_ids if t and t in live_ids)
     expected_tp = sum(1 for p in tp_parts if p > 0)
     # v9.9.8 — hard = SL terverifikasi DAN tidak ada TP yang GAGAL NYATA.
@@ -1143,8 +1214,45 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
             live_ids = {str(a.get("algoId")) for a in openalgos}
             sl_id = trade.get("sl_order_id")
             tp_ids = trade.get("tp_order_ids") or []
+            close_side = "SELL" if float(pos.get("positionAmt") or 0) > 0 else "BUY"
             sl_live = bool(sl_id and str(sl_id) in live_ids)
             tp_live = any(str(t) in live_ids for t in tp_ids if t)
+            # v9.9.10 — ID di DB bisa basi (trade dieksekusi kode lama /
+            # posisi di-layer). Verifikasi berdasarkan KARAKTERISTIK order:
+            # ada STOP_MARKET closePosition searah = SL armed; ada
+            # TAKE_PROFIT_MARKET searah = TP armed.
+            if not sl_live:
+                sl_live = any(
+                    a.get("orderType") == "STOP_MARKET"
+                    and a.get("side") == close_side
+                    and a.get("closePosition") in (True, "true", "True")
+                    for a in openalgos)
+            if not tp_live:
+                tp_live = any(
+                    a.get("orderType") == "TAKE_PROFIT_MARKET"
+                    and a.get("side") == close_side
+                    for a in openalgos)
+            # v9.9.10 — FALLBACK LEGACY: SL/TP yang dipasang kode lama
+            # (/fapi/v1/order) atau manual oleh user di app Binance tidak
+            # tercatat di Algo API. Cek openOrders legacy sebelum
+            # menyatakan posisi tanpa proteksi.
+            if not (sl_live and tp_live):
+                try:
+                    legacy = await br.open_orders_legacy(
+                        api_key, api_secret, is_testnet, bin_sym)
+                except Exception:
+                    legacy = []
+                if not sl_live:
+                    sl_live = any(
+                        bool(o.get("closePosition"))
+                        and str(o.get("type", "")).startswith("STOP")
+                        and o.get("side") == close_side
+                        for o in legacy)
+                if not tp_live:
+                    tp_live = any(
+                        str(o.get("type", "")).startswith("TAKE_PROFIT")
+                        and o.get("side") == close_side
+                        for o in legacy)
             bracket_live = sl_live and tp_live
         upd: dict[str, Any] = {
             "status": "open",
@@ -1155,6 +1263,12 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
         }
         if bracket_live is not None:
             upd["bracket_live"] = bracket_live
+            # v9.9.10 — bracket terverifikasi (algo ATAU legacy) → tandai
+            # hard & hapus label soft yang salah.
+            if bracket_live:
+                upd["bracket_type"] = "hard"
+                upd["soft_bracket"] = False
+                upd["soft_bracket_reason"] = None
         return upd
     # Position closed. Compute realized from stored data.
     realized = float(trade.get("pnl_usdt") or 0.0)

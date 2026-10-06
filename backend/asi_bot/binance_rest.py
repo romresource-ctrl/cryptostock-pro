@@ -246,3 +246,24 @@ async def last_fill_price(
         return float(data[-1].get("price") or 0) or None
     except Exception:
         return None
+
+
+async def open_orders_legacy(
+    api_key: str, api_secret: str, testnet: bool, symbol: str,
+) -> list[dict[str, Any]]:
+    """v9.9.10 — Legacy conditional orders (endpoint /fapi/v1/order).
+
+    SL/TP yang dipasang oleh KODE LAMA (sebelum migrasi Algo API) atau
+    yang dipasang MANUAL oleh user lewat fitur "TP/SL for position" di
+    aplikasi Binance TIDAK muncul di GET /openAlgoOrders. Tanpa cek ini:
+      - posisi yang SEBENARNYA terproteksi salah ditandai "tanpa SL/TP";
+      - repair mencoba pasang SL closePosition baru → Binance menolak
+        -4130 ("an open stop order with closePosition is existing").
+    """
+    code, data = await _request(
+        "GET", "/fapi/v1/openOrders", api_key, api_secret, testnet,
+        {"symbol": symbol.upper()},
+    )
+    if code != 200 or not isinstance(data, list):
+        return []
+    return data

@@ -2287,3 +2287,27 @@ frontend_v999p7:
           per jaringan (tidak ada fallback silang). Jaringan tanpa
           credential → chip redup "Not connected" + empty-state connect.
           Lint pass.
+
+# ======================================================
+# v9.9.9 patch 9 — FIX false-positive tanpa SL/TP + -4130 + duplikat row
+# ======================================================
+backend_v999p9:
+  - task: "Verifikasi bracket berlapis (ID → karakteristik algo → legacy) + repair existing-aware + konsolidasi duplikat"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/engine.py scheduler.py binance_rest.py /app/frontend/app/asi-bot.tsx"
+    stuck_count: 0
+    priority: "critical"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Screenshot user menunjukkan XRP/BCH demo ditandai tanpa SL/TP
+          padahal SL+TP algo ADA di Binance (diverifikasi langsung).
+          -4130 pada repair = closePosition SL sudah ada. Fix: verifikasi
+          karakteristik order + legacy openOrders; repair existing-aware
+          (tidak ganggu proteksi sah); scheduler auto-merge row duplikat.
+          E2E: repair XRP ok=True tanpa menyentuh 4 order existing.
+          CATATAN INSIDEN: order tes sempat mereduksi posisi demo user
+          30 XRP — dikembalikan (positionAmt -2565.3 utuh).
