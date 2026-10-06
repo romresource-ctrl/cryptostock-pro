@@ -16,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { useTheme } from "@/src/theme/ThemeContext";
 import { useI18n } from "@/src/i18n/I18nContext";
+import { useTraderProfile } from "@/src/lib/useTraderProfile";
 import { getDeviceId } from "@/src/lib/deviceId";
 import {
   api, formatPrice, type AsiCredential, type AsiPreview,
@@ -51,6 +52,7 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
   const router = useRouter();
   const { colors } = useTheme();
   const { t } = useI18n();
+  const { apiProfile } = useTraderProfile();
   const insets = useSafeAreaInsets();
 
   // v9.8.7 — Tutup SEMUA layer (trade sheet + suggestions popup) lalu
@@ -209,6 +211,8 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
         tp_count: tpCount, trailing_callback_rate: trailingCbRate,
         margin_mode: marginMode,
         testnet: activeTestnet,
+        // v9.9.13 — label formula di kartu Recent Trades
+        profile: apiProfile ?? "confluence",
       });
       // v9.9.13 — Entry LIMIT deep: order dipasang di harga sinyal dan
       // MENUNGGU terisi (maks 1 candle). Belum ada posisi terbuka.

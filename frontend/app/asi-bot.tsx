@@ -846,6 +846,12 @@ export default function ASIBotScreen() {
                           {`Margin $${(tr.margin_usdt ?? ((tr.entry_price && tr.qty && tr.leverage) ? tr.entry_price * tr.qty / tr.leverage : 0)).toFixed(2)}`}
                         </Text>
                         {"  ·  "}
+                        {/* v9.9.13 — Entry Price di antara Margin dan SL
+                            (permintaan user, menyusul baris closed). */}
+                        <Text style={{ color: colors.textPrimary, fontWeight: "800" }}>
+                          Entry {formatPrice(tr.entry_price, "crypto")}
+                        </Text>
+                        {"  ·  "}
                         <Text style={{ color: RED, fontWeight: "800" }}>SL {formatPrice(tr.stop_loss, "crypto")}</Text>
                         {"  ·  "}
                         <Text style={{ color: GREEN, fontWeight: "800" }}>
@@ -881,6 +887,15 @@ export default function ASIBotScreen() {
                         </Text>
                       </TouchableOpacity>
                     </View>
+                    {/* v9.9.13 — Baris ketiga: formula yang dipakai saat
+                        eksekusi (di bawah baris tombol CLOSE). Hanya utk
+                        trade yang merekam profile; trade lama tanpa field
+                        tidak ditebak labelnya. */}
+                    {(tr as any).profile ? formulaLines(t, (tr as any).profile).map((ln, li) => (
+                      <Text key={li} style={{ fontSize: 9, fontWeight: "700", color: colors.textMuted, lineHeight: 13 }}>
+                        {li === 0 ? `⚙️ ${t("asi_formula_label")}: ${ln}` : ln}
+                      </Text>
+                    )) : null}
                     <Text style={{
                       fontSize: 10, fontWeight: "800",
                       color: isPending ? GOLD : (tr.bracket_type === "hard" && tr.bracket_live !== false) ? GREEN : ORANGE,
@@ -943,6 +958,13 @@ export default function ASIBotScreen() {
                       </Text>
                       {tr.close_reason ? `  ·  ${String(tr.close_reason).toUpperCase()}` : ""}
                     </Text>
+                    {/* v9.9.13 — Formula yang dipakai saat eksekusi
+                        (history tetap menampilkan konteks strategi). */}
+                    {(tr as any).profile ? formulaLines(t, (tr as any).profile).map((ln, li) => (
+                      <Text key={li} style={{ fontSize: 9, fontWeight: "700", color: colors.textMuted, lineHeight: 13 }}>
+                        {li === 0 ? `⚙️ ${t("asi_formula_label")}: ${ln}` : ln}
+                      </Text>
+                    )) : null}
                   </View>
                 )}
                 </View>
@@ -1103,6 +1125,17 @@ function StatusCard({ kind, running, onPrimary, onStop, colors, t }: {
       )}
     </View>
   );
+}
+
+// v9.9.13 — Label formula yang dipakai saat trade dieksekusi (field
+// `profile` di trade record). Confluence = mesin default; profil VWAP
+// (scalper/day/swing) menyertakan baris Macro/Risk (50-SMA & 3R Choke).
+function formulaLines(t: (k: string) => string, profile?: string | null): string[] {
+  const p = profile || "confluence";
+  if (p === "scalper") return [t("asi_formula_scalper"), t("asi_formula_macro")];
+  if (p === "day") return [t("asi_formula_day"), t("asi_formula_macro")];
+  if (p === "swing") return [t("asi_formula_swing"), t("asi_formula_macro")];
+  return [t("asi_formula_confluence")];
 }
 
 function ParamRow({ label, value, onDec, onInc, colors, testID }: {

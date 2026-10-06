@@ -502,6 +502,8 @@ export type AsiTradeBody = {
   margin_mode?: "isolated" | "cross";
   // v9.9.5 — Network (undefined → backend pakai active_testnet config)
   testnet?: boolean;
+  // v9.9.13 — Profil formula saat eksekusi (label di kartu history)
+  profile?: string | null;
 };
 export type AsiPreview = {
   ok: boolean; balance_usdt: number; margin_usdt: number;

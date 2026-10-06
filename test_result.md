@@ -2548,3 +2548,43 @@ frontend_v9913c:
           (asi_delete). Catatan: klik force pada action tersembunyi tidak
           bekerja di web preview (keterbatasan simulasi mouse); gesture
           swipe native RNGH standar untuk device asli.
+
+# ======================================================
+# v9.9.13d — Label formula per kartu + Entry Price di baris detail
+# ======================================================
+backend_v9913d:
+  - task: "Trade record menyimpan profile formula saat eksekusi"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/engine.py, /app/backend/asi_bot/routes.py, /app/backend/asi_bot/scheduler.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          TradePayload.profile + execute_trade(profile=...) tersimpan di
+          record (pending/filled/ccxt fallback). Full-Auto scanner
+          meneruskan cfg.profile. Semi-Auto sheet mengirim apiProfile
+          (default confluence).
+frontend_v9913d:
+  - task: "Baris formula di bawah tombol CLOSE + Entry antara Margin dan SL"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/asi-bot.tsx, /app/frontend/src/components/AsiTradeSheet.tsx, /app/frontend/src/i18n/I18nContext.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Baris formula per profile: Confluence v9 / Scalper (7 Fast VWAP,
+          Box & Open-Scalp) / Intra-Day (5 KISS VWAP, Reclaim & Box-20) /
+          Swing (5 Multi-day Trend & Box-50) + baris Macro/Risk (50-SMA &
+          3R Choke) utk profil VWAP. Trade lama tanpa field profile tidak
+          diberi label (tidak ditebak). Entry Price kini tampil di antara
+          Margin dan SL pada baris OPEN (closed sudah ada). Screenshot-
+          verified: SOL scalper open (Entry 118 + formula VWAP + macro),
+          BTC day closed (Intra-Day), TRX confluence closed (Confluence v9).

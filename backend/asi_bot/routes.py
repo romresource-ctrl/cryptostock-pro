@@ -144,6 +144,9 @@ class TradePayload(BaseModel):
     risk_pct: float = Field(5.0, ge=1.0, le=30.0)
     leverage: int = Field(10, ge=1, le=125)
     mode: Literal["semi", "full"] = "semi"
+    # v9.9.13 — Profil formula yang dipakai saat eksekusi (untuk label
+    # formula di kartu Recent Trades).
+    profile: str | None = None
     # v9.6.0 — TP strategy & trailing stop
     tp_count: Literal[1, 2, 3] = 3
     trailing_callback_rate: float = Field(2.0, ge=0.0, le=10.0)
@@ -429,6 +432,7 @@ def _attach_trade_routes(db: Any) -> None:
             tp_count=payload.tp_count,
             trailing_callback_rate=payload.trailing_callback_rate,
             margin_mode=payload.margin_mode,
+            profile=payload.profile,
         )
         if not res.get("ok"):
             # v9.9.2 — Pass through structured reason & message so frontend
