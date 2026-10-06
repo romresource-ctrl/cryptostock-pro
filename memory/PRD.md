@@ -699,6 +699,14 @@ Fase berikutnya (BELUM):
 - Tombol eksekusi Semi-Auto di kartu AI Suggestions ("⚡ EXECUTE SEMI-AUTO") dengan badge pink SEMI.
 - Konfirmasi sukses kini menyediakan opsi langsung "Lihat Recent Trades" → navigasi ke `/asi-bot`.
 
+## v9.9.9 (patch 10) — Margin USDT di Setiap Baris Open/Closed
+
+User: setiap posisi open/closed di Recent Trades wajib menampilkan besaran
+margin USDT. Implementasi: baris detail (open & closed) diawali
+`Margin $XX.XX` (emas tebal), memakai `margin_usdt` tersimpan dengan
+fallback hitung `entry*qty/leverage` untuk trade lama. Screenshot-verified
+(Margin $39.32 pada history ETH). Lint pass. Tetap v9.9.9.
+
 ## v9.9.9 (patch 9) — FIX False-Positive "Tanpa SL/TP" + Error -4130 + Row Duplikat
 
 **Temuan dari screenshot user (kritis):**
