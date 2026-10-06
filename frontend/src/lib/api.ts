@@ -406,8 +406,10 @@ export const api = {
       send<AsiTradeResp>(
         `/asi/trades/execute?device_id=${encodeURIComponent(deviceId)}`, "POST", body,
       ),
-    listTrades: (deviceId: string) =>
-      get<{ items: AsiTradeResp[] }>(`/asi/trades?device_id=${encodeURIComponent(deviceId)}`),
+    listTrades: (deviceId: string, limit: number = 20) =>
+      get<{ items: AsiTradeResp[] }>(
+        `/asi/trades?device_id=${encodeURIComponent(deviceId)}&limit=${limit}`,
+      ),
     closeAllTrades: (deviceId: string) =>
       send<{ ok: boolean; closed: number; errors: { symbol: string; error: string }[] }>(
         `/asi/trades/close-all?device_id=${encodeURIComponent(deviceId)}`, "POST",

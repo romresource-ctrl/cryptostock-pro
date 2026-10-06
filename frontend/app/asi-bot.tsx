@@ -63,6 +63,10 @@ export default function ASIBotScreen() {
   });
   const [pnl, setPnl] = useState<AsiPnl | null>(null);
   const [trades, setTrades] = useState<AsiTradeResp[]>([]);
+  // v9.9.8 — Recent Trades: 10 tampil default, toggle kanan expand ke
+  // max 20 dengan scroll ke bawah. Trade CLOSED (demo maupun real) tetap
+  // tersimpan sebagai history — tidak pernah dihapus dari daftar.
+  const [tradesExpanded, setTradesExpanded] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
   // v9.7.6 — track in-flight close requests per trade id
   const [closingIds, setClosingIds] = useState<Record<string, boolean>>({});
@@ -111,7 +115,7 @@ export default function ASIBotScreen() {
       const b = await api.asi.getBot(id);
       if (b.exists) setBot({ ...bot, ...b });
       const p = await api.asi.pnl(id); setPnl(p);
-      const t2 = await api.asi.listTrades(id); setTrades(t2.items.slice(0, 10));
+      const t2 = await api.asi.listTrades(id, 20); setTrades(t2.items.slice(0, 20));
     } catch {}
     finally { setCredsLoaded(true); }
   };
@@ -522,8 +526,34 @@ export default function ASIBotScreen() {
 
         {/* Leaderboard — hidden on this screen; pindah ke /copy-trade */}
 
-        {/* Recent trades — v9.7.6: selalu tampil; SEMI/FULL badge + tombol CLOSE untuk posisi open */}
-        <SectionHeader title={t("asi_sec_recent")} />
+        {/* Recent trades — v9.7.6: selalu tampil; SEMI/FULL badge + tombol CLOSE untuk posisi open.
+            v9.9.8: trade closed TETAP tampil sebagai history (tidak dihapus).
+            Default 10 terbaru; toggle chevron di kanan expand ke max 20
+            dengan scroll di dalam area daftar. */}
+        <View style={{ flexDirection: "row", alignItems: "center", marginTop: 20, marginBottom: 10 }}>
+          <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 13, letterSpacing: 0.3, flex: 1 }}>
+            {t("asi_sec_recent")}
+          </Text>
+          {trades.length > 10 ? (
+            <TouchableOpacity
+              onPress={() => setTradesExpanded((v) => !v)}
+              style={{
+                flexDirection: "row", alignItems: "center", gap: 4,
+                paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
+                borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
+              }}
+              testID="asi-trades-toggle"
+            >
+              <Text style={{ color: colors.textMuted, fontSize: 11, fontWeight: "800" }}>
+                {tradesExpanded ? "10" : `${trades.length}`}
+              </Text>
+              <Ionicons
+                name={tradesExpanded ? "chevron-up" : "chevron-down"}
+                size={14} color={colors.textMuted}
+              />
+            </TouchableOpacity>
+          ) : null}
+        </View>
         {/* v9.9.2 — Banner REPAIR hanya untuk trade LAMA (pre-v9.9.2) yang
             masih berstatus soft, ATAU trade baru di mana bracket_live=false
             (user mungkin cancel manual algo order di Binance app). Trade
@@ -569,8 +599,12 @@ export default function ASIBotScreen() {
             </Text>
           </View>
         ) : (
-          <>
-            {trades.map((tr, i) => {
+          <ScrollView
+            style={tradesExpanded ? { maxHeight: 520 } : undefined}
+            nestedScrollEnabled
+            showsVerticalScrollIndicator={tradesExpanded}
+          >
+            {(tradesExpanded ? trades : trades.slice(0, 10)).map((tr, i) => {
               // v9.8.4 — Case-insensitive: beberapa row lama bisa menyimpan
               // status "OPEN"/"Closed". Tombol CLOSE HARUS selalu muncul
               // (dan aktif) untuk setiap posisi yang masih terbuka.
@@ -720,7 +754,7 @@ export default function ASIBotScreen() {
                 </View>
               );
             })}
-          </>
+          </ScrollView>
         )}
       </ScrollView>
 

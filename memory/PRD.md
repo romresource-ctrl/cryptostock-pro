@@ -699,6 +699,25 @@ Fase berikutnya (BELUM):
 - Tombol eksekusi Semi-Auto di kartu AI Suggestions ("⚡ EXECUTE SEMI-AUTO") dengan badge pink SEMI.
 - Konfirmasi sukses kini menyediakan opsi langsung "Lihat Recent Trades" → navigasi ke `/asi-bot`.
 
+## v9.9.8 (patch 3, tanpa bump) — History Recent Trades Persisten + Toggle 10/20
+
+User: (1) trade closed (demo maupun real) TIDAK boleh hilang dari Recent
+Trades — history harus tetap terlihat; (2) daftar tampilkan 10 trade,
+bisa expand hingga max 20 via toggle di sisi kanan + scroll ke bawah.
+
+Implementasi:
+- Backend memang tidak pernah menghapus trade (status closed tetap di DB)
+  — dikonfirmasi & dipertahankan; row "layered" (gabungan averaging) juga
+  tetap tampil sebagai history.
+- api.listTrades kini menerima limit (default 20) — frontend fetch 20.
+- Header "Recent Trades" punya toggle chevron di kanan (muncul hanya bila
+  >10 trade) menampilkan jumlah total; tap → expand ke max 20 dalam
+  ScrollView bersarang (maxHeight 520, nestedScrollEnabled) yang bisa
+  di-scroll ke bawah; tap lagi → kembali ke 10.
+- Screenshot-verified dengan 13 trade (1 open + 12 dummy closed):
+  collapsed 10 baris + badge "13 ⌄"; expanded menampilkan baris ke-13
+  (ATOM) via scroll; toggle kembali "10 ⌃". Dummy dihapus setelah tes.
+
 ## v9.9.8 (patch 2, tanpa bump) — Tombol CLOSE pindah ke baris 2
 
 User: CLOSE dipindah ke baris kedua persis di bawah angka PnL (paling
