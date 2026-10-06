@@ -903,7 +903,7 @@ export default function ASIBotScreen() {
                         {isPending
                           ? t("asi_pending_line")
                           : (tr.bracket_type === "hard" && tr.bracket_live !== false)
-                            ? t("asi_bracket_native_ok")
+                            ? `✓ SL/TP on ${{ binance: "Binance", bybit: "Bybit", okx: "OKX", bitget: "Bitget" }[String(tr.exchange || "").toLowerCase()] || "Exchange"}`
                             : t("asi_bracket_soft_short")}
                       </Text>
                       <View style={{ flex: 1 }} />

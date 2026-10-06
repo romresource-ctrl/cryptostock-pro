@@ -265,7 +265,7 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
           `${intent.side} ${intent.symbol} @ ${res.entry_price?.toFixed?.(6) ?? intent.entry}\n` +
           `Qty: ${res.qty} · ${t("ats_leverage")}: ${(res as any).actual_leverage ?? res.leverage}x · ${String(actualMM).toUpperCase()}\n` +
           `${res.testnet ? "TESTNET" : "MAINNET"}\n` +
-          `${t("asi_bracket_native_ok")}` + layerNote,
+          `✓ SL/TP on ${{ binance: "Binance", bybit: "Bybit", okx: "OKX", bitget: "Bitget" }[exchange] || "Exchange"}` + layerNote,
       });
     } catch (e: any) {
       // v9.9.2 — api.ts sudah menempelkan e.code dan e.detail dari

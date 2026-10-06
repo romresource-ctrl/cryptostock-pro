@@ -943,12 +943,6 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     cn: "原生括号单未能挂出。该持仓由后台监控器（软）看护。点击上方红色横幅重新挂出。",
   },
   // v9.9.1 — Label status bracket di baris Recent Trades
-  asi_bracket_native_ok: {
-    id: "✓ SL/TP on Exchange",
-    en: "✓ SL/TP on Exchange",
-    ru: "✓ SL/TP on Exchange",
-    cn: "✓ SL/TP on Exchange",
-  },
   asi_bracket_soft_short: {
     id: "⚠ SL/TP watcher soft — tap banner REPAIR",
     en: "⚠ SL/TP on soft watcher — tap REPAIR banner",
