@@ -2121,3 +2121,25 @@ frontend_v995:
           Simpan key suatu jaringan → otomatis jadikan aktif. AsiTradeSheet
           pakai credential network aktif. Recent Trades: badge biru DEMO
           utk trade testnet + baris demo PnL terpisah. Lint pass. v9.9.5.
+
+# ======================================================
+# v9.9.6 — Fix flicker tombol Execute di AsiTradeSheet
+# ======================================================
+frontend_v996:
+  - task: "Anti-flicker tombol Execute (empty-state flash + preview error overwrite)"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/AsiTradeSheet.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          User: tombol execute hilang-muncul saat sheet dibuka & saat tap
+          leverage. Fix: (1) credsLoaded flag → empty-state hanya setelah
+          fetch selesai; (2) exception jaringan saat refetch preview tidak
+          menimpa preview bagus terakhir (keep last-good), hanya backend
+          rejection yang mengubah state; (3) chip exchange sorot slot
+          network aktif. Lint pass, halaman /asi-bot smoke OK.

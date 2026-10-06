@@ -699,6 +699,32 @@ Fase berikutnya (BELUM):
 - Tombol eksekusi Semi-Auto di kartu AI Suggestions ("⚡ EXECUTE SEMI-AUTO") dengan badge pink SEMI.
 - Konfirmasi sukses kini menyediakan opsi langsung "Lihat Recent Trades" → navigasi ke `/asi-bot`.
 
+## v9.9.6 — Fix Flicker Tombol Execute di Trade Sheet
+
+User report: setelah pilih sinyal & klik EXECUTE SEMI-AUTO, tombol execute
+di trade sheet "hilang lalu muncul lalu hilang lagi"; tombol hijau Execute
+juga "kadang nyala kadang hilang" saat tap stepper leverage.
+
+Root cause (2 sumber):
+1. Flash empty-state: `creds` masih kosong sesaat saat sheet dibuka →
+   empty-state "hubungkan exchange" ter-render (menggantikan seluruh konten
+   termasuk tombol) → credential termuat → konten muncul.
+   FIX: flag `credsLoaded`; empty-state hanya dirender SETELAH fetch
+   credential selesai dan memang kosong untuk network aktif. Selama load
+   menampilkan "calculating" netral.
+2. Flicker hijau↔abu: tiap tap stepper risk/leverage memicu refetch
+   preview via proxy Binance; bila fetch melempar exception jaringan,
+   preview ditimpa ok:false → tombol disabled (abu). Fetch berikutnya
+   sukses → hijau lagi.
+   FIX: exception jaringan TIDAK lagi menimpa preview bagus terakhir
+   (keep last-good); hanya penolakan backend (ok:false + reason, mis.
+   min_notional) yang mengubah state tombol. Eksekusi tetap divalidasi
+   ulang server-side sehingga aman.
+Bonus: chip exchange kini menyorot slot network aktif saja dan label
+jaringan memakai emoji 🧪/🔴 (bukan ·T).
+
+Lint pass. Versi 9.9.6 (version.ts + app.json).
+
 ## v9.9.5 — Dual-Slot Credential (Mainnet+Testnet) + Badge DEMO & PnL Terpisah
 
 **Masalah 1:** User simpan API key mainnet, lalu simpan testnet → mainnet

@@ -70,6 +70,9 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
   const [preview, setPreview] = useState<AsiPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [executing, setExecuting] = useState(false);
+  // v9.9.6 — flag credential selesai dimuat; mencegah flash empty-state
+  // "hubungkan exchange" sesaat saat sheet dibuka (tombol hilang-muncul).
+  const [credsLoaded, setCredsLoaded] = useState(false);
   // v9.9.0 — Margin mode wajib dipilih sebelum eksekusi (default ISOLATED).
   const [marginMode, setMarginMode] = useState<"isolated" | "cross">("isolated");
   // v9.9.5 — Network aktif dari bot config (testnet = demo).
@@ -79,7 +82,7 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
   const [execResult, setExecResult] = useState<{ ok: boolean; title: string; body: string } | null>(null);
 
   // Reset panel hasil tiap kali intent baru dibuka.
-  useEffect(() => { setExecResult(null); }, [intent, visible]);
+  useEffect(() => { setExecResult(null); setCredsLoaded(false); }, [intent, visible]);
 
   useEffect(() => {
     if (!visible || !intent) return;
@@ -107,6 +110,7 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
         const match = r.items.find((c) => !!c.testnet === net) || r.items[0];
         if (match) setExchange(match.exchange as any);
       } catch {}
+      setCredsLoaded(true);
     })();
   }, [visible, intent]);
 
@@ -137,9 +141,15 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
         });
         setPreview(p);
       } catch (e: any) {
-        setPreview({ ok: false, message: e?.message || t("ats_no_preview"),
-                     balance_usdt: 0, margin_usdt: 0, size_usdt: 0, qty: 0,
-                     leverage, risk_pct: riskPct, est_loss_usdt: 0, tp_estimations: [] });
+        // v9.9.6 — EXCEPTION jaringan/timeout TIDAK menimpa preview bagus
+        // terakhir (mencegah tombol Execute flicker hijau↔abu saat tap
+        // stepper). Penolakan backend (ok:false + reason) tetap menimpa
+        // karena itu keputusan bisnis, bukan gangguan jaringan.
+        setPreview((prev) => prev?.ok ? prev : {
+          ok: false, message: e?.message || t("ats_no_preview"),
+          balance_usdt: 0, margin_usdt: 0, size_usdt: 0, qty: 0,
+          leverage, risk_pct: riskPct, est_loss_usdt: 0, tp_estimations: [],
+        });
       } finally { setLoading(false); }
     }, 250);
     return () => clearTimeout(t);
@@ -250,8 +260,17 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
               </TouchableOpacity>
             </View>
 
-            {/* No credential state (untuk network AKTIF) */}
-            {!activeCred ? (
+            {/* v9.9.6 — Loading state saat credential belum termuat
+                (anti-flash empty-state). Empty state hanya tampil setelah
+                credential benar-benar selesai dimuat dan memang kosong
+                untuk network aktif. */}
+            {!credsLoaded ? (
+              <View style={[s.empty, { backgroundColor: colors.background }]}>
+                <Text style={{ color: colors.textMuted, fontSize: 12, marginTop: 10 }}>
+                  {t("ats_calculating")}
+                </Text>
+              </View>
+            ) : !activeCred ? (
               <View style={[s.empty, { backgroundColor: colors.background }]}>
                 <Text style={{ fontSize: 36 }}>🔌</Text>
                 <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 14, marginTop: 10 }}>
@@ -269,15 +288,17 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
               </View>
             ) : (
               <>
-                {/* Exchange picker */}
+                {/* Exchange picker — v9.9.6: chip menyorot slot network
+                    aktif saja (exchange yang sama bisa punya 2 slot). */}
                 <View style={{ flexDirection: "row", gap: 6, marginTop: 10 }}>
                   {creds.map((c) => {
-                    const act = c.exchange === exchange;
+                    const act = c.exchange === exchange && !!c.testnet === activeTestnet;
                     return (
-                      <TouchableOpacity key={c.exchange} onPress={() => setExchange(c.exchange as any)}
+                      <TouchableOpacity key={`${c.exchange}:${c.testnet ? "t" : "m"}`}
+                        onPress={() => setExchange(c.exchange as any)}
                         style={[s.exChip, { backgroundColor: act ? MINT : colors.background, borderColor: act ? MINT : colors.border }]}>
                         <Text style={{ color: act ? "#FFFFFF" : colors.textPrimary, fontWeight: "800", fontSize: 11 }}>
-                          {c.exchange.toUpperCase()} {c.testnet ? "·T" : ""}
+                          {c.exchange.toUpperCase()} {c.testnet ? "·🧪" : "·🔴"}
                         </Text>
                       </TouchableOpacity>
                     );
