@@ -1671,7 +1671,7 @@ async def search_assets(
 # v8.12.69 — Latest published Android build. The /app-version endpoint
 # serves this so outdated installs get an update prompt. Bump together
 # with frontend APP_VERSION / app.json version on every release.
-APP_LATEST_VERSION = "9.9.10"
+APP_LATEST_VERSION = "9.9.11"
 
 # v9.9.9 — Release notes untuk popup update (per bahasa).
 APP_UPDATE_NOTES = {
@@ -1681,7 +1681,9 @@ APP_UPDATE_NOTES = {
         "• API Key Mainnet & Testnet tersimpan terpisah — switching instan\n"
         "• Saldo Demo & Real live di ASI-Bot\n"
         "• Copy Trade: detail Entry/SL/TP/Leverage + EXECUTE aktif\n"
-        "• History trade lengkap dengan harga close"
+        "• History trade lengkap dengan margin & harga close\n"
+        "• Tombol EXECUTE kini selalu terlihat (sticky)\n"
+        "• Fix stabilitas: order basi otomatis dibersihkan sebelum entry"
     ),
     "en": (
         "• Verified native Binance SL/TP + safe auto-rollback\n"
@@ -1689,7 +1691,9 @@ APP_UPDATE_NOTES = {
         "• Separate Mainnet & Testnet API key slots — instant switching\n"
         "• Live Demo & Real balances on ASI-Bot\n"
         "• Copy Trade: full Entry/SL/TP/Leverage details + working EXECUTE\n"
-        "• Complete trade history with close prices"
+        "• Complete trade history with margin & close prices\n"
+        "• EXECUTE button now always visible (sticky)\n"
+        "• Stability fix: stale orders auto-cleaned before entry"
     ),
 }
 

@@ -699,6 +699,18 @@ Fase berikutnya (BELUM):
 - Tombol eksekusi Semi-Auto di kartu AI Suggestions ("⚡ EXECUTE SEMI-AUTO") dengan badge pink SEMI.
 - Konfirmasi sukses kini menyediakan opsi langsung "Lihat Recent Trades" → navigasi ke `/asi-bot`.
 
+## v9.9.11 — Bump versi + Tutup celah -4130 di jalur layering
+
+Bump ke 9.9.11 (version.ts + app.json + APP_LATEST_VERSION backend).
+Release notes popup diperbarui dengan butir stabilitas terbaru.
+Fix tambahan: jalur layering kini juga membersihkan conditional LEGACY
+sebelum rebalance bracket (sebelumnya hanya algo) — mencegah -4130 saat
+menambah layer pada posisi yang punya SL/TP manual dari app Binance.
+
+Dengan ini -4130 tertutup di SEMUA jalur: entry baru (flat → bersihkan
+basi), SL retry (cancel+retry), layering (cancel algo+legacy), CLOSE
+manual, dan emergency rollback.
+
 ## v9.9.10 (patch) — Sticky Execute Button + Fix -4130 Re-Entry + Panel Rollback Netral
 
 **Masalah 1:** Tombol EXECUTE di trade sheet tidak terlihat saat sheet

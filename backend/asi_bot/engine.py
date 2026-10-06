@@ -511,6 +511,13 @@ async def execute_trade(
             logger.info("layering %s: cancelled old brackets before rebalance", bin_sym)
         except Exception as e:
             logger.warning("cancel old algos %s: %s", bin_sym, e)
+        # v9.9.10 — bersihkan juga conditional LEGACY (mis. TP/SL manual
+        # user di app Binance) supaya SL closePosition baru tidak kena
+        # -4130 dan rollback tidak sampai menutup posisi gabungan.
+        try:
+            await br.cancel_all_legacy(api_key, api_secret, is_testnet, bin_sym)
+        except Exception as e:
+            logger.warning("cancel old legacy %s: %s", bin_sym, e)
 
     async def _emergency_close(reason: str, detail: str) -> dict[str, Any]:
         """Market-close posisi + batalkan semua algo. Dipanggil bila
