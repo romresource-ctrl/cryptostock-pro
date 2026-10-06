@@ -789,6 +789,19 @@ export default function ASIBotScreen() {
                       {modeBadge === "full" ? t("asi_badge_full") : t("asi_badge_semi")}
                     </Text>
                   </View>
+                  {/* v10.0.1 — Chip cara masuk: MARKET (ungu muda) / LIMIT
+                      (kuning). Hanya tampil utk trade yang merekam
+                      entry_mode (v10.0.1+). */}
+                  {(tr as any).entry_mode ? (
+                    <View style={{
+                      paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
+                      backgroundColor: (tr as any).entry_mode === "market" ? PURPLE : GOLD,
+                    }}>
+                      <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 9, letterSpacing: 0.4 }}>
+                        {String((tr as any).entry_mode).toUpperCase()}
+                      </Text>
+                    </View>
+                  ) : null}
                   {/* v9.9.4 — Badge layering (berapa kali averaging). */}
                   {(tr as any).layer_count && (tr as any).layer_count > 1 ? (
                     <View style={{
