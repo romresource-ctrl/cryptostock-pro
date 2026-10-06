@@ -214,6 +214,20 @@ async def _get_whitelist() -> dict[str, Any]:
     return {"top_100": TOP_100_FUTURES, "count": len(TOP_100_FUTURES)}
 
 
+@router.get("/price")
+async def get_price(symbol: str = Query(..., min_length=2, max_length=20)):
+    """v9.9.9 — Harga live Binance Futures (public, via proxy SG).
+    Dipakai Copy Trade untuk entry copy pada harga pasar SAAT INI,
+    bukan harga entry lama trader yang di-copy."""
+    import httpx as _hx
+    base = symbol.upper().replace("/", "").replace("USDT", "") + "USDT"
+    async with _hx.AsyncClient(proxy=os.environ.get("ASI_PROXY_URL"), timeout=10.0) as c:
+        r = await c.get(f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={base}")
+    if r.status_code != 200:
+        raise HTTPException(400, f"Simbol {base} tidak ditemukan di Binance Futures")
+    return {"symbol": base, "price": float(r.json()["price"])}
+
+
 @router.get("/egress-ip")
 async def _get_egress_ip() -> dict[str, Any]:
     """v9.7.1 — Diagnostic: report THIS backend's DIRECT egress IP

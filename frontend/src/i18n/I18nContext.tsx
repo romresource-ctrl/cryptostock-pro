@@ -982,6 +982,12 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     ru: "🧪 Демо (Testnet): {pnl} за {n} сделок — не входит в реальный PnL",
     cn: "🧪 模拟盘（测试网）：{n} 笔共 {pnl}——不计入真实盈亏",
   },
+  copy_more_positions: {
+    id: "+{n} posisi lain masih terbuka",
+    en: "+{n} more open position(s)",
+    ru: "+{n} ещё открытых позиций",
+    cn: "另有 {n} 个持仓",
+  },
 
   // v9.6.9 — Credential validation error codes (backend returns {code, message})
   asi_err_ip_or_key_invalid: {
@@ -1028,7 +1034,7 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   },
 
   // v9.5.0 — Copy Trade page
-  copy_sub: { id: "10 trader yang SEDANG di posisi · hilang otomatis bila closed", en: "Top 10 traders CURRENTLY in positions · auto-removed when closed", ru: "Топ-10 трейдеров в позициях · исчезают при закрытии", cn: "当前持仓前 10 名交易者 · 平仓后自动消失" },
+  copy_sub: { id: "25 trader yang SEDANG di posisi · hilang otomatis bila closed", en: "Top 25 traders CURRENTLY in positions · auto-removed when closed", ru: "Топ-25 трейдеров в позициях · исчезают при закрытии", cn: "当前持仓前 25 名交易者 · 平仓后自动消失" },
   copy_loading: { id: "Memuat posisi aktif…", en: "Loading active positions…", ru: "Загрузка активных позиций…", cn: "正在加载持仓…" },
   copy_empty_title: { id: "Tidak ada posisi aktif saat ini", en: "No active positions right now", ru: "Сейчас нет активных позиций", cn: "当前没有持仓" },
   copy_empty_body: {

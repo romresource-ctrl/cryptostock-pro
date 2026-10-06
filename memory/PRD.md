@@ -699,6 +699,34 @@ Fase berikutnya (BELUM):
 - Tombol eksekusi Semi-Auto di kartu AI Suggestions ("⚡ EXECUTE SEMI-AUTO") dengan badge pink SEMI.
 - Konfirmasi sukses kini menyediakan opsi langsung "Lihat Recent Trades" → navigasi ke `/asi-bot`.
 
+## v9.9.9 (patch) — Copy Trade: EXECUTE Fungsional + Detail Lengkap + Bersih Mock
+
+**Masalah 1:** Tombol EXECUTE di leaderboard tidak bisa diklik — memang
+masih placeholder (hardcoded disabled sejak awal).
+**Fix:** EXECUTE kini fungsional → fetch harga pasar SAAT INI via endpoint
+baru `GET /api/asi/price?symbol=` (public ticker Binance via proxy SG),
+lalu membuka AsiTradeSheet dengan intent posisi trader (symbol, side,
+entry=harga kini, SL/TP trader). Fallback ke entry trader bila ticker
+gagal. Spinner saat menyiapkan.
+
+**Masalah 2:** Pill "2 OPEN POS" tapi kartu hanya tampilkan 1 posisi.
+**Penjelasan:** pill menghitung TOTAL posisi terbuka trader; kartu
+menampilkan posisi terbaru. Ditambah baris "+N posisi lain masih terbuka"
+(i18n 4 bahasa) bila open_count > 1 supaya tidak membingungkan.
+Rank #1/#2 sebelumnya adalah data MOCK/seed lama (BTC @50k, SL 10k,
+TP 999999, umur 258-273 hari) — sudah dibersihkan dari DB preview
+(4 row seed dihapus; trade testnet layout-test juga ditutup bersih).
+
+**Masalah 3 (permintaan):** Leaderboard wajib menampilkan lengkap Entry,
+SL, TP, Leverage, running PnL untuk semua rank 1-25.
+**Fix:** kartu kini menampilkan baris SL (merah) + TP (hijau) di bawah
+entry; leverage di chip LONG/SHORT; running PnL (% besar + $) tetap di
+kanan. Subtitle diperbarui Top 10 → Top 25.
+
+Lint pass. Screenshot-verified: #1 ABB DEMO menampilkan Entry $2,692.99,
+SL 2,612.05, TP 2,719.76/2,746.69, LONG 10x, +5.29% / +$2.08, EXECUTE aktif.
+Tetap versi 9.9.9 (tidak bump — mengikuti kontrol versi user).
+
 ## v9.9.9 — Bump versi (mengemas patch v9.9.8: repair senyap, CLOSE baris 2, history 10/20 + toggle)
 
 Tidak ada perubahan fungsional — nomor versi dinaikkan ke 9.9.9

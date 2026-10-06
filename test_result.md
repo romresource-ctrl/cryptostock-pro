@@ -2201,3 +2201,25 @@ backend_v998_patch:
           yang sama dgn SL); TP -2021 → skip senyap (level terlewati).
           Frontend: popup hanya utk kegagalan nyata (posisi open & bracket
           tetap gagal). Tanpa bump versi (tetap 9.9.8) sesuai permintaan.
+
+# ======================================================
+# v9.9.9 patch — Copy Trade: EXECUTE aktif + detail lengkap + mock dibersihkan
+# ======================================================
+frontend_v999:
+  - task: "EXECUTE copy-trade fungsional + Entry/SL/TP/Lev/PnL lengkap di leaderboard"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/copy-trade.tsx src/lib/api.ts src/i18n/I18nContext.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          EXECUTE fetch harga live via GET /api/asi/price (baru, public
+          ticker via proxy) lalu buka AsiTradeSheet. Kartu menampilkan
+          SL merah + TP hijau + leverage chip + running PnL % dan $.
+          "+N posisi lain" bila open_count>1. Subtitle Top 10 → Top 25.
+          Mock rows BTC@50k/TP999999 dihapus dari DB preview (4 row).
+          Screenshot-verified. Tetap v9.9.9 (tidak bump).

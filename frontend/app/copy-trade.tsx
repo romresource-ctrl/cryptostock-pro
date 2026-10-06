@@ -9,6 +9,7 @@ import { useI18n } from "@/src/i18n/I18nContext";
 import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
 import PremiumLocked from "@/src/components/PremiumLocked";
 import { api, type AsiLiveRow } from "@/src/lib/api";
+import AsiTradeSheet, { type AsiTradeIntent } from "@/src/components/AsiTradeSheet";
 
 const GOLD = "#F0B90B";
 const GREEN = "#22C55E";
@@ -26,6 +27,36 @@ export default function CopyTradeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const { hasAccess, loaded: accessLoaded } = usePremiumAccess();
+  // v9.9.9 — EXECUTE kini fungsional: membuka trade sheet berisi posisi
+  // trader yang di-copy dengan harga pasar SAAT INI (bukan entry lama).
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [copyIntent, setCopyIntent] = useState<AsiTradeIntent | null>(null);
+  const [preparingRank, setPreparingRank] = useState<number | null>(null);
+
+  const onExecuteCopy = useCallback(async (row: AsiLiveRow) => {
+    const tr = row.latest_trade || {};
+    if (!tr.symbol || !tr.side) return;
+    setPreparingRank(row.rank);
+    try {
+      const base = String(tr.symbol).replace("/USDT", "").replace("USDT", "");
+      let entry = tr.entry_price || 0;
+      try {
+        const p = await api.asi.price(base);
+        if (p.price > 0) entry = p.price;
+      } catch { /* fallback ke entry trader bila ticker gagal */ }
+      setCopyIntent({
+        symbol: base,
+        side: tr.side === "BUY" ? "BUY" : "SELL",
+        entry,
+        stop_loss: tr.stop_loss || 0,
+        take_profits: tr.take_profits || [],
+        source: "asi-bot-semi",
+      });
+      setSheetOpen(true);
+    } finally {
+      setPreparingRank(null);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -189,9 +220,36 @@ export default function CopyTradeScreen() {
                           .replace("{price}", (tr.entry_price || 0).toLocaleString())
                           .replace("{ago}", timeAgo(tr.created_at))}
                       </Text>
+                      {/* v9.9.9 — Detail lengkap di leaderboard: SL & TP dari
+                          posisi trader (permintaan user: Entry/SL/TP/Lev/PnL
+                          harus terlihat di semua rank 1-25). */}
+                      <Text style={{ color: colors.textMuted, fontSize: 10.5, lineHeight: 15 }} numberOfLines={2}>
+                        <Text style={{ color: RED, fontWeight: "800" }}>
+                          SL {tr.stop_loss ? tr.stop_loss.toLocaleString() : "—"}
+                        </Text>
+                        {"  ·  "}
+                        <Text style={{ color: GREEN, fontWeight: "800" }}>
+                          TP {(tr.take_profits || []).map((x) => x.toLocaleString()).join(" / ") || "—"}
+                        </Text>
+                      </Text>
+                      {/* v9.9.9 — Bila trader punya >1 posisi terbuka,
+                          tunjukkan jumlah sisanya agar pill "N OPEN POS"
+                          tidak membingungkan. */}
+                      {(row.open_count ?? 0) > 1 ? (
+                        <Text style={{ color: BLUE, fontSize: 10, fontWeight: "700", marginTop: 1 }}>
+                          {t("copy_more_positions").replace("{n}", String((row.open_count ?? 1) - 1))}
+                        </Text>
+                      ) : null}
                     </View>
-                    <TouchableOpacity style={[s.copyBtn, { backgroundColor: GOLD, opacity: 0.6 }]} disabled>
-                      <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 11 }}>{t("copy_execute")}</Text>
+                    <TouchableOpacity
+                      style={[s.copyBtn, { backgroundColor: GOLD }]}
+                      onPress={() => onExecuteCopy(row)}
+                      disabled={preparingRank === row.rank}
+                      testID={`copy-execute-${row.rank}`}
+                    >
+                      {preparingRank === row.rank
+                        ? <ActivityIndicator size="small" color="#0B0E11" />
+                        : <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 11 }}>{t("copy_execute")}</Text>}
                     </TouchableOpacity>
                   </View>
                 ) : null}
@@ -206,6 +264,13 @@ export default function CopyTradeScreen() {
           </Text>
         )}
       </ScrollView>
+
+      {/* v9.9.9 — Trade sheet untuk eksekusi copy (pakai harga pasar kini) */}
+      <AsiTradeSheet
+        visible={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        intent={copyIntent}
+      />
     </View>
   );
 }

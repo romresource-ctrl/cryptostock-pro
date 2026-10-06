@@ -431,6 +431,12 @@ export const api = {
         `/asi/trades/repair-brackets?device_id=${encodeURIComponent(deviceId)}&exchange=${encodeURIComponent(exchange)}`,
         "POST",
       ),
+    // v9.9.9 — harga live Binance Futures via backend (untuk copy trade
+    // entry pada harga pasar saat ini).
+    price: (symbol: string) =>
+      get<{ symbol: string; price: number }>(
+        `/asi/price?symbol=${encodeURIComponent(symbol)}`,
+      ),
     pnl: (deviceId: string) =>
       get<AsiPnl>(`/asi/pnl?device_id=${encodeURIComponent(deviceId)}`),
     leaderboard: (periodDays = 7) =>
