@@ -871,19 +871,24 @@ export default function ASIBotScreen() {
                       </Text>
                       {/* v9.9.8 — CLOSE dipindah ke baris 2, persis di bawah
                           angka PnL (kanan), dijamin di dalam frame. */}
+                      {/* v9.9.13 — LIMIT pending: tombol = CANCEL (emas)
+                          membatalkan order antri; setelah posisi OPEN
+                          berubah menjadi CLOSE (merah) menutup posisi. */}
                       <TouchableOpacity
                         onPress={() => closeOneTrade(tr)}
                         disabled={isClosing}
                         style={{
                           paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8,
-                          backgroundColor: isClosing ? colors.border : RED,
+                          backgroundColor: isClosing ? colors.border : isPending ? GOLD : RED,
                           minWidth: 60, alignItems: "center", flexShrink: 0,
                           alignSelf: "center",
                         }}
                         testID={`asi-close-${tr.symbol}`}
                       >
-                        <Text style={{ color: "#fff", fontWeight: "900", fontSize: 10, letterSpacing: 0.4 }}>
-                          {isClosing ? t("asi_recent_closing") : t("asi_recent_close")}
+                        <Text style={{ color: isPending ? "#0B0E11" : "#fff", fontWeight: "900", fontSize: 10, letterSpacing: 0.4 }}>
+                          {isClosing
+                            ? (isPending ? t("asi_cancelling") : t("asi_recent_closing"))
+                            : (isPending ? t("asi_btn_cancel") : t("asi_recent_close"))}
                         </Text>
                       </TouchableOpacity>
                     </View>

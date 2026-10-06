@@ -585,8 +585,10 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
 
   // v9.5.0 — ASI-Bot page
   asi_status_active: { id: "AKTIF", en: "ACTIVE", ru: "АКТИВЕН", cn: "已启用" },
-  asi_status_pending: { id: "MENUNGGU", en: "PENDING", ru: "ОЖИДАНИЕ", cn: "待成交" },
+  asi_status_pending: { id: "LIMIT", en: "LIMIT", ru: "ЛИМИТ", cn: "限价" },
   asi_delete: { id: "HAPUS", en: "DELETE", ru: "УДАЛИТЬ", cn: "删除" },
+  asi_btn_cancel: { id: "BATALKAN", en: "CANCEL", ru: "ОТМЕНА", cn: "取消" },
+  asi_cancelling: { id: "MEMBATALKAN…", en: "CANCELLING…", ru: "ОТМЕНА…", cn: "取消中…" },
   asi_formula_label: { id: "Formula", en: "Formula", ru: "Формула", cn: "公式" },
   asi_formula_confluence: { id: "Confluence v9", en: "Confluence v9", ru: "Confluence v9", cn: "Confluence v9" },
   asi_formula_scalper: { id: "VWAP · Separator · J.Wick Candlestick · KISS Pivot · Power of Tower · Box Theory — Scalper: 7 Fast VWAP, Box & Open-Scalp Modules", en: "VWAP · Separator · J.Wick Candlestick · KISS Pivot · Power of Tower · Box Theory — Scalper: 7 Fast VWAP, Box & Open-Scalp Modules", ru: "VWAP · Separator · J.Wick Candlestick · KISS Pivot · Power of Tower · Box Theory — Scalper: 7 Fast VWAP, Box & Open-Scalp Modules", cn: "VWAP · Separator · J.Wick Candlestick · KISS Pivot · Power of Tower · Box Theory — Scalper: 7 Fast VWAP, Box & Open-Scalp Modules" },
