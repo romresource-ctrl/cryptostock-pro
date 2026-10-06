@@ -819,12 +819,12 @@ export default function ASIBotScreen() {
                       </Text>
                     </View>
                     <Text style={{ fontSize: 10, fontWeight: "800", color: colors.textMuted }}>
+                      {/* v9.9.9 — baris ketiga closed: cukup "Closed on
+                          Binance" + alasan, tanpa "Closed @" (anti dobel). */}
                       <Text style={{ color: pos ? GREEN : RED }}>
-                        {t("asi_closed_at_price")} {formatPrice(tr.closed_price ?? tr.exit_price, "crypto")}
+                        {t("asi_closed_on")} {({ binance: "Binance", bybit: "Bybit", okx: "OKX", bitget: "Bitget" } as Record<string, string>)[tr.exchange || "binance"] || tr.exchange}
                       </Text>
                       {tr.close_reason ? `  ·  ${String(tr.close_reason).toUpperCase()}` : ""}
-                      {/* v9.9.9 — exchange asal trade (Closed on Binance/OKX/dll) */}
-                      {`  ·  ${t("asi_closed_on")} ${({ binance: "Binance", bybit: "Bybit", okx: "OKX", bitget: "Bitget" } as Record<string, string>)[tr.exchange || "binance"] || tr.exchange}`}
                     </Text>
                   </View>
                 )}

@@ -699,6 +699,12 @@ Fase berikutnya (BELUM):
 - Tombol eksekusi Semi-Auto di kartu AI Suggestions ("⚡ EXECUTE SEMI-AUTO") dengan badge pink SEMI.
 - Konfirmasi sukses kini menyediakan opsi langsung "Lihat Recent Trades" → navigasi ke `/asi-bot`.
 
+## v9.9.9 (patch 4) — Baris 3 closed disederhanakan: hanya "Closed on {Exchange}"
+
+User: tulisan "Closed @" di baris ketiga dihilangkan, cukup "Closed on
+(exchange)", jangan dobel. Implementasi: baris 3 closed kini
+`Closed on Binance · <ALASAN>` (alasan hanya bila ada). Screenshot-verified.
+
 ## v9.9.9 (patch 3) — Saldo Available Realtime + "Closed on {Exchange}"
 
 1. Kartu **Saldo Tersedia** di atas Recent Trades: endpoint baru
