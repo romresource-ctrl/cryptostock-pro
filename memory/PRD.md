@@ -699,6 +699,13 @@ Fase berikutnya (BELUM):
 - Tombol eksekusi Semi-Auto di kartu AI Suggestions ("⚡ EXECUTE SEMI-AUTO") dengan badge pink SEMI.
 - Konfirmasi sukses kini menyediakan opsi langsung "Lihat Recent Trades" → navigasi ke `/asi-bot`.
 
+## v9.9.9 — Bump versi (mengemas patch v9.9.8: repair senyap, CLOSE baris 2, history 10/20 + toggle)
+
+Tidak ada perubahan fungsional — nomor versi dinaikkan ke 9.9.9
+(version.ts + app.json) untuk rilis yang mengemas tiga patch v9.9.8:
+repair bracket senyap, tombol CLOSE di baris 2, dan history Recent
+Trades persisten dengan toggle 10→20.
+
 ## v9.9.8 (patch 3, tanpa bump) — History Recent Trades Persisten + Toggle 10/20
 
 User: (1) trade closed (demo maupun real) TIDAK boleh hilang dari Recent
