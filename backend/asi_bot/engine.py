@@ -409,6 +409,19 @@ async def execute_trade(
                 "requested": margin_mode,
                 "message": f"Gagal set margin mode {margin_mode.upper()}: {set_mt.get('msg')}",
             }
+        # v9.9.10 — Posisi flat: bersihkan bracket BASI dari posisi lama
+        # yang sudah tertutup (SL/TP closePosition sisa, baik algo maupun
+        # legacy). Tanpa ini, penempatan SL closePosition baru ditolak
+        # Binance dengan -4130 ("an open stop order with closePosition in
+        # the direction is existing") → entry jadi gagal/rollback.
+        try:
+            await br.cancel_all_algo(api_key, api_secret, is_testnet, bin_sym)
+        except Exception:
+            pass
+        try:
+            await br.cancel_all_legacy(api_key, api_secret, is_testnet, bin_sym)
+        except Exception:
+            pass
 
     # (3) Set leverage. Binance bisa menolak bila melebihi tier notional
     # (mis. request 50x tapi posisi $12k hanya boleh 20x) → error -4028.
@@ -507,6 +520,12 @@ async def execute_trade(
             await br.cancel_all_algo(api_key, api_secret, is_testnet, bin_sym)
         except Exception:
             pass
+        # v9.9.10 — bersihkan juga conditional LEGACY (bila tertinggal,
+        # bisa tereksekusi liar saat user buka posisi lain nanti).
+        try:
+            await br.cancel_all_legacy(api_key, api_secret, is_testnet, bin_sym)
+        except Exception:
+            pass
         try:
             await br.market_order(
                 api_key, api_secret, is_testnet,
@@ -551,6 +570,14 @@ async def execute_trade(
         except Exception as e:
             sl_error = str(e)[:200]
             logger.warning("SL attempt %d/%s %s: %s", attempt + 1, 3, bin_sym, sl_error)
+            # v9.9.10 — -4130: masih ada closePosition order basi yang
+            # lolos dari pembersihan awal → paksa bersihkan lalu retry.
+            if "-4130" in sl_error:
+                try:
+                    await br.cancel_all_algo(api_key, api_secret, is_testnet, bin_sym)
+                    await br.cancel_all_legacy(api_key, api_secret, is_testnet, bin_sym)
+                except Exception:
+                    pass
             await asyncio.sleep(0.4)
 
     if not sl_algo_id:
@@ -1034,6 +1061,16 @@ async def close_position(doc: dict[str, Any], symbol: str, side: Side,
     if (doc.get("exchange") or "").lower() == "binance":
         try:
             await cancel_all_conditional(
+                decrypt(doc["api_key_enc"]), decrypt(doc["api_secret_enc"]),
+                bool(doc.get("testnet", True)),
+                symbol.upper().split("/")[0].split("USDT")[0].split("-")[0] + "USDT",
+            )
+        except Exception:
+            pass
+        # v9.9.10 — bersihkan juga conditional legacy agar tidak ada
+        # order yatim yang menembak posisi lain nanti.
+        try:
+            await br.cancel_all_legacy(
                 decrypt(doc["api_key_enc"]), decrypt(doc["api_secret_enc"]),
                 bool(doc.get("testnet", True)),
                 symbol.upper().split("/")[0].split("USDT")[0].split("-")[0] + "USDT",

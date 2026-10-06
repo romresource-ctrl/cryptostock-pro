@@ -968,6 +968,12 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     ru: "🚨 ТРЕБУЕТСЯ РУЧНОЕ ДЕЙСТВИЕ",
     cn: "🚨 需要手动操作",
   },
+  ats_rollback_info_title: {
+    id: "Entry Dibatalkan — Saldo Aman",
+    en: "Entry Cancelled — Balance Safe",
+    ru: "Вход отменён — баланс в безопасности",
+    cn: "入场已取消——资金安全",
+  },
   // v9.9.5 — Dual-slot credential + Demo badge
   asi_net_other_only: {
     id: "Terhubung di jaringan lain — ketuk utk tambah jaringan ini",

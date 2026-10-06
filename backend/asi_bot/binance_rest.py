@@ -267,3 +267,16 @@ async def open_orders_legacy(
     if code != 200 or not isinstance(data, list):
         return []
     return data
+
+
+async def cancel_all_legacy(
+    api_key: str, api_secret: str, testnet: bool, symbol: str,
+) -> dict[str, Any]:
+    """v9.9.10 — Batalkan SEMUA order legacy (regular + conditional lama)
+    untuk simbol. Dipakai untuk membersihkan bracket basi sebelum entry
+    baru (mencegah -4130) dan sebelum emergency close."""
+    code, data = await _request(
+        "DELETE", "/fapi/v1/allOpenOrders", api_key, api_secret, testnet,
+        {"symbol": symbol.upper()},
+    )
+    return data if isinstance(data, dict) else {"code": code, "data": data}

@@ -233,17 +233,27 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
       const code: string | undefined = e?.code;
       const msg: string = e?.detail?.message || e?.message || String(e);
       let title = t("ats_exec_failed");
+      let infoOnly = false;
       if (code === "bracket_sl_failed" || code === "bracket_tp_incomplete"
           || code === "bracket_sl_not_verified") {
-        title = t("ats_bracket_rollback_title");
+        // v9.9.10 — Rollback bersih = TIDAK ADA uang berkurang → tampilkan
+        // panel INFO netral (emas), bukan alarm merah. Hanya rollback yang
+        // GAGAL menutup posisi (requires_manual_action) yang tetap merah.
+        if (e?.detail?.rollback_done) {
+          title = t("ats_rollback_info_title");
+          infoOnly = true;
+        } else {
+          title = t("ats_bracket_rollback_title");
+        }
       } else if (code === "margin_mode_mismatch"
                  || code === "margin_mode_set_failed") {
         title = t("ats_margin_mismatch_title");
+        infoOnly = true;  // tidak ada posisi dibuka → info, bukan alarm
       } else if (code === "bracket_failed_rollback_failed"
                  || e?.detail?.requires_manual_action) {
         title = t("ats_rollback_failed_title");
       }
-      setExecResult({ ok: false, title, body: msg });
+      setExecResult({ ok: false, title, body: msg, infoOnly } as any);
     } finally { setExecuting(false); }
   };
 
@@ -256,7 +266,10 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
       <Pressable style={s.backdrop} onPress={onClose}>
         <Pressable style={[s.sheet, { backgroundColor: colors.surface, paddingBottom: insets.bottom + 16 }]}
                    onPress={(e) => e.stopPropagation()}>
-          <ScrollView showsVerticalScrollIndicator={false}>
+          {/* v9.9.10 — flexShrink agar konten menyusut dan footer sticky
+              (tombol EXECUTE) SELALU terlihat di bawah, tidak pernah
+              terdorong keluar layar saat konten panjang. */}
+          <ScrollView showsVerticalScrollIndicator={false} style={{ flexShrink: 1 }}>
             {/* Header */}
             <View style={s.header}>
               <View style={[s.sideBadge, { backgroundColor: sideColor }]}>
@@ -480,29 +493,7 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
                   )}
                 </View>
 
-                {/* Execute button — v9.8.5: setelah SUKSES tombol berubah
-                    menjadi "✅ EXECUTED" dan TERKUNCI (tidak bisa ditekan
-                    lagi) supaya tidak ada order ganda tak sengaja. */}
-                <TouchableOpacity
-                  onPress={execute}
-                  disabled={executing || !preview?.ok || executed}
-                  style={[s.cta, {
-                    backgroundColor: executed
-                      ? GREEN
-                      : (executing || !preview?.ok ? colors.textMuted : sideColor),
-                    marginTop: 14,
-                    opacity: executed ? 0.85 : 1,
-                  }]}
-                  testID="asi-trade-execute">
-                  <Ionicons name={executed ? "checkmark-circle" : "rocket"} size={18} color="#FFFFFF" />
-                  <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.8 }}>
-                    {executed
-                      ? `✅ ${t("ats_executed_btn")}`
-                      : executing
-                        ? t("ats_sending")
-                        : `EXECUTE ${intent.side === "BUY" ? "LONG" : "SHORT"} ${activeCred?.testnet ? "(TESTNET)" : ""}`}
-                  </Text>
-                </TouchableOpacity>
+                {/* Execute button dipindah ke sticky footer (v9.9.10) */}
 
                 {/* v9.8.5 — Panel hasil eksekusi di dalam sheet (Alert.alert
                     tidak tampil di web preview, jadi hasil harus in-app). */}
@@ -510,12 +501,15 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
                   <View style={{
                     marginTop: 12, borderRadius: 12, padding: 12,
                     borderWidth: 1.5,
-                    borderColor: execResult.ok ? GREEN : RED,
+                    borderColor: execResult.ok ? GREEN : (execResult.infoOnly ? GOLD : RED),
                     backgroundColor: execResult.ok
-                      ? "rgba(34,197,94,0.08)" : "rgba(239,68,68,0.08)",
+                      ? "rgba(34,197,94,0.08)"
+                      : execResult.infoOnly
+                        ? "rgba(245,166,35,0.08)"
+                        : "rgba(239,68,68,0.08)",
                   }} testID="asi-exec-result">
                     <Text style={{
-                      color: execResult.ok ? GREEN : RED,
+                      color: execResult.ok ? GREEN : (execResult.infoOnly ? GOLD : RED),
                       fontWeight: "900", fontSize: 13, letterSpacing: 0.3,
                     }}>
                       {execResult.title}
@@ -564,6 +558,35 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
               </>
             )}
           </ScrollView>
+
+          {/* v9.9.10 — STICKY FOOTER: tombol EXECUTE SELALU terlihat di
+              bawah sheet (di luar area scroll), tidak pernah terdorong
+              keluar layar walau konten panjang. Setelah SUKSES tombol
+              berubah "✅ EXECUTED" dan terkunci (anti double-order). */}
+          {credsLoaded && activeCred && intent ? (
+            <View style={{ paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.border }}>
+              <TouchableOpacity
+                onPress={execute}
+                disabled={executing || !preview?.ok || executed}
+                style={[s.cta, {
+                  backgroundColor: executed
+                    ? GREEN
+                    : (executing || !preview?.ok ? colors.textMuted : sideColor),
+                  opacity: executed ? 0.85 : 1,
+                  marginTop: 0,
+                }]}
+                testID="asi-trade-execute">
+                <Ionicons name={executed ? "checkmark-circle" : "rocket"} size={18} color="#FFFFFF" />
+                <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.8 }}>
+                  {executed
+                    ? `✅ ${t("ats_executed_btn")}`
+                    : executing
+                      ? t("ats_sending")
+                      : `EXECUTE ${intent.side === "BUY" ? "LONG" : "SHORT"} ${activeTestnet ? "(TESTNET)" : ""}`}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
         </Pressable>
       </Pressable>
     </Modal>

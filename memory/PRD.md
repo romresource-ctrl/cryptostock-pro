@@ -699,6 +699,30 @@ Fase berikutnya (BELUM):
 - Tombol eksekusi Semi-Auto di kartu AI Suggestions ("⚡ EXECUTE SEMI-AUTO") dengan badge pink SEMI.
 - Konfirmasi sukses kini menyediakan opsi langsung "Lihat Recent Trades" → navigasi ke `/asi-bot`.
 
+## v9.9.10 (patch) — Sticky Execute Button + Fix -4130 Re-Entry + Panel Rollback Netral
+
+**Masalah 1:** Tombol EXECUTE di trade sheet tidak terlihat saat sheet
+dibuka (terdorong keluar viewport karena konten panjang); baru muncul
+setelah user tap chip TP.
+**Fix:** tombol EXECUTE dipindah ke STICKY FOOTER di luar area scroll —
+selalu terlihat di bagian bawah sheet berapa pun panjang konten. Setelah
+sukses tetap berubah "✅ EXECUTED" terkunci.
+
+**Masalah 2:** Execute ETH kena -4130 ("an open stop order with
+closePosition is existing") — ada bracket BASI dari posisi lama yang
+sudah tertutup, sehingga SL closePosition baru ditolak dan engine
+melakukan rollback (panel error merah).
+**Fix (engine):**
+- Saat posisi flat, SEMUA bracket basi (algo + legacy) dibersihkan
+  SEBELUM entry baru.
+- -4130 saat pasang SL → paksa bersihkan algo+legacy lalu retry.
+- cancel_all_legacy juga dipanggil pada emergency close & tombol CLOSE
+  manual (mencegah order yatim menembak posisi lain nanti).
+- Panel rollback bersih (uang tidak berkurang) kini tampil INFO netral
+  emas "Entry Dibatalkan — Saldo Aman", bukan alarm merah; hanya
+  rollback-gagal-tutup yang tetap merah 🚨. Margin mismatch juga info.
+**E2E PASS:** ATOM entry1 → close → entry2 tanpa -4130, bracket hard.
+
 ## v9.9.10 — Bump versi (rilis kumulatif v9.9.2–v9.9.10)
 
 Nomor versi dinaikkan ke 9.9.10 (version.ts + app.json + APP_LATEST_VERSION
