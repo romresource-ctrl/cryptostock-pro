@@ -419,6 +419,12 @@ export const api = {
         `/asi/trades/${encodeURIComponent(tradeId)}/close?device_id=${encodeURIComponent(deviceId)}`,
         "POST",
       ),
+    // v9.9.13 — Hapus kartu history (closed/expired/cancelled saja).
+    deleteTrade: (deviceId: string, tradeId: string) =>
+      send<{ ok: boolean }>(
+        `/asi/trades/${encodeURIComponent(tradeId)}?device_id=${encodeURIComponent(deviceId)}`,
+        "DELETE",
+      ),
     closeTradeBySymbol: (deviceId: string, symbol: string, exchange: string) =>
       send<{ ok: boolean; closed: number; symbol: string; note?: string | null }>(
         `/asi/trades/close-by-symbol?device_id=${encodeURIComponent(deviceId)}` +

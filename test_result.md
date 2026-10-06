@@ -2511,3 +2511,40 @@ backend_v9913b:
           di dalam pass yang sama (gap move TP2+TP3 bersamaan tidak lagi
           overstate pnl). Test TestSoftWatcherSplit.test_tp_split_then_full_close
           yang sebelumnya FAIL kini PASS (1 passed).
+
+# ======================================================
+# v9.9.13c — Swipe-to-delete kartu history Recent Trades
+# ======================================================
+backend_v9913c:
+  - task: "DELETE /asi/trades/{trade_id} — hapus kartu history"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/routes.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Hanya status closed/expired/cancelled/layered yang bisa dihapus;
+          open/pending_entry ditolak 400. Curl-verified: delete BTC 200,
+          TRX tersisa, id invalid 404.
+frontend_v9913c:
+  - task: "Swipe-to-delete (ReanimatedSwipeable) pada kartu closed"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/asi-bot.tsx, /app/frontend/src/lib/api.ts"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Kartu history digeser kiri -> tombol merah HAPUS -> kartu hilang
+          instan (state lokal) + DELETE ke backend. Posisi open/pending
+          TIDAK dibungkus swipeable (tidak bisa dihapus). i18n 4 bahasa
+          (asi_delete). Catatan: klik force pada action tersembunyi tidak
+          bekerja di web preview (keterbatasan simulasi mouse); gesture
+          swipe native RNGH standar untuk device asli.

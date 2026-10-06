@@ -586,6 +586,7 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   // v9.5.0 — ASI-Bot page
   asi_status_active: { id: "AKTIF", en: "ACTIVE", ru: "АКТИВЕН", cn: "已启用" },
   asi_status_pending: { id: "MENUNGGU", en: "PENDING", ru: "ОЖИДАНИЕ", cn: "待成交" },
+  asi_delete: { id: "HAPUS", en: "DELETE", ru: "УДАЛИТЬ", cn: "删除" },
   asi_pending_line: { id: "LIMIT menunggu terisi (maks 1 candle)", en: "LIMIT waiting to fill (max 1 candle)", ru: "Лимит ждёт исполнения (макс. 1 свеча)", cn: "限价单等待成交（最多1根K线）" },
   ats_pending_title: { id: "LIMIT ORDER TERPASANG", en: "LIMIT ORDER PLACED", ru: "ЛИМИТНЫЙ ОРДЕР РАЗМЕЩЁН", cn: "限价单已挂出" },
   ats_pending_body: { id: "Menunggu harga menyentuh entry. SL/TP otomatis dipasang setelah terisi. Dibatalkan otomatis bila tidak terisi dalam 1 candle (±1 jam).", en: "Waiting for price to reach entry. SL/TP are placed automatically once filled. Auto-cancelled if not filled within 1 candle (~1 hour).", ru: "Ожидание касания цены входа. SL/TP будут установлены автоматически после исполнения. Отмена через 1 свечу (~1 час).", cn: "等待价格触及入场价。成交后自动设置 SL/TP。若 1 根K线（约1小时）内未成交将自动取消。" },

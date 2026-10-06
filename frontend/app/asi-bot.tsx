@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 
@@ -76,6 +77,8 @@ export default function ASIBotScreen() {
   const [connectOpen, setConnectOpen] = useState(false);
   // v9.7.6 — track in-flight close requests per trade id
   const [closingIds, setClosingIds] = useState<Record<string, boolean>>({});
+  // v9.9.13 — Hapus kartu history dari Recent Trades (per-row ✕).
+  const [deletingIds, setDeletingIds] = useState<Record<string, boolean>>({});
   // v9.8.1 — AISuggestionsSheet popup (daftar aset hasil scan, dibuka
   // dari tombol PICK A SIGNAL). Sheet ini punya AsiTradeSheet internal.
   const [suggestOpen, setSuggestOpen] = useState(false);
@@ -255,6 +258,30 @@ export default function ASIBotScreen() {
       Alert.alert(t("asi_close_failed"), String(e?.message || e));
     } finally {
       setClosingIds((prev) => {
+        const next = { ...prev };
+        delete next[lockKey];
+        return next;
+      });
+    }
+  };
+
+  // v9.9.13 — Swipe-to-delete untuk kartu HISTORY (closed/expired/
+  // cancelled/layered). Posisi open/pending tidak bisa dihapus —
+  // harus CLOSE/cancel dulu (ditegakkan juga di backend).
+  const deleteOneTrade = async (trade: AsiTradeResp) => {
+    const tid = (trade as any)._id as string | undefined;
+    if (!tid || !deviceId) return;
+    const lockKey = tid;
+    if (deletingIds[lockKey]) return;
+    setDeletingIds((prev) => ({ ...prev, [lockKey]: true }));
+    try {
+      await api.asi.deleteTrade(deviceId, tid);
+      // Hapus langsung dari state lokal agar kartu hilang instan.
+      setTrades((list) => list.filter((x) => (x as any)._id !== tid));
+    } catch (e: any) {
+      Alert.alert(t("asi_close_failed"), String(e?.message || e));
+    } finally {
+      setDeletingIds((prev) => {
         const next = { ...prev };
         delete next[lockKey];
         return next;
@@ -709,8 +736,10 @@ export default function ASIBotScreen() {
               const modeBadge = tr.mode === "full" ? "full" : "semi";
               const modeColor = modeBadge === "full" ? ORANGE : GOLD;
               const borderColor = isPending ? GOLD : (dispPnl >= 0 ? GREEN : RED);
-              return (
-                <View key={tid || i} style={[s.leaderRow, { backgroundColor: colors.surface, borderColor }]}>
+              // v9.9.13 — Kartu dibungkus Swipeable HANYA untuk history
+              // (closed/expired/cancelled/layered): geser kiri → HAPUS.
+              const rowBody = (
+                <View style={[s.leaderRow, { backgroundColor: colors.surface, borderColor }]}>
                 {/* v9.9.7 — Row 1 dirampingkan agar TIDAK overflow:
                     [SEMI/FULL][Layer×n][ACTIVE/CLOSED] SIDE SYMBOL … PnL [CLOSE].
                     Badge DEMO & ISO dipindah ke row 2. flexWrap memastikan
@@ -917,6 +946,35 @@ export default function ASIBotScreen() {
                   </View>
                 )}
                 </View>
+              );
+              if (isOpen || isPending || !tid) {
+                return <React.Fragment key={tid || i}>{rowBody}</React.Fragment>;
+              }
+              return (
+                <ReanimatedSwipeable
+                  key={tid || i}
+                  friction={1.6}
+                  rightThreshold={48}
+                  overshootRight={false}
+                  renderRightActions={() => (
+                    <TouchableOpacity
+                      onPress={() => deleteOneTrade(tr)}
+                      disabled={!!deletingIds[lockKey]}
+                      style={{
+                        justifyContent: "center", alignItems: "center",
+                        backgroundColor: RED, borderRadius: 10,
+                        paddingHorizontal: 18, marginLeft: 6,
+                      }}
+                      testID={`asi-del-${tr.symbol}`}
+                    >
+                      <Text style={{ color: "#fff", fontWeight: "900", fontSize: 11, letterSpacing: 0.5 }}>
+                        {deletingIds[lockKey] ? "…" : t("asi_delete")}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                >
+                  {rowBody}
+                </ReanimatedSwipeable>
               );
             })}
           </ScrollView>

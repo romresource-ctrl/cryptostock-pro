@@ -508,6 +508,20 @@ def _attach_trade_routes(db: Any) -> None:
         except Exception as e:  # noqa: BLE001
             raise HTTPException(500, str(e)[:200])
 
+    @router.delete("/trades/{trade_id}")
+    async def delete_trade(trade_id: str, device_id: str = Query(..., min_length=4)):
+        """v9.9.13 — Hapus kartu dari history Recent Trades. Hanya untuk
+        trade yang sudah selesai (closed/layered/expired/cancelled) —
+        posisi open/pending harus di-close/cancel dulu."""
+        t = await db.asi_trades.find_one({"_id": trade_id, "device_id": device_id})
+        if not t:
+            raise HTTPException(404, "trade not found")
+        if str(t.get("status") or "").lower() in ("open", "pending_entry"):
+            raise HTTPException(
+                400, "Posisi aktif tidak bisa dihapus — tutup/batalkan dulu.")
+        await db.asi_trades.delete_one({"_id": t["_id"]})
+        return {"ok": True}
+
     @router.post("/trades/close-all")
     async def close_all_trades(device_id: str = Query(..., min_length=4)):
         """v9.7.4 — Close ALL open positions for this device.
