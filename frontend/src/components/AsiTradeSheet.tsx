@@ -23,6 +23,7 @@ import {
 
 const GOLD = "#F0B90B";
 const MINT = "#4ADE80"; // v9.4.3 — ASI-Bot accent (hijau muda + teks putih)
+const BLUE = "#3B82F6"; // v9.9.9 — chip DEMO (testnet)
 const GREEN = "#22C55E";
 const RED = "#EF4444";
 const LIGHT_BLUE_BTN = "#38BDF8"; // v9.8.5 — tombol "Lihat Recent Trades"
@@ -77,6 +78,9 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
   const [marginMode, setMarginMode] = useState<"isolated" | "cross">("isolated");
   // v9.9.5 — Network aktif dari bot config (testnet = demo).
   const [activeTestnet, setActiveTestnet] = useState(true);
+  // v9.9.9 — simpan bot config utk persist active_testnet saat user
+  // ganti jaringan langsung dari chip di sheet ini.
+  const [botCfg, setBotCfg] = useState<any>(null);
   // v9.8.5 — Hasil eksekusi ditampilkan sebagai panel di DALAM sheet
   // (Alert.alert bawaan tidak tampil di web preview). null = belum eksekusi.
   const [execResult, setExecResult] = useState<{ ok: boolean; title: string; body: string } | null>(null);
@@ -101,6 +105,7 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
         // ASI-Bot). Credential tiap jaringan slot terpisah.
         net = b.exists ? ((b as any).active_testnet ?? true) : true;
         setActiveTestnet(net);
+        if (b.exists) setBotCfg(b);
       } catch {}
       try {
         const r = await api.asi.listCredentials(did);
@@ -114,13 +119,11 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
     })();
   }, [visible, intent]);
 
-  // v9.9.5 — credential untuk network AKTIF (slot mainnet/testnet
-  // terpisah). Fallback ke slot lain hanya utk data lama.
-  // CATATAN: harus didefinisikan SEBELUM useEffect preview di bawah
-  // (dipakai di dependency array-nya).
+  // v9.9.9 — STRICT: credential harus cocok dengan jaringan yang dipilih
+  // chip (DEMO/REAL). Tidak ada fallback silang jaringan — bila jaringan
+  // pilihan belum terhubung, tampilkan empty-state "hubungkan dulu".
   const activeCred = useMemo(
-    () => creds.find((c) => c.exchange === exchange && !!c.testnet === activeTestnet)
-          || creds.find((c) => c.exchange === exchange),
+    () => creds.find((c) => c.exchange === exchange && !!c.testnet === activeTestnet),
     [creds, exchange, activeTestnet],
   );
 
@@ -141,15 +144,25 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
         });
         setPreview(p);
       } catch (e: any) {
-        // v9.9.6 — EXCEPTION jaringan/timeout TIDAK menimpa preview bagus
-        // terakhir (mencegah tombol Execute flicker hijau↔abu saat tap
-        // stepper). Penolakan backend (ok:false + reason) tetap menimpa
-        // karena itu keputusan bisnis, bukan gangguan jaringan.
-        setPreview((prev) => prev?.ok ? prev : {
-          ok: false, message: e?.message || t("ats_no_preview"),
-          balance_usdt: 0, margin_usdt: 0, size_usdt: 0, qty: 0,
-          leverage, risk_pct: riskPct, est_loss_usdt: 0, tp_estimations: [],
-        });
+        // v9.9.6/v9.9.9 — EXCEPTION jaringan/timeout TIDAK menimpa preview
+        // bagus terakhir (anti-flicker stepper). TAPI penolakan HTTP dari
+        // backend (punya e.code/e.detail — mis. jaringan belum terhubung,
+        // min notional) HARUS menimpa: itu keputusan bisnis, dan saat ganti
+        // chip jaringan user harus melihat keadaan jaringan baru, bukan
+        // angka jaringan lama.
+        if (e?.code || e?.detail) {
+          setPreview({
+            ok: false, message: e?.detail?.message || e?.message || t("ats_no_preview"),
+            balance_usdt: 0, margin_usdt: 0, size_usdt: 0, qty: 0,
+            leverage, risk_pct: riskPct, est_loss_usdt: 0, tp_estimations: [],
+          });
+        } else {
+          setPreview((prev) => prev?.ok ? prev : {
+            ok: false, message: e?.message || t("ats_no_preview"),
+            balance_usdt: 0, margin_usdt: 0, size_usdt: 0, qty: 0,
+            leverage, risk_pct: riskPct, est_loss_usdt: 0, tp_estimations: [],
+          });
+        }
       } finally { setLoading(false); }
     }, 250);
     return () => clearTimeout(t);
@@ -288,18 +301,54 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
               </View>
             ) : (
               <>
-                {/* Exchange picker — v9.9.6: chip menyorot slot network
-                    aktif saja (exchange yang sama bisa punya 2 slot). */}
-                <View style={{ flexDirection: "row", gap: 6, marginTop: 10 }}>
-                  {creds.map((c) => {
-                    const act = c.exchange === exchange && !!c.testnet === activeTestnet;
+                {/* Network picker — v9.9.9: TEPAT 2 chip: DEMO (Testnet)
+                    atau REAL (Mainnet). Tap langsung memilih jaringan
+                    SEBELUM execute + disimpan ke bot config. Jaringan
+                    tanpa credential tampil redup + label Not connected. */}
+                <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
+                  {([
+                    { isTest: true, label: t("asi_demo_badge"), sub: "Testnet", color: BLUE },
+                    { isTest: false, label: "REAL", sub: "Mainnet", color: GREEN },
+                  ] as const).map((opt) => {
+                    const act = activeTestnet === opt.isTest;
+                    const hasCred = creds.some((c) => c.exchange === exchange && !!c.testnet === opt.isTest);
                     return (
-                      <TouchableOpacity key={`${c.exchange}:${c.testnet ? "t" : "m"}`}
-                        onPress={() => setExchange(c.exchange as any)}
-                        style={[s.exChip, { backgroundColor: act ? MINT : colors.background, borderColor: act ? MINT : colors.border }]}>
-                        <Text style={{ color: act ? "#FFFFFF" : colors.textPrimary, fontWeight: "800", fontSize: 11 }}>
-                          {c.exchange.toUpperCase()} {c.testnet ? "·🧪" : "·🔴"}
+                      <TouchableOpacity
+                        key={String(opt.isTest)}
+                        onPress={() => {
+                          // v9.9.9 — ganti jaringan = kotak bawah WAJIB
+                          // langsung reset (jangan tampilkan angka jaringan
+                          // sebelumnya), lalu preview di-refetch oleh effect.
+                          setPreview(null);
+                          setActiveTestnet(opt.isTest);
+                          if (deviceId && botCfg) {
+                            const next = { ...botCfg, active_testnet: opt.isTest };
+                            setBotCfg(next);
+                            api.asi.saveBot(deviceId, next).catch(() => {});
+                          }
+                        }}
+                        style={[s.exChip, {
+                          flex: 1, alignItems: "center", paddingVertical: 10,
+                          backgroundColor: act ? opt.color : colors.background,
+                          borderColor: act ? opt.color : colors.border,
+                          opacity: hasCred ? 1 : 0.55,
+                        }]}
+                        testID={opt.isTest ? "ats-net-demo" : "ats-net-real"}
+                      >
+                        <Text style={{
+                          color: act ? "#0B0E11" : colors.textPrimary,
+                          fontWeight: "900", fontSize: 12, letterSpacing: 0.4,
+                        }}>
+                          {opt.label} ({opt.sub})
                         </Text>
+                        {!hasCred ? (
+                          <Text style={{
+                            color: act ? "#0B0E11" : colors.textMuted,
+                            fontSize: 9, fontWeight: "700", marginTop: 1,
+                          }}>
+                            {t("asi_not_connected")}
+                          </Text>
+                        ) : null}
                       </TouchableOpacity>
                     );
                   })}
@@ -390,11 +439,15 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
 
                 {/* Preview */}
                 <View style={[s.preview, { backgroundColor: colors.background, borderColor: colors.border }]}>
-                  {loading ? (
+                  {loading && !preview ? (
                     <Text style={{ color: colors.textMuted, fontSize: 12 }}>{t("ats_calculating")}</Text>
                   ) : preview?.ok ? (
                     <>
-                      <PreviewRow label={t("ats_balance")} value={`$${preview.balance_usdt.toFixed(2)}`} colors={colors} />
+                      {/* v9.9.9 — Label jaringan di kotak angka: user harus
+                          tahu angka ini milik akun DEMO atau REAL. */}
+                      <PreviewRow
+                        label={`${t("ats_balance")} · ${activeTestnet ? t("asi_demo_badge") : "REAL"}`}
+                        value={`$${preview.balance_usdt.toFixed(2)}`} colors={colors} />
                       <PreviewRow label={t("ats_margin")} value={`$${preview.margin_usdt.toFixed(2)}`} colors={colors} highlight />
                       <PreviewRow label={t("ats_size")} value={`$${preview.size_usdt.toFixed(2)} (${preview.qty.toFixed(6)})`} colors={colors} />
                       <PreviewRow label={t("ats_est_loss")} value={`-$${preview.est_loss_usdt.toFixed(2)}`} colors={colors} valueColor={RED} />

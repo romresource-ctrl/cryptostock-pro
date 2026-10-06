@@ -699,6 +699,47 @@ Fase berikutnya (BELUM):
 - Tombol eksekusi Semi-Auto di kartu AI Suggestions ("⚡ EXECUTE SEMI-AUTO") dengan badge pink SEMI.
 - Konfirmasi sukses kini menyediakan opsi langsung "Lihat Recent Trades" → navigasi ke `/asi-bot`.
 
+## v9.9.9 (patch 8) — Kotak Angka Mengikuti Chip Jaringan (Demo/Real)
+
+User: bila chip DEMO dipilih, kotak bawah (USDT Balance, Margin Used,
+Position Size, Est. Loss, TP profit) harus menampilkan angka akun DEMO;
+chip REAL → angka akun REAL.
+
+Implementasi AsiTradeSheet:
+- Ganti chip → `setPreview(null)` SEGERA (angka jaringan lama tidak
+  sempat tampil menyesatkan) → effect refetch preview dengan
+  `testnet` jaringan baru (sudah ada di payload sejak v9.9.5).
+- Label baris balance kini eksplisit: "USDT Balance · DEMO/REAL".
+- Penolakan HTTP backend (e.code/e.detail, mis. jaringan belum terhubung)
+  kini MENIMPA preview (bukan keep last-good) sehingga keadaan jaringan
+  baru selalu akurat; hanya exception jaringan murni (timeout) yang
+  keep last-good (anti-flicker stepper v9.9.6 tetap berlaku).
+- Box tidak lagi berkedip "calculating" saat tap stepper: angka lama
+  tetap tampil selama refetch (hanya tampil calculating saat belum
+  ada data sama sekali).
+
+Lint pass. Tetap v9.9.9.
+
+## v9.9.9 (patch 7) — Trade Sheet: 2 Chip Jaringan DEMO/REAL Sebelum Execute
+
+User: di trade sheet (setelah pilih aset → EXECUTE), user harus bisa
+langsung pilih Demo (Testnet) atau Real (Mainnet) sebelum eksekusi; chip
+ganda BINANCE·🧪 (legacy doc + slot v9.9.5 sama-sama muncul) dihilangkan.
+
+Implementasi AsiTradeSheet:
+- Exchange picker diganti menjadi TEPAT 2 chip besar: **DEMO (Testnet)**
+  biru dan **REAL (Mainnet)** hijau. Tap → langsung mengganti jaringan
+  aktif untuk preview & execute DAN menyimpan `active_testnet` ke bot
+  config (konsisten dengan switch di halaman ASI-Bot & Full-Auto).
+- Jaringan tanpa credential tampil redup + label "Not connected"; memilih
+  jaringan tsb menampilkan empty-state hubungkan API (bukan gagal sunyi).
+- `activeCred` dibuat STRICT per jaringan (tanpa fallback silang) sehingga
+  preview/execute tidak pernah diam-diam memakai key jaringan lain.
+- Backend sudah mendukung: TradePayload.testnet → resolve_credential
+  per-network (v9.9.5).
+
+Lint pass. Tetap v9.9.9.
+
 ## v9.9.9 (patch 6) — Popup Update dengan Release Notes Terlokalisasi
 
 APP_LATEST_VERSION backend 9.3.0 → 9.9.9. Endpoint /app-version kini

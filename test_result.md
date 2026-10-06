@@ -2265,3 +2265,25 @@ v999p3:
           $3,656.96 testnet). resolve_credential fallback ke slot v9.9.5
           bila legacy doc tidak ada. Baris 3 closed trade: "Closed @ X ·
           ALASAN · Closed on Binance". Screenshot-verified.
+
+# ======================================================
+# v9.9.9 patch 7 — Trade sheet: 2 chip DEMO/REAL sebelum execute
+# ======================================================
+frontend_v999p7:
+  - task: "2 chip jaringan DEMO/REAL di trade sheet, chip ganda dihilangkan"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/AsiTradeSheet.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Exchange chips diganti 2 chip jaringan besar: DEMO (Testnet) &
+          REAL (Mainnet). Tap = pilih jaringan utk preview+execute +
+          persist active_testnet ke bot config. activeCred dibuat strict
+          per jaringan (tidak ada fallback silang). Jaringan tanpa
+          credential → chip redup "Not connected" + empty-state connect.
+          Lint pass.
