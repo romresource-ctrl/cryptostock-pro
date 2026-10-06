@@ -699,6 +699,45 @@ Fase berikutnya (BELUM):
 - Tombol eksekusi Semi-Auto di kartu AI Suggestions ("⚡ EXECUTE SEMI-AUTO") dengan badge pink SEMI.
 - Konfirmasi sukses kini menyediakan opsi langsung "Lihat Recent Trades" → navigasi ke `/asi-bot`.
 
+## v9.9.8 — Leaderboard Copy Trade: DEMO + REAL dengan Badge (maks 25)
+
+User: 2 posisi demo yang profit tidak tampil di leaderboard (kosong) karena
+v9.9.5 mengecualikan testnet. Keputusan user: DEMO & REAL sama-sama tampil
+(strategi bot identik, hanya beda uang asli/non-asli), trader demo BOLEH
+di-copy nantinya.
+
+**Perubahan:**
+- `pnl.live_leaderboard` & `pnl.leaderboard`: filter `testnet != True`
+  DIHAPUS; group diubah per (device, testnet) supaya entry demo & real
+  trader yang sama tampil terpisah. Field `testnet` ditambahkan ke response.
+- Limit leaderboard 10 → **25** (live & periode). Sorting tetap PnL %
+  terbesar; nilai kecil tergeser keluar dari 25 list.
+- `copy-trade.tsx`: badge kecil **DEMO (biru) / REAL (hijau)** di samping
+  handle trader.
+- `pnl_summary` TETAP memisah PnL real vs demo (permintaan sebelumnya
+  tidak berubah); daily loss limit & kuota harian tetap per-jaringan.
+- Catatan: DB preview punya 1 row seed lama (BTC @50k, TP 999999) yang kini
+  tampil sebagai rank #1 demo — hanya ada di DB preview, bukan produksi.
+
+Verified curl: /leaderboard/live menampilkan entry testnet:true (demo) dan
+testnet:false (real). Lint pass. Versi 9.9.8.
+
+## v9.9.7 — Rapikan Layout Recent Trades (user screenshot review)
+
+Permintaan user (5 poin): (1) konten baris tidak keluar kotak, (2) badge
+ISO di baris atas DIHAPUS — leverage pindah ke baris 2 dengan warna hijau
+tebal (mis. 50x/100x) agar terbaca, (3) badge DEMO biru pindah ke baris 2,
+(4) susunan demo & real IDENTIK & sejajar, (5) tombol CLOSE tidak keluar
+bingkai.
+
+Implementasi: Row 1 dirampingkan → [SEMI/FULL][Layer×n][ACTIVE/CLOSED]
+SIDE SYMBOL … PnL [CLOSE] dengan flexWrap + flexShrink:0 pada PnL/CLOSE
+(symbol flexShrink:1 + numberOfLines=1). Row 2 → chip [DEMO biru / REAL
+hijau] (slot SELALU ada → susunan identik) + SL merah · TP hijau ·
+ISOLATED/CROSS · **10x hijau tebal**. Row 3 status native tak berubah.
+Verified screenshot dengan trade demo ETH sungguhan (testnet): baris rapi,
+tidak overflow, DEMO di baris 2, leverage hijau. Versi 9.9.7.
+
 ## v9.9.6 — Fix Flicker Tombol Execute di Trade Sheet
 
 User report: setelah pilih sinyal & klik EXECUTE SEMI-AUTO, tombol execute

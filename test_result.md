@@ -2143,3 +2143,39 @@ frontend_v996:
           menimpa preview bagus terakhir (keep last-good), hanya backend
           rejection yang mengubah state; (3) chip exchange sorot slot
           network aktif. Lint pass, halaman /asi-bot smoke OK.
+
+# ======================================================
+# v9.9.7 — Layout Recent Trades + v9.9.8 — Leaderboard Demo+Real
+# ======================================================
+frontend_v997:
+  - task: "Recent Trades layout rapi (no overflow, DEMO row2, leverage hijau)"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/asi-bot.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Row1: SEMI/FULL + ACTIVE + SIDE + SYMBOL + PnL + CLOSE (flexWrap,
+          CLOSE flexShrink:0). ISO badge dihapus dari row1. Row2: chip
+          DEMO/REAL selalu ada (susunan identik) + SL/TP/margin + leverage
+          hijau tebal. Verified screenshot dengan trade demo ETH asli.
+backend_v998:
+  - task: "Leaderboard tampilkan DEMO+REAL dengan badge, limit 25"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/pnl.py routes.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Filter testnet dihapus dari live_leaderboard & leaderboard;
+          group per (device, testnet); field testnet di response; limit 25.
+          curl verified: entry demo & real sama-sama tampil. Badge DEMO
+          biru / REAL hijau di copy-trade.tsx. PnL summary tetap terpisah.

@@ -529,7 +529,7 @@ def _attach_trade_routes(db: Any) -> None:
 
     @router.get("/leaderboard")
     async def leader(period_days: int = Query(7, ge=1, le=90)):
-        return {"items": await leaderboard(db, period_days=period_days, limit=10),
+        return {"items": await leaderboard(db, period_days=period_days, limit=25),
                 "period_days": period_days}
 
     @router.get("/leaderboard/live")
@@ -537,7 +537,7 @@ def _attach_trade_routes(db: Any) -> None:
         """v9.4.0 — Only traders CURRENTLY in open positions, ranked by
         live unrealized PnL. Rows disappear automatically when positions
         close. No time-window parameter needed."""
-        return {"items": await live_leaderboard(db, limit=10)}
+        return {"items": await live_leaderboard(db, limit=25)}
 
     @router.get("/bot")
     async def get_bot(device_id: str = Query(..., min_length=4)):

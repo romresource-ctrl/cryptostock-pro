@@ -532,10 +532,14 @@ export type AsiPnl = Record<"daily" | "weekly" | "monthly", {
 };
 export type AsiLeaderRow = {
   rank: number; handle: string; pnl_usdt: number; trades: number; wr: number;
+  // v9.9.7 — badge DEMO/REAL di leaderboard periode
+  testnet?: boolean;
 };
 export type AsiLiveRow = {
   rank: number;
   handle: string;
+  // v9.9.7 — true = trader demo (testnet); UI menampilkan badge DEMO/REAL
+  testnet?: boolean;
   unrealized_usdt: number;
   unrealized_pct?: number;
   open_count: number;

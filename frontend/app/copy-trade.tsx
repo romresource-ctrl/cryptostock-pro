@@ -134,6 +134,17 @@ export default function CopyTradeScreen() {
                   <View style={{ flex: 1 }}>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                       <Text style={[s.handle, { color: colors.textPrimary }]}>{row.handle}***</Text>
+                      {/* v9.9.7 — Badge kecil DEMO/REAL: leaderboard kini
+                          menampilkan keduanya (strategi bot identik), user
+                          wajib bisa membedakan jaringan trader. */}
+                      <View style={{
+                        paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 4,
+                        backgroundColor: row.testnet ? BLUE : GREEN,
+                      }}>
+                        <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 8.5, letterSpacing: 0.4 }}>
+                          {row.testnet ? t("asi_demo_badge") : "REAL"}
+                        </Text>
+                      </View>
                       <View style={[s.openPill, { borderColor: BLUE }]}>
                         <View style={[s.liveDot, { backgroundColor: BLUE }]} />
                         <Text style={{ color: BLUE, fontWeight: "900", fontSize: 10 }}>

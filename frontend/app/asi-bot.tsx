@@ -582,19 +582,11 @@ export default function ASIBotScreen() {
               const borderColor = isOpen ? modeColor : colors.border;
               return (
                 <View key={tid || i} style={[s.leaderRow, { backgroundColor: colors.surface, borderColor }]}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                  {/* v9.9.5 — Badge DEMO untuk trade testnet supaya user
-                      tidak bingung mana posisi demo vs real. */}
-                  {tr.testnet ? (
-                    <View style={{
-                      paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4,
-                      backgroundColor: LIGHT_BLUE,
-                    }}>
-                      <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 8.5, letterSpacing: 0.4 }}>
-                        {t("asi_demo_badge")}
-                      </Text>
-                    </View>
-                  ) : null}
+                {/* v9.9.7 — Row 1 dirampingkan agar TIDAK overflow:
+                    [SEMI/FULL][Layer×n][ACTIVE/CLOSED] SIDE SYMBOL … PnL [CLOSE].
+                    Badge DEMO & ISO dipindah ke row 2. flexWrap memastikan
+                    tombol CLOSE tidak pernah keluar bingkai. */}
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                   {/* MODE badge (SEMI / FULL) */}
                   <View style={{
                     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
@@ -615,23 +607,6 @@ export default function ASIBotScreen() {
                       </Text>
                     </View>
                   ) : null}
-                  {/* v9.9.2 — Margin mode badge pakai actual_margin_mode
-                      dari Binance (bukan request). Fallback ke margin_mode
-                      lama bila trade pre-v9.9.2. */}
-                  {(tr.actual_margin_mode || tr.margin_mode) ? (
-                    <View style={{
-                      paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4,
-                      borderWidth: 1,
-                      borderColor: ((tr.actual_margin_mode || tr.margin_mode) === "cross") ? PURPLE : TEAL,
-                    }}>
-                      <Text style={{
-                        color: ((tr.actual_margin_mode || tr.margin_mode) === "cross") ? PURPLE : TEAL,
-                        fontWeight: "900", fontSize: 8.5, letterSpacing: 0.3,
-                      }}>
-                        {((tr.actual_margin_mode || tr.margin_mode) === "cross") ? "CRS" : "ISO"}
-                      </Text>
-                    </View>
-                  ) : null}
                   {/* OPEN / CLOSED badge */}
                   <View style={{
                     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
@@ -641,7 +616,7 @@ export default function ASIBotScreen() {
                       {isOpen ? t("asi_status_active") : "CLOSED"}
                     </Text>
                   </View>
-                  <Text style={{ color: tr.side === "BUY" ? GREEN : RED, fontWeight: "900", width: 46 }}>
+                  <Text style={{ color: tr.side === "BUY" ? GREEN : RED, fontWeight: "900", width: 44, fontSize: 12 }}>
                     {/* v9.8.6 — Futures convention: tampilkan LONG/SHORT,
                         bukan BUY/SELL (permintaan user). */}
                     {tr.side === "BUY" ? "LONG" : "SHORT"}
@@ -660,9 +635,9 @@ export default function ASIBotScreen() {
                       <Text style={{ fontSize: 13 }}>⚠️</Text>
                     </TouchableOpacity>
                   ) : null}
-                  <Text style={{ color: colors.textPrimary, fontWeight: "700" }}>{tr.symbol}</Text>
+                  <Text numberOfLines={1} style={{ color: colors.textPrimary, fontWeight: "700", flexShrink: 1 }}>{tr.symbol}</Text>
                   <View style={{ flex: 1 }} />
-                  <View style={{ alignItems: "flex-end" }}>
+                  <View style={{ alignItems: "flex-end", flexShrink: 0 }}>
                     <Text style={{ color: pos ? GREEN : RED, fontWeight: "800" }}>
                       {pos ? "+" : ""}${(tr.pnl_usdt ?? 0).toFixed(2)}
                     </Text>
@@ -677,7 +652,7 @@ export default function ASIBotScreen() {
                       style={{
                         paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
                         backgroundColor: isClosing ? colors.border : RED,
-                        marginLeft: 6, minWidth: 56, alignItems: "center",
+                        minWidth: 56, alignItems: "center", flexShrink: 0,
                       }}
                       testID={`asi-close-${tr.symbol}`}
                     >
@@ -691,23 +666,41 @@ export default function ASIBotScreen() {
                     Tampilkan SL, TP, margin mode AKTUAL + status native.
                     "Native OK" hanya hijau bila bracket_type=hard DAN
                     (bracket_live tidak false). */}
+                {/* v9.9.7 — Row 2: [DEMO/REAL chip] SL · TP · MARGIN · LEVx.
+                    Susunan IDENTIK untuk demo & real: slot chip selalu ada
+                    (DEMO biru utk testnet, REAL hijau utk mainnet) sehingga
+                    semua baris sejajar rapi ke bawah. Leverage diperjelas
+                    hijau tebal (permintaan user). */}
                 {isOpen ? (
                   <View style={{ marginTop: 6, gap: 2 }}>
-                    <Text style={{ color: colors.textMuted, fontSize: 10, lineHeight: 15 }} numberOfLines={2}>
-                      <Text style={{ color: RED, fontWeight: "800" }}>SL {formatPrice(tr.stop_loss, "crypto")}</Text>
-                      {"  ·  "}
-                      <Text style={{ color: GREEN, fontWeight: "800" }}>
-                        TP {(tr.take_profits || []).map((x) => formatPrice(x, "crypto")).join(" / ") || "—"}
-                      </Text>
-                      {"  ·  "}
-                      <Text style={{
-                        color: ((tr.actual_margin_mode || tr.margin_mode) === "cross") ? PURPLE : TEAL,
-                        fontWeight: "800",
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <View style={{
+                        paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 4,
+                        backgroundColor: tr.testnet ? LIGHT_BLUE : GREEN,
                       }}>
-                        {String(tr.actual_margin_mode || tr.margin_mode || "isolated").toUpperCase()}
+                        <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 8.5, letterSpacing: 0.4 }}>
+                          {tr.testnet ? t("asi_demo_badge") : "REAL"}
+                        </Text>
+                      </View>
+                      <Text style={{ color: colors.textMuted, fontSize: 10, lineHeight: 15, flexShrink: 1 }} numberOfLines={2}>
+                        <Text style={{ color: RED, fontWeight: "800" }}>SL {formatPrice(tr.stop_loss, "crypto")}</Text>
+                        {"  ·  "}
+                        <Text style={{ color: GREEN, fontWeight: "800" }}>
+                          TP {(tr.take_profits || []).map((x) => formatPrice(x, "crypto")).join(" / ") || "—"}
+                        </Text>
+                        {"  ·  "}
+                        <Text style={{
+                          color: ((tr.actual_margin_mode || tr.margin_mode) === "cross") ? PURPLE : TEAL,
+                          fontWeight: "800",
+                        }}>
+                          {String(tr.actual_margin_mode || tr.margin_mode || "isolated").toUpperCase()}
+                        </Text>
+                        {"  ·  "}
+                        <Text style={{ color: GREEN, fontWeight: "900", fontSize: 11 }}>
+                          {`${(tr as any).actual_leverage ?? tr.leverage ?? "?"}x`}
+                        </Text>
                       </Text>
-                      {`  ·  ${(tr as any).actual_leverage ?? tr.leverage ?? "?"}x`}
-                    </Text>
+                    </View>
                     <Text style={{
                       fontSize: 10, fontWeight: "800",
                       color: (tr.bracket_type === "hard" && tr.bracket_live !== false) ? GREEN : ORANGE,

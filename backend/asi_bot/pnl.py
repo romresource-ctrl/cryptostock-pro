@@ -63,13 +63,13 @@ async def pnl_summary(db: Any, device_id: str) -> dict[str, Any]:
     return out
 
 
-async def leaderboard(db: Any, period_days: int = 7, limit: int = 10) -> list[dict[str, Any]]:
+async def leaderboard(db: Any, period_days: int = 7, limit: int = 25) -> list[dict[str, Any]]:
+    # v9.9.7 — DEMO & REAL sama-sama tampil (keputusan user), dipisah per
+    # jaringan supaya badge DEMO akurat. Maks 25 — nilai kecil tergeser.
     pipeline = [
-        # v9.9.5 — leaderboard hanya trade REAL (mainnet), demo dikecualikan
-        {"$match": {"created_at": {"$gte": _iso_days_ago(period_days)},
-                    "testnet": {"$ne": True}}},
+        {"$match": {"created_at": {"$gte": _iso_days_ago(period_days)}}},
         {"$group": {
-            "_id": "$device_id",
+            "_id": {"device": "$device_id", "testnet": {"$eq": ["$testnet", True]}},
             "pnl_usdt": {"$sum": "$pnl_usdt"},
             "trades": {"$sum": 1},
             "wins": {"$sum": {"$cond": [{"$gt": ["$pnl_usdt", 0]}, 1, 0]}},
@@ -81,34 +81,39 @@ async def leaderboard(db: Any, period_days: int = 7, limit: int = 10) -> list[di
     rows = await db.asi_trades.aggregate(pipeline).to_list(limit)
     out = []
     for i, r in enumerate(rows):
-        cred = await db.asi_credentials.find_one({"device_id": r["_id"]}, {"handle": 1})
+        cred = await db.asi_credentials.find_one(
+            {"device_id": r["_id"]["device"]}, {"handle": 1})
         handle = (cred or {}).get("handle") or "***"
         trades = r.get("trades", 0)
         wins = r.get("wins", 0)
         wr = round(wins / trades * 100, 1) if trades else 0.0
         out.append({
             "rank": i + 1, "handle": handle,
+            "testnet": bool(r["_id"]["testnet"]),
             "pnl_usdt": round(r.get("pnl_usdt") or 0.0, 2),
             "trades": trades, "wr": wr,
         })
     return out
 
 
-async def live_leaderboard(db: Any, limit: int = 10) -> list[dict[str, Any]]:
+async def live_leaderboard(db: Any, limit: int = 25) -> list[dict[str, Any]]:
     """v9.4.0 — Return traders that are CURRENTLY in open positions.
 
     v9.7.7 — Hanya tampilkan trader yang SEDANG PROFIT (hijau) dan diurutkan
     dari UNREALIZED PnL % terbesar (bukan $). Trader loss (merah) dan
     break-even disembunyikan — leaderboard khusus "who's crushing it right now".
-    Each row includes the open trade snapshot so the UI can show what's
-    being traded (symbol, side, entry) and the user can preview a copy.
+
+    v9.9.7 — DEMO & REAL sama-sama ditampilkan (keputusan user: strategi bot
+    identik, hanya beda uang asli/non-asli). Group per (device, testnet)
+    supaya entry demo & real trader yang sama tampil terpisah dengan badge.
+    Maks 25 entri — nilai kecil tergeser keluar oleh % dan $ terbesar.
     """
     pipeline = [
-        # v9.9.5 — leaderboard live hanya posisi REAL (mainnet)
-        {"$match": {"status": "open", "testnet": {"$ne": True}}},
+        {"$match": {"status": "open"}},
         {"$sort": {"updated_at": -1}},
         {"$group": {
-            "_id": "$device_id",
+            # v9.9.7 — pisahkan demo vs real per trader (badge DEMO di UI)
+            "_id": {"device": "$device_id", "testnet": {"$eq": ["$testnet", True]}},
             "unrealized_usdt": {"$sum": "$pnl_usdt"},
             "margin_usdt": {"$sum": {"$ifNull": ["$margin_usdt", 0]}},
             # Fallback margin from notional/leverage for older records.
@@ -131,7 +136,8 @@ async def live_leaderboard(db: Any, limit: int = 10) -> list[dict[str, Any]]:
     rows = await db.asi_trades.aggregate(pipeline).to_list(limit * 3)
     enriched: list[dict[str, Any]] = []
     for r in rows:
-        device_id = r["_id"]
+        device_id = r["_id"]["device"]
+        is_demo = bool(r["_id"]["testnet"])
         unrealized = round(r.get("unrealized_usdt") or 0.0, 2)
         margin = (r.get("margin_usdt") or 0.0) or (r.get("notional_margin") or 0.0)
         unrealized_pct = round(unrealized / margin * 100.0, 2) if margin > 0 else 0.0
@@ -139,12 +145,12 @@ async def live_leaderboard(db: Any, limit: int = 10) -> list[dict[str, Any]]:
             continue
         cred = await db.asi_credentials.find_one({"device_id": device_id}, {"handle": 1})
         handle = (cred or {}).get("handle") or "***"
-        # Realised 30-day Win Rate for extra context.
+        # Realised 30-day Win Rate for extra context (demo & real digabung —
+        # strategi bot identik menurut keputusan user v9.9.7).
         hist = await db.asi_trades.aggregate([
             {"$match": {
                 "device_id": device_id, "status": "closed",
                 "created_at": {"$gte": _iso_days_ago(30)},
-                "testnet": {"$ne": True},
             }},
             {"$group": {
                 "_id": None,
@@ -158,6 +164,7 @@ async def live_leaderboard(db: Any, limit: int = 10) -> list[dict[str, Any]]:
         latest = r.get("latest") or {}
         enriched.append({
             "handle": handle,
+            "testnet": is_demo,
             "unrealized_usdt": unrealized,
             "unrealized_pct": unrealized_pct,
             "open_count": int(r.get("open_count") or 0),
