@@ -1671,29 +1671,29 @@ async def search_assets(
 # v8.12.69 — Latest published Android build. The /app-version endpoint
 # serves this so outdated installs get an update prompt. Bump together
 # with frontend APP_VERSION / app.json version on every release.
-APP_LATEST_VERSION = "9.9.13"
+APP_LATEST_VERSION = "10.0.1"
 
-# v9.9.9 — Release notes untuk popup update (per bahasa).
+# v10.0.1 — Release notes untuk popup update (per bahasa).
 APP_UPDATE_NOTES = {
     "id": (
-        "• SL/TP native Binance kini TERVERIFIKASI + auto-rollback aman\n"
-        "• Layering (averaging) dengan SL/TP otomatis dihitung ulang\n"
-        "• API Key Mainnet & Testnet tersimpan terpisah — switching instan\n"
-        "• Saldo Demo & Real live di ASI-Bot\n"
-        "• Copy Trade: detail Entry/SL/TP/Leverage + EXECUTE aktif\n"
-        "• History trade lengkap dengan margin & harga close\n"
-        "• Tombol EXECUTE kini selalu terlihat (sticky)\n"
-        "• Fix stabilitas: order basi otomatis dibersihkan sebelum entry"
+        "• Entry LIMIT Moderate (-0.5/-0.3 ATR): order bot jauh lebih mudah terisi, tunggu maks 2 candle lalu auto-cancel\n"
+        "• Perbaikan akar masalah close dini: SL/TP kini ter-anchor ke harga fill NYATA (anchor-to-fill) + guard TP salah-sisi\n"
+        "• TP split benar di semua jalur: TP1 ⅓, TP2 ⅓, TP3 sisa (tidak lagi tutup 100% di TP1)\n"
+        "• Floor TP minimum: TP1 tidak bisa lagi 'nempel' di entry\n"
+        "• Mark price REALTIME (2 detik) di samping simbol posisi open\n"
+        "• Frame kartu Recent Trades: hijau = profit, merah = loss, emas = LIMIT antri\n"
+        "• Badge LIMIT + tombol CANCEL untuk order antri; swipe-to-delete kartu history\n"
+        "• Label formula singkat per trade (John Wick, KISS Pivot, Box Theory, dst)"
     ),
     "en": (
-        "• Verified native Binance SL/TP + safe auto-rollback\n"
-        "• Layering (averaging) with auto-rebalanced SL/TP brackets\n"
-        "• Separate Mainnet & Testnet API key slots — instant switching\n"
-        "• Live Demo & Real balances on ASI-Bot\n"
-        "• Copy Trade: full Entry/SL/TP/Leverage details + working EXECUTE\n"
-        "• Complete trade history with margin & close prices\n"
-        "• EXECUTE button now always visible (sticky)\n"
-        "• Stability fix: stale orders auto-cleaned before entry"
+        "• Moderate LIMIT entries (-0.5/-0.3 ATR): bot orders fill far more often, auto-cancel after 2 candles\n"
+        "• Early-close root fix: SL/TP now anchored to the ACTUAL fill price (anchor-to-fill) + wrong-side TP guard\n"
+        "• Correct TP splitting everywhere: TP1 ⅓, TP2 ⅓, TP3 remainder (no more 100% close at TP1)\n"
+        "• Minimum TP floor: TP1 can no longer sit on top of entry\n"
+        "• REALTIME mark price (2s) next to the symbol of open positions\n"
+        "• Recent Trades card frames: green = profit, red = loss, gold = LIMIT pending\n"
+        "• LIMIT badge + CANCEL button for queued orders; swipe-to-delete history cards\n"
+        "• Short per-trade formula labels (John Wick, KISS Pivot, Box Theory, etc.)"
     ),
 }
 
