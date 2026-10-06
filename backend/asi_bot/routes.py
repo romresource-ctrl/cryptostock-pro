@@ -30,6 +30,10 @@ from .whitelist import TOP_100_FUTURES
 
 router = APIRouter(prefix="/asi", tags=["asi-bot"])
 
+# v9.9.9 — module-level DB ref supaya endpoint di luar closure register()
+# (price, balance, egress-ip) bisa mengakses Mongo.
+_DB: Any = None
+
 
 def _initials_from_email(email: str | None, device_id: str) -> str:
     """3-letter anonymous handle: first 3 non-dot chars of email prefix,
@@ -115,6 +119,8 @@ class BotConfigPayload(BaseModel):
 
 def register(app_api: APIRouter, db: Any) -> None:
     """Mount ASI-Bot routes onto an existing FastAPI APIRouter."""
+    global _DB
+    _DB = db
     # Attach trade-level endpoints (defined below with `router` closure).
     _attach_trade_routes(db)
 
@@ -227,6 +233,42 @@ async def get_price(symbol: str = Query(..., min_length=2, max_length=20)):
         raise HTTPException(400, f"Simbol {base} tidak ditemukan di Binance Futures")
     return {"symbol": base, "price": float(r.json()["price"])}
 
+
+
+@router.get("/balance")
+async def get_balance(device_id: str = Query(..., min_length=4),
+                      exchange: ExchangeId = Query("binance")):
+    """v9.9.9 — Saldo USDT available dari exchange untuk jaringan AKTIF
+    (active_testnet di bot config). Ditampilkan di atas Recent Trades;
+    di-refresh frontend bersamaan dengan siklus PnL."""
+    from .engine import _get_client, _fetch_usdt_balance
+    cfg = await _DB.asi_bot_config.find_one({"_id": device_id})
+    net = bool(cfg.get("active_testnet", True)) if cfg and "active_testnet" in cfg else None
+    cred = await resolve_credential(_DB, device_id, exchange, net)
+    if not cred:
+        return {"ok": False, "available_usdt": None,
+                "testnet": bool(net) if net is not None else None}
+    try:
+        if exchange == "binance":
+            from . import binance_rest as br
+            bal = await br.available_usdt(
+                decrypt(cred["api_key_enc"]), decrypt(cred["api_secret_enc"]),
+                bool(cred.get("testnet", True)),
+            )
+        else:
+            client = await _get_client(cred)
+            try:
+                bal = await _fetch_usdt_balance(client)
+            finally:
+                try:
+                    await client.close()
+                except Exception:
+                    pass
+        return {"ok": True, "available_usdt": round(float(bal), 2),
+                "testnet": bool(cred.get("testnet", True))}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "available_usdt": None, "error": str(e)[:160],
+                "testnet": bool(cred.get("testnet", True))}
 
 @router.get("/egress-ip")
 async def _get_egress_ip() -> dict[str, Any]:

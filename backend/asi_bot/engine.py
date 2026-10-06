@@ -198,6 +198,13 @@ async def resolve_credential(
                 pass
             return legacy
         return None  # network tidak cocok → jangan pakai key jaringan lain
+    # Tidak ada legacy doc & network tidak ditentukan → pakai slot apa pun
+    # yang tersedia (kasus device baru yang hanya punya slot v9.9.5).
+    if testnet is None:
+        for net in ("mainnet", "testnet"):
+            doc = await db.asi_credentials.find_one({"_id": f"{device_id}:{exchange}:{net}"})
+            if doc:
+                return doc
     return None
 
 

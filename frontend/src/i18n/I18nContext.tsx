@@ -989,6 +989,8 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     cn: "另有 {n} 个持仓",
   },
   asi_closed_at_price: { id: "Closed @", en: "Closed @", ru: "Закрыто @", cn: "平仓 @" },
+  asi_closed_on: { id: "Closed on", en: "Closed on", ru: "Закрыто на", cn: "平仓于" },
+  asi_balance_label: { id: "Saldo Tersedia", en: "Available Balance", ru: "Доступный баланс", cn: "可用余额" },
 
   // v9.6.9 — Credential validation error codes (backend returns {code, message})
   asi_err_ip_or_key_invalid: {

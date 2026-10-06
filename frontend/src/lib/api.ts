@@ -437,6 +437,11 @@ export const api = {
       get<{ symbol: string; price: number }>(
         `/asi/price?symbol=${encodeURIComponent(symbol)}`,
       ),
+    // v9.9.9 — saldo USDT available untuk jaringan aktif (demo/real).
+    balance: (deviceId: string, exchange: string = "binance") =>
+      get<{ ok: boolean; available_usdt: number | null; testnet: boolean | null }>(
+        `/asi/balance?device_id=${encodeURIComponent(deviceId)}&exchange=${encodeURIComponent(exchange)}`,
+      ),
     pnl: (deviceId: string) =>
       get<AsiPnl>(`/asi/pnl?device_id=${encodeURIComponent(deviceId)}`),
     leaderboard: (periodDays = 7) =>

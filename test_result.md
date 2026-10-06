@@ -2245,3 +2245,23 @@ frontend_backend_v999p2:
           untuk trade closed: chip DEMO/REAL + Entry·SL·TP·margin·lev +
           "Closed @ harga · ALASAN". Screenshot-verified (SOL demo +
           ARB real closed). Legacy rows tanpa closed_price → "—".
+
+# ======================================================
+# v9.9.9 patch 3 — Saldo available realtime + Closed on Exchange
+# ======================================================
+v999p3:
+  - task: "Available balance card atas Recent Trades + Closed on {exchange}"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/routes.py engine.py /app/frontend/app/asi-bot.tsx src/lib/api.ts"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          GET /api/asi/balance → saldo USDT jaringan aktif (curl verified
+          $3,656.96 testnet). resolve_credential fallback ke slot v9.9.5
+          bila legacy doc tidak ada. Baris 3 closed trade: "Closed @ X ·
+          ALASAN · Closed on Binance". Screenshot-verified.

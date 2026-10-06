@@ -699,6 +699,22 @@ Fase berikutnya (BELUM):
 - Tombol eksekusi Semi-Auto di kartu AI Suggestions ("⚡ EXECUTE SEMI-AUTO") dengan badge pink SEMI.
 - Konfirmasi sukses kini menyediakan opsi langsung "Lihat Recent Trades" → navigasi ke `/asi-bot`.
 
+## v9.9.9 (patch 3) — Saldo Available Realtime + "Closed on {Exchange}"
+
+1. Kartu **Saldo Tersedia** di atas Recent Trades: endpoint baru
+   `GET /api/asi/balance` membaca available USDT langsung dari exchange
+   untuk jaringan AKTIF (active_testnet config → resolve_credential).
+   Chip DEMO/REAL menandai jaringan. Di-refresh bersama siklus PnL
+   (interval bot + pull-to-refresh). Perbaikan bonus: resolve_credential
+   kini fallback ke slot v9.9.5 mana pun bila device baru tidak punya
+   legacy doc (sebelumnya balance execute bisa gagal menemukan key).
+2. Baris ketiga trade closed kini: `Closed @ <harga> · <ALASAN> · Closed
+   on Binance/Bybit/OKX/Bitget` sesuai exchange trade tsb.
+
+Verified: endpoint mengembalikan saldo testnet asli ($3,656.96);
+screenshot menampilkan kartu saldo DEMO + baris "Closed on Binance".
+Lint pass. Tetap v9.9.9.
+
 ## v9.9.9 (patch 2) — History Closed Menampilkan Detail Lengkap + Closed Price
 
 User: trade CLOSED di Recent Trades harus menampilkan detail lengkap
