@@ -24,6 +24,7 @@ import {
 import { API_BASE } from "@/src/lib/api";
 import { APP_VERSION } from "@/src/lib/version";
 import { useTheme } from "@/src/theme/ThemeContext";
+import { useI18n } from "@/src/i18n/I18nContext";
 
 const PLAY_STORE_URL =
   "https://play.google.com/store/apps/details?id=com.cryptostockapps.aicryptostockpro";
@@ -44,7 +45,9 @@ function isOutdated(current: string, latest: string): boolean {
 
 export default function UpdatePrompt() {
   const { colors } = useTheme();
+  const { t, lang } = useI18n();
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
+  const [notes, setNotes] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -56,6 +59,11 @@ export default function UpdatePrompt() {
         const latest = String(data?.latest_version ?? "");
         if (alive && latest && isOutdated(APP_VERSION, latest)) {
           setLatestVersion(latest);
+          // v9.9.9 — tampilkan release notes per bahasa bila tersedia.
+          const n = data?.notes;
+          if (n && typeof n === "object") {
+            setNotes(n[lang] || n.en || n.id || null);
+          }
         }
       } catch {
         /* offline / backend down — never block the app */
@@ -64,7 +72,7 @@ export default function UpdatePrompt() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [lang]);
 
   if (!latestVersion) return null;
 
@@ -94,29 +102,34 @@ export default function UpdatePrompt() {
             <Ionicons name="rocket" size={26} color={colors.accentBlue} />
           </View>
           <Text style={[styles.title, { color: colors.textPrimary }]}>
-            Update Available
+            {t("update_title")}
           </Text>
           <Text style={[styles.body, { color: colors.textMuted }]}>
-            A new version of AI Crypto Stock Pro is available on Google Play.
-            {"\n\n"}
-            Installed: v{APP_VERSION} → Latest: v{latestVersion}
-            {"\n\n"}
-            Update now to get the latest features, fixes, and market coverage.
+            {t("update_body")
+              .replace("{cur}", APP_VERSION)
+              .replace("{latest}", latestVersion)}
           </Text>
+          {notes ? (
+            <View style={[styles.notesBox, { borderColor: colors.border, backgroundColor: colors.background }]}>
+              <Text style={{ color: colors.textPrimary, fontSize: 11, lineHeight: 17, fontWeight: "600" }}>
+                {notes}
+              </Text>
+            </View>
+          ) : null}
           <TouchableOpacity
             onPress={openStore}
             style={[styles.updateBtn, { backgroundColor: colors.accentBlue }]}
             testID="update-now-button"
           >
             <Ionicons name="logo-google-playstore" size={16} color="#fff" />
-            <Text style={styles.updateBtnText}>UPDATE ON PLAY STORE</Text>
+            <Text style={styles.updateBtnText}>{t("update_now")}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => setLatestVersion(null)}
             style={styles.laterBtn}
             testID="update-later-button"
           >
-            <Text style={[styles.laterText, { color: colors.textMuted }]}>Later</Text>
+            <Text style={[styles.laterText, { color: colors.textMuted }]}>{t("update_later")}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -154,6 +167,13 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     textAlign: "center",
     marginTop: 8,
+  },
+  notesBox: {
+    width: "100%",
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 12,
   },
   updateBtn: {
     marginTop: 16,

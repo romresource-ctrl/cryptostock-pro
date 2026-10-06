@@ -11,6 +11,7 @@ device). Phase 4 will optionally bind to an auth user id if present.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 from datetime import datetime, timezone
@@ -238,37 +239,37 @@ async def get_price(symbol: str = Query(..., min_length=2, max_length=20)):
 @router.get("/balance")
 async def get_balance(device_id: str = Query(..., min_length=4),
                       exchange: ExchangeId = Query("binance")):
-    """v9.9.9 — Saldo USDT available dari exchange untuk jaringan AKTIF
-    (active_testnet di bot config). Ditampilkan di atas Recent Trades;
-    di-refresh frontend bersamaan dengan siklus PnL."""
+    """v9.9.9 — Saldo USDT available dari exchange untuk KEDUA jaringan
+    (demo/testnet + real/mainnet) sekaligus. Ditampilkan sebagai 2 kartu
+    di atas Recent Trades; di-refresh frontend bersama siklus PnL."""
     from .engine import _get_client, _fetch_usdt_balance
-    cfg = await _DB.asi_bot_config.find_one({"_id": device_id})
-    net = bool(cfg.get("active_testnet", True)) if cfg and "active_testnet" in cfg else None
-    cred = await resolve_credential(_DB, device_id, exchange, net)
-    if not cred:
-        return {"ok": False, "available_usdt": None,
-                "testnet": bool(net) if net is not None else None}
-    try:
-        if exchange == "binance":
-            from . import binance_rest as br
-            bal = await br.available_usdt(
-                decrypt(cred["api_key_enc"]), decrypt(cred["api_secret_enc"]),
-                bool(cred.get("testnet", True)),
-            )
-        else:
-            client = await _get_client(cred)
-            try:
-                bal = await _fetch_usdt_balance(client)
-            finally:
+    from . import binance_rest as br
+
+    async def _one(testnet: bool) -> dict[str, Any]:
+        cred = await resolve_credential(_DB, device_id, exchange, testnet)
+        if not cred:
+            return {"connected": False, "available_usdt": None}
+        try:
+            if exchange == "binance":
+                bal = await br.available_usdt(
+                    decrypt(cred["api_key_enc"]), decrypt(cred["api_secret_enc"]),
+                    bool(cred.get("testnet", True)),
+                )
+            else:
+                client = await _get_client(cred)
                 try:
-                    await client.close()
-                except Exception:
-                    pass
-        return {"ok": True, "available_usdt": round(float(bal), 2),
-                "testnet": bool(cred.get("testnet", True))}
-    except Exception as e:  # noqa: BLE001
-        return {"ok": False, "available_usdt": None, "error": str(e)[:160],
-                "testnet": bool(cred.get("testnet", True))}
+                    bal = await _fetch_usdt_balance(client)
+                finally:
+                    try:
+                        await client.close()
+                    except Exception:
+                        pass
+            return {"connected": True, "available_usdt": round(float(bal), 2)}
+        except Exception:  # noqa: BLE001
+            return {"connected": True, "available_usdt": None}
+
+    demo, real = await asyncio.gather(_one(True), _one(False))
+    return {"ok": True, "demo": demo, "real": real}
 
 @router.get("/egress-ip")
 async def _get_egress_ip() -> dict[str, Any]:

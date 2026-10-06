@@ -67,8 +67,12 @@ export default function ASIBotScreen() {
   // max 20 dengan scroll ke bawah. Trade CLOSED (demo maupun real) tetap
   // tersimpan sebagai history — tidak pernah dihapus dari daftar.
   const [tradesExpanded, setTradesExpanded] = useState(false);
-  // v9.9.9 — Saldo available USDT jaringan aktif (di atas Recent Trades).
-  const [balance, setBalance] = useState<{ usdt: number | null; testnet: boolean | null }>({ usdt: null, testnet: null });
+  // v9.9.9 — Saldo available USDT KEDUA jaringan (kartu DEMO di atas,
+  // kartu REAL di bawahnya) di atas Recent Trades.
+  const [balance, setBalance] = useState<{
+    demo: { connected: boolean; available_usdt: number | null };
+    real: { connected: boolean; available_usdt: number | null };
+  }>({ demo: { connected: false, available_usdt: null }, real: { connected: false, available_usdt: null } });
   const [connectOpen, setConnectOpen] = useState(false);
   // v9.7.6 — track in-flight close requests per trade id
   const [closingIds, setClosingIds] = useState<Record<string, boolean>>({});
@@ -118,10 +122,10 @@ export default function ASIBotScreen() {
       if (b.exists) setBot({ ...bot, ...b });
       const p = await api.asi.pnl(id); setPnl(p);
       const t2 = await api.asi.listTrades(id, 20); setTrades(t2.items.slice(0, 20));
-      // v9.9.9 — saldo available jaringan aktif, di-refresh bersama PnL.
+      // v9.9.9 — saldo available kedua jaringan, di-refresh bersama PnL.
       try {
         const b = await api.asi.balance(id, bot.exchange);
-        setBalance({ usdt: b.available_usdt, testnet: b.testnet });
+        setBalance({ demo: b.demo, real: b.real });
       } catch { /* saldo opsional — jangan ganggu refresh utama */ }
     } catch {}
     finally { setCredsLoaded(true); }
@@ -533,27 +537,39 @@ export default function ASIBotScreen() {
 
         {/* Leaderboard — hidden on this screen; pindah ke /copy-trade */}
 
-        {/* v9.9.9 — Saldo available USDT untuk jaringan AKTIF (demo/real)
-            langsung dari exchange, realtime mengikuti siklus refresh PnL. */}
-        <View style={{
-          flexDirection: "row", alignItems: "center", gap: 8,
-          backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1,
-          borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginTop: 14,
-        }}>
-          <View style={{
-            paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
-            backgroundColor: (balance.testnet ?? activeTestnet) ? LIGHT_BLUE : GREEN,
-          }}>
-            <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 9, letterSpacing: 0.4 }}>
-              {(balance.testnet ?? activeTestnet) ? t("asi_demo_badge") : "REAL"}
-            </Text>
-          </View>
-          <Text style={{ color: colors.textMuted, fontSize: 11, fontWeight: "700", flex: 1 }}>
-            {t("asi_balance_label")}
-          </Text>
-          <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 14 }}>
-            {balance.usdt === null ? "—" : `$${balance.usdt.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-          </Text>
+        {/* v9.9.9 — Dua kartu saldo available USDT langsung dari exchange:
+            DEMO (testnet) di ATAS, REAL (mainnet) di BAWAHNYA. Refresh
+            realtime mengikuti siklus PnL. */}
+        <View style={{ gap: 8, marginTop: 14 }}>
+          {([
+            { key: "demo", label: t("asi_demo_badge"), chipColor: LIGHT_BLUE, data: balance.demo },
+            { key: "real", label: "REAL", chipColor: GREEN, data: balance.real },
+          ] as const).map((row) => (
+            <View key={row.key} style={{
+              flexDirection: "row", alignItems: "center", gap: 8,
+              backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1,
+              borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10,
+            }}>
+              <View style={{
+                paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
+                backgroundColor: row.chipColor,
+              }}>
+                <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 9, letterSpacing: 0.4 }}>
+                  {row.label}
+                </Text>
+              </View>
+              <Text style={{ color: colors.textMuted, fontSize: 11, fontWeight: "700", flex: 1 }}>
+                {t("asi_balance_label")}
+              </Text>
+              <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 14 }}>
+                {!row.data.connected
+                  ? t("asi_not_connected")
+                  : row.data.available_usdt === null
+                    ? "—"
+                    : `$${row.data.available_usdt.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+              </Text>
+            </View>
+          ))}
         </View>
 
         {/* Recent trades — v9.7.6: selalu tampil; SEMI/FULL badge + tombol CLOSE untuk posisi open.

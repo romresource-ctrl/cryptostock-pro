@@ -699,6 +699,24 @@ Fase berikutnya (BELUM):
 - Tombol eksekusi Semi-Auto di kartu AI Suggestions ("⚡ EXECUTE SEMI-AUTO") dengan badge pink SEMI.
 - Konfirmasi sukses kini menyediakan opsi langsung "Lihat Recent Trades" → navigasi ke `/asi-bot`.
 
+## v9.9.9 (patch 6) — Popup Update dengan Release Notes Terlokalisasi
+
+APP_LATEST_VERSION backend 9.3.0 → 9.9.9. Endpoint /app-version kini
+mengembalikan `notes` per bahasa (id/en). UpdatePrompt menampilkan release
+notes dalam bahasa user + seluruh teks popup dilokalisasi (update_title/
+body/now/later — 4 bahasa). Popup muncul otomatis di cold start untuk
+build yang lebih tua dari 9.9.9 dan mengarah ke Play Store.
+
+## v9.9.9 (patch 5) — Dua Kartu Saldo: DEMO di atas, REAL di bawah
+
+User: kotak DEMO Available Balance diletakkan di atas kotak REAL Available
+Balance. Endpoint /asi/balance diubah mengembalikan KEDUA jaringan
+sekaligus (asyncio.gather paralel): {demo: {connected, available_usdt},
+real: {...}}. Frontend menampilkan 2 kartu berurutan: DEMO (chip biru)
+lalu REAL (chip hijau); jaringan tanpa credential menampilkan
+"Not connected →". Screenshot-verified: DEMO $3,656.96 di atas, REAL
+Not connected di bawah. Lint pass. Tetap v9.9.9.
+
 ## v9.9.9 (patch 4) — Baris 3 closed disederhanakan: hanya "Closed on {Exchange}"
 
 User: tulisan "Closed @" di baris ketiga dihilangkan, cukup "Closed on

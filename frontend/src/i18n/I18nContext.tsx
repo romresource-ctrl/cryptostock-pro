@@ -991,6 +991,16 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   asi_closed_at_price: { id: "Closed @", en: "Closed @", ru: "Закрыто @", cn: "平仓 @" },
   asi_closed_on: { id: "Closed on", en: "Closed on", ru: "Закрыто на", cn: "平仓于" },
   asi_balance_label: { id: "Saldo Tersedia", en: "Available Balance", ru: "Доступный баланс", cn: "可用余额" },
+  // v9.9.9 — popup update terlokalisasi
+  update_title: { id: "Update Tersedia", en: "Update Available", ru: "Доступно обновление", cn: "有可用更新" },
+  update_body: {
+    id: "Versi baru AI Crypto Stock Pro tersedia di Google Play.\n\nTerpasang: v{cur} → Terbaru: v{latest}\n\nUpdate sekarang untuk mendapatkan fitur & perbaikan terbaru.",
+    en: "A new version of AI Crypto Stock Pro is available on Google Play.\n\nInstalled: v{cur} → Latest: v{latest}\n\nUpdate now to get the latest features and fixes.",
+    ru: "Новая версия AI Crypto Stock Pro доступна в Google Play.\n\nУстановлена: v{cur} → Последняя: v{latest}\n\nОбновите, чтобы получить новые функции и исправления.",
+    cn: "AI Crypto Stock Pro 新版本已在 Google Play 上线。\n\n当前版本：v{cur} → 最新版本：v{latest}\n\n立即更新以获取最新功能和修复。",
+  },
+  update_now: { id: "UPDATE DI PLAY STORE", en: "UPDATE ON PLAY STORE", ru: "ОБНОВИТЬ В PLAY STORE", cn: "在 PLAY 商店更新" },
+  update_later: { id: "Nanti", en: "Later", ru: "Позже", cn: "稍后" },
 
   // v9.6.9 — Credential validation error codes (backend returns {code, message})
   asi_err_ip_or_key_invalid: {

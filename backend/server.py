@@ -1671,7 +1671,27 @@ async def search_assets(
 # v8.12.69 — Latest published Android build. The /app-version endpoint
 # serves this so outdated installs get an update prompt. Bump together
 # with frontend APP_VERSION / app.json version on every release.
-APP_LATEST_VERSION = "9.3.0"
+APP_LATEST_VERSION = "9.9.9"
+
+# v9.9.9 — Release notes untuk popup update (per bahasa).
+APP_UPDATE_NOTES = {
+    "id": (
+        "• SL/TP native Binance kini TERVERIFIKASI + auto-rollback aman\n"
+        "• Layering (averaging) dengan SL/TP otomatis dihitung ulang\n"
+        "• API Key Mainnet & Testnet tersimpan terpisah — switching instan\n"
+        "• Saldo Demo & Real live di ASI-Bot\n"
+        "• Copy Trade: detail Entry/SL/TP/Leverage + EXECUTE aktif\n"
+        "• History trade lengkap dengan harga close"
+    ),
+    "en": (
+        "• Verified native Binance SL/TP + safe auto-rollback\n"
+        "• Layering (averaging) with auto-rebalanced SL/TP brackets\n"
+        "• Separate Mainnet & Testnet API key slots — instant switching\n"
+        "• Live Demo & Real balances on ASI-Bot\n"
+        "• Copy Trade: full Entry/SL/TP/Leverage details + working EXECUTE\n"
+        "• Complete trade history with close prices"
+    ),
+}
 
 
 @api.get("/app-version")
@@ -1685,6 +1705,7 @@ async def app_version() -> dict[str, Any]:
     return {
         "latest_version": APP_LATEST_VERSION,
         "play_store_url": "https://play.google.com/store/apps/details?id=com.cryptostockapps.aicryptostockpro",
+        "notes": APP_UPDATE_NOTES,
     }
 
 

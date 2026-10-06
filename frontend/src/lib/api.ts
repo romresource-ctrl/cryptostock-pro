@@ -439,7 +439,9 @@ export const api = {
       ),
     // v9.9.9 — saldo USDT available untuk jaringan aktif (demo/real).
     balance: (deviceId: string, exchange: string = "binance") =>
-      get<{ ok: boolean; available_usdt: number | null; testnet: boolean | null }>(
+      get<{ ok: boolean;
+             demo: { connected: boolean; available_usdt: number | null };
+             real: { connected: boolean; available_usdt: number | null } }>(
         `/asi/balance?device_id=${encodeURIComponent(deviceId)}&exchange=${encodeURIComponent(exchange)}`,
       ),
     pnl: (deviceId: string) =>
