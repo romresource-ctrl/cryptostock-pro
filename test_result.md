@@ -2603,3 +2603,43 @@ frontend_v9913d:
   tidak melebihi bingkai), baris ketiga di bawah tombol CLOSE/CANCEL.
 - Label badge pending -> LIMIT; tombol pending -> CANCEL (emas), open ->
   CLOSE (merah). Screenshot-verified. Unit tag logic PASS.
+
+# ======================================================
+# v9.9.14 — Entry LIMIT MODERATE + TTL 2 candle (keputusan user)
+# ======================================================
+backend_v9914:
+  - task: "Bot limit entry memakai entry_moderate (Confluence -0.5xATR, VWAP -0.3xATR), TTL 7200s, cancel-only saat expired"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py, /app/backend/asi_bot/engine.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Latar: semua LIMIT deep expired tanpa fill (harga tidak pernah
+          retrace -1.0/-0.6 ATR). User pilih: moderate, 2 candle, cancel
+          saja, Semi & Full-Auto.
+          - _asi_signal_fetcher: entry=entry_moderate, SL/TP digeser
+            sebesar (moderate-deep) -> R:R & ladder utuh. Diverifikasi
+            live: SUI SELL confluence entry 1.19464, TP1 0.70R, TP3 2.50R.
+          - ENTRY_LIMIT_TTL_SEC 3600 -> 7200.
+          - Fallback expired TETAP cancel-only (tidak market/chase).
+frontend_v9914:
+  - task: "Semi-Auto sheet memakai entry moderate (SL/TP ikut shift) + teks 2 candle"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/AISuggestionsSheet.tsx, /app/frontend/src/i18n/I18nContext.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Intent dari AI Suggestions: entry=entry_moderate, SL/TP shifted.
+          Teks pending diubah ke "2 candle (±2 jam)" 4 bahasa. Detail page
+          (AI consensus) tidak berlaku moderate (bukan level mesin
+          indikator). Lint bersih.

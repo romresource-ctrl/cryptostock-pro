@@ -3100,6 +3100,17 @@ async def _asi_signal_fetcher(market: str, symbol: str, profile: str | None = No
                                 d.get("take_profit_3")) if t]
             if not (entry and sl and tps):
                 return None
+            # v9.9.14 — Keputusan user: entry LIMIT memakai tier MODERATE
+            # (Confluence -0.5xATR, VWAP -0.3xATR) agar lebih sering terisi
+            # dibanding Deep yang nyaris tidak pernah tersentuh. SL/TP
+            # digeser sebesar selisih (moderate - deep) sehingga jarak R
+            # dan ladder tetap utuh relatif ke harga limit baru.
+            entry_mod = d.get("entry_moderate") or entry
+            shift = float(entry_mod) - float(entry)
+            if abs(shift) > 0:
+                entry = entry_mod
+                sl = sl + shift
+                tps = [t + shift for t in tps]
             return {
                 "side": side, "entry": entry, "stop_loss": sl,
                 "take_profits": tps,

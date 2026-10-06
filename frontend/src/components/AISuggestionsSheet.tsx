@@ -316,10 +316,16 @@ export default function AISuggestionsSheet({ visible, onClose, onRequestSubscrib
                       }]}
                       onPress={() => {
                         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+                        // v9.9.14 — Entry LIMIT MODERATE (lebih mudah
+                        // terisi): geser SL/TP sebesar selisih
+                        // moderate-deep agar R:R & ladder tetap utuh.
+                        const eDeep = a.entry!;
+                        const eMod = (a as any).entry_moderate ?? eDeep;
+                        const sh = eMod - eDeep;
                         setTradeIntent({
                           symbol: a.symbol, side: a.action as "BUY" | "SELL",
-                          entry: a.entry!, stop_loss: a.stop_loss!,
-                          take_profits: tps, source: "ai-suggestions",
+                          entry: eMod, stop_loss: a.stop_loss! + sh,
+                          take_profits: tps.map((x) => x + sh), source: "ai-suggestions",
                           formula_tag: formulaTagFromSignal(
                             (a as any).indicators, (a as any).reasons, apiProfile),
                         });

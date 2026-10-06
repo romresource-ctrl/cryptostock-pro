@@ -49,10 +49,10 @@ from .whitelist import binance_symbol_filters, round_to_step, round_to_tick
 logger = logging.getLogger("asi_bot.engine")
 
 Side = Literal["BUY", "SELL"]
-# v9.9.13 — Entry LIMIT deep (keputusan user): bot TIDAK lagi eksekusi
-# MARKET. Order limit di harga entry sinyal menunggu maksimal 1 candle
-# (sinyal bot = 1h) lalu dibatalkan otomatis oleh scheduler.
-ENTRY_LIMIT_TTL_SEC = 3600
+# v9.9.14 — Entry LIMIT MODERATE (keputusan user): bot TIDAK eksekusi
+# MARKET. Order limit di harga entry moderate sinyal menunggu maksimal
+# 2 candle (sinyal bot = 1h) lalu dibatalkan otomatis oleh scheduler.
+ENTRY_LIMIT_TTL_SEC = 7200
 # v9.6.0 — split dinamis mengikuti jumlah TP yang user pilih.
 TP_SPLITS: dict[int, tuple[float, ...]] = {
     1: (1.0,),
@@ -471,11 +471,10 @@ async def execute_trade(
     # Validate SL direction vs side (avoid instant trigger)
     close_side = "SELL" if side == "BUY" else "BUY"
 
-    # (5) Place LIMIT entry di harga sinyal (deep). v9.9.13 — keputusan
-    # user: bot TIDAK lagi eksekusi MARKET. Entry limit persis formula
-    # (backtest-validated, buy-the-pullback); jika tidak terisi dalam
-    # 1 candle, scheduler membatalkan otomatis. SL/TP ter-anchor ke harga
-    # limit ini → tidak ada lagi masalah TP nempel/salah sisi vs fill.
+    # (5) Place LIMIT entry di harga sinyal MODERATE (v9.9.14). Bot tidak
+    # eksekusi MARKET — entry limit di -0.5xATR (Confluence) / -0.3xATR
+    # (VWAP) dari harga; expire 2 candle bila tidak terisi. SL/TP sudah
+    # di-shift oleh signal fetcher ke anchor moderate → R:R & ladder utuh.
     limit_px = round_to_tick(float(entry), tick)
     try:
         entry_res = await br.limit_order(
