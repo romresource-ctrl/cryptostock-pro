@@ -944,10 +944,10 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   },
   // v9.9.1 — Label status bracket di baris Recent Trades
   asi_bracket_native_ok: {
-    id: "✓ SL/TP native aktif di Binance",
-    en: "✓ Native SL/TP armed on Binance",
-    ru: "✓ Нативные SL/TP активны на Binance",
-    cn: "✓ 原生 SL/TP 已在 Binance 生效",
+    id: "✓ SL/TP on Exchange",
+    en: "✓ SL/TP on Exchange",
+    ru: "✓ SL/TP on Exchange",
+    cn: "✓ SL/TP on Exchange",
   },
   asi_bracket_soft_short: {
     id: "⚠ SL/TP watcher soft — tap banner REPAIR",

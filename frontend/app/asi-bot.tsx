@@ -892,25 +892,27 @@ export default function ASIBotScreen() {
                         </Text>
                       </TouchableOpacity>
                     </View>
-                    {/* v9.9.13 — Baris ketiga: formula yang dipakai saat
-                        eksekusi (di bawah baris tombol CLOSE). Hanya utk
-                        trade yang merekam profile; trade lama tanpa field
-                        tidak ditebak labelnya. */}
-                    {((tr as any).profile || (tr as any).formula_tag) ? formulaLines(t, (tr as any).profile, (tr as any).formula_tag).map((ln, li) => (
-                      <Text key={li} numberOfLines={2} style={{ fontSize: 9, fontWeight: "700", color: colors.textMuted, lineHeight: 13, textAlign: "right", alignSelf: "stretch", flexShrink: 1 }}>
-                        {li === 0 ? `⚙️ ${t("asi_formula_label")}: ${ln}` : ln}
+                    {/* v9.9.13 — Baris ketiga SATU BARIS: status proteksi
+                        (kiri) + formula singkat (kanan, tidak keluar
+                        bingkai kartu). */}
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Text numberOfLines={1} style={{
+                        fontSize: 10, fontWeight: "800", flexShrink: 0,
+                        color: isPending ? GOLD : (tr.bracket_type === "hard" && tr.bracket_live !== false) ? GREEN : ORANGE,
+                      }}>
+                        {isPending
+                          ? t("asi_pending_line")
+                          : (tr.bracket_type === "hard" && tr.bracket_live !== false)
+                            ? t("asi_bracket_native_ok")
+                            : t("asi_bracket_soft_short")}
                       </Text>
-                    )) : null}
-                    <Text style={{
-                      fontSize: 10, fontWeight: "800",
-                      color: isPending ? GOLD : (tr.bracket_type === "hard" && tr.bracket_live !== false) ? GREEN : ORANGE,
-                    }}>
-                      {isPending
-                        ? t("asi_pending_line")
-                        : (tr.bracket_type === "hard" && tr.bracket_live !== false)
-                          ? t("asi_bracket_native_ok")
-                          : t("asi_bracket_soft_short")}
-                    </Text>
+                      <View style={{ flex: 1 }} />
+                      {((tr as any).profile || (tr as any).formula_tag) ? (
+                        <Text numberOfLines={1} style={{ fontSize: 9, fontWeight: "700", color: colors.textMuted, flexShrink: 1, textAlign: "right" }}>
+                          {`⚙️ ${t("asi_formula_label")}: ${formulaLines(t, (tr as any).profile, (tr as any).formula_tag)[0]}`}
+                        </Text>
+                      ) : null}
+                    </View>
                   </View>
                 ) : (
                   /* v9.9.9 — Trade CLOSED menampilkan detail lengkap yang
