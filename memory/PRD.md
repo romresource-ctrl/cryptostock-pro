@@ -699,6 +699,15 @@ Fase berikutnya (BELUM):
 - Tombol eksekusi Semi-Auto di kartu AI Suggestions ("⚡ EXECUTE SEMI-AUTO") dengan badge pink SEMI.
 - Konfirmasi sukses kini menyediakan opsi langsung "Lihat Recent Trades" → navigasi ke `/asi-bot`.
 
+## v9.9.8 (patch 2, tanpa bump) — Tombol CLOSE pindah ke baris 2
+
+User: CLOSE dipindah ke baris kedua persis di bawah angka PnL (paling
+kanan, wajib di dalam frame). Implementasi: CLOSE dikeluarkan dari row 1
+(hanya badges + SIDE + SYMBOL + PnL) dan ditempatkan di ujung kanan row 2
+(sejajar dengan chip DEMO/REAL + SL/TP/margin/leverage), flexShrink:0,
+minWidth 60. Screenshot-verified dengan trade demo ETH: CLOSE tepat di
+bawah PnL, tidak keluar bingkai.
+
 ## v9.9.8 (patch, tanpa bump) — Repair Bracket Senyap untuk Kasus Tidak Berisiko
 
 User: popup "Bracket Repair" menampilkan error mentah (-2021 dst) untuk

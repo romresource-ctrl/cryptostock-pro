@@ -650,22 +650,6 @@ export default function ASIBotScreen() {
                       {pos ? "+" : ""}{pct.toFixed(1)}%
                     </Text>
                   </View>
-                  {isOpen ? (
-                    <TouchableOpacity
-                      onPress={() => closeOneTrade(tr)}
-                      disabled={isClosing}
-                      style={{
-                        paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
-                        backgroundColor: isClosing ? colors.border : RED,
-                        minWidth: 56, alignItems: "center", flexShrink: 0,
-                      }}
-                      testID={`asi-close-${tr.symbol}`}
-                    >
-                      <Text style={{ color: "#fff", fontWeight: "900", fontSize: 10, letterSpacing: 0.4 }}>
-                        {isClosing ? t("asi_recent_closing") : t("asi_recent_close")}
-                      </Text>
-                    </TouchableOpacity>
-                  ) : null}
                 </View>
                 {/* v9.9.2 — Baris verifikasi proteksi untuk posisi OPEN.
                     Tampilkan SL, TP, margin mode AKTUAL + status native.
@@ -687,7 +671,7 @@ export default function ASIBotScreen() {
                           {tr.testnet ? t("asi_demo_badge") : "REAL"}
                         </Text>
                       </View>
-                      <Text style={{ color: colors.textMuted, fontSize: 10, lineHeight: 15, flexShrink: 1 }} numberOfLines={2}>
+                      <Text style={{ color: colors.textMuted, fontSize: 10, lineHeight: 15, flex: 1 }} numberOfLines={2}>
                         <Text style={{ color: RED, fontWeight: "800" }}>SL {formatPrice(tr.stop_loss, "crypto")}</Text>
                         {"  ·  "}
                         <Text style={{ color: GREEN, fontWeight: "800" }}>
@@ -705,6 +689,23 @@ export default function ASIBotScreen() {
                           {`${(tr as any).actual_leverage ?? tr.leverage ?? "?"}x`}
                         </Text>
                       </Text>
+                      {/* v9.9.8 — CLOSE dipindah ke baris 2, persis di bawah
+                          angka PnL (kanan), dijamin di dalam frame. */}
+                      <TouchableOpacity
+                        onPress={() => closeOneTrade(tr)}
+                        disabled={isClosing}
+                        style={{
+                          paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8,
+                          backgroundColor: isClosing ? colors.border : RED,
+                          minWidth: 60, alignItems: "center", flexShrink: 0,
+                          alignSelf: "center",
+                        }}
+                        testID={`asi-close-${tr.symbol}`}
+                      >
+                        <Text style={{ color: "#fff", fontWeight: "900", fontSize: 10, letterSpacing: 0.4 }}>
+                          {isClosing ? t("asi_recent_closing") : t("asi_recent_close")}
+                        </Text>
+                      </TouchableOpacity>
                     </View>
                     <Text style={{
                       fontSize: 10, fontWeight: "800",
