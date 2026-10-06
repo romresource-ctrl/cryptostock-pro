@@ -791,9 +791,10 @@ export default function ASIBotScreen() {
                     </Text>
                   </View>
                   {/* v10.0.1 — Chip cara masuk: MARKET (ungu muda) / LIMIT
-                      (kuning). Hanya tampil utk trade yang merekam
-                      entry_mode (v10.0.1+). */}
-                  {(tr as any).entry_mode ? (
+                      (kuning). Disembunyikan saat status PENDING karena
+                      badge status sudah menampilkan "LIMIT" (hindari
+                      duplikat 2 tulisan LIMIT pada kartu antri). */}
+                  {(tr as any).entry_mode && !isPending ? (
                     <View style={{
                       paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
                       backgroundColor: (tr as any).entry_mode === "market" ? PURPLE : YELLOW,
