@@ -147,6 +147,8 @@ class TradePayload(BaseModel):
     # v9.9.13 — Profil formula yang dipakai saat eksekusi (untuk label
     # formula di kartu Recent Trades).
     profile: str | None = None
+    # Tag singkat modul yang memicu (mis. "John Wick Candle Stick").
+    formula_tag: str | None = None
     # v9.6.0 — TP strategy & trailing stop
     tp_count: Literal[1, 2, 3] = 3
     trailing_callback_rate: float = Field(2.0, ge=0.0, le=10.0)
@@ -433,6 +435,7 @@ def _attach_trade_routes(db: Any) -> None:
             trailing_callback_rate=payload.trailing_callback_rate,
             margin_mode=payload.margin_mode,
             profile=payload.profile,
+            formula_tag=payload.formula_tag,
         )
         if not res.get("ok"):
             # v9.9.2 — Pass through structured reason & message so frontend

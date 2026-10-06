@@ -19,7 +19,7 @@ import TickCounter from "@/src/components/TickCounter";
 import PriceChart from "@/src/components/PriceChart";
 import PositionSizeCalculator from "@/src/components/PositionSizeCalculator";
 import TargetProfit from "@/src/components/TargetProfit";
-import AsiTradeSheet, { type AsiTradeIntent } from "@/src/components/AsiTradeSheet";
+import AsiTradeSheet, { type AsiTradeIntent, formulaTagFromSignal } from "@/src/components/AsiTradeSheet";
 import WrHistoryModal, { type WrPeriod } from "@/src/components/WrHistoryModal";
 import LadderAlertBadge from "@/src/components/LadderAlertBadge";
 import DipTopPopup from "@/src/components/DipTopPopup";
@@ -1368,6 +1368,8 @@ export default function AssetDetail() {
                       stop_loss: analysis.consensus.stop_loss as number,
                       take_profits: [tp, entry + dir * spread * 2, entry + dir * spread * 3],
                       source: "asset-detail",
+                      formula_tag: formulaTagFromSignal(
+                        chart?.signal?.indicators, (chart?.signal as any)?.reasons, apiProfile),
                     });
                   }}
                   testID="asset-asi-trade"

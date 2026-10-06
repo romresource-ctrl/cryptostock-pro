@@ -34,7 +34,7 @@ import { getDeviceId } from "@/src/lib/deviceId";
 import { useTraderProfile } from "@/src/lib/useTraderProfile";
 import { useI18n } from "@/src/i18n/I18nContext";
 import { useTheme } from "@/src/theme/ThemeContext";
-import AsiTradeSheet, { type AsiTradeIntent } from "./AsiTradeSheet";
+import AsiTradeSheet, { type AsiTradeIntent, formulaTagFromSignal } from "./AsiTradeSheet";
 
 type Props = {
   visible: boolean;
@@ -320,6 +320,8 @@ export default function AISuggestionsSheet({ visible, onClose, onRequestSubscrib
                           symbol: a.symbol, side: a.action as "BUY" | "SELL",
                           entry: a.entry!, stop_loss: a.stop_loss!,
                           take_profits: tps, source: "ai-suggestions",
+                          formula_tag: formulaTagFromSignal(
+                            (a as any).indicators, (a as any).reasons, apiProfile),
                         });
                       }}
                       testID={`ai-trade-${a.symbol}`}

@@ -3037,6 +3037,30 @@ _asi_fetch_cache: dict[str, tuple[float, dict]] = {}
 ASI_FETCH_TTL = float(os.environ.get("ASI_FETCH_TTL_SEC", "60"))
 
 
+def _asi_formula_tag(ind: dict | None, reasons: list[str] | None,
+                     profile: str | None) -> str | None:
+    """v9.9.13 — Tag SINGKAT modul formula yang benar-benar memicu sinyal
+    (label kartu Recent Trades). Prioritas pola spesifik; fallback ke
+    formula dasar profil."""
+    ind = ind or {}
+    if ind.get("vwap_engine") == "SCALP-15M":
+        return "Open-Scalp Modules"
+    tags: list[str] = []
+    if ind.get("power_of_tower"):
+        tags.append("Power of Tower Pattern")
+    if ind.get("john_wick"):
+        tags.append("John Wick Candle Stick")
+    r = " ".join(reasons or []).lower()
+    if "kiss" in r:
+        tags.append("KISS Pivot")
+    if ind.get("box_break_long") or ind.get("box_break_short"):
+        tags.append("Box Theory")
+    if tags:
+        return " · ".join(tags[:2])
+    return {"scalper": "7 Fast VWAP", "day": "5 KISS VWAP",
+            "swing": "5 Multi-day Trend"}.get(profile or "")
+
+
 async def _asi_signal_fetcher(market: str, symbol: str, profile: str | None = None) -> dict[str, Any] | None:
     """Return a dashboard-grade signal for Full-Auto execution.
 
@@ -3080,6 +3104,8 @@ async def _asi_signal_fetcher(market: str, symbol: str, profile: str | None = No
                 "side": side, "entry": entry, "stop_loss": sl,
                 "take_profits": tps,
                 "confidence": int(d.get("confidence") or 0),
+                "formula_tag": _asi_formula_tag(
+                    d.get("indicators"), d.get("reasons"), profile),
             }
         return None
     except Exception as e:  # noqa: BLE001

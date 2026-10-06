@@ -327,6 +327,7 @@ async def execute_trade(
     trailing_callback_rate: float = 2.0,
     margin_mode: str = "isolated",
     profile: str | None = None,
+    formula_tag: str | None = None,
 ) -> dict[str, Any]:
     """v9.9.2 — Place entry + VERIFIED bracket SL/TP. Auto-rollback jika
     bracket tidak dapat terpasang & terverifikasi di exchange.
@@ -346,7 +347,7 @@ async def execute_trade(
         return await _execute_ccxt_fallback(
             doc, symbol, side, entry, stop_loss, tps,
             risk_pct, leverage, mode, tp_count,
-            trailing_callback_rate, margin_mode, profile,
+            trailing_callback_rate, margin_mode, profile, formula_tag,
         )
 
     # ── BINANCE DIRECT REST PATH ─────────────────────────────────────
@@ -527,6 +528,7 @@ async def execute_trade(
             "layered": layering,
             "anchor_shift": 0,
             "profile": profile,
+            "formula_tag": formula_tag,
             "mode": mode, "status": "pending_entry", "pnl_usdt": 0.0,
             "entry_expire_at": expire_p.isoformat(),
             "soft_bracket": False, "soft_bracket_reason": None,
@@ -755,6 +757,7 @@ async def execute_trade(
             + (f" ({lev_rejected})" if lev_rejected else "")
         ) if actual_leverage != leverage else None,
         "profile": profile,
+        "formula_tag": formula_tag,
         "mode": mode, "status": "open", "pnl_usdt": 0.0,
         "soft_bracket": False, "soft_bracket_reason": None,
         "bracket_type": "hard",
@@ -769,7 +772,7 @@ async def _execute_ccxt_fallback(
     entry: float, stop_loss: float, tps: list[float],
     risk_pct: float, leverage: int, mode: str,
     tp_count: int, trailing_callback_rate: float, margin_mode: str,
-    profile: str | None = None,
+    profile: str | None = None, formula_tag: str | None = None,
 ) -> dict[str, Any]:
     """Original CCXT-based path for non-Binance exchanges. Preserved as-is
     with its known soft-bracket fallback semantics."""
@@ -905,6 +908,7 @@ async def _execute_ccxt_fallback(
         "actual_margin_mode": margin_mode,
         "actual_leverage": leverage,
         "profile": profile,
+        "formula_tag": formula_tag,
         "mode": mode, "status": "open", "pnl_usdt": 0.0,
         "soft_bracket": soft_bracket,
         "soft_bracket_reason": (sl_err or tp_err) if soft_bracket else None,

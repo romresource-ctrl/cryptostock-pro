@@ -543,6 +543,7 @@ async def _run_full_auto_scanner(
                         trailing_callback_rate=float(cfg.get("trailing_callback_rate") or 0.0),
                         margin_mode=str(cfg.get("margin_mode") or "isolated"),
                         profile=bot_profile,
+                        formula_tag=sig.get("formula_tag"),
                     )
                 except Exception as e:
                     logger.warning("full-auto execute failed %s/%s: %s", device_id, sym, e)

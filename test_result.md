@@ -2588,3 +2588,18 @@ frontend_v9913d:
           Margin dan SL pada baris OPEN (closed sudah ada). Screenshot-
           verified: SOL scalper open (Entry 118 + formula VWAP + macro),
           BTC day closed (Intra-Day), TRX confluence closed (Confluence v9).
+
+# ======================================================
+# v9.9.13e — Tag formula SINGKAT spesifik modul pemicu + rata kanan
+# ======================================================
+- backend: server._asi_formula_tag(indicators, reasons, profile) — deteksi
+  modul yang benar-benar memicu: Open-Scalp Modules (SCALP-15M), Power of
+  Tower Pattern, John Wick Candle Stick, KISS Pivot, Box Theory; fallback
+  per profil: 7 Fast VWAP / 5 KISS VWAP / 5 Multi-day Trend. Diteruskan
+  Full-Auto (scheduler) & disimpan di trade record (formula_tag).
+- frontend: formulaTagFromSignal() di AsiTradeSheet (dipakai AI
+  Suggestions + detail page); kartu menampilkan 1 baris singkat
+  "⚙️ Formula: {tag}" RATA KANAN (textAlign right, numberOfLines 2,
+  tidak melebihi bingkai), baris ketiga di bawah tombol CLOSE/CANCEL.
+- Label badge pending -> LIMIT; tombol pending -> CANCEL (emas), open ->
+  CLOSE (merah). Screenshot-verified. Unit tag logic PASS.

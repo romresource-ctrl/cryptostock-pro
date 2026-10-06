@@ -36,7 +36,29 @@ export type AsiTradeIntent = {
   stop_loss: number;
   take_profits: number[];      // [tp1, tp2, tp3]
   source?: "ai-suggestions" | "asset-detail" | "asi-bot-semi";
+  // v9.9.13 — Tag singkat modul formula pemicu (label kartu history)
+  formula_tag?: string | null;
 };
+
+// v9.9.13 — Tag singkat formula yang benar-benar memicu sinyal.
+// Prioritas pola spesifik; fallback ke formula dasar profil.
+export function formulaTagFromSignal(
+  ind?: any, reasons?: string[] | null, profile?: string | null,
+): string | null {
+  const i = ind || {};
+  if (i.vwap_engine === "SCALP-15M") return "Open-Scalp Modules";
+  const tags: string[] = [];
+  if (i.power_of_tower) tags.push("Power of Tower Pattern");
+  if (i.john_wick) tags.push("John Wick Candle Stick");
+  const r = (reasons || []).join(" ").toLowerCase();
+  if (r.includes("kiss")) tags.push("KISS Pivot");
+  if (i.box_break_long || i.box_break_short) tags.push("Box Theory");
+  if (tags.length) return tags.slice(0, 2).join(" · ");
+  if (profile === "scalper") return "7 Fast VWAP";
+  if (profile === "day") return "5 KISS VWAP";
+  if (profile === "swing") return "5 Multi-day Trend";
+  return null;
+}
 
 type Props = {
   visible: boolean;
@@ -213,6 +235,7 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
         testnet: activeTestnet,
         // v9.9.13 — label formula di kartu Recent Trades
         profile: apiProfile ?? "confluence",
+        formula_tag: intent.formula_tag ?? formulaTagFromSignal(null, null, apiProfile),
       });
       // v9.9.13 — Entry LIMIT deep: order dipasang di harga sinyal dan
       // MENUNGGU terisi (maks 1 candle). Belum ada posisi terbuka.

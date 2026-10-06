@@ -504,6 +504,8 @@ export type AsiTradeBody = {
   testnet?: boolean;
   // v9.9.13 — Profil formula saat eksekusi (label di kartu history)
   profile?: string | null;
+  // Tag singkat modul pemicu (mis. "John Wick Candle Stick")
+  formula_tag?: string | null;
 };
 export type AsiPreview = {
   ok: boolean; balance_usdt: number; margin_usdt: number;
@@ -525,6 +527,7 @@ export type AsiTradeResp = {
   // v9.7.4 — enriched fields for the Recent Trades panel
   margin_usdt?: number | null;
   mark_price?: number | null;
+  formula_tag?: string | null;
   bracket_type?: string | null;
   close_reason?: string | null;
   closed_at?: string | null;

@@ -896,8 +896,8 @@ export default function ASIBotScreen() {
                         eksekusi (di bawah baris tombol CLOSE). Hanya utk
                         trade yang merekam profile; trade lama tanpa field
                         tidak ditebak labelnya. */}
-                    {(tr as any).profile ? formulaLines(t, (tr as any).profile).map((ln, li) => (
-                      <Text key={li} style={{ fontSize: 9, fontWeight: "700", color: colors.textMuted, lineHeight: 13 }}>
+                    {((tr as any).profile || (tr as any).formula_tag) ? formulaLines(t, (tr as any).profile, (tr as any).formula_tag).map((ln, li) => (
+                      <Text key={li} numberOfLines={2} style={{ fontSize: 9, fontWeight: "700", color: colors.textMuted, lineHeight: 13, textAlign: "right", alignSelf: "stretch", flexShrink: 1 }}>
                         {li === 0 ? `⚙️ ${t("asi_formula_label")}: ${ln}` : ln}
                       </Text>
                     )) : null}
@@ -965,8 +965,8 @@ export default function ASIBotScreen() {
                     </Text>
                     {/* v9.9.13 — Formula yang dipakai saat eksekusi
                         (history tetap menampilkan konteks strategi). */}
-                    {(tr as any).profile ? formulaLines(t, (tr as any).profile).map((ln, li) => (
-                      <Text key={li} style={{ fontSize: 9, fontWeight: "700", color: colors.textMuted, lineHeight: 13 }}>
+                    {((tr as any).profile || (tr as any).formula_tag) ? formulaLines(t, (tr as any).profile, (tr as any).formula_tag).map((ln, li) => (
+                      <Text key={li} numberOfLines={2} style={{ fontSize: 9, fontWeight: "700", color: colors.textMuted, lineHeight: 13, textAlign: "right", alignSelf: "stretch", flexShrink: 1 }}>
                         {li === 0 ? `⚙️ ${t("asi_formula_label")}: ${ln}` : ln}
                       </Text>
                     )) : null}
@@ -1132,14 +1132,15 @@ function StatusCard({ kind, running, onPrimary, onStop, colors, t }: {
   );
 }
 
-// v9.9.13 — Label formula yang dipakai saat trade dieksekusi (field
-// `profile` di trade record). Confluence = mesin default; profil VWAP
-// (scalper/day/swing) menyertakan baris Macro/Risk (50-SMA & 3R Choke).
-function formulaLines(t: (k: string) => string, profile?: string | null): string[] {
+// v9.9.13 — Label formula SINGKAT yang dipakai saat trade dieksekusi.
+// Tag modul spesifik yang memicu sinyal (mis. "John Wick Candle Stick")
+// diprioritaskan; fallback ke formula dasar profil.
+function formulaLines(t: (k: string) => string, profile?: string | null, tag?: string | null): string[] {
+  if (tag) return [tag];
   const p = profile || "confluence";
-  if (p === "scalper") return [t("asi_formula_scalper"), t("asi_formula_macro")];
-  if (p === "day") return [t("asi_formula_day"), t("asi_formula_macro")];
-  if (p === "swing") return [t("asi_formula_swing"), t("asi_formula_macro")];
+  if (p === "scalper") return [t("asi_formula_scalper")];
+  if (p === "day") return [t("asi_formula_day")];
+  if (p === "swing") return [t("asi_formula_swing")];
   return [t("asi_formula_confluence")];
 }
 
