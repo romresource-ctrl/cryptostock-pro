@@ -10,11 +10,19 @@ def _iso_days_ago(days: int) -> str:
 
 
 async def pnl_summary(db: Any, device_id: str) -> dict[str, Any]:
-    """Return dict with daily/weekly/monthly PnL in USDT + %."""
+    """Return dict with daily/weekly/monthly PnL in USDT + %.
+
+    v9.9.5 — PnL utama HANYA trade mainnet (real). Trade testnet (demo)
+    dipisah ke key `demo` agar tidak mengurangi/menambah PnL real user.
+    """
     out: dict[str, Any] = {}
     for key, days in (("daily", 1), ("weekly", 7), ("monthly", 30)):
         pipeline = [
-            {"$match": {"device_id": device_id, "created_at": {"$gte": _iso_days_ago(days)}}},
+            {"$match": {
+                "device_id": device_id,
+                "created_at": {"$gte": _iso_days_ago(days)},
+                "testnet": {"$ne": True},  # hanya REAL
+            }},
             {"$group": {
                 "_id": None,
                 "pnl_usdt": {"$sum": "$pnl_usdt"},
@@ -34,12 +42,32 @@ async def pnl_summary(db: Any, device_id: str) -> dict[str, Any]:
             "trades": row.get("trades", 0),
             "wins": row.get("wins", 0), "losses": row.get("losses", 0),
         }
+    # Demo (testnet) ringkasan terpisah — informatif, tidak masuk PnL real.
+    demo_pipeline = [
+        {"$match": {"device_id": device_id, "testnet": True}},
+        {"$group": {
+            "_id": None,
+            "pnl_usdt": {"$sum": "$pnl_usdt"},
+            "trades": {"$sum": 1},
+            "wins": {"$sum": {"$cond": [{"$gt": ["$pnl_usdt", 0]}, 1, 0]}},
+            "losses": {"$sum": {"$cond": [{"$lt": ["$pnl_usdt", 0]}, 1, 0]}},
+        }},
+    ]
+    dagg = await db.asi_trades.aggregate(demo_pipeline).to_list(1)
+    drow = dagg[0] if dagg else {}
+    out["demo"] = {
+        "pnl_usdt": round(drow.get("pnl_usdt") or 0.0, 2),
+        "trades": drow.get("trades", 0),
+        "wins": drow.get("wins", 0), "losses": drow.get("losses", 0),
+    }
     return out
 
 
 async def leaderboard(db: Any, period_days: int = 7, limit: int = 10) -> list[dict[str, Any]]:
     pipeline = [
-        {"$match": {"created_at": {"$gte": _iso_days_ago(period_days)}}},
+        # v9.9.5 — leaderboard hanya trade REAL (mainnet), demo dikecualikan
+        {"$match": {"created_at": {"$gte": _iso_days_ago(period_days)},
+                    "testnet": {"$ne": True}}},
         {"$group": {
             "_id": "$device_id",
             "pnl_usdt": {"$sum": "$pnl_usdt"},
@@ -76,7 +104,8 @@ async def live_leaderboard(db: Any, limit: int = 10) -> list[dict[str, Any]]:
     being traded (symbol, side, entry) and the user can preview a copy.
     """
     pipeline = [
-        {"$match": {"status": "open"}},
+        # v9.9.5 — leaderboard live hanya posisi REAL (mainnet)
+        {"$match": {"status": "open", "testnet": {"$ne": True}}},
         {"$sort": {"updated_at": -1}},
         {"$group": {
             "_id": "$device_id",
@@ -115,6 +144,7 @@ async def live_leaderboard(db: Any, limit: int = 10) -> list[dict[str, Any]]:
             {"$match": {
                 "device_id": device_id, "status": "closed",
                 "created_at": {"$gte": _iso_days_ago(30)},
+                "testnet": {"$ne": True},
             }},
             {"$group": {
                 "_id": None,

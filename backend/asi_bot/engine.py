@@ -164,6 +164,43 @@ async def _get_client(doc: dict[str, Any]):
     )
 
 
+async def resolve_credential(
+    db: Any, device_id: str, exchange: str, testnet: bool | None = None,
+) -> dict[str, Any] | None:
+    """v9.9.5 — Dual-slot credential: mainnet & testnet disimpan TERPISAH
+    per exchange (_id = device:exchange:mainnet|testnet) sehingga user
+    tidak perlu input ulang API key saat pindah jaringan.
+
+    Resolusi:
+      1. Slot spesifik untuk network yang diminta.
+      2. Legacy doc pre-v9.9.5 (device:exchange tanpa suffix) — hanya
+         dipakai bila network-nya COCOK (atau testnet=None). Saat cocok,
+         doc otomatis di-migrate (disalin) ke slot baru.
+      3. None → caller menampilkan "hubungkan API untuk jaringan ini".
+    """
+    exchange = (exchange or "").lower()
+    if testnet is not None:
+        net = "testnet" if testnet else "mainnet"
+        doc = await db.asi_credentials.find_one({"_id": f"{device_id}:{exchange}:{net}"})
+        if doc:
+            return doc
+    legacy = await db.asi_credentials.find_one({"_id": f"{device_id}:{exchange}"})
+    if legacy:
+        legacy_net = bool(legacy.get("testnet", True))
+        if testnet is None or legacy_net == bool(testnet):
+            # Lazy-migrate ke slot baru supaya konsisten ke depan.
+            net = "testnet" if legacy_net else "mainnet"
+            slot_id = f"{device_id}:{exchange}:{net}"
+            try:
+                if not await db.asi_credentials.find_one({"_id": slot_id}):
+                    await db.asi_credentials.insert_one({**legacy, "_id": slot_id})
+            except Exception:
+                pass
+            return legacy
+        return None  # network tidak cocok → jangan pakai key jaringan lain
+    return None
+
+
 async def _fetch_usdt_balance(client) -> float:
     bal = await client.fetch_balance()
     free = (bal.get("USDT") or {}).get("free")

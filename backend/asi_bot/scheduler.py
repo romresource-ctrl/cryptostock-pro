@@ -25,7 +25,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable
 
 from .crypto import decrypt
-from .engine import close_position, execute_trade, refresh_trade_pnl
+from .engine import close_position, execute_trade, refresh_trade_pnl, resolve_credential
 from .exchanges import _build
 from .whitelist import TOP_100_FUTURES, is_allowed
 
@@ -66,7 +66,8 @@ def _is_hit(side: str, mark: float, trigger: float, is_stop_loss: bool) -> bool:
 
 
 async def _close_soft_trade(db: Any, trade: dict[str, Any], reason: str) -> None:
-    cred = await db.asi_credentials.find_one({"_id": f"{trade['device_id']}:{trade['exchange']}"})
+    cred = await resolve_credential(
+        db, trade["device_id"], trade["exchange"], bool(trade.get("testnet", True)))
     if not cred:
         return
     try:
@@ -144,9 +145,8 @@ async def _refresh_open_pnl(db: Any) -> None:
     cursor = db.asi_trades.find({"status": "open"})
     async for t in cursor:
         try:
-            cred = await db.asi_credentials.find_one(
-                {"_id": f"{t['device_id']}:{t['exchange']}"}
-            )
+            cred = await resolve_credential(
+                db, t["device_id"], t["exchange"], bool(t.get("testnet", True)))
             if not cred:
                 continue
             upd = await refresh_trade_pnl(cred, t)
@@ -156,20 +156,27 @@ async def _refresh_open_pnl(db: Any) -> None:
             logger.debug("pnl refresh %s: %s", t.get("_id"), e)
 
 
-async def _trades_today_count(db: Any, device_id: str) -> int:
+async def _trades_today_count(db: Any, device_id: str,
+                              testnet: bool | None = None) -> int:
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-    return await db.asi_trades.count_documents(
-        {"device_id": device_id, "created_at": {"$gte": cutoff}}
-    )
+    # v9.9.5 — kuota harian dihitung per jaringan aktif: trade demo tidak
+    # memakan kuota mainnet dan sebaliknya.
+    q: dict[str, Any] = {"device_id": device_id, "created_at": {"$gte": cutoff}}
+    if testnet is not None:
+        q["testnet"] = bool(testnet)
+    return await db.asi_trades.count_documents(q)
 
 
 async def _realized_pnl_today(db: Any, device_id: str) -> float:
     """Sum of pnl_usdt for CLOSED trades in the last 24h (realized loss/gain)."""
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
     pipeline = [
+        # v9.9.5 — daily loss limit hanya menghitung trade REAL (demo
+        # testnet tidak boleh memicu auto-disable bot real).
         {"$match": {
             "device_id": device_id, "status": "closed",
             "closed_at": {"$gte": cutoff},
+            "testnet": {"$ne": True},
         }},
         {"$group": {"_id": None, "pnl": {"$sum": "$pnl_usdt"}}},
     ]
@@ -246,7 +253,10 @@ async def _run_full_auto_scanner(
             if not device_id:
                 continue
             max_tr = int(cfg.get("max_trades_per_day") or 5)
-            placed = await _trades_today_count(db, device_id)
+            # v9.9.5 — network aktif ditentukan lebih awal supaya kuota
+            # harian juga dihitung per jaringan.
+            net = bool(cfg["active_testnet"]) if "active_testnet" in cfg else None
+            placed = await _trades_today_count(db, device_id, net)
             if placed >= max_tr:
                 continue
             # v9.7.3 — BUG FIX: empty whitelist silently disabled the bot
@@ -256,7 +266,10 @@ async def _run_full_auto_scanner(
             if not whitelist:
                 continue
             exchange = cfg.get("exchange") or "binance"
-            cred = await db.asi_credentials.find_one({"_id": f"{device_id}:{exchange}"})
+            # v9.9.5 — Full-Auto memakai credential sesuai switch jaringan
+            # aktif (active_testnet). Config lama tanpa field ini → None =
+            # perilaku lama (credential apa pun yang tersedia).
+            cred = await resolve_credential(db, device_id, exchange, net)
             if not cred:
                 continue
             risk = float(cfg.get("risk_pct") or 5.0)

@@ -474,6 +474,8 @@ export type AsiTradeBody = {
   trailing_callback_rate?: number;
   // v9.9.0 — Margin mode wajib dipilih user sebelum eksekusi
   margin_mode?: "isolated" | "cross";
+  // v9.9.5 — Network (undefined → backend pakai active_testnet config)
+  testnet?: boolean;
 };
 export type AsiPreview = {
   ok: boolean; balance_usdt: number; margin_usdt: number;
@@ -524,7 +526,10 @@ export type AsiTradeResp = {
 };
 export type AsiPnl = Record<"daily" | "weekly" | "monthly", {
   pnl_usdt: number; pnl_pct: number; trades: number; wins: number; losses: number;
-}>;
+}> & {
+  // v9.9.5 — ringkasan DEMO (testnet) terpisah; tidak masuk PnL real.
+  demo?: { pnl_usdt: number; trades: number; wins: number; losses: number };
+};
 export type AsiLeaderRow = {
   rank: number; handle: string; pnl_usdt: number; trades: number; wr: number;
 };
@@ -568,6 +573,9 @@ export type AsiBotConfig = {
   disclaimer_ack?: boolean;
   // v9.9.0 — default margin mode bot
   margin_mode?: "isolated" | "cross";
+  // v9.9.5 — network aktif (testnet/mainnet). Credential per jaringan
+  // disimpan di slot terpisah; switching tidak meminta API key ulang.
+  active_testnet?: boolean;
   auto_disabled_reason?: string | null;
   auto_disabled_at?: string | null;
 };

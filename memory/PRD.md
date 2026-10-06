@@ -699,6 +699,38 @@ Fase berikutnya (BELUM):
 - Tombol eksekusi Semi-Auto di kartu AI Suggestions ("⚡ EXECUTE SEMI-AUTO") dengan badge pink SEMI.
 - Konfirmasi sukses kini menyediakan opsi langsung "Lihat Recent Trades" → navigasi ke `/asi-bot`.
 
+## v9.9.5 — Dual-Slot Credential (Mainnet+Testnet) + Badge DEMO & PnL Terpisah
+
+**Masalah 1:** User simpan API key mainnet, lalu simpan testnet → mainnet
+tertimpa; harus input ulang tiap ganti jaringan.
+**Fix:** Credential disimpan di slot terpisah per jaringan
+(`_id = device:exchange:mainnet|testnet`). Helper `resolve_credential()`
+di engine dengan lazy-migration legacy doc (device:exchange tanpa suffix
+→ otomatis disalin ke slot saat pertama dipakai). Network aktif disimpan
+di bot config (`active_testnet`) dan diubah via switch 🧪/🔴 baru di
+halaman ASI-Bot. TradePayload menerima `testnet` opsional (None → ikut
+config). Preview/execute/close/repair/refresh/scheduler (scanner, watcher,
+PnL) semuanya resolve per-network. Setelah simpan key suatu jaringan,
+jaringan itu otomatis jadi aktif. Kuota harian Full-Auto dihitung per
+jaringan; daily loss limit hanya real.
+UI: baris exchange menampilkan status KEDUA slot (🧪✓/— 🔴✓/—) + mask
+key slot aktif; AsiTradeSheet memakai credential network aktif dan
+menolak preview bila slot network itu belum terhubung.
+
+**Masalah 2:** User bingung membedakan posisi demo vs real; PnL demo
+tidak boleh mengurangi PnL real.
+**Fix:** pnl_summary kini hanya menghitung trade `testnet != true`
+untuk daily/weekly/monthly + key `demo` terpisah. Leaderboard &
+live leaderboard & WR-30d & daily-loss-limit hanya real. Recent Trades
+menampilkan badge biru **DEMO** pada trade testnet + baris kecil
+"Demo (Testnet): ±$x dari n trade — tidak masuk PnL real" di bawah
+kartu PnL. i18n 4 bahasa (asi_demo_badge, asi_pnl_demo,
+asi_net_other_only). Versi 9.9.5 (version.ts + app.json).
+
+Verified curl: simpan testnet → simpan mainnet invalid ditolak TANPA
+menimpa slot testnet; preview testnet resolve slot benar ($4355); preview
+mainnet tanpa slot → 404 jelas; pnl mengembalikan key demo.
+
 ## v9.9.4 — Smart Layering (Averaging) + Auto-Rebalance Brackets
 
 User request: trader profesional menambah muatan (layering/DCA) beberapa kali

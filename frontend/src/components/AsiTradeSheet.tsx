@@ -72,6 +72,8 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
   const [executing, setExecuting] = useState(false);
   // v9.9.0 — Margin mode wajib dipilih sebelum eksekusi (default ISOLATED).
   const [marginMode, setMarginMode] = useState<"isolated" | "cross">("isolated");
+  // v9.9.5 — Network aktif dari bot config (testnet = demo).
+  const [activeTestnet, setActiveTestnet] = useState(true);
   // v9.8.5 — Hasil eksekusi ditampilkan sebagai panel di DALAM sheet
   // (Alert.alert bawaan tidak tampil di web preview). null = belum eksekusi.
   const [execResult, setExecResult] = useState<{ ok: boolean; title: string; body: string } | null>(null);
@@ -84,13 +86,7 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
     (async () => {
       const did = await getDeviceId();
       setDeviceId(did);
-      try {
-        const r = await api.asi.listCredentials(did);
-        setCreds(r.items);
-        if (r.items.length > 0) {
-          setExchange(r.items[0].exchange as any);
-        }
-      } catch {}
+      let net = true;
       try {
         // v9.9.0 — Default margin mode dari bot config (diset di halaman
         // ASI-Bot). User tetap bisa ubah per-trade di selector bawah.
@@ -98,12 +94,34 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
         if (b.exists && (b as any).margin_mode) {
           setMarginMode((b as any).margin_mode as "isolated" | "cross");
         }
+        // v9.9.5 — Network aktif dari bot config (switch di halaman
+        // ASI-Bot). Credential tiap jaringan slot terpisah.
+        net = b.exists ? ((b as any).active_testnet ?? true) : true;
+        setActiveTestnet(net);
+      } catch {}
+      try {
+        const r = await api.asi.listCredentials(did);
+        setCreds(r.items);
+        // v9.9.5 — pilih exchange dari credential yang COCOK dengan
+        // network aktif, fallback ke credential apa pun.
+        const match = r.items.find((c) => !!c.testnet === net) || r.items[0];
+        if (match) setExchange(match.exchange as any);
       } catch {}
     })();
   }, [visible, intent]);
 
+  // v9.9.5 — credential untuk network AKTIF (slot mainnet/testnet
+  // terpisah). Fallback ke slot lain hanya utk data lama.
+  // CATATAN: harus didefinisikan SEBELUM useEffect preview di bawah
+  // (dipakai di dependency array-nya).
+  const activeCred = useMemo(
+    () => creds.find((c) => c.exchange === exchange && !!c.testnet === activeTestnet)
+          || creds.find((c) => c.exchange === exchange),
+    [creds, exchange, activeTestnet],
+  );
+
   useEffect(() => {
-    if (!visible || !intent || !deviceId || creds.length === 0) {
+    if (!visible || !intent || !deviceId || !activeCred) {
       setPreview(null);
       return;
     }
@@ -115,6 +133,7 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
           entry: intent.entry, stop_loss: intent.stop_loss,
           take_profits: intent.take_profits.slice(0, tpCount),
           risk_pct: riskPct, leverage, tp_count: tpCount,
+          testnet: activeTestnet,
         });
         setPreview(p);
       } catch (e: any) {
@@ -124,12 +143,7 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
       } finally { setLoading(false); }
     }, 250);
     return () => clearTimeout(t);
-  }, [visible, intent, deviceId, exchange, riskPct, leverage, tpCount, creds.length]);
-
-  const activeCred = useMemo(
-    () => creds.find((c) => c.exchange === exchange),
-    [creds, exchange],
-  );
+  }, [visible, intent, deviceId, exchange, riskPct, leverage, tpCount, activeCred, activeTestnet]);
 
   const execute = async () => {
     if (!intent || !preview?.ok) return;
@@ -171,6 +185,7 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
         risk_pct: riskPct, leverage, mode: "semi",
         tp_count: tpCount, trailing_callback_rate: trailingCbRate,
         margin_mode: marginMode,
+        testnet: activeTestnet,
       });
       // v9.9.2 — Backend sekarang GARANSI: res.ok === true berarti SL+TP
       // sudah TERVERIFIKASI di Binance (via openAlgoOrders). Bracket soft
@@ -235,8 +250,8 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
               </TouchableOpacity>
             </View>
 
-            {/* No credential state */}
-            {creds.length === 0 ? (
+            {/* No credential state (untuk network AKTIF) */}
+            {!activeCred ? (
               <View style={[s.empty, { backgroundColor: colors.background }]}>
                 <Text style={{ fontSize: 36 }}>🔌</Text>
                 <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 14, marginTop: 10 }}>
@@ -244,6 +259,7 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
                 </Text>
                 <Text style={{ color: colors.textMuted, fontSize: 12, textAlign: "center", lineHeight: 18, marginTop: 6 }}>
                   {t("ats_no_cred_body")}
+                  {`\n(${activeTestnet ? "🧪 TESTNET" : "🔴 MAINNET"})`}
                 </Text>
                 <TouchableOpacity
                   style={[s.cta, { backgroundColor: MINT, marginTop: 14 }]}

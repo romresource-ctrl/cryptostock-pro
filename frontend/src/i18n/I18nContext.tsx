@@ -968,6 +968,20 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     ru: "🚨 ТРЕБУЕТСЯ РУЧНОЕ ДЕЙСТВИЕ",
     cn: "🚨 需要手动操作",
   },
+  // v9.9.5 — Dual-slot credential + Demo badge
+  asi_net_other_only: {
+    id: "Terhubung di jaringan lain — ketuk utk tambah jaringan ini",
+    en: "Connected on the other network — tap to add this one",
+    ru: "Подключено в другой сети — нажмите, чтобы добавить эту",
+    cn: "已在另一网络连接——点击添加此网络",
+  },
+  asi_demo_badge: { id: "DEMO", en: "DEMO", ru: "ДЕМО", cn: "模拟" },
+  asi_pnl_demo: {
+    id: "🧪 Demo (Testnet): {pnl} dari {n} trade — tidak masuk PnL real",
+    en: "🧪 Demo (Testnet): {pnl} from {n} trade(s) — not counted in real PnL",
+    ru: "🧪 Демо (Testnet): {pnl} за {n} сделок — не входит в реальный PnL",
+    cn: "🧪 模拟盘（测试网）：{n} 笔共 {pnl}——不计入真实盈亏",
+  },
 
   // v9.6.9 — Credential validation error codes (backend returns {code, message})
   asi_err_ip_or_key_invalid: {

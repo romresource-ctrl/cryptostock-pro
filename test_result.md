@@ -2082,3 +2082,42 @@ frontend_v994:
           Dialog duplikat kini menjelaskan averaging + auto-rebalance SL/TP
           (4 bahasa). Panel sukses menampilkan catatan layer. Recent Trades
           badge "Layer ×n". Lint pass. Version 9.9.4.
+
+# ======================================================
+# v9.9.5 — Dual-Slot Credential + Badge DEMO + PnL Terpisah
+# ======================================================
+backend_v995:
+  - task: "Credential mainnet/testnet slot terpisah + resolve per-network"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/routes.py engine.py scheduler.py pnl.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Slot _id = device:exchange:mainnet|testnet. resolve_credential()
+          lazy-migrate legacy doc. BotConfig.active_testnet mengendalikan
+          network Semi/Full-Auto. Verified: save testnet OK → save mainnet
+          invalid DITOLAK tanpa menimpa slot testnet; preview testnet=true
+          resolve slot benar; preview testnet=false tanpa slot → 404 jelas.
+          PnL/leaderboard/WR/daily-loss hanya real; key demo terpisah.
+frontend_v995:
+  - task: "Network switch global + status 2 slot + badge DEMO trades"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/asi-bot.tsx src/components/AsiTradeSheet.tsx src/lib/api.ts src/i18n/I18nContext.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Switch 🧪TESTNET/🔴MAINNET di halaman ASI-Bot (saveBot
+          active_testnet). Baris exchange tampilkan status kedua slot.
+          Simpan key suatu jaringan → otomatis jadikan aktif. AsiTradeSheet
+          pakai credential network aktif. Recent Trades: badge biru DEMO
+          utk trade testnet + baris demo PnL terpisah. Lint pass. v9.9.5.

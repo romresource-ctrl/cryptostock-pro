@@ -20,7 +20,10 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from .crypto import decrypt, encrypt, mask
-from .engine import close_position, execute_trade, preview_trade, refresh_trade_pnl
+from .engine import (
+    close_position, execute_trade, preview_trade, refresh_trade_pnl,
+    resolve_credential,
+)
 from .exchanges import EXCHANGE_DISPLAY, EXCHANGES, ExchangeId, validate_credentials
 from .pnl import leaderboard, live_leaderboard, pnl_summary
 from .whitelist import TOP_100_FUTURES
@@ -69,6 +72,10 @@ class TradePayload(BaseModel):
     # v9.9.0 — Margin mode dipilih user sebelum eksekusi (wajib).
     # Default ISOLATED: kerugian terbatas pada margin posisi saja.
     margin_mode: Literal["isolated", "cross"] = "isolated"
+    # v9.9.5 — Network mana yang dipakai. None → ikuti active_testnet di
+    # bot config (switch di halaman ASI-Bot). Credential mainnet/testnet
+    # disimpan di slot terpisah sehingga switching tanpa input ulang.
+    testnet: bool | None = None
 
 
 class BotConfigPayload(BaseModel):
@@ -100,6 +107,10 @@ class BotConfigPayload(BaseModel):
     disclaimer_ack: bool = False
     # v9.9.0 — Default margin mode bot (dipakai Full-Auto & default sheet).
     margin_mode: Literal["isolated", "cross"] = "isolated"
+    # v9.9.5 — Network aktif (testnet/mainnet) untuk Semi & Full-Auto.
+    # Diubah via switch jaringan di halaman ASI-Bot; credential tiap
+    # jaringan disimpan di slot terpisah.
+    active_testnet: bool = True
 
 
 def register(app_api: APIRouter, db: Any) -> None:
@@ -126,8 +137,11 @@ def register(app_api: APIRouter, db: Any) -> None:
         enc_sec = encrypt(payload.api_secret)
         enc_pwd = encrypt(payload.password) if payload.password else None
         now = _now_iso()
+        # v9.9.5 — Dual slot: mainnet & testnet disimpan terpisah agar
+        # switching jaringan tidak meminta API key ulang.
+        net = "testnet" if payload.testnet else "mainnet"
         doc = {
-            "_id": f"{device_id}:{payload.exchange}",
+            "_id": f"{device_id}:{payload.exchange}:{net}",
             "device_id": device_id,
             "exchange": payload.exchange,
             "testnet": bool(payload.testnet),
@@ -163,16 +177,26 @@ def register(app_api: APIRouter, db: Any) -> None:
 
     @router.delete("/credentials/{exchange}")
     async def delete_credential(exchange: ExchangeId,
-                                device_id: str = Query(..., min_length=4)):
-        r = await db.asi_credentials.delete_one({"_id": f"{device_id}:{exchange}"})
+                                device_id: str = Query(..., min_length=4),
+                                testnet: bool | None = Query(None)):
+        # v9.9.5 — testnet param opsional: hapus 1 slot saja. Tanpa param
+        # → hapus semua slot (legacy + mainnet + testnet).
+        if testnet is not None:
+            net = "testnet" if testnet else "mainnet"
+            r = await db.asi_credentials.delete_one({"_id": f"{device_id}:{exchange}:{net}"})
+            return {"deleted": r.deleted_count}
+        r = await db.asi_credentials.delete_many({
+            "device_id": device_id, "exchange": exchange,
+        })
         return {"deleted": r.deleted_count}
 
     @router.post("/credentials/{exchange}/test")
     async def test_credential(exchange: ExchangeId,
-                              device_id: str = Query(..., min_length=4)):
-        doc = await db.asi_credentials.find_one({"_id": f"{device_id}:{exchange}"})
+                              device_id: str = Query(..., min_length=4),
+                              testnet: bool | None = Query(None)):
+        doc = await resolve_credential(db, device_id, exchange, testnet)
         if not doc:
-            raise HTTPException(404, "Credential tidak ditemukan")
+            raise HTTPException(404, "Credential tidak ditemukan untuk jaringan ini")
         res = await validate_credentials(
             exchange,
             decrypt(doc["api_key_enc"]), decrypt(doc["api_secret_enc"]),
@@ -235,14 +259,26 @@ async def _get_server_ip() -> dict[str, Any]:
     }
 
 
+async def _resolve_trade_cred(db: Any, device_id: str, exchange: str,
+                              requested_testnet: bool | None) -> dict[str, Any] | None:
+    """v9.9.5 — Tentukan network: payload → bot config active_testnet →
+    legacy (None = pakai credential apa pun yang ada, perilaku lama)."""
+    net = requested_testnet
+    if net is None:
+        cfg = await db.asi_bot_config.find_one({"_id": device_id})
+        if cfg and "active_testnet" in cfg:
+            net = bool(cfg.get("active_testnet"))
+    return await resolve_credential(db, device_id, exchange, net)
+
+
 def _attach_trade_routes(db: Any) -> None:
     @router.post("/trades/preview")
     async def preview(payload: TradePayload, device_id: str = Query(..., min_length=4)):
         # v9.8.2 — whitelist statis Top-100 DIHAPUS. Engine memvalidasi
         # simbol secara dinamis terhadap daftar pasar exchange user.
-        doc = await db.asi_credentials.find_one({"_id": f"{device_id}:{payload.exchange}"})
+        doc = await _resolve_trade_cred(db, device_id, payload.exchange, payload.testnet)
         if not doc:
-            raise HTTPException(404, "Hubungkan API exchange terlebih dahulu.")
+            raise HTTPException(404, "Hubungkan API exchange untuk jaringan ini terlebih dahulu.")
         return await preview_trade(
             doc, payload.symbol, payload.side,
             payload.entry, payload.stop_loss, payload.take_profits,
@@ -253,9 +289,9 @@ def _attach_trade_routes(db: Any) -> None:
     @router.post("/trades/execute")
     async def execute(payload: TradePayload, device_id: str = Query(..., min_length=4)):
         # v9.8.2 — whitelist statis Top-100 DIHAPUS (lihat engine._ensure_tradable).
-        doc = await db.asi_credentials.find_one({"_id": f"{device_id}:{payload.exchange}"})
+        doc = await _resolve_trade_cred(db, device_id, payload.exchange, payload.testnet)
         if not doc:
-            raise HTTPException(404, "Hubungkan API exchange terlebih dahulu.")
+            raise HTTPException(404, "Hubungkan API exchange untuk jaringan ini terlebih dahulu.")
         res = await execute_trade(
             doc, payload.symbol, payload.side,
             payload.entry, payload.stop_loss, payload.take_profits,
@@ -316,7 +352,8 @@ def _attach_trade_routes(db: Any) -> None:
             raise HTTPException(404, "trade not found")
         if t.get("status") != "open":
             return {"ok": True, "already_closed": True}
-        cred = await db.asi_credentials.find_one({"_id": f"{device_id}:{t['exchange']}"})
+        cred = await resolve_credential(
+            db, device_id, t["exchange"], bool(t.get("testnet", True)))
         if not cred:
             raise HTTPException(400, "credential missing")
         try:
@@ -351,9 +388,8 @@ def _attach_trade_routes(db: Any) -> None:
         errors: list[dict[str, str]] = []
         for t in open_trades:
             try:
-                cred = await db.asi_credentials.find_one(
-                    {"_id": f"{device_id}:{t['exchange']}"}
-                )
+                cred = await resolve_credential(
+                    db, device_id, t["exchange"], bool(t.get("testnet", True)))
                 if not cred:
                     errors.append({"symbol": t.get("symbol", "?"), "error": "credential missing"})
                     continue
@@ -403,9 +439,10 @@ def _attach_trade_routes(db: Any) -> None:
         open_trades = [t for t in trades
                        if str(t.get("status", "")).lower() == "open"]
         ref = open_trades[0] if open_trades else trades[0]
-        cred = await db.asi_credentials.find_one({"_id": f"{device_id}:{exchange}"})
+        cred = await resolve_credential(
+            db, device_id, exchange, bool(ref.get("testnet", True)))
         if not cred:
-            raise HTTPException(404, "Hubungkan API exchange terlebih dahulu.")
+            raise HTTPException(404, "Hubungkan API exchange untuk jaringan ini terlebih dahulu.")
         try:
             await close_position(
                 cred, ref["symbol"], ref["side"], float(ref.get("qty") or 0),
@@ -433,9 +470,8 @@ def _attach_trade_routes(db: Any) -> None:
         Response menyertakan error mentah Binance per simbol sehingga mudah
         didiagnosis dari UI."""
         from .engine import attach_brackets
-        cred = await db.asi_credentials.find_one({"_id": f"{device_id}:{exchange}"})
-        if not cred:
-            raise HTTPException(404, "Hubungkan API exchange terlebih dahulu.")
+        # v9.9.5 — resolve credential PER-TRADE sesuai jaringan trade tsb
+        # (posisi testnet tidak bisa di-repair dengan key mainnet).
         open_trades = [
             d async for d in db.asi_trades.find({
                 "device_id": device_id, "exchange": exchange, "status": "open",
@@ -444,7 +480,13 @@ def _attach_trade_routes(db: Any) -> None:
         results: list[dict[str, Any]] = []
         for tr in open_trades:
             try:
-                res = await attach_brackets(cred, tr)
+                cred = await resolve_credential(
+                    db, device_id, exchange, bool(tr.get("testnet", True)))
+                if not cred:
+                    res = {"ok": False, "symbol": tr.get("symbol"),
+                           "errors": ["credential missing untuk jaringan trade ini"]}
+                else:
+                    res = await attach_brackets(cred, tr)
             except Exception as e:  # noqa: BLE001
                 res = {"ok": False, "symbol": tr.get("symbol"),
                        "errors": [str(e)[:180]]}
@@ -472,9 +514,10 @@ def _attach_trade_routes(db: Any) -> None:
         doc = await db.asi_trades.find_one({"_id": f"{device_id}:{trade_id}"})
         if not doc:
             raise HTTPException(404, "Trade tidak ditemukan")
-        cred = await db.asi_credentials.find_one({"_id": f"{device_id}:{doc['exchange']}"})
+        cred = await resolve_credential(
+            db, device_id, doc["exchange"], bool(doc.get("testnet", True)))
         if not cred:
-            raise HTTPException(404, "Credential exchange tidak ditemukan")
+            raise HTTPException(404, "Credential exchange tidak ditemukan untuk jaringan ini")
         update = await refresh_trade_pnl(cred, doc)
         update["updated_at"] = _now_iso()
         await db.asi_trades.update_one({"_id": doc["_id"]}, {"$set": update})

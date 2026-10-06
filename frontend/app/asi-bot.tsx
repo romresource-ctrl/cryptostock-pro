@@ -58,6 +58,8 @@ export default function ASIBotScreen() {
     semi_enabled: false, full_enabled: false,
     // v9.7.7 — persistent disclaimer
     disclaimer_ack: false,
+    // v9.9.5 — network aktif (credential mainnet/testnet slot terpisah)
+    active_testnet: true,
   });
   const [pnl, setPnl] = useState<AsiPnl | null>(null);
   const [trades, setTrades] = useState<AsiTradeResp[]>([]);
@@ -114,7 +116,13 @@ export default function ASIBotScreen() {
     finally { setCredsLoaded(true); }
   };
 
-  const activeCred = creds.find((c) => c.exchange === bot.exchange);
+  const activeTestnet = bot.active_testnet ?? true;
+  // v9.9.5 — credential dicocokkan dengan network AKTIF (slot terpisah).
+  // Fallback ke credential lain di exchange yang sama hanya untuk
+  // kompatibilitas data lama.
+  const activeCred =
+    creds.find((c) => c.exchange === bot.exchange && !!c.testnet === activeTestnet)
+    || creds.find((c) => c.exchange === bot.exchange);
   // v9.7.7 — Disclaimer dibaca dari backend config (permanent, sekali centang)
   const canUseBot = !!activeCred && !!bot.disclaimer_ack;
 
@@ -245,9 +253,41 @@ export default function ASIBotScreen() {
 
         {/* Connect exchange */}
         <SectionHeader title={t("asi_sec_exchange")} />
+        {/* v9.9.5 — Network switch GLOBAL: memilih jaringan aktif untuk
+            Semi & Full-Auto. Credential mainnet & testnet disimpan di
+            slot terpisah → switching instan tanpa input ulang API key. */}
+        <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
+          {([true, false] as const).map((isTest) => {
+            const active = activeTestnet === isTest;
+            return (
+              <TouchableOpacity
+                key={String(isTest)}
+                onPress={() => saveBot({ active_testnet: isTest })}
+                style={{
+                  flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1.5,
+                  borderColor: active ? (isTest ? GOLD : RED) : colors.border,
+                  backgroundColor: active ? (isTest ? GOLD : RED) : colors.surface,
+                  alignItems: "center",
+                }}
+                testID={isTest ? "asi-net-testnet" : "asi-net-mainnet"}
+              >
+                <Text style={{
+                  color: active ? (isTest ? ACCENT_TEXT : "#fff") : colors.textPrimary,
+                  fontWeight: "900", fontSize: 12, letterSpacing: 0.6,
+                }}>
+                  {isTest ? "🧪 TESTNET" : "🔴 MAINNET"}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
         <View style={{ gap: 8 }}>
           {EXCHANGES.map((ex) => {
-            const c = creds.find((x) => x.exchange === ex.id);
+            // v9.9.5 — tampilkan status KEDUA slot jaringan; slot yang
+            // aktif ditandai border emas pada teks status.
+            const cTest = creds.find((x) => x.exchange === ex.id && !!x.testnet);
+            const cMain = creds.find((x) => x.exchange === ex.id && !x.testnet);
+            const cActive = activeTestnet ? cTest : cMain;
             return (
               <TouchableOpacity
                 key={ex.id}
@@ -257,13 +297,21 @@ export default function ASIBotScreen() {
               >
                 <Text style={[s.rowLabel, { color: colors.textPrimary }]}>{ex.label}</Text>
                 <View style={{ flex: 1 }} />
-                {c ? (
-                  <Text style={{ color: GREEN, fontSize: 11, fontWeight: "800" }}>
-                    {c.testnet ? "TESTNET" : "MAINNET"} · {c.api_key_mask}
+                <View style={{ alignItems: "flex-end", gap: 2 }}>
+                  <Text style={{
+                    fontSize: 10.5, fontWeight: "800",
+                    color: cActive ? GREEN : colors.textMuted,
+                  }}>
+                    {cActive
+                      ? `${activeTestnet ? "🧪 TESTNET" : "🔴 MAINNET"} ✓ · ${cActive.api_key_mask}`
+                      : (cTest || cMain)
+                        ? t("asi_net_other_only")
+                        : t("asi_not_connected")}
                   </Text>
-                ) : (
-                  <Text style={{ color: colors.textMuted, fontSize: 11 }}>{t("asi_not_connected")}</Text>
-                )}
+                  <Text style={{ color: colors.textMuted, fontSize: 9 }}>
+                    {`🧪 ${cTest ? "✓" : "—"}   🔴 ${cMain ? "✓" : "—"}`}
+                  </Text>
+                </View>
               </TouchableOpacity>
             );
           })}
@@ -463,6 +511,14 @@ export default function ASIBotScreen() {
             );
           })}
         </View>
+        {/* v9.9.5 — Demo (testnet) PnL terpisah, tidak masuk PnL real. */}
+        {(pnl?.demo?.trades ?? 0) > 0 ? (
+          <Text style={{ color: colors.textMuted, fontSize: 10.5, marginTop: 6 }}>
+            {t("asi_pnl_demo")
+              .replace("{pnl}", `${(pnl!.demo!.pnl_usdt >= 0 ? "+" : "")}$${pnl!.demo!.pnl_usdt.toFixed(2)}`)
+              .replace("{n}", String(pnl!.demo!.trades))}
+          </Text>
+        ) : null}
 
         {/* Leaderboard — hidden on this screen; pindah ke /copy-trade */}
 
@@ -527,6 +583,18 @@ export default function ASIBotScreen() {
               return (
                 <View key={tid || i} style={[s.leaderRow, { backgroundColor: colors.surface, borderColor }]}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  {/* v9.9.5 — Badge DEMO untuk trade testnet supaya user
+                      tidak bingung mana posisi demo vs real. */}
+                  {tr.testnet ? (
+                    <View style={{
+                      paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4,
+                      backgroundColor: LIGHT_BLUE,
+                    }}>
+                      <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 8.5, letterSpacing: 0.4 }}>
+                        {t("asi_demo_badge")}
+                      </Text>
+                    </View>
+                  ) : null}
                   {/* MODE badge (SEMI / FULL) */}
                   <View style={{
                     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
@@ -662,7 +730,15 @@ export default function ASIBotScreen() {
         onClose={() => setConnectOpen(false)}
         exchange={bot.exchange as ExchangeId}
         colors={colors}
-        onSaved={async () => { setConnectOpen(false); await refresh(); }}
+        onSaved={async (savedTestnet) => {
+          setConnectOpen(false);
+          // v9.9.5 — Setelah menyimpan key untuk suatu jaringan, langsung
+          // jadikan jaringan itu aktif (niat user jelas ingin memakainya).
+          if (typeof savedTestnet === "boolean") {
+            await saveBot({ active_testnet: savedTestnet });
+          }
+          await refresh();
+        }}
         deviceId={deviceId}
       />
 
@@ -793,7 +869,7 @@ function ParamRow({ label, value, onDec, onInc, colors, testID }: {
 
 function ConnectExchangeModal({ visible, onClose, exchange, colors, onSaved, deviceId }: {
   visible: boolean; onClose: () => void; exchange: ExchangeId; colors: any;
-  onSaved: () => void; deviceId: string;
+  onSaved: (savedTestnet?: boolean) => void; deviceId: string;
 }) {
   const { t } = useI18n();
   const [k, setK] = useState(""); const [s2, setS2] = useState(""); const [p, setP] = useState("");
@@ -829,7 +905,9 @@ function ConnectExchangeModal({ visible, onClose, exchange, colors, onSaved, dev
         exchange, api_key: k.trim(), api_secret: s2.trim(),
         password: ex.needsPass ? p.trim() : null, testnet: !isMainnet,
       });
-      setK(""); setS2(""); setP(""); setMainnetAck(false); onSaved();
+      // v9.9.5 — Hanya slot jaringan yang dipilih yang ditimpa; slot
+      // jaringan lain tetap utuh.
+      setK(""); setS2(""); setP(""); setMainnetAck(false); onSaved(!isMainnet);
     } catch (e: any) {
       // v9.6.9 — Backend returns {code, message} on validation failure.
       // Fetch wrapper surfaces either `detail` (FastAPI JSON) or `message`.
