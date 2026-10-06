@@ -891,7 +891,7 @@ export default function ASIBotScreen() {
                       </View>
                       <Text style={{ color: colors.textMuted, fontSize: 10, lineHeight: 15, flex: 1 }} numberOfLines={2}>
                         {/* v9.9.9 — Margin USDT wajib tampil di tiap posisi */}
-                        <Text style={{ color: GOLD, fontWeight: "900" }}>
+                        <Text style={{ color: YELLOW, fontWeight: "900" }}>
                           {`Margin $${(tr.margin_usdt ?? ((tr.entry_price && tr.qty && tr.leverage) ? tr.entry_price * tr.qty / tr.leverage : 0)).toFixed(2)}`}
                         </Text>
                         {"  ·  "}
@@ -980,7 +980,7 @@ export default function ASIBotScreen() {
                       </View>
                       <Text style={{ color: colors.textMuted, fontSize: 10, lineHeight: 15, flex: 1 }} numberOfLines={2}>
                         {/* v9.9.9 — Margin USDT wajib tampil di tiap history */}
-                        <Text style={{ color: GOLD, fontWeight: "900" }}>
+                        <Text style={{ color: YELLOW, fontWeight: "900" }}>
                           {`Margin $${(tr.margin_usdt ?? ((tr.entry_price && tr.qty && tr.leverage) ? tr.entry_price * tr.qty / tr.leverage : 0)).toFixed(2)}`}
                         </Text>
                         {"  ·  "}
