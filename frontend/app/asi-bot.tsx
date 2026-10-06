@@ -694,7 +694,9 @@ export default function ASIBotScreen() {
               // v9.9.13 — PnL LIVE dari mark price realtime (poll 2s) utk
               // posisi open; fallback ke pnl tersimpan. FRAME kartu: hijau
               // saat profit, merah saat loss (open & closed), emas pending.
-              const lpNow = livePx[tr.symbol] ?? null;
+              // Symbol dinormalisasi (row lama bisa menyimpan "XRPUSDT").
+              const symBase = String(tr.symbol || "").replace(/USDT$/, "");
+              const lpNow = livePx[symBase] ?? null;
               const livePnl = (isOpen && lpNow && tr.entry_price && tr.qty)
                 ? (tr.side === "BUY" ? lpNow - tr.entry_price : tr.entry_price - lpNow) * (tr.qty || 0)
                 : (tr.pnl_usdt ?? 0);
@@ -768,7 +770,7 @@ export default function ASIBotScreen() {
                   {/* v9.9.13 — Mark price REALTIME di samping symbol (posisi
                       open): polling 2 detik, hijau/merah vs entry. */}
                   {isOpen ? (() => {
-                    const lp = livePx[tr.symbol] ?? (tr as any).mark_price ?? null;
+                    const lp = livePx[symBase] ?? (tr as any).mark_price ?? null;
                     if (!lp || !tr.entry_price) return null;
                     const profitSide = tr.side === "BUY" ? lp >= tr.entry_price : lp <= tr.entry_price;
                     return (
@@ -780,7 +782,7 @@ export default function ASIBotScreen() {
                   <View style={{ flex: 1 }} />
                   <View style={{ alignItems: "flex-end", flexShrink: 0 }}>
                     <Text style={{ color: pos ? GREEN : RED, fontWeight: "800" }}>
-                      {pos ? "+" : ""}${(tr.pnl_usdt ?? 0).toFixed(2)}
+                      {pos ? "+" : ""}${dispPnl.toFixed(2)}
                     </Text>
                     <Text style={{ color: pos ? GREEN : RED, fontSize: 10, fontWeight: "700" }}>
                       {pos ? "+" : ""}{pct.toFixed(1)}%
