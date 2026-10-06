@@ -99,6 +99,35 @@ export default function ASIBotScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bot.semi_enabled, bot.full_enabled, bot.enabled, deviceId]);
 
+  // v9.9.13 — Mark price REALTIME untuk posisi open: polling batch 2 detik
+  // (backend cache 1 detik via proxy SG). Angka harga di samping symbol
+  // berubah live, dan frame kartu hijau/merah mengikuti PnL live.
+  const [livePx, setLivePx] = useState<Record<string, number>>({});
+  const openSymsKey = trades
+    .filter((t2) => String(t2.status || "").toLowerCase() === "open")
+    .map((t2) => t2.symbol)
+    .filter((v, i, a) => a.indexOf(v) === i)
+    .join(",");
+  useEffect(() => {
+    if (!openSymsKey) { setLivePx({}); return; }
+    const syms = openSymsKey.split(",");
+    let alive = true;
+    const tick = async () => {
+      try {
+        const r = await api.asi.prices(syms);
+        if (!alive) return;
+        const m: Record<string, number> = {};
+        Object.entries(r.prices || {}).forEach(([k, v]) => {
+          m[k.replace(/USDT$/, "")] = v;
+        });
+        setLivePx(m);
+      } catch { /* pertahankan harga terakhir */ }
+    };
+    tick();
+    const id = setInterval(tick, 2000);
+    return () => { alive = false; clearInterval(id); };
+  }, [openSymsKey]);
+
   // v9.8.0 — Sinkronkan Trader Profile global ke bot.profile saat berubah.
   // Full-Auto scanner akan membaca field ini di scheduler → sinyal yang
   // dieksekusi otomatis mengikuti profil yang user pilih di header.
@@ -655,17 +684,29 @@ export default function ASIBotScreen() {
               // v9.8.4 — Case-insensitive: beberapa row lama bisa menyimpan
               // status "OPEN"/"Closed". Tombol CLOSE HARUS selalu muncul
               // (dan aktif) untuk setiap posisi yang masih terbuka.
-              const isOpen = String(tr.status || "").toLowerCase() === "open";
+              const statusLower = String(tr.status || "").toLowerCase();
+              const isOpen = statusLower === "open";
+              // v9.9.13 — LIMIT entry menunggu fill: badge PENDING +
+              // tombol CLOSE berfungsi sebagai cancel order.
+              const isPending = statusLower === "pending_entry";
               const margin = tr.margin_usdt
                 || ((tr.entry_price || 0) * (tr.qty || 0) / Math.max(1, tr.leverage || 1));
-              const pct = margin > 0 ? ((tr.pnl_usdt ?? 0) / margin) * 100 : 0;
-              const pos = (tr.pnl_usdt ?? 0) >= 0;
+              // v9.9.13 — PnL LIVE dari mark price realtime (poll 2s) utk
+              // posisi open; fallback ke pnl tersimpan. FRAME kartu: hijau
+              // saat profit, merah saat loss (open & closed), emas pending.
+              const lpNow = livePx[tr.symbol] ?? null;
+              const livePnl = (isOpen && lpNow && tr.entry_price && tr.qty)
+                ? (tr.side === "BUY" ? lpNow - tr.entry_price : tr.entry_price - lpNow) * (tr.qty || 0)
+                : (tr.pnl_usdt ?? 0);
+              const dispPnl = isOpen ? livePnl : (tr.pnl_usdt ?? 0);
+              const pct = margin > 0 ? (dispPnl / margin) * 100 : 0;
+              const pos = dispPnl >= 0;
               const tid = (tr as any)._id as string | undefined;
               const lockKey = tid || `${tr.exchange}:${tr.symbol}`;
               const isClosing = !!closingIds[lockKey];
               const modeBadge = tr.mode === "full" ? "full" : "semi";
               const modeColor = modeBadge === "full" ? ORANGE : GOLD;
-              const borderColor = isOpen ? modeColor : colors.border;
+              const borderColor = isPending ? GOLD : (dispPnl >= 0 ? GREEN : RED);
               return (
                 <View key={tid || i} style={[s.leaderRow, { backgroundColor: colors.surface, borderColor }]}>
                 {/* v9.9.7 — Row 1 dirampingkan agar TIDAK overflow:
@@ -696,10 +737,10 @@ export default function ASIBotScreen() {
                   {/* OPEN / CLOSED badge */}
                   <View style={{
                     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
-                    backgroundColor: isOpen ? GREEN : colors.border,
+                    backgroundColor: isOpen ? GREEN : isPending ? GOLD : colors.border,
                   }}>
-                    <Text style={{ color: isOpen ? ACCENT_TEXT : colors.textMuted, fontWeight: "900", fontSize: 9 }}>
-                      {isOpen ? t("asi_status_active") : "CLOSED"}
+                    <Text style={{ color: isOpen ? ACCENT_TEXT : isPending ? "#0B0E11" : colors.textMuted, fontWeight: "900", fontSize: 9 }}>
+                      {isOpen ? t("asi_status_active") : isPending ? t("asi_status_pending") : "CLOSED"}
                     </Text>
                   </View>
                   <Text style={{ color: tr.side === "BUY" ? GREEN : RED, fontWeight: "900", width: 44, fontSize: 12 }}>
@@ -724,6 +765,18 @@ export default function ASIBotScreen() {
                     </TouchableOpacity>
                   ) : null}
                   <Text numberOfLines={1} style={{ color: colors.textPrimary, fontWeight: "700", flexShrink: 1 }}>{tr.symbol}</Text>
+                  {/* v9.9.13 — Mark price REALTIME di samping symbol (posisi
+                      open): polling 2 detik, hijau/merah vs entry. */}
+                  {isOpen ? (() => {
+                    const lp = livePx[tr.symbol] ?? (tr as any).mark_price ?? null;
+                    if (!lp || !tr.entry_price) return null;
+                    const profitSide = tr.side === "BUY" ? lp >= tr.entry_price : lp <= tr.entry_price;
+                    return (
+                      <Text style={{ color: profitSide ? GREEN : RED, fontWeight: "900", fontSize: 11 }}>
+                        {formatPrice(lp, "crypto")}
+                      </Text>
+                    );
+                  })() : null}
                   <View style={{ flex: 1 }} />
                   <View style={{ alignItems: "flex-end", flexShrink: 0 }}>
                     <Text style={{ color: pos ? GREEN : RED, fontWeight: "800" }}>
@@ -743,7 +796,9 @@ export default function ASIBotScreen() {
                     (DEMO biru utk testnet, REAL hijau utk mainnet) sehingga
                     semua baris sejajar rapi ke bawah. Leverage diperjelas
                     hijau tebal (permintaan user). */}
-                {isOpen ? (
+                {/* v9.9.13 — Baris detail + tombol CLOSE juga tampil untuk
+                    LIMIT PENDING (CLOSE = batalkan order limit). */}
+                {isOpen || isPending ? (
                   <View style={{ marginTop: 6, gap: 2 }}>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                       <View style={{
@@ -797,11 +852,13 @@ export default function ASIBotScreen() {
                     </View>
                     <Text style={{
                       fontSize: 10, fontWeight: "800",
-                      color: (tr.bracket_type === "hard" && tr.bracket_live !== false) ? GREEN : ORANGE,
+                      color: isPending ? GOLD : (tr.bracket_type === "hard" && tr.bracket_live !== false) ? GREEN : ORANGE,
                     }}>
-                      {(tr.bracket_type === "hard" && tr.bracket_live !== false)
-                        ? t("asi_bracket_native_ok")
-                        : t("asi_bracket_soft_short")}
+                      {isPending
+                        ? t("asi_pending_line")
+                        : (tr.bracket_type === "hard" && tr.bracket_live !== false)
+                          ? t("asi_bracket_native_ok")
+                          : t("asi_bracket_soft_short")}
                     </Text>
                   </View>
                 ) : (

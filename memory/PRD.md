@@ -1193,3 +1193,35 @@ tidak dieksekusi sama sekali (no more silent fake SL/TP).
 - Sinkronisasi verifikasi unlock code antara Preview dan Production host (`https://cryptostock-pro.emergent.host`).
 - Penyederhanaan otentikasi admin code generator.
 
+
+## v9.9.12–v9.9.13 — Fix akar "close di +0.4" + Entry LIMIT Deep (Okt 2026)
+
+**Root cause (bukti DB + audit live):** sinyal memakai entry DEEP (offset
+0.6–1.0 ATR) tapi bot eksekusi MARKET → TP1 nempel/salah sisi vs harga fill
+(bukti live: HYPE SELL TP1 +0.053% vs harga; TIA BUY TP1 −0.763% vs harga).
+TP1 kena instan (⅓ posisi, profit kecil), sisa ⅔ mati di SL jauh → rugi
+berulang di SEMUA profil. Ditambah: soft watcher menutup 100% posisi di TP
+pertama, dan layering mewarisi TP salah sisi (ETH TP1 2714.47 < avg entry
+2714.48 untuk BUY → close instan −0.44).
+
+**Perbaikan:**
+- Engine anchor-to-fill + TP guard (buang TP salah-sisi/nempel < max(0.25%
+  entry, 0.2×risk); sintesis 1.5R bila semua gugur). Field `anchor_shift`.
+- indicators._floor_tp_ladder: TP1 min max(0.25% entry, 0.5×ATR) — dipasang
+  di VWAP levels, deep levels (crypto+stocklike), Pattern Scalp 15M.
+- Soft watcher SPLIT TP per bobot (TP1 ⅓, TP2 ⅓, TP3 sisa), tracking
+  tp_filled/qty_remaining/soft_realized_pnl, close_reason TP1/TP2/TP3.
+- **KEPUTUSAN USER: entry LIMIT Deep (bukan market), expire 1 candle
+  (3600s), Semi & Full-Auto.** engine.execute_trade place LIMIT GTC di
+  harga sinyal; fill instan (marketable) → bracket langsung; belum →
+  status pending_entry; scheduler._process_pending_entries (20s):
+  fill→attach_brackets (layered→rebalance), expired→cancel+status expired,
+  attach gagal→close_position (no-unprotected). CLOSE pada pending =
+  cancel limit. Badge MENUNGGU + panel "LIMIT ORDER TERPASANG" (4 bahasa).
+- Mark price realtime: GET /asi/prices batch (cache 1s); UI poll 2 detik;
+  harga live di samping symbol; frame kartu hijau=profit / merah=loss
+  (open & closed), emas=pending; PnL $ & % live.
+
+**Testing:** testing_agent iter36: 10/11 PASS (E2E testnet LIMIT pending,
+marketable fill, expire, TP guard, regresi). 1 bug accounting soft-watcher
+ditemukan → diperbaiki, test PASS. Versi 9.9.13.

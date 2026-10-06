@@ -210,6 +210,19 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
         margin_mode: marginMode,
         testnet: activeTestnet,
       });
+      // v9.9.13 — Entry LIMIT deep: order dipasang di harga sinyal dan
+      // MENUNGGU terisi (maks 1 candle). Belum ada posisi terbuka.
+      if ((res as any).pending) {
+        setExecResult({
+          ok: true,
+          title: t("ats_pending_title"),
+          body:
+            `LIMIT ${intent.side} ${intent.symbol} @ ${res.entry_price?.toFixed?.(6) ?? intent.entry}\n` +
+            `${res.testnet ? "TESTNET" : "MAINNET"}\n` +
+            t("ats_pending_body"),
+        });
+        return;
+      }
       // v9.9.2 — Backend sekarang GARANSI: res.ok === true berarti SL+TP
       // sudah TERVERIFIKASI di Binance (via openAlgoOrders). Bracket soft
       // tidak lagi dibuat untuk trade baru — rollback otomatis dilakukan

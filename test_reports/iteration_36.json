@@ -1,0 +1,49 @@
+{
+  "summary": "ASI-Bot v9.9.13 LIMIT-entry (deep) + v9.9.12 guards: BACKEND 10/11 PASS against Binance Futures TESTNET only (mainnet never touched). VERIFIED: (1) LIMIT ENTRY PENDING — execute_trade 3% below market returns pending=True, status=pending_entry, bracket_type=pending, entry_expire_at=+3600s; real LIMIT GTC order live on testnet with exact price/qty; one scheduler pass keeps it pending; POST /api/asi/trades/{id}/close cancels the limit (gone on exchange), status=cancelled, NO market close (position stayed 0). (2) LIMIT ENTRY MARKETABLE — instant fill → open/hard, sl_order_id+3 tp_order_ids all live in openAlgoOrders, anchor_shift≈0, TPs above/SL below fill; close_position leaves account clean. (3) PENDING EXPIRE — fake past-expired pending doc + real far-below-market limit → _process_pending_entries sets status=expired/close_reason=entry_expired and cancels the order on exchange. (4) TP GUARD — wrong-side TP dropped, tp_count 3→2, bracket hard. (5) TP FLOOR via chart API (plain + scalper) 200 + schema OK. (6) Regression (dashboard/trades/balance/logs) OK. ONE REAL BUG: soft-watcher TP3 full close uses stale qty_remaining snapshot when multiple TPs are hit in the same pass.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "scheduler._watch_soft_brackets (soft TP split)",
+        "issue": "Stale qty_remaining within one watcher pass: when TP2+TP3 are hit simultaneously (gap move), the final full close in _close_soft_trade reuses the pass-start trade snapshot. Reproduced: qty 3, TP1 closed 1.0 (pass 1), pass 2 closes TP2 partial 1.0 then TP3 'full' close with qty=2.0 instead of the actual remaining 1.0. Exchange-side is safe on Binance because close_position overrides qty from live positionRisk, but soft_realized_pnl/pnl_usdt accounting is computed with the stale qty → realized PnL overstated (got 20.0, expected 15.0 in repro). Reference: /app/backend/asi_bot/scheduler.py:77-130 (_close_soft_trade) called from :181-201 with stale `t`.",
+        "priority": "MINOR"
+      },
+      {
+        "endpoint": "engine.execute_trade min-notional precheck",
+        "issue": "Engine rejects only notional < $5, but Binance testnet enforces min notional $20 (error -4164). Orders $5-$20 pass the precheck and fail at placement as entry_rejected. Cosmetic on Binance path (error surfaces cleanly), but precheck constant should track exchange MIN_NOTIONAL filter.",
+        "priority": "LOW"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter37_v9913_limit_entry.py",
+    "/app/test_reports/pytest/iter37.xml"
+  ],
+  "action_items": [
+    "Fix _watch_soft_brackets stale snapshot: after each partial close in the TP loop, refresh the trade doc (or track qty_remaining locally and pass it down) so the final full close uses the true remaining qty and leg PnL is computed on the correct quantity. Failing test TestSoftWatcherSplit::test_tp_split_then_full_close documents expected behavior.",
+    "Optional: raise/replace engine's hardcoded $5 min-notional precheck with the exchange MIN_NOTIONAL filter (testnet rejects <$20 with -4164)."
+  ],
+  "critical_code_review_comments": [
+    "engine.execute_trade v9.9.13 pending path is solid: LIMIT GTC placed before any bracket, 6x0.4s fill poll, pending record carries SL/TP anchored to the limit price — the original anchor/mis-side TP complaint cannot recur for unfilled deep entries.",
+    "routes.close_one_trade pending_entry branch correctly cancels the limit and never sends a market close (verified: position stayed 0, order gone from exchange, status=cancelled).",
+    "_process_pending_entries expire path has a proper race guard (positionRisk re-check after cancel) and attach-failure → close_position safety net; verified expire flow end-to-end with a real order.",
+    "BUG (minor): scheduler._close_soft_trade trusts the loop-start trade doc for qty_remaining; in a multi-TP-same-pass situation the TP-final full close qty and its leg PnL are computed from stale state (see backend_issues).",
+    "binance_rest.limit_order/cancel_order are strict (raise on non-200) — good; cancel_order returns bool and callers tolerate already-filled races.",
+    "Note for main agent: SOL testnet book is thin — a BUY limit at exact market price (tick-floored) repeatedly stayed unfilled >2.4s and correctly degraded to pending_entry. Not a bug; tests use +0.1% markup for 'marketable' on SOL."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter37_v9913_limit_entry.py (new)"
+  ],
+  "success_rate": {"backend": "91% (10/11; 1 failure = genuine soft-watcher stale-qty bug)", "frontend": "not tested per request (backend only)"},
+  "seed_data_creation": "Ephemeral only: one real pending LIMIT trade (device:orderId row) created then cancelled via API; one TEST_iter37_expire1 doc (deleted); one TEST_iter37_soft1 mock doc (deleted). Post-run verification: ETHUSDT & SOLUSDT positionAmt=0, 0 algo orders, 0 open orders, 0 TEST_iter37 docs, 0 pending_entry docs. Testnet balance untouched apart from dust PnL of filled round-trips.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Pytest file test_iter37_v9913_limit_entry.py is the v9.9.13 regression suite (runtime ~3min, talks to real Binance testnet via ASI_PROXY_URL). Re-run: pytest backend/tests/test_iter37_v9913_limit_entry.py -v. After main agent fixes the stale qty_remaining bug, TestSoftWatcherSplit should go green (expected full-close qty 1.0 and pnl_usdt 15.0). Marketable-fill tests retry up to 3x because round_to_tick floors the limit price; SOL uses +0.1% markup. If Binance testnet flakes (-5021/503/timeouts), re-run once before escalating.",
+  "rca_of_issue": "BUG RCA (soft watcher stale qty): _watch_soft_brackets iterates TPs using the trade document fetched once at pass start. Each _close_soft_trade call re-derives qty_remaining from that same stale dict. When TP2 (partial, 1.0) and TP3 (full) trigger in one pass, the TP3 full close computes qty from qty_remaining=2.0 (start-of-pass) instead of 1.0 (post-TP2). Reproduction: seed soft trade qty=3 TPs=[100,110,120], mark=105 → pass; mark=125 → pass; observe full close qty=2.0, pnl_usdt=20.0 (should be qty=1.0, pnl=15.0). Mitigation: exchange-side safe on Binance (close_position overrides with live positionRisk) so no over-close in production; only DB PnL accounting is wrong. Fix: refresh trade doc per TP iteration or thread updated qty_remaining through the loop."
+}

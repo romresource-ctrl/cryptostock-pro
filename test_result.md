@@ -2311,3 +2311,203 @@ backend_v999p9:
           E2E: repair XRP ok=True tanpa menyentuh 4 order existing.
           CATATAN INSIDEN: order tes sempat mereduksi posisi demo user
           30 XRP — dikembalikan (positionAmt -2565.3 utuh).
+
+# ======================================================
+# v9.9.12 — Fix akar "close di +0.4" & Full-Auto rugi berulang
+# ======================================================
+backend_v9912:
+  - task: "Anchor-to-fill: SL/TP digeser ke harga fill MARKET aktual (engine.py)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/asi_bot/engine.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          ROOT CAUSE (bukti live dashboard): sinyal memakai entry DEEP
+          (offset 0.6-1.0 ATR dari harga), tapi bot eksekusi MARKET.
+          TP1 dihitung dari entry deep → nempel/salah sisi vs harga fill
+          (contoh live: HYPE SELL TP1 +0.053% vs harga = SISI SALAH;
+          TIA BUY TP1 -0.763% vs harga). TP1 kena instan (1/3 posisi,
+          profit kecil ~+0.4), sisa 2/3 mati di SL jauh → rugi berulang
+          di SEMUA profil (scalper/day/swing/confluence).
+          FIX: setelah fill, anchor_shift = actual_entry - entry_sinyal;
+          sl_price & tps digeser sebesar shift (R:R & ladder utuh relatif
+          ke fill). Diterapkan di jalur Binance REST + CCXT fallback.
+          Disimpan di field trade "anchor_shift" untuk audit.
+  - task: "Guard TP: buang TP sisi-salah/nempel vs avg entry aktual + floor TP1 (0.25% entry / 0.5x ATR)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/asi_bot/engine.py, /app/backend/indicators.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          engine.execute_trade: setelah anchor shift, TP dengan jarak
+          < max(0.25% entry, 0.2 x risk) dari fill DIBUANG; jika semua
+          gugur -> sintesis 1 TP di 1.5R. attach_brackets: TP di sisi
+          salah vs entryPrice live -> repair dibatalkan dgn pesan aman.
+          indicators._floor_tp_ladder: floor TP1 min max(0.25% entry,
+          0.5xATR), ladder tetap berurutan; diterapkan di
+          _compute_vwap_levels, _compute_deep_levels (crypto+stocklike),
+          dan jalur Pattern Scalp 15M.
+  - task: "Soft watcher: TP split 1/3-1/3-1/3 (bukan tutup 100% di TP1)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/asi_bot/scheduler.py, /app/backend/asi_bot/engine.py (close_position_partial)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          _watch_soft_brackets kini menutup SEBAGIAN per TP sesuai bobot
+          TP_SPLITS (TP1 1/3, TP2 1/3, TP terakhir = sisa penuh). SL
+          tetap tutup semua. Tracking baru: tp_filled[], qty_remaining,
+          soft_realized_pnl; close_reason kini "TP1"/"TP2"/"TP3"/"SL".
+          close_position_partial (engine): market close reduceOnly TANPA
+          cancel conditional & TANPA override qty dari positionRisk.
+          Trade lama tanpa field baru: default aman (filled=False, qty
+          remaining = qty asli).
+test_plan:
+  current_focus:
+    - "Anchor-to-fill E2E Binance TESTNET: entry deep sengaja jauh dari harga -> SL/TP terpasang harus bergeser relatif ke fill, tidak ada TP salah sisi, bracket verified hard, lalu close bersih"
+    - "Soft watcher split: unit/mock test logika TP1 partial 1/3 + DB fields (JANGAN live fire tanpa posisi kecil khusus)"
+    - "Regresi: dashboard signal API, engine import, scheduler loop hidup"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+agent_communication:
+  - agent: "main"
+    message: |
+      v9.9.12 — User melaporkan Full-Auto Confluence/Intraday selalu rugi
+      dan posisi tertutup di profit kecil ~+0.4 sebelum TP1/TP3.
+      ROOT CAUSE ditemukan via data DB + audit live:
+      1. Entry sinyal = DEEP (limit), eksekusi = MARKET -> TP1 nempel/
+         salah sisi vs harga fill (bukti: HYPE SELL TP1 +0.053% vs harga,
+         TIA BUY TP1 -0.763% vs harga).
+      2. Soft watcher menutup 100% posisi saat TP pertama tersentuh
+         (scheduler.py lama, loop reversed(tps) -> _close_soft_trade full).
+      3. Layering rebalance mewarisi TP sinyal lama yang bisa salah sisi
+         vs avg entry gabungan (bukti DB: ETH layered TP1 2714.47 < avg
+         entry 2714.48 untuk BUY -> close instan, pnl -0.44).
+      FIX (3 file): anchor-to-fill + TP guard (engine), TP floor
+      (indicators), soft watcher split (scheduler + close_position_partial).
+      Tolong test sesuai test_plan. Credential testnet tersedia di
+      /app/memory/test_credentials.md (device web:qmeqflw0e2d-mui5ar38,
+      slot testnet). HANYA TESTNET — Mainnet tidak boleh disentuh.
+
+# ======================================================
+# v9.9.13 — Entry LIMIT Deep (keputusan user) menggantikan MARKET
+# ======================================================
+backend_v9913:
+  - task: "Entry LIMIT deep + expire 1 candle + auto-bracket setelah fill"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/asi_bot/engine.py, /app/backend/asi_bot/binance_rest.py, /app/backend/asi_bot/scheduler.py, /app/backend/asi_bot/routes.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Keputusan user: entry bot BUKAN market price — LIMIT di entry
+          Deep (-1.0 ATR confluence / -0.6 ATR VWAP), expire 1 candle,
+          berlaku untuk Semi & Full-Auto.
+          - engine.execute_trade (Binance): place LIMIT GTC di harga
+            sinyal; poll 2.4s — bila FILLED instan (marketable) lanjut
+            flow bracket seperti biasa (anchor shift + guard); bila
+            belum -> trade tersimpan status "pending_entry" dengan
+            entry_expire_at = now + 3600s, bracket_type "pending".
+          - binance_rest: limit_order() + cancel_order() baru.
+          - scheduler._process_pending_entries (tiap 20s): FILLED ->
+            attach_brackets (rebalance paksa bila layered) + entry_price/
+            qty aktual + merge row layering; EXPIRED -> cancel limit,
+            race-guard cek posisi, tandai "expired"; attach GAGAL ->
+            close_position demi keamanan (no-unprotected policy).
+          - attach_brackets: trade.layered -> cancel algo+legacy dulu
+            lalu pasang ulang utk total posisi (rebalance).
+          - routes: execute skip merge layering utk pending; close by id
+            pada pending -> batalkan limit (bukan market close);
+            close-all juga membatalkan pending; scanner dup-guard
+            memasukkan pending_entry.
+frontend_v9913:
+  - task: "Badge PENDING + panel LIMIT di trade sheet"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/asi-bot.tsx, /app/frontend/src/components/AsiTradeSheet.tsx, /app/frontend/src/i18n/I18nContext.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Recent Trades: badge MENUNGGU (emas) utk status pending_entry,
+          baris detail + tombol CLOSE (berfungsi cancel order limit),
+          baris status "LIMIT menunggu terisi (maks 1 candle)".
+          AsiTradeSheet: res.pending -> panel sukses "LIMIT ORDER
+          TERPASANG" dgn penjelasan. i18n 4 bahasa: asi_status_pending,
+          asi_pending_line, ats_pending_title, ats_pending_body.
+          Versi 9.9.13 (version.ts + app.json + APP_LATEST_VERSION).
+metadata:
+  created_by: "main_agent"
+  version: "9.9.13"
+  test_sequence: 35
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "LIMIT entry E2E Testnet: execute dengan entry 2-3% di bawah pasar -> res.pending True, status pending_entry, order limit terlihat di Binance testnet; lalu cancel via endpoint close -> status cancelled; order hilang dari exchange"
+    - "LIMIT entry marketable (entry = harga pasar) -> FILLED instan -> bracket SL/TP terpasang & terverifikasi, status open, anchor_shift ~0; lalu tutup bersih"
+    - "v9.9.12 regression: anchor-to-fill (entry deep 3%), TP guard salah-sisi, soft watcher split (mock), TP floor via API"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+# ======================================================
+# v9.9.13b — Mark price realtime + frame PnL hijau/merah
+# ======================================================
+frontend_v9913b:
+  - task: "Mark price live 2 detik di samping symbol + frame kartu hijau(profit)/merah(loss) open & closed"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/asi-bot.tsx, /app/frontend/src/lib/api.ts, /app/backend/asi_bot/routes.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Backend: GET /api/asi/prices?symbols= batch (cache 1s, proxy SG).
+          Frontend: polling 2 detik utk simbol posisi open; harga live di
+          samping symbol (hijau/merah vs entry); PnL $ & % dihitung live
+          dari harga itu; FRAME kartu: hijau=profit, merah=loss (open &
+          closed), emas=pending. Screenshot-verified dgn 4 trade dummy
+          (SOL win hijau+121.02, ETH loss merah+2.699,72, BTC closed
+          hijau, TRX closed merah). Dummy dibersihkan setelah tes.
+backend_v9913b:
+  - task: "Fix accounting soft-watcher (temuan testing agent iter36)"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/scheduler.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Snapshot qty_remaining/soft_realized_pnl kini di-refresh per TP
+          di dalam pass yang sama (gap move TP2+TP3 bersamaan tidak lagi
+          overstate pnl). Test TestSoftWatcherSplit.test_tp_split_then_full_close
+          yang sebelumnya FAIL kini PASS (1 passed).

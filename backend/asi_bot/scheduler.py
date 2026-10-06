@@ -25,9 +25,18 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable
 
 from .crypto import decrypt
-from .engine import close_position, execute_trade, refresh_trade_pnl, resolve_credential
+from .engine import (
+    TP_SPLITS,
+    attach_brackets,
+    close_position,
+    close_position_partial,
+    execute_trade,
+    refresh_trade_pnl,
+    resolve_credential,
+)
 from .exchanges import _build
-from .whitelist import TOP_100_FUTURES, is_allowed
+from .whitelist import TOP_100_FUTURES, binance_symbol_filters, is_allowed, round_to_step
+from . import binance_rest as br
 
 logger = logging.getLogger("asi_bot.scheduler")
 
@@ -65,47 +74,70 @@ def _is_hit(side: str, mark: float, trigger: float, is_stop_loss: bool) -> bool:
     return mark >= trigger if is_stop_loss else mark <= trigger
 
 
-async def _close_soft_trade(db: Any, trade: dict[str, Any], reason: str) -> None:
+async def _close_soft_trade(db: Any, trade: dict[str, Any], reason: str,
+                            qty_to_close: float | None = None) -> dict[str, Any] | None:
+    """Tutup posisi soft-bracket.
+
+    v9.9.12 — qty_to_close=None → tutup SELURUH sisa posisi (SL / TP
+    terakhir). Dengan qty_to_close → PARTIAL TP split (TP1 1/3, TP2 1/3,
+    dst), konsisten dengan bracket native Binance. Sebelumnya watcher
+    menutup 100% posisi di TP pertama — akar keluhan "profit kecil
+    langsung tertutup semua sebelum TP2/TP3".
+    """
     cred = await resolve_credential(
         db, trade["device_id"], trade["exchange"], bool(trade.get("testnet", True)))
     if not cred:
-        return
+        return None
+    qty_remaining = float(trade.get("qty_remaining") or trade.get("qty") or 0)
+    qty = qty_remaining if qty_to_close is None else min(float(qty_to_close), qty_remaining)
+    if qty <= 0:
+        return None
     try:
-        r = await close_position(cred, trade["symbol"], trade["side"], float(trade["qty"]))
+        if qty_to_close is None:
+            r = await close_position(cred, trade["symbol"], trade["side"], qty)
+        else:
+            r = await close_position_partial(
+                cred, trade["symbol"], trade["side"], qty)
     except Exception as e:
         logger.warning("soft close failed %s: %s", trade.get("_id"), e)
-        return
+        return None
     exit_px = float((r or {}).get("avg") or 0) or None
     entry = float(trade.get("entry_price") or 0)
-    qty = float(trade.get("qty") or 0)
-    if exit_px:
-        if trade["side"] == "BUY":
-            pnl = (exit_px - entry) * qty
-        else:
-            pnl = (entry - exit_px) * qty
-    else:
-        # Fallback: use trigger price we closed at.
-        pnl = 0.0
-    await db.asi_trades.update_one(
-        {"_id": trade["_id"]},
-        {"$set": {
+    sign = 1.0 if trade["side"] == "BUY" else -1.0
+    leg_pnl = ((exit_px or 0.0) - entry) * qty * sign if exit_px else 0.0
+    acc = float(trade.get("soft_realized_pnl") or 0.0) + leg_pnl
+    remaining = qty_remaining - qty
+    full_close = qty_to_close is None or remaining <= 1e-12
+    now = datetime.now(timezone.utc).isoformat()
+    upd: dict[str, Any] = {
+        "soft_realized_pnl": round(acc, 6),
+        "qty_remaining": 0.0 if full_close else remaining,
+        "updated_at": now,
+    }
+    if full_close:
+        upd.update({
             "status": "closed",
-            "closed_at": datetime.now(timezone.utc).isoformat(),
+            "closed_at": now,
             "close_reason": reason,
             "exit_price": exit_px,
-            # v9.9.9 — samakan field dgn refresh path agar UI history
-            # selalu punya closed_price.
             "closed_price": exit_px,
-            "pnl_usdt": round(pnl, 2),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }},
-    )
-    logger.info("soft-bracket closed trade=%s reason=%s pnl=%.2f",
-                trade.get("_id"), reason, pnl)
+            "pnl_usdt": round(acc, 2),
+        })
+    await db.asi_trades.update_one({"_id": trade["_id"]}, {"$set": upd})
+    logger.info("soft-bracket %s trade=%s reason=%s qty=%.8f pnl=%.2f",
+                "closed" if full_close else "partial",
+                trade.get("_id"), reason, qty, acc)
+    return {"full": full_close, "remaining": remaining,
+            "exit_px": exit_px, "acc": acc}
 
 
 async def _watch_soft_brackets(db: Any) -> None:
-    """One pass through all open soft-bracket trades."""
+    """One pass through all open soft-bracket trades.
+
+    v9.9.12 — TP kini SPLIT per level mengikuti bobot TP_SPLITS (TP1 1/3,
+    TP2 1/3, TP3 sisa), alih-alih menutup seluruh posisi di TP pertama.
+    SL tetap menutup seluruh sisa posisi (prioritas keamanan).
+    """
     cursor = db.asi_trades.find({
         "status": "open",
         "$or": [
@@ -125,22 +157,190 @@ async def _watch_soft_brackets(db: Any) -> None:
             if mark is None:
                 continue
             side = t["side"]
-            # Check SL first (safety priority).
+            # Check SL first (safety priority) — tutup seluruh sisa.
             sl = float(t.get("stop_loss") or 0)
             if sl and _is_hit(side, mark, sl, is_stop_loss=True):
                 await _close_soft_trade(db, t, reason="SL")
                 continue
-            # Then TPs — close first TP that is hit (watcher simplicity:
-            # all-or-nothing on the final TP; partial TP management via
-            # exchange-side orders remains unsupported in soft-bracket).
-            tps = list(t.get("take_profits") or [])
-            for tp in reversed(tps):  # start from furthest TP
-                tp = float(tp)
-                if _is_hit(side, mark, tp, is_stop_loss=False):
-                    await _close_soft_trade(db, t, reason="TP")
+            tps = [float(x) for x in (t.get("take_profits") or [])]
+            n = len(tps)
+            if n == 0:
+                continue
+            filled = list(t.get("tp_filled") or [])
+            filled = (filled + [False] * n)[:n]
+            orig_qty = float(t.get("qty") or 0)
+            weights = TP_SPLITS.get(n, TP_SPLITS[3])
+            # Step rounding untuk Binance supaya partial qty valid.
+            step: float | None = None
+            if (exchange or "").lower() == "binance":
+                base = str(t.get("symbol") or "").upper().split("/")[0].split("USDT")[0].split("-")[0]
+                try:
+                    f = (await binance_symbol_filters() or {}).get(base) or {}
+                    step = float(f.get("step") or 0) or None
+                except Exception:
+                    step = None
+            for i, tp in enumerate(tps):
+                if filled[i] or not _is_hit(side, mark, tp, is_stop_loss=False):
+                    continue
+                is_last_unfilled = all(filled[j] for j in range(i + 1, n))
+                if is_last_unfilled:
+                    res = await _close_soft_trade(db, t, reason=f"TP{i + 1}")
+                else:
+                    share = orig_qty * weights[i]
+                    if step:
+                        share = round_to_step(share, step)
+                    if share <= 0:
+                        filled[i] = True
+                        continue
+                    res = await _close_soft_trade(
+                        db, t, reason=f"TP{i + 1}", qty_to_close=share)
+                if res is None:
+                    break  # eksekusi gagal — coba lagi di pass berikutnya
+                filled[i] = True
+                # v9.9.13 — FIX accounting (temuan testing agent): teruskan
+                # qty_remaining & akumulasi PnL TERBARU ke snapshot lokal,
+                # agar TP berikutnya yang ter-hit DI PASS YANG SAMA
+                # (gap move) memakai angka fresh, bukan snapshot basi
+                # dari awal pass (pnl_usdt sempat ter-overstate).
+                t["qty_remaining"] = res.get("remaining", t.get("qty_remaining"))
+                t["soft_realized_pnl"] = res.get("acc", t.get("soft_realized_pnl"))
+                await db.asi_trades.update_one(
+                    {"_id": t["_id"]}, {"$set": {"tp_filled": filled}})
+                if res.get("full"):
                     break
         except Exception as e:  # noqa: BLE001
             logger.warning("watcher error on %s: %s", t.get("_id"), e)
+
+
+async def _process_pending_entries(db: Any) -> None:
+    """v9.9.13 — Pantau order LIMIT entry (status "pending_entry"):
+
+    1. Order FILLED → pasang SL/TP bracket via engine.attach_brackets
+       (sudah termasuk guard sisi TP + verifikasi openAlgoOrders). Untuk
+       layer (layered=True) attach_brackets me-REBALANCE total posisi.
+       Jika bracket gagal → posisi ditutup demi keamanan (kebijakan
+       no-unprotected v9.9.2 tetap berlaku).
+    2. Belum filled & melewati entry_expire_at (1 candle) → batalkan
+       order limit, tandai "expired" (tidak pernah buka posisi).
+    """
+    cursor = db.asi_trades.find({"status": "pending_entry"})
+    async for t in cursor:
+        try:
+            exchange = (t.get("exchange") or "").lower()
+            if exchange != "binance":
+                continue
+            cred = await resolve_credential(
+                db, t["device_id"], t["exchange"], bool(t.get("testnet", True)))
+            if not cred:
+                continue
+            api_key = decrypt(cred["api_key_enc"])
+            api_secret = decrypt(cred["api_secret_enc"])
+            is_testnet = bool(cred.get("testnet", True))
+            base = str(t.get("symbol") or "").upper().split("/")[0].split("USDT")[0].split("-")[0]
+            bin_sym = base + "USDT"
+            now = datetime.now(timezone.utc)
+
+            filled = False
+            try:
+                st = await br.order_status(
+                    api_key, api_secret, is_testnet,
+                    symbol=bin_sym, order_id=t["entry_order_id"])
+                filled = str(st.get("status")) == "FILLED"
+            except Exception:
+                pass
+
+            if not filled:
+                exp = str(t.get("entry_expire_at") or "")
+                if not exp or now.isoformat() < exp:
+                    continue  # masih menunggu pullback
+                # Expired → batalkan order. Race guard: kalau ternyata
+                # terisi tepat sebelum cancel, posisi akan terdeteksi.
+                try:
+                    await br.cancel_order(
+                        api_key, api_secret, is_testnet,
+                        symbol=bin_sym, order_id=t["entry_order_id"])
+                except Exception:
+                    pass
+                try:
+                    pos = await br.position_risk(api_key, api_secret, is_testnet, bin_sym)
+                except Exception:
+                    pos = None
+                if pos and abs(float(pos.get("positionAmt") or 0)) > 0:
+                    filled = True  # jatuh ke jalur attach di bawah
+                else:
+                    await db.asi_trades.update_one(
+                        {"_id": t["_id"]},
+                        {"$set": {
+                            "status": "expired",
+                            "close_reason": "entry_expired",
+                            "closed_at": now.isoformat(),
+                            "updated_at": now.isoformat(),
+                        }},
+                    )
+                    logger.info("pending entry expired %s %s", t.get("_id"), bin_sym)
+                    continue
+
+            # FILLED → pasang bracket. attach_brackets membaca posisi live
+            # & trade SL/TP (sudah ter-anchor ke harga limit).
+            res = await attach_brackets(cred, dict(t))
+            if res.get("ok"):
+                upd = dict(res.get("update") or {})
+                upd["status"] = "open"
+                upd["updated_at"] = now.isoformat()
+                try:
+                    pos = await br.position_risk(api_key, api_secret, is_testnet, bin_sym)
+                    if pos:
+                        upd["entry_price"] = float(pos.get("entryPrice") or t.get("entry_price") or 0)
+                        upd["qty"] = abs(float(pos.get("positionAmt") or t.get("qty") or 0))
+                except Exception:
+                    pass
+                await db.asi_trades.update_one({"_id": t["_id"]}, {"$set": upd})
+                # Layering: lebur row open lama pada simbol yang sama.
+                if t.get("layered"):
+                    old_rows = [
+                        d async for d in db.asi_trades.find({
+                            "device_id": t["device_id"], "exchange": t["exchange"],
+                            "symbol": base, "status": "open",
+                            "_id": {"$ne": t["_id"]},
+                        })
+                    ]
+                    if old_rows:
+                        await db.asi_trades.update_many(
+                            {"_id": {"$in": [d["_id"] for d in old_rows]}},
+                            {"$set": {
+                                "status": "layered",
+                                "close_reason": "merged_into_layer",
+                                "merged_into": t["_id"],
+                                "closed_at": now.isoformat(),
+                                "updated_at": now.isoformat(),
+                            }},
+                        )
+                        await db.asi_trades.update_one(
+                            {"_id": t["_id"]},
+                            {"$set": {"layer_count": len(old_rows) + 1}},
+                        )
+                logger.info("pending entry filled+bracketed %s %s", t.get("_id"), bin_sym)
+            else:
+                # Bracket gagal terpasang/terverifikasi → tutup posisi
+                # demi keamanan (tidak boleh ada posisi tanpa proteksi).
+                logger.warning("attach failed after fill %s: %s",
+                               t.get("_id"), (res.get("errors") or [])[:2])
+                try:
+                    await close_position(cred, t["symbol"], t["side"],
+                                         float(t.get("qty") or 0))
+                except Exception as e:
+                    logger.exception("close after attach failure %s: %s", t.get("_id"), e)
+                await db.asi_trades.update_one(
+                    {"_id": t["_id"]},
+                    {"$set": {
+                        "status": "closed",
+                        "close_reason": "bracket_failed_after_fill",
+                        "closed_at": now.isoformat(),
+                        "updated_at": now.isoformat(),
+                    }},
+                )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("pending entry error %s: %s", t.get("_id"), e)
 
 
 async def _consolidate_duplicate_open(db: Any) -> None:
@@ -326,9 +526,10 @@ async def _run_full_auto_scanner(
                     continue
                 if int(sig.get("confidence") or 0) < user_min_conf:
                     continue
-                # Guard: skip if an OPEN trade on same symbol exists.
+                # Guard: skip if an OPEN/pending trade on same symbol exists.
                 dup = await db.asi_trades.find_one(
-                    {"device_id": device_id, "symbol": sym, "status": "open"}
+                    {"device_id": device_id, "symbol": sym,
+                     "status": {"$in": ["open", "pending_entry"]}}
                 )
                 if dup:
                     continue
@@ -402,6 +603,9 @@ class ASIScheduler:
         while self._running:
             try:
                 await _watch_soft_brackets(self.db)
+                # v9.9.13 — pantau order LIMIT entry (fill → bracket,
+                # expired → cancel).
+                await _process_pending_entries(self.db)
             except Exception as e:  # noqa: BLE001
                 logger.exception("watcher loop crash: %s", e)
             await asyncio.sleep(WATCHER_INTERVAL)

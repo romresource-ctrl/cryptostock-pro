@@ -332,6 +332,9 @@ def _compute_deep_levels(
             take_profit = entry_deep - risk * tp_ladder[0]
             take_profit_2 = entry_deep - risk * tp_ladder[1]
             take_profit_3 = entry_deep - risk * tp_ladder[2]
+        # v9.9.12 — floor jarak TP (0.25% entry) untuk pasar stocklike
+        take_profit, take_profit_2, take_profit_3 = _floor_tp_ladder(
+            action, entry_deep, 0.0, take_profit, take_profit_2, take_profit_3)
         band = price * 0.002                  # ±0.2% zone for stock ranges
         return {
             "entry": entry_deep,
@@ -391,6 +394,11 @@ def _compute_deep_levels(
         take_profit = None
         take_profit_2 = None
         take_profit_3 = None
+
+    # v9.9.12 — Guard: TP1 tidak boleh "nempel" di entry.
+    if action in ("BUY", "SELL") and entry_deep is not None:
+        take_profit, take_profit_2, take_profit_3 = _floor_tp_ladder(
+            action, entry_deep, atr, take_profit, take_profit_2, take_profit_3)
 
     # Helper to safely apply an offset when the base value may be None (HOLD).
     def _off(base, delta):
@@ -722,6 +730,8 @@ def _compute_vwap_signal(
                 reasons.append(f"Counter-trend vs bias harian ({daily_bias}) — half risk (scalp cepat).")
             # Level PERSIS dari formula: entry pola, SL sisi lain, TP ujung range 15M
             e, sl_, tp_ = scalp["entry"], scalp["sl"], scalp["tp"]
+            # v9.9.12 — floor jarak TP pola scalp (mencegah TP nempel entry)
+            tp_ = _floor_tp_ladder(action, e, atr, tp_)[0]
             band = abs(e - sl_) * 0.15 or price * 0.001
             levels = {
                 "entry": e, "entry_moderate": e, "entry_aggressive": e,
@@ -1013,6 +1023,33 @@ def _compute_vwap_signal(
     }
 
 
+def _floor_tp_ladder(action: str, entry: float | None, atr: float | None,
+                     *tps):
+    """v9.9.12 — Floor jarak TP: TP1 minimal max(0.25% entry, 0.5×ATR)
+    dari entry, dan ladder tetap berurutan sesuai arah. Mencegah TP yang
+    "nempel" di entry (akar posisi tertutup instan di profit kecil
+    sebelum TP2/TP3)."""
+    if action not in ("BUY", "SELL") or entry is None or not tps:
+        return tps
+    min_dist = max(abs(entry) * 0.0025, float(atr or 0.0) * 0.5)
+    out: list[Any] = []
+    prev: float | None = None
+    for t in tps:
+        if t is None:
+            out.append(None)
+            continue
+        t = float(t)
+        if action == "BUY":
+            floor = entry + min_dist if prev is None else max(prev, entry + min_dist)
+            v = max(t, floor)
+        else:
+            floor = entry - min_dist if prev is None else min(prev, entry - min_dist)
+            v = min(t, floor)
+        prev = v
+        out.append(v)
+    return tuple(out)
+
+
 def _compute_vwap_levels(
     action: str,
     price: float,
@@ -1065,6 +1102,11 @@ def _compute_vwap_levels(
         band = 0.0
         sl_deep = sl_moderate = sl_aggressive = None
         tp1 = tp2 = tp3 = None
+
+    # v9.9.12 — Guard: TP1 tidak boleh "nempel" di entry (floor 0.25%
+    # entry / 0.5×ATR), ladder tetap berurutan.
+    if action in ("BUY", "SELL") and entry_deep is not None:
+        tp1, tp2, tp3 = _floor_tp_ladder(action, entry_deep, atr, tp1, tp2, tp3)
 
     recent_peaks = peaks[-5:] if len(peaks) >= 5 else peaks
     recent_valleys = valleys[-5:] if len(valleys) >= 5 else valleys

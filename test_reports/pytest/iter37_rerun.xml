@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="11.562" timestamp="2026-10-06T17:42:23.560633+00:00" hostname="agent-env-beafbbb3-f2aa-4357-9ba4-c47526bf7bc0"><testcase classname="tests.test_iter37_v9913_limit_entry.TestPendingExpire" name="test_expired_pending_entry_cancelled" time="10.892"><failure message="AttributeError: 'TestPendingExpire' object has no attribute 'BASE'">tests/test_iter37_v9913_limit_entry.py:437: in test_expired_pending_entry_cancelled
+    "symbol": self.BASE, "ccxt_symbol": "ETH/USDT:USDT",
+              ^^^^^^^^^
+E   AttributeError: 'TestPendingExpire' object has no attribute 'BASE'</failure></testcase><testcase classname="tests.test_iter37_v9913_limit_entry.TestSoftWatcherSplit" name="test_tp_split_then_full_close" time="0.010"><failure message="AssertionError: TP3 full close qty=2.0 — stale qty_remaining snapshot used inside one watcher pass (expected 1.0)&#10;assert 1.0 &lt; 1e-09&#10; +  where 1.0 = abs((2.0 - 1.0))">tests/test_iter37_v9913_limit_entry.py:618: in test_tp_split_then_full_close
+    assert abs(calls["full"][0]["qty"] - 1.0) &lt; 1e-9, (
+E   AssertionError: TP3 full close qty=2.0 — stale qty_remaining snapshot used inside one watcher pass (expected 1.0)
+E   assert 1.0 &lt; 1e-09
+E    +  where 1.0 = abs((2.0 - 1.0))</failure></testcase></testsuite></testsuites>

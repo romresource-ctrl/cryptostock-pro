@@ -150,6 +150,36 @@ async def order_status(
     return data
 
 
+async def limit_order(
+    api_key: str, api_secret: str, testnet: bool, *,
+    symbol: str, side: str, quantity: float, price: float,
+    time_in_force: str = "GTC",
+) -> dict[str, Any]:
+    """v9.9.13 — Entry LIMIT (deep). Bot tidak lagi eksekusi MARKET."""
+    params: dict[str, Any] = {
+        "symbol": symbol.upper(), "side": side.upper(), "type": "LIMIT",
+        "timeInForce": time_in_force,
+        "quantity": _fmt(quantity), "price": _fmt(price),
+    }
+    code, data = await _request("POST", "/fapi/v1/order", api_key, api_secret, testnet, params)
+    if code != 200:
+        raise RuntimeError(f"limit order rejected: {data}")
+    return data if isinstance(data, dict) else {}
+
+
+async def cancel_order(
+    api_key: str, api_secret: str, testnet: bool, *,
+    symbol: str, order_id: int | str,
+) -> bool:
+    """v9.9.13 — Batalkan satu order limit (dipakai saat pending entry
+    expired / di-cancel user). True bila berhasil."""
+    code, data = await _request(
+        "DELETE", "/fapi/v1/order", api_key, api_secret, testnet,
+        {"symbol": symbol.upper(), "orderId": str(order_id)},
+    )
+    return code == 200
+
+
 # ──────────────────────────────────────────────────────────────────────
 # Algo orders (conditional SL/TP)
 # ──────────────────────────────────────────────────────────────────────

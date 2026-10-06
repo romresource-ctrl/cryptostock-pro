@@ -28,12 +28,85 @@ from .engine import (
 from .exchanges import EXCHANGE_DISPLAY, EXCHANGES, ExchangeId, validate_credentials
 from .pnl import leaderboard, live_leaderboard, pnl_summary
 from .whitelist import TOP_100_FUTURES
+from . import binance_rest as br
+
+
+async def _cancel_pending_limit(db: Any, t: dict, reason: str) -> None:
+    """v9.9.13 — Batalkan order LIMIT entry yang masih pending (belum
+    pernah membuka posisi) lalu tandai trade cancelled/expired."""
+    cred = await resolve_credential(
+        db, t["device_id"], t["exchange"], bool(t.get("testnet", True)))
+    if cred and (t.get("exchange") or "").lower() == "binance":
+        try:
+            bin_sym = (str(t.get("symbol") or "").upper()
+                       .split("/")[0].split("USDT")[0].split("-")[0] + "USDT")
+            await br.cancel_order(
+                decrypt(cred["api_key_enc"]), decrypt(cred["api_secret_enc"]),
+                bool(cred.get("testnet", True)),
+                symbol=bin_sym, order_id=t.get("entry_order_id"))
+        except Exception:
+            pass
+    now = datetime.now(timezone.utc).isoformat()
+    await db.asi_trades.update_one(
+        {"_id": t["_id"]},
+        {"$set": {"status": "cancelled", "close_reason": reason,
+                  "closed_at": now, "updated_at": now}},
+    )
 
 router = APIRouter(prefix="/asi", tags=["asi-bot"])
 
 # v9.9.9 — module-level DB ref supaya endpoint di luar closure register()
 # (price, balance, egress-ip) bisa mengakses Mongo.
 _DB: Any = None
+
+# v9.9.13 — Cache harga 1 detik per simbol untuk endpoint batch /prices
+# (dipoll tiap 2 detik oleh UI Recent Trades untuk mark price realtime).
+_PX_CACHE: dict[str, tuple[float, float]] = {}
+
+
+@router.get("/prices")
+async def get_prices(symbols: str = Query(..., min_length=2, max_length=200)):
+    """v9.9.13 — Batch harga live Binance Futures (public, via proxy SG).
+    Dipakai Recent Trades untuk mark price realtime posisi open.
+    Maks 10 simbol per call; cache 1 detik per simbol."""
+    import time as _time
+
+    import httpx as _hx
+    syms = []
+    for s in symbols.split(","):
+        s = s.strip().upper().replace("/", "").replace("USDT", "")
+        if s:
+            syms.append(s + "USDT")
+    syms = syms[:10]
+    now = _time.time()
+    out: dict[str, float] = {}
+    missing: list[str] = []
+    for s in syms:
+        hit = _PX_CACHE.get(s)
+        if hit and now - hit[0] < 1.0:
+            out[s] = hit[1]
+        else:
+            missing.append(s)
+    if missing:
+        async with _hx.AsyncClient(proxy=os.environ.get("ASI_PROXY_URL"), timeout=8.0) as c:
+            if len(missing) == 1:
+                r = await c.get(
+                    f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={missing[0]}")
+                if r.status_code == 200:
+                    p = float(r.json()["price"])
+                    _PX_CACHE[missing[0]] = (now, p)
+                    out[missing[0]] = p
+            else:
+                r = await c.get("https://fapi.binance.com/fapi/v1/ticker/price")
+                if r.status_code == 200:
+                    want = set(missing)
+                    for row in r.json():
+                        s = row.get("symbol")
+                        if s in want:
+                            p = float(row["price"])
+                            _PX_CACHE[s] = (now, p)
+                            out[s] = p
+    return {"prices": out}
 
 
 def _initials_from_email(email: str | None, device_id: str) -> str:
@@ -375,7 +448,11 @@ def _attach_trade_routes(db: Any) -> None:
         # v9.9.4 — LAYERING: lebur row trade lama pada simbol yang sama
         # ke row baru (Binance one-way mode menggabungkan posisi fisik;
         # DB harus mencerminkan hal yang sama agar PnL tidak ganda).
-        if res.get("layered") and rec.get("_id"):
+        # v9.9.13 — LIMIT entry: merge row layering DITUNDA sampai order
+        # benar-benar terisi (dilakukan scheduler _process_pending_entries).
+        # Jika di-merge sekarang dan limit tidak terisi, row posisi lama
+        # akan hilang dari daftar padahal posisi masih terbuka.
+        if res.get("layered") and rec.get("_id") and not res.get("pending"):
             base_sym = payload.symbol.upper().split("/")[0].split("USDT")[0].split("-")[0]
             now = datetime.now(timezone.utc).isoformat()
             old_rows = [
@@ -407,6 +484,11 @@ def _attach_trade_routes(db: Any) -> None:
         t = await db.asi_trades.find_one({"_id": trade_id, "device_id": device_id})
         if not t:
             raise HTTPException(404, "trade not found")
+        # v9.9.13 — Pending LIMIT entry: belum ada posisi → cukup batalkan
+        # order limit di exchange, jangan kirim market close.
+        if str(t.get("status") or "").lower() == "pending_entry":
+            await _cancel_pending_limit(db, t, "cancelled_pending")
+            return {"ok": True, "cancelled_pending": True}
         if t.get("status") != "open":
             return {"ok": True, "already_closed": True}
         cred = await resolve_credential(
@@ -434,6 +516,14 @@ def _attach_trade_routes(db: Any) -> None:
         Native SL/TP orders di exchange ikut dibatalkan lewat
         engine.close_position (cancel_all_conditional di dalamnya).
         """
+        # v9.9.13 — sertakan pending LIMIT entry: dibatalkan, bukan di-close.
+        pendings = [
+            d async for d in db.asi_trades.find(
+                {"device_id": device_id, "status": "pending_entry"}
+            )
+        ]
+        for p in pendings:
+            await _cancel_pending_limit(db, p, "cancelled_pending")
         open_trades = [
             d async for d in db.asi_trades.find(
                 {"device_id": device_id, "status": "open"}

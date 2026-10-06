@@ -437,6 +437,11 @@ export const api = {
       get<{ symbol: string; price: number }>(
         `/asi/price?symbol=${encodeURIComponent(symbol)}`,
       ),
+    // v9.9.13 — Batch harga live untuk mark price realtime Recent Trades.
+    prices: (symbols: string[]) =>
+      get<{ prices: Record<string, number> }>(
+        `/asi/prices?symbols=${encodeURIComponent(symbols.join(","))}`,
+      ),
     // v9.9.9 — saldo USDT available untuk jaringan aktif (demo/real).
     balance: (deviceId: string, exchange: string = "binance") =>
       get<{ ok: boolean;

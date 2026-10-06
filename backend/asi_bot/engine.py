@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 from .crypto import decrypt
@@ -49,6 +49,10 @@ from .whitelist import binance_symbol_filters, round_to_step, round_to_tick
 logger = logging.getLogger("asi_bot.engine")
 
 Side = Literal["BUY", "SELL"]
+# v9.9.13 — Entry LIMIT deep (keputusan user): bot TIDAK lagi eksekusi
+# MARKET. Order limit di harga entry sinyal menunggu maksimal 1 candle
+# (sinyal bot = 1h) lalu dibatalkan otomatis oleh scheduler.
+ENTRY_LIMIT_TTL_SEC = 3600
 # v9.6.0 — split dinamis mengikuti jumlah TP yang user pilih.
 TP_SPLITS: dict[int, tuple[float, ...]] = {
     1: (1.0,),
@@ -465,19 +469,70 @@ async def execute_trade(
     # Validate SL direction vs side (avoid instant trigger)
     close_side = "SELL" if side == "BUY" else "BUY"
 
-    # (5) Place MARKET entry
+    # (5) Place LIMIT entry di harga sinyal (deep). v9.9.13 — keputusan
+    # user: bot TIDAK lagi eksekusi MARKET. Entry limit persis formula
+    # (backtest-validated, buy-the-pullback); jika tidak terisi dalam
+    # 1 candle, scheduler membatalkan otomatis. SL/TP ter-anchor ke harga
+    # limit ini → tidak ada lagi masalah TP nempel/salah sisi vs fill.
+    limit_px = round_to_tick(float(entry), tick)
     try:
-        entry_res = await br.market_order(
+        entry_res = await br.limit_order(
             api_key, api_secret, is_testnet,
-            symbol=bin_sym, side=side, quantity=qty, reduce_only=False,
+            symbol=bin_sym, side=side, quantity=qty, price=limit_px,
         )
     except Exception as e:
         return {"ok": False, "reason": "entry_rejected",
-                "message": f"Entry ditolak Binance: {str(e)[:200]}"}
+                "message": f"Entry LIMIT ditolak Binance: {str(e)[:200]}"}
 
     entry_order_id = entry_res.get("orderId")
 
-    # (6) Wait for position to materialize
+    # (6) Poll singkat status order: limit "marketable" (harga sudah
+    # melewati level sinyal) terisi instan → lanjut pasang bracket di
+    # bawah. Bila belum FILLED → simpan sebagai pending_entry; scheduler
+    # memantau fill/expiry dan memasang bracket setelah fill.
+    filled_now = False
+    for _ in range(6):
+        await asyncio.sleep(0.4)
+        try:
+            st = await br.order_status(
+                api_key, api_secret, is_testnet,
+                symbol=bin_sym, order_id=entry_order_id)
+            filled_now = str(st.get("status")) == "FILLED"
+        except Exception:
+            filled_now = False
+        if filled_now:
+            break
+
+    if not filled_now:
+        now_p = datetime.now(timezone.utc)
+        expire_p = now_p + timedelta(seconds=ENTRY_LIMIT_TTL_SEC)
+        return {
+            "ok": True, "pending": True, "exchange": "binance",
+            "testnet": is_testnet,
+            "symbol": base, "ccxt_symbol": f"{base}/USDT:USDT", "side": side,
+            "entry_order_id": entry_order_id,
+            "sl_order_id": None,
+            "tp_order_ids": [None] * tp_count,
+            "entry_price": limit_px,
+            "stop_loss": sl_price, "take_profits": tps_rounded[:tp_count],
+            "tp_count": tp_count,
+            "trailing_callback_rate": float(trailing_callback_rate or 0.0),
+            "trailing_order_id": None,
+            "trailing_activated": False,
+            "qty": qty, "leverage": leverage, "risk_pct": risk_pct,
+            "margin_mode": margin_mode,
+            "actual_margin_mode": None,
+            "actual_leverage": None,
+            "layered": layering,
+            "anchor_shift": 0,
+            "mode": mode, "status": "pending_entry", "pnl_usdt": 0.0,
+            "entry_expire_at": expire_p.isoformat(),
+            "soft_bracket": False, "soft_bracket_reason": None,
+            "bracket_type": "pending",
+            "created_at": now_p.isoformat(), "updated_at": now_p.isoformat(),
+        }
+
+    # Order limit sudah FILLED (instan) → lanjut verifikasi posisi.
     pos_final = None
     for _ in range(10):
         await asyncio.sleep(0.3)
@@ -486,7 +541,7 @@ async def execute_trade(
                 api_key, api_secret, is_testnet, bin_sym)
         except Exception:
             continue
-        if pos_final and abs(float(pos_final.get("positionAmt") or 0)) > 0:
+        if pos_final and abs(float(pos_final.get("positionAmt") or 0)) > abs(existing_amt):
             break
 
     if not pos_final or abs(float(pos_final.get("positionAmt") or 0)) <= 0:
@@ -501,6 +556,33 @@ async def execute_trade(
     # diam-diam (mis. request 50x tapi tier notional hanya izinkan 20x),
     # simpan yang benar supaya UI tidak menampilkan angka request palsu.
     actual_leverage = int(float(pos_final.get("leverage") or leverage))
+
+    # v9.9.12 — ANCHOR-TO-FILL: sinyal memakai entry DEEP (limit di bawah/
+    # atas harga), tetapi bot SELALU eksekusi MARKET. Geser SL/TP sebesar
+    # selisih fill aktual vs entry sinyal sehingga jarak R & ladder TP
+    # tetap utuh relatif ke harga masuk SEBENARNYA. Tanpa ini TP1 bisa
+    # nempel atau bahkan di sisi salah dari fill (akar keluhan "posisi
+    # tertutup di +0.4 sebelum TP2/TP3").
+    anchor_shift = actual_entry - float(entry)
+    if abs(anchor_shift) > 0:
+        sl_price = round_to_tick(sl_price + anchor_shift, tick)
+        tps_rounded = [round_to_tick(t + anchor_shift, tick) for t in tps_rounded]
+
+    # v9.9.12 — GUARD TP vs average entry AKTUAL: buang TP yang berada di
+    # sisi salah / terlalu dekat (krusial setelah layering: TP lama bisa
+    # jatuh di bawah avg entry untuk BUY → instan terpicu). Jika semua
+    # gugur, sintesis 1 TP di 1.5R dari fill.
+    risk_dist = abs(actual_entry - sl_price) or actual_entry * 0.005
+    min_tp_dist = max(actual_entry * 0.0025, risk_dist * 0.2)
+    if side == "BUY":
+        tps_rounded = [t for t in tps_rounded if t - actual_entry >= min_tp_dist]
+        if not tps_rounded:
+            tps_rounded = [round_to_tick(actual_entry + risk_dist * 1.5, tick)]
+    else:
+        tps_rounded = [t for t in tps_rounded if actual_entry - t >= min_tp_dist]
+        if not tps_rounded:
+            tps_rounded = [round_to_tick(actual_entry - risk_dist * 1.5, tick)]
+    tp_count = min(3, max(1, len(tps_rounded)))
 
     # v9.9.4 — AUTO-REBALANCE BRACKET saat layering: batalkan SL/TP lama
     # dari layer sebelumnya (qty-nya sudah usang), lalu pasang ulang di
@@ -665,6 +747,7 @@ async def execute_trade(
         # v9.9.4 — true bila ini eksekusi ke-2+ pada simbol yang sama
         # (averaging). Routes akan melebur row trade lama ke row ini.
         "layered": layering,
+        "anchor_shift": round(anchor_shift, 10),
         "leverage_note": (
             f"Requested {leverage}x tetapi Binance set {actual_leverage}x"
             + (f" ({lev_rejected})" if lev_rejected else "")
@@ -748,6 +831,23 @@ async def _execute_ccxt_fallback(
         entry_order_id = entry_order.get("id")
         actual_fill = float(entry_order.get("average") or entry_order.get("price") or entry)
         actual_qty = float(entry_order.get("filled") or qty)
+        # v9.9.12 — anchor-to-fill + guard TP (setara jalur Binance):
+        # geser SL/TP sebesar selisih fill aktual vs entry sinyal, lalu
+        # buang TP sisi salah / nempel terhadap harga fill.
+        shift = actual_fill - float(entry)
+        if abs(shift) > 0:
+            stop_loss = float(stop_loss) + shift
+            tps = [float(t) + shift for t in tps]
+            if price_tick and price_tick > 0:
+                stop_loss = round(round(stop_loss / price_tick) * price_tick, 8)
+                tps = [round(round(t / price_tick) * price_tick, 8) for t in tps]
+        risk_dist = abs(actual_fill - float(stop_loss)) or actual_fill * 0.005
+        min_tp_dist = max(actual_fill * 0.0025, risk_dist * 0.2)
+        if side == "BUY":
+            tps = [t for t in tps if t - actual_fill >= min_tp_dist] or [actual_fill + risk_dist * 1.5]
+        else:
+            tps = [t for t in tps if actual_fill - t >= min_tp_dist] or [actual_fill - risk_dist * 1.5]
+        tp_count = min(3, max(1, len(tps)))
         close_side = _opposite(side)
         exchange = doc["exchange"].lower()
         soft_bracket = False
@@ -866,25 +966,57 @@ async def attach_brackets(
     sl_price = round_to_tick(stop_loss, tick) if tick else stop_loss
     tps_rounded = [round_to_tick(float(t), tick) for t in tps] if tick else [float(t) for t in tps]
 
+    # v9.9.12 — GUARD sisi TP vs entry LIVE exchange: repair tidak boleh
+    # memasang TP yang berada di sisi salah (akan instan terpicu).
+    entry_live = float(pos.get("entryPrice") or 0) or float(trade.get("entry_price") or 0)
+    if entry_live > 0 and tps_rounded:
+        if close_side == "SELL":  # posisi LONG
+            tps_rounded = [t for t in tps_rounded if t > entry_live]
+        else:  # posisi SHORT
+            tps_rounded = [t for t in tps_rounded if t < entry_live]
+        if not tps_rounded:
+            return {
+                "ok": False, "symbol": symbol,
+                "errors": ["Semua TP tersimpan berada di sisi salah dari entry aktual — repair dibatalkan demi keamanan."],
+            }
+
     # v9.9.10 — JANGAN cancel dulu: proteksi existing (algo/legacy) sah
     # dan akan terdeteksi di bawah. Cancel hanya dilakukan tepat sebelum
     # memasang SL baru (bila memang belum ada proteksi).
+
+    # v9.9.13 — LAYERED fill (limit): bracket lama qty-nya sudah usang
+    # → REBALANCE paksa: batalkan semua proteksi existing lalu pasang
+    # ulang untuk TOTAL posisi gabungan (lewati shortcut "sudah ada").
+    if trade.get("layered"):
+        try:
+            await br.cancel_all_algo(api_key, api_secret, is_testnet, bin_sym)
+        except Exception:
+            pass
+        try:
+            await br.cancel_all_legacy(api_key, api_secret, is_testnet, bin_sym)
+        except Exception:
+            pass
 
     # v9.9.10 — EXISTING-PROTECTION-AWARE: cek DUA sumber sebelum pasang:
     # (1) Algo API (order yang dibuat v9.9.2+), (2) legacy openOrders
     # (kode lama / manual user di app Binance). closePosition SL yang
     # sudah ada membuat Binance menolak SL baru dengan -4130 — dan
     # proteksi yang sudah ada itu SAH, jangan diganggu.
-    try:
-        legacy_orders = await br.open_orders_legacy(
-            api_key, api_secret, is_testnet, bin_sym)
-    except Exception:
+    if trade.get("layered"):
+        # Baru saja dibatalkan di atas — jangan deteksi sebagai existing.
         legacy_orders = []
-    try:
-        existing_algos = await br.open_algo_orders(
-            api_key, api_secret, is_testnet, bin_sym)
-    except Exception:
         existing_algos = []
+    else:
+        try:
+            legacy_orders = await br.open_orders_legacy(
+                api_key, api_secret, is_testnet, bin_sym)
+        except Exception:
+            legacy_orders = []
+        try:
+            existing_algos = await br.open_algo_orders(
+                api_key, api_secret, is_testnet, bin_sym)
+        except Exception:
+            existing_algos = []
     existing_sl = (
         any(bool(o.get("closePosition"))
             and str(o.get("type", "")).startswith("STOP")
@@ -1100,6 +1232,39 @@ async def close_position(doc: dict[str, Any], symbol: str, side: Side,
             pass
         if qty <= 0:
             return {"ok": True, "id": None, "avg": None, "note": "no_position"}
+    client = await _get_client(doc)
+    try:
+        exch_sym = _ccxt_symbol(doc["exchange"], symbol)
+        o = await client.create_order(
+            exch_sym, "market", _opposite(side), qty, None,
+            params={"reduceOnly": True},
+        )
+        return {"ok": True, "id": o.get("id"), "avg": o.get("average")}
+    finally:
+        try:
+            await client.close()
+        except Exception:
+            pass
+
+
+async def close_position_partial(doc: dict[str, Any], symbol: str, side: Side,
+                                 qty: float) -> dict[str, Any]:
+    """v9.9.12 — Market close SEBAGIAN posisi. Berbeda dari close_position:
+    TIDAK membatalkan conditional order lain dan TIDAK menimpa qty dari
+    positionRisk. Dipakai soft-watcher untuk TP split (TP1 1/3, TP2 1/3,
+    sisanya di TP3/SL) agar konsisten dengan bracket native."""
+    if (doc.get("exchange") or "").lower() == "binance":
+        api_key = decrypt(doc["api_key_enc"])
+        api_secret = decrypt(doc["api_secret_enc"])
+        is_testnet = bool(doc.get("testnet", True))
+        bin_sym = symbol.upper().split("/")[0].split("USDT")[0].split("-")[0] + "USDT"
+        r = await br.market_order(
+            api_key, api_secret, is_testnet,
+            symbol=bin_sym, side="SELL" if side == "BUY" else "BUY",
+            quantity=qty, reduce_only=True,
+        )
+        return {"ok": True, "id": r.get("orderId"),
+                "avg": r.get("avgPrice") or r.get("price")}
     client = await _get_client(doc)
     try:
         exch_sym = _ccxt_symbol(doc["exchange"], symbol)
