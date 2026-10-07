@@ -29,44 +29,43 @@ from typing import Any
 # that downgraded valid signals to HOLD was the root cause of the
 # "dashboard BUY vs detail SIDEWAYS" desync and is permanently removed.
 TRADER_PROFILES: dict[str, dict[str, Any]] = {
+    # v10.0.2 — Keputusan user: SL diperketat ke 0.5×ATR (semua profil)
+    # dan ladder TP diratakan 1R/2R/3R (sebelumnya TP1 0.5–0.7R terlalu
+    # dekat → sering close dini di profit kecil sebelum TP2/TP3).
     "scalper": {
         "ema_fast": 9,
         "ema_slow": 21,
         "require_ema200": False,
-        "sl_atr_mult": 1.0,
-        "tp_ladder": (0.7, 1.5, 2.5),
-        # v9.2.4 — Ladder KHUSUS mesin VWAP: TP1 lebih rapat (0.5R) agar
-        # WR profile berbayar (scalper/day/swing) lebih tinggi dari
-        # Confluence. Bukan kosmetik: filter trigger VWAP juga diperketat
-        # (wajib pola reversal + volume ekspansi + floor confidence).
-        "vwap_tp_ladder": (0.5, 1.0, 1.75),
+        "sl_atr_mult": 0.5,
+        "tp_ladder": (1.0, 2.0, 3.0),
+        "vwap_tp_ladder": (1.0, 2.0, 3.0),
         "description": "5m–15m intraday moves",
     },
     "day": {  # default — balanced horizon
         "ema_fast": 20,
         "ema_slow": 50,
         "require_ema200": False,
-        "sl_atr_mult": 1.5,
-        "tp_ladder": (0.7, 1.5, 2.5),
-        "vwap_tp_ladder": (0.55, 1.1, 2.0),
+        "sl_atr_mult": 0.5,
+        "tp_ladder": (1.0, 2.0, 3.0),
+        "vwap_tp_ladder": (1.0, 2.0, 3.0),
         "description": "1h–4h day trading",
     },
     "swing": {
         "ema_fast": 20,
         "ema_slow": 50,
         "require_ema200": True,
-        "sl_atr_mult": 2.0,
-        "tp_ladder": (0.7, 1.5, 2.5),
-        "vwap_tp_ladder": (0.6, 1.25, 2.25),
+        "sl_atr_mult": 0.5,
+        "tp_ladder": (1.0, 2.0, 3.0),
+        "vwap_tp_ladder": (1.0, 2.0, 3.0),
         "description": "4h–24h multi-day",
     },
     "longterm": {
         "ema_fast": 50,
         "ema_slow": 100,
         "require_ema200": True,
-        "sl_atr_mult": 2.5,
-        "tp_ladder": (0.8, 1.75, 3.0),
-        "vwap_tp_ladder": (0.8, 1.75, 3.0),
+        "sl_atr_mult": 0.5,
+        "tp_ladder": (1.0, 2.0, 3.0),
+        "vwap_tp_ladder": (1.0, 2.0, 3.0),
         "description": "1D+ position hold",
     },
 }

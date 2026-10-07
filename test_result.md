@@ -2706,3 +2706,50 @@ frontend_v1001b:
             LIMIT pada kartu antri. Terlihat dari screenshot user:
             SUI SHORT (semi) & BCH SHORT (full) pending limit moderate
             dengan SL/TP arah benar.
+
+# ======================================================
+# v10.0.2 — Formula R:R baru + layout badge final
+# ======================================================
+backend_v1002:
+  - task: "SL 0.5xATR semua profil + TP ladder 1R/2R/3R (keputusan user); min_wr TETAP 70 (user batalkan 80)"
+    implemented: true
+    working: true
+    file: "/app/backend/indicators.py, /app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          TRADER_PROFILES: sl_atr_mult -> 0.5 (scalper/day/swing/longterm),
+          tp_ladder & vwap_tp_ladder -> (1.0, 2.0, 3.0). Live-verified:
+          MANA SELL scalper TP1=1.00R TP2=2.00R TP3=3.00R, SL dist 1.05%.
+          min_wr 70 TIDAK diubah (user: jangan sampai sinyal terlalu jarang).
+          CATATAN: backtest summary di dashboard kini dihitung dengan
+          parameter baru — angka WR hist. akan berubah.
+frontend_v1002:
+  - task: "Badge DEMO/REAL + tanggal/jam di baris paling atas kartu"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/asi-bot.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Baris atas: [DEMO(biru)/REAL(kuning)] [DD/MM · HH:MM]. Baris 2:
+          [🦾hijau/🤖biru muda] [M ungu/L kuning] [ACTIVE/LIMIT/CLOSED]
+          LONG/SHORT SYMBOL. Closed: 'Closed on {Exchange} · ALASAN' sejajar
+          formula. Screenshot-verified (SOL open + MANA closed).
+analisis_trade_user:
+  comment: |
+    Analisis 12 trade closed di DB preview: WR 42% (5/12), total +20.86
+    USDT (ditopang 1 trade SOL +8.75 dgn TP1 2R). 11/12 BUY (satu arah).
+    Trade rugi kecil punya TP1 0.26-0.5R (masalah lama, sudah di-fix).
+    CATATAN PENTING: loss besar user (MANA -151, BCH -112, ADA -159) ada
+    di database PRODUKSI (beda environment dengan preview) — tidak bisa
+    dianalisis dari sini. Arah SL/TP di screenshot user sudah benar
+    (tidak terbalik).

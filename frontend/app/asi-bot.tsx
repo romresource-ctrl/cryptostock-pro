@@ -770,37 +770,55 @@ export default function ASIBotScreen() {
               const lockKey = tid || `${tr.exchange}:${tr.symbol}`;
               const isClosing = !!closingIds[lockKey];
               const modeBadge = tr.mode === "full" ? "full" : "semi";
-              const modeColor = modeBadge === "full" ? ORANGE : GOLD;
               const borderColor = isPending ? GOLD : (dispPnl >= 0 ? GREEN : RED);
               // v9.9.13 — Kartu dibungkus Swipeable HANYA untuk history
               // (closed/expired/cancelled/layered): geser kiri → HAPUS.
               const rowBody = (
                 <View style={[s.leaderRow, { backgroundColor: colors.surface, borderColor }]}>
-                {/* v9.9.7 — Row 1 dirampingkan agar TIDAK overflow:
-                    [SEMI/FULL][Layer×n][ACTIVE/CLOSED] SIDE SYMBOL … PnL [CLOSE].
-                    Badge DEMO & ISO dipindah ke row 2. flexWrap memastikan
-                    tombol CLOSE tidak pernah keluar bingkai. */}
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                  {/* MODE badge (SEMI / FULL) */}
+                {/* v10.0.1 — Baris paling atas: badge DEMO/REAL (REAL
+                    kuning) + tanggal/jam eksekusi — dipindah dari baris
+                    badge agar baris utama tidak sempit. */}
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 }}>
                   <View style={{
                     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
-                    backgroundColor: modeColor,
+                    backgroundColor: tr.testnet ? LIGHT_BLUE : YELLOW,
                   }}>
-                    <Text style={{ color: ACCENT_TEXT, fontWeight: "900", fontSize: 9, letterSpacing: 0.4 }}>
-                      {modeBadge === "full" ? t("asi_badge_full") : t("asi_badge_semi")}
+                    <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 9, letterSpacing: 0.4 }}>
+                      {tr.testnet ? t("asi_demo_badge") : "REAL"}
                     </Text>
                   </View>
-                  {/* v10.0.1 — Chip cara masuk: MARKET (ungu muda) / LIMIT
-                      (kuning). Disembunyikan saat status PENDING karena
-                      badge status sudah menampilkan "LIMIT" (hindari
-                      duplikat 2 tulisan LIMIT pada kartu antri). */}
+                  <Text style={{ fontSize: 9, fontWeight: "700", color: colors.textMuted }}>
+                    {(() => {
+                      const iso = String((tr as any).created_at || (tr as any).updated_at || "");
+                      if (!iso) return "";
+                      const d = new Date(iso);
+                      if (isNaN(d.getTime())) return "";
+                      const pad = (n: number) => String(n).padStart(2, "0");
+                      return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} · ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                    })()}
+                  </Text>
+                </View>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  {/* v10.0.1 — MODE badge: Semi=🦾 (hijau), Full=🤖 (biru muda) */}
+                  <View style={{
+                    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
+                    backgroundColor: modeBadge === "full" ? LIGHT_BLUE : GOLD,
+                  }}>
+                    <Text style={{ fontSize: 11, fontWeight: "900" }}>
+                      {modeBadge === "full" ? "🤖" : "🦾"}
+                    </Text>
+                  </View>
+                  {/* v10.0.1 — Chip cara masuk: L (kuning) / M (ungu),
+                      disingkat agar tidak bentrok dengan badge LIMIT
+                      status. Tetap disembunyikan saat pending (status
+                      sudah menyampaikan LIMIT). */}
                   {(tr as any).entry_mode && !isPending ? (
                     <View style={{
                       paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
                       backgroundColor: (tr as any).entry_mode === "market" ? PURPLE : YELLOW,
                     }}>
                       <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 9, letterSpacing: 0.4 }}>
-                        {String((tr as any).entry_mode).toUpperCase()}
+                        {(tr as any).entry_mode === "market" ? "M" : "L"}
                       </Text>
                     </View>
                   ) : null}
@@ -815,7 +833,7 @@ export default function ASIBotScreen() {
                       </Text>
                     </View>
                   ) : null}
-                  {/* OPEN / CLOSED badge */}
+                  {/* OPEN / CLOSED / LIMIT badge */}
                   <View style={{
                     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
                     backgroundColor: isOpen ? GREEN : isPending ? YELLOW : colors.border,
@@ -882,14 +900,6 @@ export default function ASIBotScreen() {
                 {isOpen || isPending ? (
                   <View style={{ marginTop: 6, gap: 2 }}>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                      <View style={{
-                        paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 4,
-                        backgroundColor: tr.testnet ? LIGHT_BLUE : GREEN,
-                      }}>
-                        <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 8.5, letterSpacing: 0.4 }}>
-                          {tr.testnet ? t("asi_demo_badge") : "REAL"}
-                        </Text>
-                      </View>
                       <Text style={{ color: colors.textMuted, fontSize: 10, lineHeight: 15, flex: 1 }} numberOfLines={2}>
                         {/* v9.9.9 — Margin USDT wajib tampil di tiap posisi */}
                         <Text style={{ color: YELLOW, fontWeight: "900" }}>
@@ -965,22 +975,11 @@ export default function ASIBotScreen() {
                     </View>
                   </View>
                 ) : (
-                  /* v9.9.9 — Trade CLOSED menampilkan detail lengkap yang
-                     sama: chip DEMO/REAL + Entry · SL · TP1/2/3 · margin ·
-                     leverage + baris Close Price (permintaan user: history
-                     tidak boleh kehilangan detail). */
+                  /* v10.0.1 — Trade CLOSED: badge DEMO/REAL sudah dipindah
+                     ke row atas; baris ini cukup detail numerik. */
                   <View style={{ marginTop: 6, gap: 2 }}>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                      <View style={{
-                        paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 4,
-                        backgroundColor: tr.testnet ? LIGHT_BLUE : GREEN,
-                      }}>
-                        <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 8.5, letterSpacing: 0.4 }}>
-                          {tr.testnet ? t("asi_demo_badge") : "REAL"}
-                        </Text>
-                      </View>
                       <Text style={{ color: colors.textMuted, fontSize: 10, lineHeight: 15, flex: 1 }} numberOfLines={2}>
-                        {/* v9.9.9 — Margin USDT wajib tampil di tiap history */}
                         <Text style={{ color: YELLOW, fontWeight: "900" }}>
                           {`Margin $${(tr.margin_usdt ?? ((tr.entry_price && tr.qty && tr.leverage) ? tr.entry_price * tr.qty / tr.leverage : 0)).toFixed(2)}`}
                         </Text>
@@ -1007,21 +1006,24 @@ export default function ASIBotScreen() {
                         </Text>
                       </Text>
                     </View>
-                    <Text style={{ fontSize: 10, fontWeight: "800", color: colors.textMuted }}>
-                      {/* v9.9.9 — baris ketiga closed: cukup "Closed on
-                          Binance" + alasan, tanpa "Closed @" (anti dobel). */}
-                      <Text style={{ color: pos ? GREEN : RED }}>
-                        {t("asi_closed_on")} {({ binance: "Binance", bybit: "Bybit", okx: "OKX", bitget: "Bitget" } as Record<string, string>)[tr.exchange || "binance"] || tr.exchange}
+                    {/* v10.0.1 — "Closed on {Exchange}" + Formula sejajar
+                        satu baris di bawah detail (bukan dua baris lagi). */}
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: "800", flexShrink: 0 }}>
+                        <Text style={{ color: pos ? GREEN : RED }}>
+                          {t("asi_closed_on")} {({ binance: "Binance", bybit: "Bybit", okx: "OKX", bitget: "Bitget" } as Record<string, string>)[tr.exchange || "binance"] || tr.exchange}
+                        </Text>
+                        <Text style={{ color: colors.textMuted }}>
+                          {tr.close_reason ? `  ·  ${String(tr.close_reason).toUpperCase()}` : ""}
+                        </Text>
                       </Text>
-                      {tr.close_reason ? `  ·  ${String(tr.close_reason).toUpperCase()}` : ""}
-                    </Text>
-                    {/* v9.9.13 — Formula yang dipakai saat eksekusi
-                        (history tetap menampilkan konteks strategi). */}
-                    {((tr as any).profile || (tr as any).formula_tag) ? formulaLines(t, (tr as any).profile, (tr as any).formula_tag).map((ln, li) => (
-                      <Text key={li} numberOfLines={2} style={{ fontSize: 9, fontWeight: "700", color: colors.textMuted, lineHeight: 13, textAlign: "right", alignSelf: "stretch", flexShrink: 1 }}>
-                        {li === 0 ? `⚙️ ${t("asi_formula_label")}: ${ln}` : ln}
-                      </Text>
-                    )) : null}
+                      <View style={{ flex: 1 }} />
+                      {((tr as any).profile || (tr as any).formula_tag) ? (
+                        <Text numberOfLines={1} style={{ fontSize: 9, fontWeight: "700", color: colors.textMuted, flexShrink: 1, textAlign: "right" }}>
+                          {`⚙️ ${t("asi_formula_label")}: ${formulaLines(t, (tr as any).profile, (tr as any).formula_tag)[0]}`}
+                        </Text>
+                      ) : null}
+                    </View>
                   </View>
                 )}
                 </View>
