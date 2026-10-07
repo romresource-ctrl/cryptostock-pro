@@ -155,7 +155,6 @@ export default function CopyTradeScreen() {
           </View>
         ) : (
           leader.map((row) => {
-            const tr = row.latest_trade || {};
             return (
               <View
                 key={`${row.handle}-${row.rank}`}
@@ -164,11 +163,8 @@ export default function CopyTradeScreen() {
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                   <Text style={[s.rank, { color: row.rank <= 3 ? GOLD : colors.textMuted }]}>#{row.rank}</Text>
                   <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       <Text style={[s.handle, { color: colors.textPrimary }]}>{row.handle}***</Text>
-                      {/* v9.9.7 — Badge kecil DEMO/REAL: leaderboard kini
-                          menampilkan keduanya (strategi bot identik), user
-                          wajib bisa membedakan jaringan trader. */}
                       <View style={{
                         paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 4,
                         backgroundColor: row.testnet ? BLUE : GREEN,
@@ -177,33 +173,46 @@ export default function CopyTradeScreen() {
                           {row.testnet ? t("asi_demo_badge") : "REAL"}
                         </Text>
                       </View>
-                      <View style={[s.openPill, { borderColor: BLUE }]}>
-                        <View style={[s.liveDot, { backgroundColor: BLUE }]} />
-                        <Text style={{ color: BLUE, fontWeight: "900", fontSize: 10 }}>
-                          {t("copy_open_count").replace("{n}", String(row.open_count))}
-                        </Text>
-                      </View>
+                      {/* v10.0.3 — Pill posisi: OPEN POS (biru) jika online,
+                          CLOSED (abu) jika hanya history 24h. */}
+                      {(row.open_count ?? 0) > 0 ? (
+                        <View style={[s.openPill, { borderColor: BLUE }]}>
+                          <View style={[s.liveDot, { backgroundColor: BLUE }]} />
+                          <Text style={{ color: BLUE, fontWeight: "900", fontSize: 10 }}>
+                            {t("copy_open_count").replace("{n}", String(row.open_count))}
+                          </Text>
+                        </View>
+                      ) : (
+                        <View style={[s.openPill, { borderColor: colors.border }]}>
+                          <Text style={{ color: colors.textMuted, fontWeight: "900", fontSize: 10 }}>
+                            {(row.closed_count ?? 0) + "× CLOSED"}
+                          </Text>
+                        </View>
+                      )}
                     </View>
                     <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 2 }}>
                       {t("copy_wr_line").replace("{wr}", String(row.wr30d)).replace("{n}", String(row.trades30d))}
                     </Text>
                   </View>
                   <View style={{ alignItems: "flex-end" }}>
-                    <Text style={{ color: colors.textMuted, fontSize: 10, fontWeight: "700" }}>{t("copy_unrealized")}</Text>
-                    {/* v9.7.7 — persentase jadi metrik utama (hijau = profit) */}
-                    <Text style={{ color: row.unrealized_pct && row.unrealized_pct >= 0 ? GREEN : RED, fontWeight: "900", fontSize: 20 }}>
-                      {row.unrealized_pct && row.unrealized_pct >= 0 ? "+" : ""}{(row.unrealized_pct ?? 0).toFixed(2)}%
+                    <Text style={{ color: colors.textMuted, fontSize: 10, fontWeight: "700" }}>
+                      {(row.open_count ?? 0) > 0 ? t("copy_total_24h") : t("copy_realized_24h")}
                     </Text>
-                    <Text style={{ color: row.unrealized_usdt >= 0 ? GREEN : RED, fontWeight: "700", fontSize: 11 }}>
-                      {row.unrealized_usdt >= 0 ? "+" : ""}${row.unrealized_usdt.toFixed(2)}
+                    {/* v10.0.3 — Metrik utama = TOTAL profit $ 24h. */}
+                    <Text style={{ color: (row.total_profit_usdt ?? row.unrealized_usdt) >= 0 ? GREEN : RED, fontWeight: "900", fontSize: 20 }}>
+                      {(row.total_profit_usdt ?? row.unrealized_usdt) >= 0 ? "+" : ""}${(row.total_profit_usdt ?? row.unrealized_usdt).toFixed(2)}
                     </Text>
+                    {(row.open_count ?? 0) > 0 ? (
+                      <Text style={{ color: colors.textMuted, fontSize: 10, fontWeight: "700" }}>
+                        {`open ${row.unrealized_pct && row.unrealized_pct >= 0 ? "+" : ""}${(row.unrealized_pct ?? 0).toFixed(2)}%`}
+                      </Text>
+                    ) : null}
                   </View>
                 </View>
 
-                {/* v10.0.3 — SEMUA posisi open trader sebagai kartu
-                    terpisah (bukan 1 kartu + teks "+N more"). Tiap kartu
-                    punya tombol EXECUTE sendiri untuk posisi itu. */}
-                {(row.open_trades?.length ? row.open_trades : (tr.symbol ? [tr] : [])).map((ot, oi) => {
+                {/* v10.0.3 — SEMUA posisi open sebagai kartu terpisah.
+                    Trader "closed only" tidak menampilkan kartu posisi. */}
+                {(row.open_trades || []).map((ot, oi) => {
                   if (!ot.symbol || !ot.side) return null;
                   const otLong = ot.side === "BUY";
                   const busyKey = `${row.rank}:${ot.symbol}`;

@@ -1003,6 +1003,8 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     ru: "+{n} ещё открытых позиций",
     cn: "另有 {n} 个持仓",
   },
+  copy_total_24h: { id: "PROFIT 24J", en: "24H PROFIT", ru: "ПРИБЫЛЬ 24Ч", cn: "24小时盈利" },
+  copy_realized_24h: { id: "REALIZED 24J", en: "24H REALIZED", ru: "РЕАЛИЗ. 24Ч", cn: "24小时已结算" },
   asi_closed_at_price: { id: "Closed @", en: "Closed @", ru: "Закрыто @", cn: "平仓 @" },
   asi_closed_on: { id: "Closed on", en: "Closed on", ru: "Закрыто на", cn: "平仓于" },
   asi_balance_label: { id: "Saldo Tersedia", en: "Available Balance", ru: "Доступный баланс", cn: "可用余额" },

@@ -589,7 +589,11 @@ export type AsiLiveRow = {
   testnet?: boolean;
   unrealized_usdt: number;
   unrealized_pct?: number;
+  // v10.0.3 — total profit 24h = realized_closed + unrealized_open
+  realized_usdt?: number;
+  total_profit_usdt?: number;
   open_count: number;
+  closed_count?: number;
   wr30d: number;
   trades30d: number;
   latest_trade: AsiLiveTrade;

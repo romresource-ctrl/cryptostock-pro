@@ -2809,3 +2809,31 @@ frontend_v1003b:
       - working: true
         agent: "main"
         comment: "Teks '+1 more open position(s)' dihapus; tiap posisi jadi kartu sendiri dengan PnL live per posisi dan tombol EXECUTE yang menyalin posisi tersebut. preparingRank kini keyed per (rank:symbol). Screenshot-verified: trader 2 OPEN POS menampilkan kartu SOL LONG +$0.42 dan ENA SHORT +$0.06 terpisah."
+
+# ======================================================
+# v10.0.3 — Leaderboard Top 25 Profit 24h (open + closed)
+# ======================================================
+backend_v1003:
+  - task: "live_leaderboard: Top 25 trader by TOTAL profit 24h (realized+unrealized)"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/pnl.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Agregat open (unrealized) + closed 24h (realized) per device/network. Rank by total profit $ desc. Response: total_profit_usdt, realized_usdt, unrealized_usdt, open_count, closed_count, open_trades[] (hanya trade open). Diverifikasi: #1 trader all-closed (71.18), #2 all-closed (8.75), #3 mix open+closed (5.52) dengan kartu posisi SOL."
+frontend_v1003:
+  - task: "UI leaderboard menampilkan trader open & closed; kartu posisi hanya untuk open"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/copy-trade.tsx, /app/frontend/src/lib/api.ts, /app/frontend/src/i18n/I18nContext.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Metrik utama = $ total profit 24h (sebelumnya hanya % unrealized). Pill 'OPEN POS' biru utk online, '×N CLOSED' abu untuk closed-only. Label metrik '24H PROFIT' (ada open) atau '24H REALIZED' (closed only). Kartu posisi hanya dirender bila open_trades.length>0 (tidak lagi fallback ke latest_trade yang bisa closed). Versi bump 10.0.3 (version.ts/app.json/APP_LATEST_VERSION)."
