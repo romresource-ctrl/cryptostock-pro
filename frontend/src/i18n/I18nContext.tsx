@@ -1078,7 +1078,7 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   copy_unrealized: { id: "UNREALIZED", en: "UNREALIZED", ru: "НЕРЕАЛИЗ.", cn: "未实现" },
   copy_entry_line: { id: "Entry ${price} · dibuka {ago}", en: "Entry ${price} · opened {ago}", ru: "Вход ${price} · открыта {ago}", cn: "入场 ${price} · {ago}开仓" },
   copy_execute: { id: "EXECUTE", en: "EXECUTE", ru: "EXECUTE", cn: "EXECUTE" },
-  copy_footer: { id: "Daftar refresh tiap 15 detik · EXECUTE menyalin setup posisi dengan harga pasar saat ini.", en: "List refreshes every 15 seconds · EXECUTE copies the position setup at current market price.", ru: "Обновление каждые 15 секунд · EXECUTE копирует позицию по текущей цене.", cn: "列表每 15 秒刷新 · EXECUTE 以当前市价复制仓位设置。" },
+  copy_footer: { id: "Daftar refresh tiap 15 detik · EXECUTE aktif hanya untuk posisi yang masih OPEN.", en: "List refreshes every 15 seconds · EXECUTE is enabled only for still-OPEN positions.", ru: "Обновление каждые 15 секунд · EXECUTE активен только для открытых позиций.", cn: "列表每 15 秒刷新 · EXECUTE 仅对仍在持仓的仓位可用。" },
 
   // v9.6.4 — Premium gate (ASI-Bot & Copy Trade)
   premium_locked_title: { id: "Fitur Khusus Premium", en: "Premium Members Only", ru: "Только для Premium", cn: "仅限高级会员" },

@@ -2890,7 +2890,7 @@ frontend_v1004:
 # Frontend: 1 kartu = 1 posisi; PnL $+% di kanan atas EXECUTE; badge
 #   🤖/🦾 mode, M/L entry, tanggal-jam, "Closed on ..."; EXECUTE hanya
 #   open. AsiLiveTrade dihapus. Screenshot PASS. Versi 10.0.5.
-# UPDATE (user): EXECUTE TETAP ADA di SEMUA kartu (open & closed) tepat di
-#   bawah angka PnL — closed memakai harga pasar kini + SL/TP posisi tsb.
-#   copy_footer diperbarui. Screenshot PASS: 2 kartu closed → EXECUTE
-#   muncul, klik membuka trade sheet MANA SHORT.
+# UPDATE (user): EXECUTE TETAP ADA di SEMUA kartu tepat di bawah angka
+#   PnL, tapi READ-ONLY (abu, disabled) untuk posisi CLOSED — klik tidak
+#   membuka sheet. Aktif (emas) hanya untuk posisi OPEN. Screenshot PASS:
+#   copy-execute-1 disabled=true, klik tidak membuka sheet.

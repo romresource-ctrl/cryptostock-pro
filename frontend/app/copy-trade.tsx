@@ -303,19 +303,18 @@ export default function CopyTradeScreen() {
                         </Text>
                       ) : null}
                     </View>
-                    {/* v10.0.5 — EXECUTE SELALU tampil (open & closed),
-                        tepat di bawah angka PnL. Untuk posisi closed,
-                        sheet memakai harga pasar SAAT INI + SL/TP posisi
-                        tersebut (copy ulang setup). */}
+                    {/* v10.0.5 — EXECUTE SELALU tampil di bawah angka PnL,
+                        tapi READ-ONLY (abu, nonaktif) untuk posisi closed;
+                        hanya posisi OPEN yang bisa dieksekusi. */}
                     <TouchableOpacity
-                      style={[s.copyBtn, { backgroundColor: GOLD }]}
+                      style={[s.copyBtn, { backgroundColor: isOpen ? GOLD : colors.border, opacity: isOpen ? 1 : 0.6 }]}
                       onPress={() => onExecuteCopy(row)}
-                      disabled={preparingRank === busyKey}
+                      disabled={!isOpen || preparingRank === busyKey}
                       testID={`copy-execute-${row.rank}`}
                     >
                       {preparingRank === busyKey
                         ? <ActivityIndicator size="small" color="#0B0E11" />
-                        : <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 11 }}>{t("copy_execute")}</Text>}
+                        : <Text style={{ color: isOpen ? "#0B0E11" : colors.textMuted, fontWeight: "900", fontSize: 11 }}>{t("copy_execute")}</Text>}
                     </TouchableOpacity>
                   </View>
                 </View>
