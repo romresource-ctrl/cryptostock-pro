@@ -1105,6 +1105,8 @@ type Ctx = {
   setLang: (l: Lang) => void;
   toggle: () => void;
   t: (key: keyof typeof STRINGS | string) => string;
+  // v10.0.6 — Always English (system/trade notifications).
+  tEN: (key: keyof typeof STRINGS | string) => string;
   ready: boolean;
 };
 
@@ -1146,7 +1148,20 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
     [lang],
   );
 
-  const value = useMemo(() => ({ lang, setLang, toggle, t, ready }), [lang, setLang, toggle, t, ready]);
+  // v10.0.6 — tEN() → selalu return English. Dipakai untuk notifikasi
+  // sistem/eksekusi order yang harus GLOBAL (lintas bahasa) karena aplikasi
+  // ini dipakai pengguna internasional dan trader/support perlu baca pesan
+  // teknis yang konsisten.
+  const tEN = useCallback(
+    (key: string): string => {
+      const entry = (STRINGS as Record<string, StringEntry>)[key];
+      if (!entry) return key;
+      return entry.en ?? entry.id;
+    },
+    [],
+  );
+
+  const value = useMemo(() => ({ lang, setLang, toggle, t, tEN, ready }), [lang, setLang, toggle, t, tEN, ready]);
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 

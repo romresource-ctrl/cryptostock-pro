@@ -74,7 +74,7 @@ type Props = {
 export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: Props) {
   const router = useRouter();
   const { colors } = useTheme();
-  const { t } = useI18n();
+  const { t, tEN } = useI18n();
   const { apiProfile } = useTraderProfile();
   const insets = useSafeAreaInsets();
 
@@ -250,11 +250,11 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
       if ((res as any).pending) {
         setExecResult({
           ok: true,
-          title: t("ats_pending_title"),
+          title: tEN("ats_pending_title"),
           body:
             `LIMIT ${intent.side} ${intent.symbol} @ ${res.entry_price?.toFixed?.(6) ?? intent.entry}\n` +
             `${res.testnet ? "TESTNET" : "MAINNET"}\n` +
-            t("ats_pending_body"),
+            tEN("ats_pending_body"),
         });
         return;
       }
@@ -264,14 +264,14 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
       // bila gagal. Jadi panel sukses selalu bersih tanpa warning.
       const actualMM = (res as any).actual_margin_mode || marginMode;
       const layerNote = (res as any).layered
-        ? `\n${t("ats_layered_note").replace("{n}", "2+")}`
+        ? `\n${tEN("ats_layered_note").replace("{n}", "2+")}`
         : "";
       setExecResult({
         ok: true,
-        title: t("ats_exec_done"),
+        title: tEN("ats_exec_done"),
         body:
           `${intent.side} ${intent.symbol} @ ${res.entry_price?.toFixed?.(6) ?? intent.entry}\n` +
-          `Qty: ${res.qty} · ${t("ats_leverage")}: ${(res as any).actual_leverage ?? res.leverage}x · ${String(actualMM).toUpperCase()}\n` +
+          `Qty: ${res.qty} · ${tEN("ats_leverage")}: ${(res as any).actual_leverage ?? res.leverage}x · ${String(actualMM).toUpperCase()}\n` +
           `${res.testnet ? "TESTNET" : "MAINNET"}\n` +
           `✓ SL/TP on ${{ binance: "Binance", bybit: "Bybit", okx: "OKX", bitget: "Bitget" }[exchange] || "Exchange"}` + layerNote,
       });
@@ -280,26 +280,24 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
       // response body JSON {code, message, rollback_done, ...}.
       const code: string | undefined = e?.code;
       const msg: string = e?.detail?.message || e?.message || String(e);
-      let title = t("ats_exec_failed");
+      // v10.0.6 — Notifikasi eksekusi SELALU English (aplikasi global).
+      let title = tEN("ats_exec_failed");
       let infoOnly = false;
       if (code === "bracket_sl_failed" || code === "bracket_tp_incomplete"
           || code === "bracket_sl_not_verified") {
-        // v9.9.10 — Rollback bersih = TIDAK ADA uang berkurang → tampilkan
-        // panel INFO netral (emas), bukan alarm merah. Hanya rollback yang
-        // GAGAL menutup posisi (requires_manual_action) yang tetap merah.
         if (e?.detail?.rollback_done) {
-          title = t("ats_rollback_info_title");
+          title = tEN("ats_rollback_info_title");
           infoOnly = true;
         } else {
-          title = t("ats_bracket_rollback_title");
+          title = tEN("ats_bracket_rollback_title");
         }
       } else if (code === "margin_mode_mismatch"
                  || code === "margin_mode_set_failed") {
-        title = t("ats_margin_mismatch_title");
-        infoOnly = true;  // tidak ada posisi dibuka → info, bukan alarm
+        title = tEN("ats_margin_mismatch_title");
+        infoOnly = true;
       } else if (code === "bracket_failed_rollback_failed"
                  || e?.detail?.requires_manual_action) {
-        title = t("ats_rollback_failed_title");
+        title = tEN("ats_rollback_failed_title");
       }
       setExecResult({ ok: false, title, body: msg, infoOnly } as any);
     } finally { setExecuting(false); }

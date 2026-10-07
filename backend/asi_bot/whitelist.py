@@ -24,6 +24,12 @@ TOP_100_FUTURES: list[str] = [
     "ONDO", "MANTA", "ALT", "BOME", "W", "ENA", "TNSR", "AEVO", "PIXEL", "PYR",
 ]
 
+# v10.0.6 — Universe BIG-CAPS (Top-50 by market cap/liquidity) khusus untuk
+# mode FULL-AUTO. Scheduler full-auto HANYA scan daftar ini supaya bot tidak
+# otomatis eksekusi di low-caps yang slippage-nya besar. Semi-Auto tetap
+# memakai TOP_100_FUTURES / exchange_info dinamis.
+TOP_50_FUTURES: list[str] = TOP_100_FUTURES[:50]
+
 def is_allowed(symbol: str) -> bool:
     """DEPRECATED v9.8.2 — hanya dipakai scheduler untuk scan-universe check.
     Eksekusi trade kini memakai engine._ensure_tradable (dinamis)."""

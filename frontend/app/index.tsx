@@ -708,6 +708,18 @@ export default function Dashboard() {
           >
             <Ionicons name="newspaper-outline" size={18} color={colors.textPrimary} />
           </TouchableOpacity>
+          {/* v10.0.6 — Tombol Trades Position: akses cepat ke daftar
+              posisi open/pending + history dari dashboard tanpa harus
+              scroll halaman ASI-Bot. Ditempatkan DI KIRI tombol Trader
+              Profile (per permintaan user). */}
+          <TouchableOpacity
+            onPress={() => router.push("/trades-position" as never)}
+            testID="trades-position-button"
+            style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            accessibilityLabel="Trades Position"
+          >
+            <Ionicons name="pulse-outline" size={18} color={colors.textPrimary} />
+          </TouchableOpacity>
           {/* v8.12.57 — Trader Profile picker button. Sits immediately
               next to the Live News icon (per user request). Shows the
               currently-active preset emoji so users always see which

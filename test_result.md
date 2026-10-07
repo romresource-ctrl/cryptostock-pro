@@ -2940,3 +2940,20 @@ frontend_v1004:
 # Setelah deploy + user buka app: trade KAS/ENA pindah ke device aktif,
 #   scheduler reconcile ke Binance (positionAmt=0) → tercatat closed dgn
 #   alasan, leaderboard bersih, Recent Trades kembali terisi history lama.
+# ======================================================
+# v10.0.6 — Full-Auto big-caps + English notifications + Trades Position
+# ======================================================
+# Part 1: whitelist.py TOP_50_FUTURES (slice [0:50]) + scheduler full-auto
+#   scanner HANYA pakai TOP_50 (filter whitelist user juga). Semi-Auto
+#   (via trade sheet / AsiTradeSheet) tetap bebas semua pair karena ia
+#   TIDAK memakai scanner — mereka pakai engine._ensure_tradable dinamis.
+# Part 2: I18nContext tambah tEN() helper (selalu English). AsiTradeSheet
+#   pakai tEN untuk SEMUA notifikasi hasil eksekusi (sukses, pending,
+#   gagal, rollback, margin mismatch) — audience global, trader/support
+#   perlu konsistensi pesan.
+# Part 3: /app/trades-position.tsx — screen baru, akses dari dashboard
+#   (tombol pulse-outline di KIRI tombol Trader Profile). Fitur: list
+#   open+pending+history, mark price live 2s, CLOSE (open) / CANCEL
+#   (pending), swipe-to-DELETE (closed). Konten setara Recent Trades.
+# Verified: lint clean. Dashboard shows button (testid confirmed). Screen
+#   renders empty-state untuk device baru. Navigation OK.

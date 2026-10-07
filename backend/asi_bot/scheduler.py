@@ -35,7 +35,7 @@ from .engine import (
     resolve_credential,
 )
 from .exchanges import _build
-from .whitelist import TOP_100_FUTURES, binance_symbol_filters, is_allowed, round_to_step
+from .whitelist import TOP_50_FUTURES, TOP_100_FUTURES, binance_symbol_filters, is_allowed, round_to_step
 from . import binance_rest as br
 
 logger = logging.getLogger("asi_bot.scheduler")
@@ -524,7 +524,12 @@ async def _run_full_auto_scanner(
             # v9.7.3 — BUG FIX: empty whitelist silently disabled the bot
             # ("ACTIVE" tapi tidak pernah scan). Default ke Top-100 futures
             # agar Full-Auto langsung bekerja tanpa konfigurasi tambahan.
-            whitelist = cfg.get("whitelist") or list(TOP_100_FUTURES)
+            # v10.0.6 — FULL-AUTO terbatas BIG-CAPS (Top-50 saja) untuk
+            # menghindari eksekusi otomatis di low-caps yang volatil & tipis
+            # likuiditasnya. Semi-Auto (via trade sheet) tetap bebas semua
+            # aset — scheduler ini hanya dipakai mode=full.
+            whitelist = cfg.get("whitelist") or list(TOP_50_FUTURES)
+            whitelist = [s for s in whitelist if s in TOP_50_FUTURES]
             if not whitelist:
                 continue
             exchange = cfg.get("exchange") or "binance"
