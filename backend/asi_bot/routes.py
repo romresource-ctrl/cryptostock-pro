@@ -12,6 +12,7 @@ device). Phase 4 will optionally bind to an auth user id if present.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import re
 from datetime import datetime, timezone
@@ -29,6 +30,9 @@ from .exchanges import EXCHANGE_DISPLAY, EXCHANGES, ExchangeId, validate_credent
 from .pnl import leaderboard, live_leaderboard, pnl_summary
 from .whitelist import TOP_100_FUTURES
 from . import binance_rest as br
+
+logger = logging.getLogger("asi_bot.routes")
+
 
 
 async def _cancel_pending_limit(db: Any, t: dict, reason: str) -> None:
@@ -208,6 +212,65 @@ def register(app_api: APIRouter, db: Any) -> None:
     # Attach trade-level endpoints (defined below with `router` closure).
     _attach_trade_routes(db)
 
+    async def _migrate_same_key_history(db: Any, device_id: str,
+                                        exchange: str, testnet: bool) -> int:
+        """v10.0.6 — REINSTALL/DEVICE-CHANGE RECOVERY.
+
+        Bila user reinstall app, device ID bisa berubah (signing key baru /
+        vendor ID reset). Credential lama yatim di device lama → riwayat
+        trade "hilang" dari Recent Trades dan posisi open lama tidak bisa
+        direconcile scheduler (phantom open di leaderboard).
+
+        Bila API key yang SAMA ditemukan di device lain (exchange + network
+        sama), pindahkan trade + bot config device lama ke device ini dan
+        hapus credential yatim. Return jumlah device lama yang dimigrasi.
+        """
+        net = "testnet" if testnet else "mainnet"
+        my_doc = await db.asi_credentials.find_one(
+            {"_id": f"{device_id}:{exchange}:{net}"})
+        if not my_doc:
+            return 0
+        try:
+            my_key = decrypt(my_doc["api_key_enc"])
+        except Exception:
+            return 0
+        # Query murah dulu: ada kandidat device lain di exchange+net ini?
+        candidates = await db.asi_credentials.find(
+            {"exchange": exchange, "testnet": bool(testnet),
+             "device_id": {"$ne": device_id}},
+            {"device_id": 1, "api_key_enc": 1}).to_list(20)
+        migrated = 0
+        now = _now_iso()
+        for cand in candidates:
+            try:
+                if decrypt(cand["api_key_enc"]) != my_key:
+                    continue
+            except Exception:
+                continue
+            old_dev = cand["device_id"]
+            # Pindahkan trade (exchange+network sama saja) ke device baru.
+            await db.asi_trades.update_many(
+                {"device_id": old_dev, "exchange": exchange,
+                 "testnet": bool(testnet)},
+                {"$set": {"device_id": device_id, "updated_at": now}})
+            # Pindahkan bot config bila device baru belum punya.
+            old_cfg = await db.asi_bot_config.find_one({"_id": old_dev})
+            new_cfg = await db.asi_bot_config.find_one({"_id": device_id})
+            if old_cfg and not new_cfg:
+                old_cfg.pop("_id", None)
+                old_cfg["device_id"] = device_id
+                old_cfg["updated_at"] = now
+                await db.asi_bot_config.replace_one(
+                    {"_id": device_id}, old_cfg, upsert=True)
+                await db.asi_bot_config.delete_one({"_id": old_dev})
+            # Hapus credential yatim supaya tidak dipakai scheduler 2×.
+            await db.asi_credentials.delete_one({"_id": cand["_id"]})
+            migrated += 1
+            logger.info(
+                "ASI credential migration: %s (%s/%s) -> %s",
+                old_dev, exchange, net, device_id)
+        return migrated
+
     @router.post("/credentials")
     async def save_credential(payload: SaveCredentialPayload,
                               device_id: str = Query(..., min_length=4)):
@@ -245,6 +308,15 @@ def register(app_api: APIRouter, db: Any) -> None:
             "updated_at": now,
         }
         await db.asi_credentials.replace_one({"_id": doc["_id"]}, doc, upsert=True)
+        # v10.0.6 — Setelah reconnect (mis. pasca reinstall), pindahkan
+        # riwayat trade dari device lama yang memakai API key sama.
+        try:
+            migrated = await _migrate_same_key_history(
+                db, device_id, payload.exchange, bool(payload.testnet))
+            if migrated:
+                logger.info("migrated history from %d old device(s)", migrated)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("history migration failed: %s", e)
         return {
             "ok": True, "exchange": payload.exchange,
             "display": EXCHANGE_DISPLAY[payload.exchange],
@@ -261,6 +333,16 @@ def register(app_api: APIRouter, db: Any) -> None:
         ):
             d["display"] = EXCHANGE_DISPLAY.get(d.get("exchange"), d.get("exchange"))
             out.append(d)
+        # v10.0.6 — Lazy self-heal: bila device ini punya credential yang
+        # API key-nya juga terdaftar di device LAMA (reinstall), pindahkan
+        # riwayat trade otomatis. Query kandidat murah; no-op bila tidak
+        # ada duplikat lintas device.
+        for d in out:
+            try:
+                await _migrate_same_key_history(
+                    db, device_id, d.get("exchange"), bool(d.get("testnet")))
+            except Exception as e:  # noqa: BLE001
+                logger.warning("lazy history migration failed: %s", e)
         return {"items": out, "supported_exchanges": [
             {"id": x, "display": EXCHANGE_DISPLAY[x]} for x in EXCHANGES
         ]}

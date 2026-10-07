@@ -378,18 +378,44 @@ async def _consolidate_duplicate_open(db: Any) -> None:
 async def _refresh_open_pnl(db: Any) -> None:
     """Keep unrealized PnL fresh for all open trades (hard & soft)."""
     await _consolidate_duplicate_open(db)
+    now = datetime.now(timezone.utc)
     cursor = db.asi_trades.find({"status": "open"})
     async for t in cursor:
         try:
             cred = await resolve_credential(
                 db, t["device_id"], t["exchange"], bool(t.get("testnet", True)))
             if not cred:
+                # v10.0.6 — ORPHAN SWEEPER: trade open milik device yang
+                # credential-nya sudah tidak ada (mis. user reinstall dan
+                # credential yatim di device lama) tidak bisa direconcile
+                # ke Binance. Bila sudah > 1 jam tidak tersentuh, tandai
+                # "orphaned" agar tidak tampil selamanya sebagai posisi
+                # open phantom di leaderboard. Data PnL terakhir dipertahankan;
+                # bila user reconnect API key yang sama, migrasi history
+                # akan memulihkan trade ini ke device barunya.
+                try:
+                    last = datetime.fromisoformat(
+                        str(t.get("updated_at") or t.get("created_at")).replace("Z", "+00:00"))
+                except Exception:
+                    last = now
+                age_s = (now - last).total_seconds()
+                if age_s > 3600:
+                    await db.asi_trades.update_one(
+                        {"_id": t["_id"]},
+                        {"$set": {"status": "orphaned",
+                                  "close_reason": "orphaned_no_credential",
+                                  "updated_at": now.isoformat()}})
+                    logger.warning(
+                        "orphaned open trade %s (%s %s) — no credential for device",
+                        t.get("_id"), t.get("symbol"), t.get("side"))
                 continue
             upd = await refresh_trade_pnl(cred, t)
-            upd["updated_at"] = datetime.now(timezone.utc).isoformat()
+            upd["updated_at"] = now.isoformat()
             await db.asi_trades.update_one({"_id": t["_id"]}, {"$set": upd})
         except Exception as e:  # noqa: BLE001
-            logger.debug("pnl refresh %s: %s", t.get("_id"), e)
+            # v10.0.6 — warning (bukan debug) supaya kegagalan reconcile
+            # terlihat di log produksi.
+            logger.warning("pnl refresh %s gagal: %s", t.get("_id"), e)
 
 
 async def _trades_today_count(db: Any, device_id: str,

@@ -2919,3 +2919,24 @@ frontend_v1004:
 #   di build 10.0.5. Verified curl /app-version.
 # Leaderboard compat: unrealized_usdt=pnl & open_count=1 → app lama tidak
 #   lagi tampil "+$0.00 / 0 OPEN POS". Repro kode 10.0.2 PASS.
+# ======================================================
+# v10.0.6 — Fix posisi phantom open di leaderboard + history hilang
+#           pasca reinstall
+# ======================================================
+# Gejala user: KAS/ENA tampil "open" di leaderboard padahal di Binance
+#   sudah closed; Recent Trades kosong setelah reinstall app.
+# Akar masalah: reinstall/upgrade mengganti device ID → credential tersimpan
+#   ulang di device BARU; trade lama yatim di device LAMA → scheduler tidak
+#   bisa reconcile (resolve_credential gagal) → phantom open selamanya.
+# FIX A (routes.py): _migrate_same_key_history — bila API key sama ditemukan
+#   di device lain, trade (exchange+net sama) & bot config pindah ke device
+#   baru, credential yatim dihapus. Dipanggil saat POST /credentials DAN
+#   lazy di GET /credentials (self-heal saat user buka app).
+#   TESTED E2E: seed old/new device key sama → GET credentials → trade KAS
+#   pindah ke device baru, cred lama terhapus, config ikut. PASS.
+# FIX B (scheduler.py): orphan sweeper — trade open tanpa credential >1 jam
+#   → status "orphaned" (hilang dari leaderboard; leaderboard hanya hitung
+#   open/closed). Log refresh failure dinaikkan debug→warning.
+# Setelah deploy + user buka app: trade KAS/ENA pindah ke device aktif,
+#   scheduler reconcile ke Binance (positionAmt=0) → tercatat closed dgn
+#   alasan, leaderboard bersih, Recent Trades kembali terisi history lama.
