@@ -1684,7 +1684,7 @@ APP_UPDATE_NOTES = {
         "• Frame kartu Recent Trades: hijau = profit, merah = loss, emas = LIMIT antri\n"
         "• Badge LIMIT + tombol CANCEL untuk order antri; swipe-to-delete kartu history\n"
         "• Label formula singkat per trade (John Wick, KISS Pivot, Box Theory, dst)\n"
-        "• Leaderboard Copy Trade: 1 rank = 1 POSISI (bukan gabungan per trader) — open & closed tampil lengkap (symbol, entry, SL, TP); PnL di kanan atas tombol EXECUTE; EXECUTE hanya untuk posisi open"
+        "• Leaderboard Copy Trade: 1 rank = 1 POSISI (bukan gabungan per trader) — open & closed tampil lengkap (symbol, entry, SL, TP); PnL di kanan atas tombol EXECUTE; EXECUTE tersedia di semua kartu (closed memakai harga pasar saat ini)"
     ),
     "en": (
         "• Moderate LIMIT entries (-0.5/-0.3 ATR): bot orders fill far more often, auto-cancel after 2 candles\n"
@@ -1695,7 +1695,7 @@ APP_UPDATE_NOTES = {
         "• Recent Trades card frames: green = profit, red = loss, gold = LIMIT pending\n"
         "• LIMIT badge + CANCEL button for queued orders; swipe-to-delete history cards\n"
         "• Short per-trade formula labels (John Wick, KISS Pivot, Box Theory, etc.)\n"
-        "• Copy Trade leaderboard: 1 rank = 1 POSITION (not merged per trader) — open & closed shown with full details (symbol, entry, SL, TP); PnL on the right above EXECUTE; EXECUTE only for open positions"
+        "• Copy Trade leaderboard: 1 rank = 1 POSITION (not merged per trader) — open & closed shown with full details (symbol, entry, SL, TP); PnL on the right above EXECUTE; EXECUTE available on every card (closed positions use current market price)"
     ),
 }
 
