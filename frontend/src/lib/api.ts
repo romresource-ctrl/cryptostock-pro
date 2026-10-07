@@ -581,6 +581,10 @@ export type AsiLiveTrade = {
   exchange: string | null;
   created_at: string | null;
   pnl_usdt?: number | null;
+  // v10.0.4 — field tambahan untuk kartu posisi CLOSED di leaderboard
+  closed_at?: string | null;
+  closed_price?: number | null;
+  close_reason?: string | null;
 };
 export type AsiLiveRow = {
   rank: number;
@@ -599,6 +603,8 @@ export type AsiLiveRow = {
   latest_trade: AsiLiveTrade;
   // v10.0.3 — SEMUA posisi open trader (tiap posisi = kartu terpisah)
   open_trades?: AsiLiveTrade[];
+  // v10.0.4 — posisi closed 24h tampil lengkap (read-only, tanpa EXECUTE)
+  closed_trades?: AsiLiveTrade[];
 };
 export type AsiBotConfig = {
   enabled: boolean;

@@ -173,22 +173,9 @@ export default function CopyTradeScreen() {
                           {row.testnet ? t("asi_demo_badge") : "REAL"}
                         </Text>
                       </View>
-                      {/* v10.0.3 — Pill posisi: OPEN POS (biru) jika online,
-                          CLOSED (abu) jika hanya history 24h. */}
-                      {(row.open_count ?? 0) > 0 ? (
-                        <View style={[s.openPill, { borderColor: BLUE }]}>
-                          <View style={[s.liveDot, { backgroundColor: BLUE }]} />
-                          <Text style={{ color: BLUE, fontWeight: "900", fontSize: 10 }}>
-                            {t("copy_open_count").replace("{n}", String(row.open_count))}
-                          </Text>
-                        </View>
-                      ) : (
-                        <View style={[s.openPill, { borderColor: colors.border }]}>
-                          <Text style={{ color: colors.textMuted, fontWeight: "900", fontSize: 10 }}>
-                            {(row.closed_count ?? 0) + "× CLOSED"}
-                          </Text>
-                        </View>
-                      )}
+                      {/* v10.0.4 — Pill penghitung OPEN/CLOSED dihapus: tiap
+                          posisi sudah tampil satu per satu sebagai kartu
+                          terpisah dengan PnL masing-masing (tidak digabung). */}
                     </View>
                     <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 2 }}>
                       {t("copy_wr_line").replace("{wr}", String(row.wr30d)).replace("{n}", String(row.trades30d))}
@@ -211,7 +198,7 @@ export default function CopyTradeScreen() {
                 </View>
 
                 {/* v10.0.3 — SEMUA posisi open sebagai kartu terpisah.
-                    Trader "closed only" tidak menampilkan kartu posisi. */}
+                    v10.0.4 — posisi closed 24h juga tampil lengkap (read-only). */}
                 {(row.open_trades || []).map((ot, oi) => {
                   if (!ot.symbol || !ot.side) return null;
                   const otLong = ot.side === "BUY";
@@ -267,6 +254,69 @@ export default function CopyTradeScreen() {
                     </View>
                   );
                 })}
+
+                {/* v10.0.4 — Kartu posisi CLOSED: lengkap (symbol, side, entry,
+                    SL, TP, PnL realized, harga & alasan close) tapi read-only —
+                    TIDAK ada tombol EXECUTE karena posisi sudah selesai. */}
+                {(row.closed_trades || []).map((ct, ci) => {
+                  if (!ct.symbol || !ct.side) return null;
+                  const ctLong = ct.side === "BUY";
+                  const ctPnl = ct.pnl_usdt ?? null;
+                  return (
+                    <View
+                      key={`${row.rank}-closed-${ct.symbol}-${ci}`}
+                      style={[s.tradeRow, { borderColor: colors.border, backgroundColor: colors.background, opacity: 0.75 }]}
+                      testID={`copy-closed-${row.rank}-${ct.symbol}-${ci}`}
+                    >
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 15 }}>
+                            {ct.symbol}/USDT
+                          </Text>
+                          <View style={{
+                            paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
+                            backgroundColor: ctLong ? GREEN : RED,
+                          }}>
+                            <Text style={{ color: "#fff", fontWeight: "900", fontSize: 10 }}>
+                              {ctLong ? "LONG" : "SHORT"} {ct.leverage ? `${ct.leverage}x` : ""}
+                            </Text>
+                          </View>
+                          <View style={{
+                            paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
+                            backgroundColor: colors.border,
+                          }}>
+                            <Text style={{ color: colors.textMuted, fontWeight: "900", fontSize: 9 }}>CLOSED</Text>
+                          </View>
+                          {/* PnL realized */}
+                          {ctPnl != null ? (
+                            <Text style={{ color: ctPnl >= 0 ? GREEN : RED, fontWeight: "900", fontSize: 11 }}>
+                              {ctPnl >= 0 ? "+" : ""}${ctPnl.toFixed(2)}
+                            </Text>
+                          ) : null}
+                        </View>
+                        <Text style={{ color: colors.textMuted, fontSize: 11 }}>
+                          {t("copy_entry_line")
+                            .replace("{price}", (ct.entry_price || 0).toLocaleString())
+                            .replace("{ago}", timeAgo(ct.created_at))}
+                        </Text>
+                        <Text style={{ color: colors.textMuted, fontSize: 10.5, lineHeight: 15 }} numberOfLines={2}>
+                          <Text style={{ color: RED, fontWeight: "800" }}>
+                            SL {ct.stop_loss ? ct.stop_loss.toLocaleString() : "—"}
+                          </Text>
+                          {"  ·  "}
+                          <Text style={{ color: GREEN, fontWeight: "800" }}>
+                            TP {(ct.take_profits || []).map((x) => x.toLocaleString()).join(" / ") || "—"}
+                          </Text>
+                        </Text>
+                        <Text style={{ color: colors.textMuted, fontSize: 10.5 }}>
+                          Closed @ {ct.closed_price ? ct.closed_price.toLocaleString() : "—"}
+                          {ct.close_reason ? ` · ${ct.close_reason}` : ""}
+                          {ct.closed_at ? ` · ${timeAgo(ct.closed_at)}` : ""}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })}
               </View>
             );
           })
@@ -301,10 +351,6 @@ const s = StyleSheet.create({
   card: { padding: 14, borderRadius: 14, borderWidth: 1.5, gap: 10 },
   rank: { fontSize: 22, fontWeight: "900", width: 42 },
   handle: { fontWeight: "900", fontSize: 15, letterSpacing: 1.5 },
-  openPill: {
-    flexDirection: "row", alignItems: "center", gap: 4,
-    paddingHorizontal: 7, paddingVertical: 3, borderRadius: 999, borderWidth: 1,
-  },
   tradeRow: {
     flexDirection: "row", alignItems: "center", gap: 10,
     padding: 10, borderRadius: 10, borderWidth: 1,

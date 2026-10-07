@@ -1671,7 +1671,7 @@ async def search_assets(
 # v8.12.69 — Latest published Android build. The /app-version endpoint
 # serves this so outdated installs get an update prompt. Bump together
 # with frontend APP_VERSION / app.json version on every release.
-APP_LATEST_VERSION = "10.0.3"
+APP_LATEST_VERSION = "10.0.4"
 
 # v10.0.1 — Release notes untuk popup update (per bahasa).
 APP_UPDATE_NOTES = {
@@ -1683,7 +1683,8 @@ APP_UPDATE_NOTES = {
         "• Mark price REALTIME (2 detik) di samping simbol posisi open\n"
         "• Frame kartu Recent Trades: hijau = profit, merah = loss, emas = LIMIT antri\n"
         "• Badge LIMIT + tombol CANCEL untuk order antri; swipe-to-delete kartu history\n"
-        "• Label formula singkat per trade (John Wick, KISS Pivot, Box Theory, dst)"
+        "• Label formula singkat per trade (John Wick, KISS Pivot, Box Theory, dst)\n"
+        "• Leaderboard Copy Trade: posisi OPEN & CLOSED tampil lengkap per kartu (symbol, entry, SL, TP, PnL); EXECUTE hanya untuk posisi open"
     ),
     "en": (
         "• Moderate LIMIT entries (-0.5/-0.3 ATR): bot orders fill far more often, auto-cancel after 2 candles\n"
@@ -1693,7 +1694,8 @@ APP_UPDATE_NOTES = {
         "• REALTIME mark price (2s) next to the symbol of open positions\n"
         "• Recent Trades card frames: green = profit, red = loss, gold = LIMIT pending\n"
         "• LIMIT badge + CANCEL button for queued orders; swipe-to-delete history cards\n"
-        "• Short per-trade formula labels (John Wick, KISS Pivot, Box Theory, etc.)"
+        "• Short per-trade formula labels (John Wick, KISS Pivot, Box Theory, etc.)\n"
+        "• Copy Trade leaderboard: OPEN & CLOSED positions shown as full cards (symbol, entry, SL, TP, PnL); EXECUTE only for open positions"
     ),
 }
 

@@ -141,6 +141,10 @@ async def live_leaderboard(db: Any, limit: int = 25) -> list[dict[str, Any]]:
             "open_trades": {"$push": {
                 "$cond": [{"$eq": ["$status", "open"]}, "$$ROOT", "$$REMOVE"],
             }},
+            # v10.0.4 — posisi closed 24h juga dikirim lengkap (kartu read-only)
+            "closed_trades": {"$push": {
+                "$cond": [{"$eq": ["$status", "closed"]}, "$$ROOT", "$$REMOVE"],
+            }},
         }},
     ]
     rows = await db.asi_trades.aggregate(pipeline).to_list(limit * 3)
@@ -176,6 +180,12 @@ async def live_leaderboard(db: Any, limit: int = 25) -> list[dict[str, Any]]:
             (r.get("open_trades") or []),
             key=lambda y: y.get("pnl_usdt") or 0, reverse=True,
         )
+        # v10.0.4 — closed trades terbaru dulu, maks 10 kartu per trader.
+        closed_trades_sorted = sorted(
+            (r.get("closed_trades") or []),
+            key=lambda y: y.get("closed_at") or y.get("updated_at") or "",
+            reverse=True,
+        )[:10]
         enriched.append({
             "handle": handle,
             "testnet": is_demo,
@@ -211,6 +221,25 @@ async def live_leaderboard(db: Any, limit: int = 25) -> list[dict[str, Any]]:
                     "pnl_usdt": x.get("pnl_usdt"),
                 }
                 for x in open_trades_sorted
+            ],
+            # v10.0.4 — kartu closed lengkap (symbol/entry/SL/TP/PnL realized)
+            # supaya leaderboard tetap informatif walau tidak bisa di-copy.
+            "closed_trades": [
+                {
+                    "symbol": x.get("symbol"),
+                    "side": x.get("side"),
+                    "entry_price": x.get("entry_price"),
+                    "stop_loss": x.get("stop_loss"),
+                    "take_profits": x.get("take_profits"),
+                    "leverage": x.get("leverage"),
+                    "exchange": x.get("exchange"),
+                    "created_at": x.get("created_at"),
+                    "closed_at": x.get("closed_at"),
+                    "closed_price": x.get("closed_price"),
+                    "close_reason": x.get("close_reason"),
+                    "pnl_usdt": x.get("pnl_usdt"),
+                }
+                for x in closed_trades_sorted
             ],
         })
     # v10.0.3 — Rank berdasarkan TOTAL PROFIT $ (realized + unrealized 24h).

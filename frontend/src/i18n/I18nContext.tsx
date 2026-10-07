@@ -1064,7 +1064,7 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   },
 
   // v9.5.0 — Copy Trade page
-  copy_sub: { id: "25 trader yang SEDANG di posisi · hilang otomatis bila closed", en: "Top 25 traders CURRENTLY in positions · auto-removed when closed", ru: "Топ-25 трейдеров в позициях · исчезают при закрытии", cn: "当前持仓前 25 名交易者 · 平仓后自动消失" },
+  copy_sub: { id: "Top 25 profit 24 jam · posisi open & closed tampil per kartu", en: "Top 25 by 24h profit · open & closed positions shown per card", ru: "Топ-25 по прибыли за 24ч · открытые и закрытые позиции отдельно", cn: "按24小时盈利排名前25 · 开仓与平仓逐卡显示" },
   copy_loading: { id: "Memuat posisi aktif…", en: "Loading active positions…", ru: "Загрузка активных позиций…", cn: "正在加载持仓…" },
   copy_empty_title: { id: "Tidak ada posisi aktif saat ini", en: "No active positions right now", ru: "Сейчас нет активных позиций", cn: "当前没有持仓" },
   copy_empty_body: {
@@ -1078,7 +1078,7 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   copy_unrealized: { id: "UNREALIZED", en: "UNREALIZED", ru: "НЕРЕАЛИЗ.", cn: "未实现" },
   copy_entry_line: { id: "Entry ${price} · dibuka {ago}", en: "Entry ${price} · opened {ago}", ru: "Вход ${price} · открыта {ago}", cn: "入场 ${price} · {ago}开仓" },
   copy_execute: { id: "EXECUTE", en: "EXECUTE", ru: "EXECUTE", cn: "EXECUTE" },
-  copy_footer: { id: "Daftar refresh tiap 15 detik · trader hilang otomatis saat posisi mereka ditutup.", en: "List refreshes every 15 seconds · traders auto-removed when their positions close.", ru: "Обновление каждые 15 секунд · трейдеры исчезают при закрытии позиций.", cn: "列表每 15 秒刷新 · 交易者平仓后自动移除。" },
+  copy_footer: { id: "Daftar refresh tiap 15 detik · hanya posisi OPEN yang bisa di-copy.", en: "List refreshes every 15 seconds · only OPEN positions can be copied.", ru: "Обновление каждые 15 секунд · копировать можно только открытые позиции.", cn: "列表每 15 秒刷新 · 仅可复制持仓中的仓位。" },
 
   // v9.6.4 — Premium gate (ASI-Bot & Copy Trade)
   premium_locked_title: { id: "Fitur Khusus Premium", en: "Premium Members Only", ru: "Только для Premium", cn: "仅限高级会员" },

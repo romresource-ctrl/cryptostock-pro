@@ -2837,3 +2837,45 @@ frontend_v1003:
       - working: true
         agent: "main"
         comment: "Metrik utama = $ total profit 24h (sebelumnya hanya % unrealized). Pill 'OPEN POS' biru utk online, '×N CLOSED' abu untuk closed-only. Label metrik '24H PROFIT' (ada open) atau '24H REALIZED' (closed only). Kartu posisi hanya dirender bila open_trades.length>0 (tidak lagi fallback ke latest_trade yang bisa closed). Versi bump 10.0.3 (version.ts/app.json/APP_LATEST_VERSION)."
+
+
+# ======================================================
+# v10.0.4 — Leaderboard: kartu CLOSED lengkap + pill counter dihapus
+# ======================================================
+backend_v1004:
+  - task: "live_leaderboard kirim closed_trades lengkap (symbol/side/entry/SL/TP/leverage/PnL/closed_price/close_reason/closed_at)"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/pnl.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Permintaan user: posisi closed di leaderboard harus tampil LENGKAP
+          seperti open position (bukan hanya inisial+PnL). $group kini juga
+          push closed_trades; diurutkan closed_at desc, maks 10 per trader.
+          Verifikasi curl data real: rank#1 DCC closed MANA SHORT +$54.17
+          dan SAND SHORT +$17.01 lengkap entry/SL/TP/closed@.
+frontend_v1004:
+  - task: "Render kartu closed read-only + hapus pill 'OPEN POS'/'N× CLOSED'"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/copy-trade.tsx, /app/frontend/src/lib/api.ts, /app/frontend/src/i18n/I18nContext.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          User: tiap posisi tampil satu per satu dengan PnL masing-masing
+          (tidak digabung), jadi pill penghitung tidak perlu. Kartu closed:
+          badge CLOSED abu, PnL realized, entry/SL/TP, 'Closed @ price ·
+          reason · ago', opacity 0.75, TANPA tombol EXECUTE. copy_sub &
+          copy_footer diperbarui (4 bahasa). Screenshot verified: pill hilang,
+          2 kartu closed lengkap, 0 tombol EXECUTE utk closed.
+          Versi bump 10.0.3 → 10.0.4 (version.ts, app.json, server.py
+          APP_LATEST_VERSION + release notes).

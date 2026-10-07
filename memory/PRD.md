@@ -1225,3 +1225,20 @@ pertama, dan layering mewarisi TP salah sisi (ETH TP1 2714.47 < avg entry
 **Testing:** testing_agent iter36: 10/11 PASS (E2E testnet LIMIT pending,
 marketable fill, expire, TP guard, regresi). 1 bug accounting soft-watcher
 ditemukan → diperbaiki, test PASS. Versi 9.9.13.
+
+## v10.0.4 — Leaderboard Copy Trade: kartu posisi lengkap (open & closed)
+- User: posisi CLOSED di leaderboard tetap tampil LENGKAP seperti open
+  (symbol, side, entry, SL, TP, PnL realized) — bukan hanya inisial + PnL.
+- User: tiap posisi tampil SATU PER SATU dengan PnL masing-masing (tidak
+  digabung per aset) → pill penghitung "OPEN POS"/"N× CLOSED" DIHAPUS.
+- Backend `pnl.live_leaderboard`: $group juga push `closed_trades` (maks 10
+  per trader, sort closed_at desc) berisi symbol/side/entry/SL/TP/leverage/
+  pnl_usdt/closed_price/close_reason/closed_at.
+- Frontend `copy-trade.tsx`: kartu closed read-only (badge CLOSED abu,
+  opacity 0.75, baris "Closed @ price · reason · ago"), TANPA tombol
+  EXECUTE. Kartu open tidak berubah (EXECUTE tetap aktif).
+- i18n copy_sub/copy_footer diperbarui (id/en/ru/cn): ranking Top 25 by
+  profit 24h; hanya posisi OPEN yang bisa di-copy.
+- Versi 10.0.3 → 10.0.4 (version.ts, app.json, APP_LATEST_VERSION +
+  release notes). Terverifikasi curl data real + screenshot.
+
