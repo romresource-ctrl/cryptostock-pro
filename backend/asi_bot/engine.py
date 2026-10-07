@@ -1510,7 +1510,38 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
         closed_px = await br.last_fill_price(api_key, api_secret, is_testnet, bin_sym)
     except Exception:
         pass
-    upd_closed: dict[str, Any] = {"status": "closed", "pnl_usdt": round(realized, 2)}
+    # v10.0.5 — Simpulkan ALASAN close dari harga fill vs level SL/TP
+    # (sebelumnya None → kartu history tidak tahu kenapa tertutup) dan
+    # SELALU catat closed_at (dibutuhkan leaderboard 24h).
+    now_c = datetime.now(timezone.utc).isoformat()
+    reason = None
+    if closed_px:
+        sl = float(trade.get("stop_loss") or 0)
+        tps = [float(x) for x in (trade.get("take_profits") or []) if x]
+        tol = 0.004  # toleransi 0.4% utk slippage trigger
+        if trade.get("side") == "BUY":
+            if sl and closed_px <= sl * (1 + tol):
+                reason = "SL"
+            else:
+                for i, tp in enumerate(tps, 1):
+                    if closed_px >= tp * (1 - tol):
+                        reason = f"TP{i}"
+                        break
+        else:
+            if sl and closed_px >= sl * (1 - tol):
+                reason = "SL"
+            else:
+                for i, tp in enumerate(tps, 1):
+                    if closed_px <= tp * (1 + tol):
+                        reason = f"TP{i}"
+                        break
+    upd_closed: dict[str, Any] = {
+        "status": "closed",
+        "pnl_usdt": round(realized, 2),
+        "closed_at": now_c,
+        "updated_at": now_c,
+        "close_reason": reason or "position_closed_externally",
+    }
     if closed_px:
         upd_closed["closed_price"] = closed_px
     return upd_closed

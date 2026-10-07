@@ -166,6 +166,26 @@ async def live_leaderboard(db: Any, limit: int = 25) -> list[dict[str, Any]]:
             margin = (entry * qty / lev) if entry and qty else 0.0
         pnl_pct = round(pnl / margin * 100.0, 2) if margin > 0 else 0.0
         wr30, tr30 = await _stats30(device_id)
+        is_open = tr.get("status") == "open"
+        # v10.0.5 — COMPAT: aplikasi lama (<=10.0.4) membaca field grup
+        # per-trader (unrealized_usdt/total_profit_usdt/open_trades/dst)
+        # dan CRASH bila field hilang (undefined.toFixed). Kirim keduanya:
+        # bentuk baru (flat per-posisi) + field lama yang diisi dari posisi
+        # ini agar build lama tetap render tanpa crash sampai user update.
+        pos_payload = {
+            "symbol": tr.get("symbol"),
+            "side": tr.get("side"),
+            "entry_price": tr.get("entry_price"),
+            "stop_loss": tr.get("stop_loss"),
+            "take_profits": tr.get("take_profits"),
+            "leverage": tr.get("leverage"),
+            "exchange": tr.get("exchange"),
+            "created_at": tr.get("created_at"),
+            "pnl_usdt": pnl,
+            "closed_at": tr.get("closed_at"),
+            "closed_price": tr.get("closed_price"),
+            "close_reason": tr.get("close_reason"),
+        }
         out.append({
             "rank": i + 1,
             "handle": await _handle(device_id),
@@ -188,5 +208,15 @@ async def live_leaderboard(db: Any, limit: int = 25) -> list[dict[str, Any]]:
             "pnl_pct": pnl_pct,
             "wr30d": wr30,
             "trades30d": tr30,
+            # ---- field kompatibilitas untuk app versi lama ----
+            "unrealized_usdt": pnl if is_open else 0.0,
+            "unrealized_pct": pnl_pct if is_open else 0.0,
+            "realized_usdt": 0.0 if is_open else pnl,
+            "total_profit_usdt": pnl,
+            "open_count": 1 if is_open else 0,
+            "closed_count": 0 if is_open else 1,
+            "latest_trade": pos_payload,
+            "open_trades": [pos_payload] if is_open else [],
+            "closed_trades": [] if is_open else [pos_payload],
         })
     return out

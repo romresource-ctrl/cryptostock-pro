@@ -2894,3 +2894,17 @@ frontend_v1004:
 #   PnL, tapi READ-ONLY (abu, disabled) untuk posisi CLOSED — klik tidak
 #   membuka sheet. Aktif (emas) hanya untuk posisi OPEN. Screenshot PASS:
 #   copy-execute-1 disabled=true, klik tidak membuka sheet.
+# ======================================================
+# v10.0.5a — FIX crash app lama 10.0.1 di leaderboard
+# ======================================================
+# User report: app 10.0.1 terinstal CRASH saat buka leaderboard & asi-bot.
+# ROOT CAUSE (leaderboard): backend v10.0.5 menghapus field grup per-trader
+#   (unrealized_usdt/total_profit_usdt/open_trades/latest_trade/open_count)
+#   yang dibaca LANGSUNG oleh app lama (undefined.toFixed → crash JS).
+# FIX: pnl.live_leaderboard kini mengirim field baru (flat per-posisi) +
+#   field lama (diisi dari posisi tsb) — kompatibel utk app <=10.0.4.
+#   Verified curl: semua field kompat hadir.
+# Catatan: tidak ada perubahan breaking di /asi/trades & /asi/bot antara
+#   10.0.1→10.0.5 (git diff hanya pnl.py) — crash asi-bot di app lama
+#   kemungkinan efek sekunder; perlu konfirmasi user setelah fix ini.
+# Solusi definitif: user install build 10.0.5 (popup update sudah tampil).
