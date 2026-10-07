@@ -168,10 +168,10 @@ async def live_leaderboard(db: Any, limit: int = 25) -> list[dict[str, Any]]:
         wr30, tr30 = await _stats30(device_id)
         is_open = tr.get("status") == "open"
         # v10.0.5 — COMPAT: aplikasi lama (<=10.0.4) membaca field grup
-        # per-trader (unrealized_usdt/total_profit_usdt/open_trades/dst)
-        # dan CRASH bila field hilang (undefined.toFixed). Kirim keduanya:
-        # bentuk baru (flat per-posisi) + field lama yang diisi dari posisi
-        # ini agar build lama tetap render tanpa crash sampai user update.
+        # per-trader (unrealized_usdt/total_profit_usdt/open_trades/dst).
+        # Set unrealized_usdt = pnl (BUKAN 0) agar app lama menampilkan
+        # angka PnL yang bermakna; set open_count = 1 supaya pill
+        # "0 OPEN POS" tidak muncul. pnl SELALU > 0 (sudah difilter).
         pos_payload = {
             "symbol": tr.get("symbol"),
             "side": tr.get("side"),
@@ -209,11 +209,14 @@ async def live_leaderboard(db: Any, limit: int = 25) -> list[dict[str, Any]]:
             "wr30d": wr30,
             "trades30d": tr30,
             # ---- field kompatibilitas untuk app versi lama ----
-            "unrealized_usdt": pnl if is_open else 0.0,
-            "unrealized_pct": pnl_pct if is_open else 0.0,
+            # unrealized/total diisi pnl aktual (positif) supaya app lama
+            # tidak menampilkan "+$0.00"; open_count=1 agar pill "0 OPEN
+            # POS" tidak muncul.
+            "unrealized_usdt": pnl,
+            "unrealized_pct": pnl_pct,
             "realized_usdt": 0.0 if is_open else pnl,
             "total_profit_usdt": pnl,
-            "open_count": 1 if is_open else 0,
+            "open_count": 1,
             "closed_count": 0 if is_open else 1,
             "latest_trade": pos_payload,
             "open_trades": [pos_payload] if is_open else [],

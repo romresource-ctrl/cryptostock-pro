@@ -121,7 +121,7 @@ export default function UpdatePrompt() {
             style={[styles.updateBtn, { backgroundColor: colors.accentBlue }]}
             testID="update-now-button"
           >
-            <Ionicons name="logo-google-playstore" size={16} color="#fff" />
+            <Ionicons name="download-outline" size={16} color="#fff" />
             <Text style={styles.updateBtnText}>{t("update_now")}</Text>
           </TouchableOpacity>
           <TouchableOpacity

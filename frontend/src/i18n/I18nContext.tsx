@@ -1011,12 +1011,12 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   // v9.9.9 — popup update terlokalisasi
   update_title: { id: "Update Tersedia", en: "Update Available", ru: "Доступно обновление", cn: "有可用更新" },
   update_body: {
-    id: "Versi baru AI Crypto Stock Pro tersedia di Google Play.\n\nTerpasang: v{cur} → Terbaru: v{latest}\n\nUpdate sekarang untuk mendapatkan fitur & perbaikan terbaru.",
-    en: "A new version of AI Crypto Stock Pro is available on Google Play.\n\nInstalled: v{cur} → Latest: v{latest}\n\nUpdate now to get the latest features and fixes.",
-    ru: "Новая версия AI Crypto Stock Pro доступна в Google Play.\n\nУстановлена: v{cur} → Последняя: v{latest}\n\nОбновите, чтобы получить новые функции и исправления.",
-    cn: "AI Crypto Stock Pro 新版本已在 Google Play 上线。\n\n当前版本：v{cur} → 最新版本：v{latest}\n\n立即更新以获取最新功能和修复。",
+    id: "Versi baru AI Crypto Stock Pro telah dirilis.\n\nTerpasang: v{cur} → Terbaru: v{latest}\n\nMinta file APK terbaru dari admin untuk mendapatkan fitur & perbaikan terbaru.",
+    en: "A new version of AI Crypto Stock Pro has been released.\n\nInstalled: v{cur} → Latest: v{latest}\n\nAsk the admin for the latest APK to get new features and fixes.",
+    ru: "Выпущена новая версия AI Crypto Stock Pro.\n\nУстановлена: v{cur} → Последняя: v{latest}\n\nЗапросите у администратора последний APK, чтобы получить новые функции и исправления.",
+    cn: "AI Crypto Stock Pro 新版本已发布。\n\n当前版本：v{cur} → 最新版本：v{latest}\n\n请向管理员获取最新 APK,以获取新功能和修复。",
   },
-  update_now: { id: "UPDATE DI PLAY STORE", en: "UPDATE ON PLAY STORE", ru: "ОБНОВИТЬ В PLAY STORE", cn: "在 PLAY 商店更新" },
+  update_now: { id: "DAPATKAN APK TERBARU", en: "GET LATEST APK", ru: "ПОЛУЧИТЬ ПОСЛЕДНИЙ APK", cn: "获取最新 APK" },
   update_later: { id: "Nanti", en: "Later", ru: "Позже", cn: "稍后" },
 
   // v9.6.9 — Credential validation error codes (backend returns {code, message})
