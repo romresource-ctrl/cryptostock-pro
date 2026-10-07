@@ -2681,3 +2681,28 @@ frontend_v1001:
           (dipakai Semi & Full via config bersama). Default: Limit Price.
           Screenshot-verified. Versi bump 10.0.1 (version.ts, app.json,
           APP_LATEST_VERSION + release notes update popup).
+
+# ======================================================
+# v10.0.1b — Polish warna & duplikat badge
+# ======================================================
+frontend_v1001b:
+  - task: "Limit Price kuning asli, Margin kuning, hapus duplikat badge LIMIT"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/asi-bot.tsx"
+    stuck_count: 0
+    priority: "low"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          - Tambah const YELLOW #F0B90B (GOLD di file ini hijau muda).
+          - Tombol Limit Price (Risk Parameters) + chip LIMIT + badge
+            status LIMIT pending kini kuning; Market Price tetap ungu.
+          - Teks 'Margin $..' di kartu open & closed kini kuning.
+          - Chip entry-mode LIMIT disembunyikan saat status pending_entry
+            (badge status sudah 'LIMIT') -> tidak ada lagi 2 tulisan
+            LIMIT pada kartu antri. Terlihat dari screenshot user:
+            SUI SHORT (semi) & BCH SHORT (full) pending limit moderate
+            dengan SL/TP arah benar.
