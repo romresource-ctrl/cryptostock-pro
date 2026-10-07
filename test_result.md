@@ -2966,3 +2966,14 @@ frontend_v1004:
 #   swipe) SEMUA tampil & badge lengkap. Seed dibersihkan.
 # - Versi 10.0.5 -> 10.0.8 (version.ts, app.json, APP_LATEST_VERSION).
 #   Release notes ditambah: full-auto big-caps + halaman Positions.
+
+
+# ======================================================
+# Strategy Exit Roadmap (Keputusan User - Status: Monitoring)
+# ======================================================
+# User memutuskan TIDAK MENGUBAH FORMULA DULU, pantau dulu performa bot
+# dengan pembatasan BIG-CAPS (Top-50) yang sudah aktif di v10.0.8.
+# Preferensi user yang sudah dicatat untuk fase berikutnya bila diperlukan:
+#   1. TP1 digeser lebih tinggi (mis. >1R atau 1.5R)
+#   2. Trailing stop hanya diaktifkan setelah TP2 terisi
+#   3. SL tetap 0.5x ATR
