@@ -3037,6 +3037,39 @@ _asi_fetch_cache: dict[str, tuple[float, dict]] = {}
 ASI_FETCH_TTL = float(os.environ.get("ASI_FETCH_TTL_SEC", "60"))
 
 
+# v10.0.3 — Cache bias harian (harga vs 50-SMA Daily) per simbol untuk
+# gate Full-Auto "searah trend harian". TTL 30 menit.
+_DAILY_BIAS_CACHE: dict[str, tuple[float, str]] = {}
+
+
+async def _daily_trend_bias(symbol: str) -> str | None:
+    """BULLISH bila harga di atas 50-SMA harian, BEARISH bila di bawah.
+    None bila data tidak tersedia (gate tidak memblokir saat data gagal,
+    supaya kegagalan jaringan tidak menghentikan bot sepenuhnya)."""
+    key = symbol.upper().replace("/", "").replace("USDT", "")
+    hit = _DAILY_BIAS_CACHE.get(key)
+    if hit and time.time() - hit[0] < 1800:
+        return hit[1]
+    try:
+        import httpx as _hx
+
+        async with _hx.AsyncClient(proxy=os.environ.get("ASI_PROXY_URL"), timeout=10.0) as cl:
+            r = await cl.get(
+                f"https://fapi.binance.com/fapi/v1/klines?symbol={key}USDT&interval=1d&limit=60")
+            if r.status_code != 200:
+                return None
+            candles = r.json()
+        if len(candles) < 51:
+            return None
+        closes = [float(k[4]) for k in candles]
+        sma50 = sum(closes[-50:]) / 50.0
+        bias = "BULLISH" if closes[-1] > sma50 else "BEARISH"
+        _DAILY_BIAS_CACHE[key] = (time.time(), bias)
+        return bias
+    except Exception:
+        return None
+
+
 def _asi_formula_tag(ind: dict | None, reasons: list[str] | None,
                      profile: str | None) -> str | None:
     """v9.9.13 — Tag SINGKAT modul formula yang benar-benar memicu sinyal
@@ -3111,6 +3144,18 @@ async def _asi_signal_fetcher(market: str, symbol: str, profile: str | None = No
                 entry = entry_mod
                 sl = sl + shift
                 tps = [t + shift for t in tps]
+            # v10.0.3 — FILTER SEARAH TREND HARIAN (keputusan user): bot
+            # hanya LONG bila harga di atas 50-SMA Daily, SHORT bila di
+            # bawahnya. Counter-trend → sinyal dibuang. Bias dari sinyal
+            # (mesin VWAP) atau dihitung dari klines harian (cache 30m).
+            bias = (d.get("indicators") or {}).get("daily_bias")
+            if not bias:
+                bias = await _daily_trend_bias(symbol)
+            if bias and (
+                (side == "BUY" and bias != "BULLISH")
+                or (side == "SELL" and bias != "BEARISH")
+            ):
+                return None
             return {
                 "side": side, "entry": entry, "stop_loss": sl,
                 "take_profits": tps,

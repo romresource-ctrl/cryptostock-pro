@@ -2753,3 +2753,31 @@ analisis_trade_user:
     di database PRODUKSI (beda environment dengan preview) — tidak bisa
     dianalisis dari sini. Arah SL/TP di screenshot user sudah benar
     (tidak terbalik).
+
+# ======================================================
+# v10.0.3 — Filter Searah Trend Harian (50-SMA Daily) Full-Auto
+# ======================================================
+backend_v1003:
+  - task: "Gate Full-Auto: LONG hanya di atas 50-SMA Daily, SHORT hanya di bawahnya"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          _asi_signal_fetcher: bias dari indikator sinyal (mesin VWAP
+          punya daily_bias) atau fallback _daily_trend_bias() — klines 1d
+          Binance via proxy, cache 30 menit. Counter-trend -> sinyal
+          dibuang (return None). Bias unknown (data gagal) -> TIDAK
+          memblokir (bot tidak mati total saat jaringan bermasalah).
+          Unit test sintetis PASS 3/3: BUY-vs-BEARISH diblokir,
+          BUY-vs-BULLISH lolos, bias unknown lolos.
+          CATATAN: gate ini khusus BOT (fetcher). Dashboard/tampilan
+          sinyal manual TIDAK berubah. Semi-Auto (user tap) tidak
+          diblokir — bisa ditambahkan warning bila diminta.
+          Mesin VWAP day/swing sebenarnya sudah HOLD counter-trend
+          (3R Rule); gate ini menutup celah mesin CONFLUENCE.
