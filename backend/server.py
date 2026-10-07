@@ -1671,7 +1671,7 @@ async def search_assets(
 # v8.12.69 — Latest published Android build. The /app-version endpoint
 # serves this so outdated installs get an update prompt. Bump together
 # with frontend APP_VERSION / app.json version on every release.
-APP_LATEST_VERSION = "10.0.5"
+APP_LATEST_VERSION = "10.0.8"
 
 # v10.0.1 — Release notes untuk popup update (per bahasa).
 # v10.0.5 — Ditulis ulang dengan bahasa sederhana untuk pengguna awam:
@@ -1685,6 +1685,8 @@ APP_UPDATE_NOTES = {
         "• Kartu trade berwarna: hijau = untung, merah = rugi, kuning = order menunggu\n"
         "• Order yang belum terisi otomatis dibatalkan, bisa juga dibatalkan manual\n"
         "• Leaderboard Copy Trade: setiap posisi tampil lengkap dengan untung/rugi masing-masing\n"
+        "• Mode Full-Auto kini hanya memperdagangkan aset besar (top-50) demi keamanan\n"
+        "• Halaman Positions baru: cek semua posisi, tutup/batalkan order langsung dari dashboard\n"
         "• Berbagai perbaikan kecil dan peningkatan kestabilan"
     ),
     "en": (
@@ -1695,6 +1697,8 @@ APP_UPDATE_NOTES = {
         "• Color-coded trade cards: green = profit, red = loss, gold = waiting order\n"
         "• Unfilled orders cancel automatically, or cancel them manually\n"
         "• Copy Trade leaderboard: every position shown with its own profit/loss\n"
+        "• Full-Auto mode now trades only large-cap assets (top 50) for safety\n"
+        "• New Positions page: review all positions and close/cancel right from the dashboard\n"
         "• Various minor fixes and stability improvements"
     ),
 }

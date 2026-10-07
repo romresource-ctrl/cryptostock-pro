@@ -2957,3 +2957,12 @@ frontend_v1004:
 #   (pending), swipe-to-DELETE (closed). Konten setara Recent Trades.
 # Verified: lint clean. Dashboard shows button (testid confirmed). Screen
 #   renders empty-state untuk device baru. Navigation OK.
+# ======================================================
+# v10.0.8 — Rename Positions + bump final
+# ======================================================
+# - Judul screen "Trades Position" -> "Positions" (header + accessibilityLabel).
+# - Verified dgn seed 3 trade (open BTC / pending SOL / closed ETH):
+#   tombol CLOSE (open), CANCEL (pending LIMIT WAITING), DELETE (history,
+#   swipe) SEMUA tampil & badge lengkap. Seed dibersihkan.
+# - Versi 10.0.5 -> 10.0.8 (version.ts, app.json, APP_LATEST_VERSION).
+#   Release notes ditambah: full-auto big-caps + halaman Positions.

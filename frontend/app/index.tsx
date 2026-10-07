@@ -716,7 +716,7 @@ export default function Dashboard() {
             onPress={() => router.push("/trades-position" as never)}
             testID="trades-position-button"
             style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-            accessibilityLabel="Trades Position"
+            accessibilityLabel="Positions"
           >
             <Ionicons name="pulse-outline" size={18} color={colors.textPrimary} />
           </TouchableOpacity>

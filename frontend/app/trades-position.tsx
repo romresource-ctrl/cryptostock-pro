@@ -297,7 +297,7 @@ export default function TradesPositionScreen() {
           <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 16 }}>
-          Trades Position
+          Positions
         </Text>
         <TouchableOpacity onPress={load} style={s.backBtn}>
           <Ionicons name="refresh" size={20} color={colors.textPrimary} />
