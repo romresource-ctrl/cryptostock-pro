@@ -169,7 +169,9 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
         const p = await api.asi.previewTrade(deviceId, {
           exchange, symbol: intent.symbol, side: intent.side,
           entry: intent.entry, stop_loss: intent.stop_loss,
-          take_profits: intent.take_profits.slice(0, tpCount),
+          // v10.0.9 — kirim ladder PENUH; backend yang menggeser level
+          // (2 TP → [TP2,TP3], 1 TP → [TP2]) supaya preview = eksekusi.
+          take_profits: intent.take_profits,
           risk_pct: riskPct, leverage, tp_count: tpCount,
           testnet: activeTestnet,
         });
@@ -235,7 +237,7 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
       const res = await api.asi.executeTrade(deviceId, {
         exchange, symbol: intent.symbol, side: intent.side,
         entry: intent.entry, stop_loss: intent.stop_loss,
-        take_profits: intent.take_profits.slice(0, tpCount),
+        take_profits: intent.take_profits,
         risk_pct: riskPct, leverage, mode: "semi",
         tp_count: tpCount, trailing_callback_rate: trailingCbRate,
         margin_mode: marginMode,
@@ -413,19 +415,22 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
                   })}
                 </View>
 
-                {/* Level grid */}
+                {/* Level grid — v10.0.9: level TP yang ditampilkan MENGIKUTI
+                    pergeseran ladder backend (2 TP → TP1 cell = harga level
+                    TP2, dst) supaya yang user lihat = yang benar-benar
+                    dipasang di exchange. */}
                 <View style={s.grid}>
                   <LevelCell label="ENTRY" value={formatPrice(intent.entry, "crypto")} color={colors.textPrimary} colors={colors} />
                   <LevelCell label="STOP LOSS" value={formatPrice(intent.stop_loss, "crypto")} color={RED} colors={colors} />
-                  {tpCount >= 1 ? (
-                    <LevelCell label="TP1" value={formatPrice(intent.take_profits[0] ?? NaN, "crypto")} color={GREEN} colors={colors} />
-                  ) : null}
-                  {tpCount >= 2 ? (
-                    <LevelCell label="TP2" value={formatPrice(intent.take_profits[1] ?? NaN, "crypto")} color={GREEN} colors={colors} />
-                  ) : null}
-                  {tpCount >= 3 ? (
-                    <LevelCell label="TP3" value={formatPrice(intent.take_profits[2] ?? NaN, "crypto")} color={GREEN} colors={colors} />
-                  ) : null}
+                  {(() => {
+                    const full = intent.take_profits || [];
+                    const shifted = (full.length >= 3 && tpCount < 3)
+                      ? full.slice(1, 1 + tpCount)
+                      : full.slice(0, tpCount);
+                    return shifted.map((tp, i) => (
+                      <LevelCell key={`tp${i}`} label={`TP${i + 1}`} value={formatPrice(tp ?? NaN, "crypto")} color={GREEN} colors={colors} />
+                    ));
+                  })()}
                   <LevelCell label="SIDE" value={intent.side === "BUY" ? "LONG" : "SHORT"} color={sideColor} colors={colors} />
                 </View>
 

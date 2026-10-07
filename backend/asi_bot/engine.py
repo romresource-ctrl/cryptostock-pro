@@ -61,6 +61,21 @@ TP_SPLITS: dict[int, tuple[float, ...]] = {
 }
 
 
+def _shift_tp_ladder(tps: list[float] | None, tp_count: int) -> list[float]:
+    """v10.0.9 — Ladder TP DIGESER ke level lebih tinggi saat user memilih
+    lebih sedikit TP (keputusan user):
+      tp_count=3 → [TP1, TP2, TP3]  (tidak berubah)
+      tp_count=2 → [TP2, TP3]       (target pertama = level TP2)
+      tp_count=1 → [TP2]            (target tunggal = level TP2)
+    Backward-compat: bila ladder yang masuk < 3 level (app lama yang sudah
+    pre-slice), pakai slice depan seperti semula."""
+    full = [float(x) for x in (tps or []) if x]
+    n = max(1, min(3, int(tp_count)))
+    if len(full) >= 3 and n < 3:
+        return full[1:1 + n]
+    return full[:n]
+
+
 def _split_tp_qty(qty: float, step: float | None,
                   n_targets: int = 3) -> list[float]:
     """Split qty across TP1..TPn, aligned to the market's amount step.
@@ -304,7 +319,9 @@ async def preview_trade(
     est_loss = round(risk_per_unit * qty, 2)
     weights = TP_SPLITS[tp_count]
     tp_est = []
-    for i, tp in enumerate(tps[:tp_count]):
+    # v10.0.9 — preview menampilkan level yang BENAR-BENAR dipasang
+    # (ladder bergeser saat tp_count < 3).
+    for i, tp in enumerate(_shift_tp_ladder(tps, tp_count)):
         delta = abs(tp - entry)
         tp_qty = qty * weights[i]
         tp_est.append({
@@ -339,7 +356,8 @@ async def execute_trade(
     risk_pct = max(1.0, min(30.0, float(risk_pct)))
     leverage = max(1, min(125, int(leverage)))
     tp_count = max(1, min(3, int(tp_count)))
-    tps = list(tps or [])[:tp_count]
+    # v10.0.9 — Geser ladder: tp_count<3 memakai level TP yang lebih tinggi.
+    tps = _shift_tp_ladder(tps, tp_count)
     margin_mode = "cross" if str(margin_mode).lower() == "cross" else "isolated"
     exchange = (doc.get("exchange") or "binance").lower()
 

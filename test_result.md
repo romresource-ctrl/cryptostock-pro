@@ -2977,3 +2977,12 @@ frontend_v1004:
 #   1. TP1 digeser lebih tinggi (mis. >1R atau 1.5R)
 #   2. Trailing stop hanya diaktifkan setelah TP2 terisi
 #   3. SL tetap 0.5x ATR
+# ======================================================
+# v10.0.9 — TP ladder shift (keputusan user)
+# ======================================================
+# Aturan baru: pilih 2 TP → target = [level TP2, level TP3]; pilih 1 TP →
+#   target = [level TP2]; 3 TP tidak berubah. Backend = sumber kebenaran
+#   (_shift_tp_ladder di engine.py), dipakai preview + execute + full-auto.
+#   Frontend kirim ladder penuh + tampilkan level bergeser di grid sheet.
+#   Backward-compat: app lama (pre-sliced <3 level) tidak terpengaruh.
+#   Unit test helper: PASS semua skenario.
