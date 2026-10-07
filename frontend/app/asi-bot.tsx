@@ -797,6 +797,27 @@ export default function ASIBotScreen() {
                       return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} · ${pad(d.getHours())}:${pad(d.getMinutes())}`;
                     })()}
                   </Text>
+                  {/* v10.0.3 — Penyebab closed/cancel (PUTIH) di sebelah
+                      kanan tanggal-jam: "Closed on SL/TP1/TP2/TP3",
+                      "Canceled upon ...", dst. */}
+                  {!isOpen && !isPending ? (() => {
+                    const rc = String((tr as any).close_reason || "");
+                    let txt: string;
+                    if (/^TP\d?$/.test(rc)) txt = `Closed on ${rc}`;
+                    else if (rc === "SL") txt = "Closed on SL";
+                    else if (rc === "cancelled_pending") txt = "Canceled upon user cancel";
+                    else if (rc === "entry_expired") txt = "Canceled upon expiry (2 candles)";
+                    else if (rc === "manual_cleanup") txt = "Closed on cleanup";
+                    else if (rc === "merged_into_layer") txt = "Merged into layer";
+                    else if (rc === "bracket_failed_after_fill") txt = "Closed upon bracket failure";
+                    else if (rc === "MANUAL") txt = "Closed Manually";
+                    else txt = rc ? `Closed on ${rc}` : "Closed";
+                    return (
+                      <Text numberOfLines={1} style={{ fontSize: 9, fontWeight: "800", color: colors.textPrimary, flexShrink: 1 }}>
+                        {txt}
+                      </Text>
+                    );
+                  })() : null}
                 </View>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                   {/* v10.0.1 — MODE badge: Semi=🦾 (hijau), Full=🤖 (biru muda) */}
