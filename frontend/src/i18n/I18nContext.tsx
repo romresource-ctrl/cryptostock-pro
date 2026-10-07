@@ -1064,7 +1064,7 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   },
 
   // v9.5.0 — Copy Trade page
-  copy_sub: { id: "Top 25 profit 24 jam · posisi open & closed tampil per kartu", en: "Top 25 by 24h profit · open & closed positions shown per card", ru: "Топ-25 по прибыли за 24ч · открытые и закрытые позиции отдельно", cn: "按24小时盈利排名前25 · 开仓与平仓逐卡显示" },
+  copy_sub: { id: "Top 25 posisi profit 24 jam · 1 rank = 1 posisi (PnL per aset)", en: "Top 25 positions by 24h profit · 1 rank = 1 position (PnL per asset)", ru: "Топ-25 позиций по прибыли за 24ч · 1 ранг = 1 позиция", cn: "按24小时盈利排名前25仓位 · 1个名次=1个仓位" },
   copy_loading: { id: "Memuat posisi aktif…", en: "Loading active positions…", ru: "Загрузка активных позиций…", cn: "正在加载持仓…" },
   copy_empty_title: { id: "Tidak ada posisi aktif saat ini", en: "No active positions right now", ru: "Сейчас нет активных позиций", cn: "当前没有持仓" },
   copy_empty_body: {

@@ -1231,14 +1231,21 @@ ditemukan → diperbaiki, test PASS. Versi 9.9.13.
   (symbol, side, entry, SL, TP, PnL realized) — bukan hanya inisial + PnL.
 - User: tiap posisi tampil SATU PER SATU dengan PnL masing-masing (tidak
   digabung per aset) → pill penghitung "OPEN POS"/"N× CLOSED" DIHAPUS.
-- Backend `pnl.live_leaderboard`: $group juga push `closed_trades` (maks 10
-  per trader, sort closed_at desc) berisi symbol/side/entry/SL/TP/leverage/
-  pnl_usdt/closed_price/close_reason/closed_at.
-- Frontend `copy-trade.tsx`: kartu closed read-only (badge CLOSED abu,
-  opacity 0.75, baris "Closed @ price · reason · ago"), TANPA tombol
-  EXECUTE. Kartu open tidak berubah (EXECUTE tetap aktif).
-- i18n copy_sub/copy_footer diperbarui (id/en/ru/cn): ranking Top 25 by
-  profit 24h; hanya posisi OPEN yang bisa di-copy.
-- Versi 10.0.3 → 10.0.4 (version.ts, app.json, APP_LATEST_VERSION +
-  release notes). Terverifikasi curl data real + screenshot.
+- Backend `pnl.live_leaderboard`: $group juga push `closed_trades`.
+- Frontend `copy-trade.tsx`: kartu closed read-only, TANPA tombol EXECUTE.
+- Versi 10.0.3 → 10.0.4. Terverifikasi curl data real + screenshot.
+
+## v10.0.5 — Leaderboard: RANK PER POSISI (final, keputusan user)
+- **1 rank = 1 POSISI** (open maupun closed 24 jam), PnL TIDAK digabung
+  per trader/aset. Trader yang sama bisa muncul di banyak rank.
+- Backend `pnl.live_leaderboard`: find open + closed-24h (pnl>0), sort
+  pnl_usdt desc, limit 25; tiap row bawa symbol/side/entry/SL/TP/leverage/
+  mode/entry_mode/pnl/pnl_pct/closed info + wr30d (cache per device).
+- Frontend `copy-trade.tsx`: 1 kartu = 1 posisi; badge seperti Recent
+  Trades (🦾 semi / 🤖 full, chip M ungu / L kuning, tanggal-jam entry,
+  teks "Closed on SL/TP1..."); PnL $+% di PALING KANAN di atas tombol
+  EXECUTE; EXECUTE hanya untuk posisi open.
+- Tipe `AsiLiveTrade` dihapus; `AsiLiveRow` = satu posisi. copy_sub
+  diperbarui 4 bahasa. Versi 10.0.5 (version.ts, app.json,
+  APP_LATEST_VERSION + release notes). Verified curl + screenshot.
 

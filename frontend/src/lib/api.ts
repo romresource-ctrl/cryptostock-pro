@@ -571,7 +571,12 @@ export type AsiLeaderRow = {
   // v9.9.7 — badge DEMO/REAL di leaderboard periode
   testnet?: boolean;
 };
-export type AsiLiveTrade = {
+// v10.0.5 — Satu entri leaderboard = SATU posisi (open/closed), bukan trader.
+export type AsiLiveRow = {
+  rank: number;
+  handle: string;
+  testnet?: boolean;
+  status?: "open" | "closed" | string;
   symbol: string | null;
   side: "BUY" | "SELL" | null;
   entry_price: number | null;
@@ -579,32 +584,17 @@ export type AsiLiveTrade = {
   take_profits: number[] | null;
   leverage: number | null;
   exchange: string | null;
+  // v10.0.5 — badge seperti Recent Trades: mode bot & cara entry
+  mode?: "semi" | "full" | string | null;
+  entry_mode?: "market" | "limit" | string | null;
   created_at: string | null;
-  pnl_usdt?: number | null;
-  // v10.0.4 — field tambahan untuk kartu posisi CLOSED di leaderboard
   closed_at?: string | null;
   closed_price?: number | null;
   close_reason?: string | null;
-};
-export type AsiLiveRow = {
-  rank: number;
-  handle: string;
-  // v9.9.7 — true = trader demo (testnet); UI menampilkan badge DEMO/REAL
-  testnet?: boolean;
-  unrealized_usdt: number;
-  unrealized_pct?: number;
-  // v10.0.3 — total profit 24h = realized_closed + unrealized_open
-  realized_usdt?: number;
-  total_profit_usdt?: number;
-  open_count: number;
-  closed_count?: number;
-  wr30d: number;
-  trades30d: number;
-  latest_trade: AsiLiveTrade;
-  // v10.0.3 — SEMUA posisi open trader (tiap posisi = kartu terpisah)
-  open_trades?: AsiLiveTrade[];
-  // v10.0.4 — posisi closed 24h tampil lengkap (read-only, tanpa EXECUTE)
-  closed_trades?: AsiLiveTrade[];
+  pnl_usdt: number;
+  pnl_pct?: number;
+  wr30d?: number;
+  trades30d?: number;
 };
 export type AsiBotConfig = {
   enabled: boolean;

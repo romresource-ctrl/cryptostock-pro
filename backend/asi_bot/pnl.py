@@ -97,154 +97,96 @@ async def leaderboard(db: Any, period_days: int = 7, limit: int = 25) -> list[di
 
 
 async def live_leaderboard(db: Any, limit: int = 25) -> list[dict[str, Any]]:
-    """v10.0.3 — Top 25 trader berdasarkan TOTAL PROFIT 24 jam terakhir:
-    unrealized (posisi open) + realized (posisi closed). Trader yang masih
-    online (punya posisi open) bisa langsung di-copy via kartu posisi;
-    trader yang sudah selesai hari ini tetap tampil (tanpa kartu posisi)
-    sampai digantikan rank yang lebih tinggi. Hanya profit positif."""
+    """v10.0.5 — RANK PER POSISI (bukan per trader): setiap posisi open
+    maupun closed (24 jam terakhir) menjadi SATU entri leaderboard dengan
+    PnL masing-masing — tidak digabung per trader/aset. Nama trader yang
+    sama bisa muncul di beberapa rank bila punya banyak posisi profit.
+    Hanya posisi ber-PnL positif; EXECUTE hanya untuk status open."""
     since = _iso_days_ago(1)
-    # Agregat total profit per (device, testnet) dari open + closed 24h.
-    pipeline = [
-        {"$match": {
+    cursor = db.asi_trades.find(
+        {
             "$or": [
                 {"status": "open"},
                 {"status": "closed", "closed_at": {"$gte": since}},
                 {"status": "closed", "created_at": {"$gte": since}},
             ],
-        }},
-        {"$sort": {"updated_at": -1}},
-        {"$group": {
-            "_id": {"device": "$device_id", "testnet": {"$eq": ["$testnet", True]}},
-            "unrealized_usdt": {"$sum": {
-                "$cond": [{"$eq": ["$status", "open"]}, {"$ifNull": ["$pnl_usdt", 0]}, 0],
-            }},
-            "realized_usdt": {"$sum": {
-                "$cond": [{"$eq": ["$status", "closed"]}, {"$ifNull": ["$pnl_usdt", 0]}, 0],
-            }},
-            "margin_usdt": {"$sum": {
-                "$cond": [{"$eq": ["$status", "open"]}, {"$ifNull": ["$margin_usdt", 0]}, 0],
-            }},
-            "notional_margin": {"$sum": {"$cond": [
-                {"$eq": ["$status", "open"]},
-                {"$divide": [
-                    {"$multiply": [
-                        {"$ifNull": ["$entry_price", 0]},
-                        {"$ifNull": ["$qty", 0]},
-                    ]},
-                    {"$max": [{"$ifNull": ["$leverage", 1]}, 1]},
-                ]},
-                0,
-            ]}},
-            "open_count": {"$sum": {"$cond": [{"$eq": ["$status", "open"]}, 1, 0]}},
-            "closed_count": {"$sum": {"$cond": [{"$eq": ["$status", "closed"]}, 1, 0]}},
-            "latest": {"$first": "$$ROOT"},
-            "open_trades": {"$push": {
-                "$cond": [{"$eq": ["$status", "open"]}, "$$ROOT", "$$REMOVE"],
-            }},
-            # v10.0.4 — posisi closed 24h juga dikirim lengkap (kartu read-only)
-            "closed_trades": {"$push": {
-                "$cond": [{"$eq": ["$status", "closed"]}, "$$ROOT", "$$REMOVE"],
-            }},
-        }},
-    ]
-    rows = await db.asi_trades.aggregate(pipeline).to_list(limit * 3)
-    enriched: list[dict[str, Any]] = []
-    for r in rows:
-        device_id = r["_id"]["device"]
-        is_demo = bool(r["_id"]["testnet"])
-        unreal = round(r.get("unrealized_usdt") or 0.0, 2)
-        realized = round(r.get("realized_usdt") or 0.0, 2)
-        total = round(unreal + realized, 2)
-        if total <= 0:
-            continue
-        margin = (r.get("margin_usdt") or 0.0) or (r.get("notional_margin") or 0.0)
-        unreal_pct = round(unreal / margin * 100.0, 2) if margin > 0 else 0.0
-        cred = await db.asi_credentials.find_one({"device_id": device_id}, {"handle": 1})
-        handle = (cred or {}).get("handle") or "***"
-        hist = await db.asi_trades.aggregate([
-            {"$match": {
-                "device_id": device_id, "status": "closed",
-                "created_at": {"$gte": _iso_days_ago(30)},
-            }},
-            {"$group": {
-                "_id": None,
-                "trades": {"$sum": 1},
-                "wins": {"$sum": {"$cond": [{"$gt": ["$pnl_usdt", 0]}, 1, 0]}},
-            }},
-        ]).to_list(1)
-        h = hist[0] if hist else {}
-        tr30 = int(h.get("trades") or 0)
-        wr30 = round((h.get("wins") or 0) / tr30 * 100, 1) if tr30 else 0.0
-        latest = r.get("latest") or {}
-        open_trades_sorted = sorted(
-            (r.get("open_trades") or []),
-            key=lambda y: y.get("pnl_usdt") or 0, reverse=True,
-        )
-        # v10.0.4 — closed trades terbaru dulu, maks 10 kartu per trader.
-        closed_trades_sorted = sorted(
-            (r.get("closed_trades") or []),
-            key=lambda y: y.get("closed_at") or y.get("updated_at") or "",
-            reverse=True,
-        )[:10]
-        enriched.append({
-            "handle": handle,
-            "testnet": is_demo,
-            # Backward-compat: unrealized_usdt tetap tersedia (UI lama).
-            "unrealized_usdt": unreal,
-            "unrealized_pct": unreal_pct,
-            "realized_usdt": realized,
-            "total_profit_usdt": total,
-            "open_count": int(r.get("open_count") or 0),
-            "closed_count": int(r.get("closed_count") or 0),
+            "pnl_usdt": {"$gt": 0},
+        },
+        {
+            "device_id": 1, "testnet": 1, "status": 1,
+            "symbol": 1, "side": 1, "entry_price": 1, "stop_loss": 1,
+            "take_profits": 1, "leverage": 1, "exchange": 1, "qty": 1,
+            "margin_usdt": 1, "pnl_usdt": 1,
+            "mode": 1, "entry_mode": 1,
+            "created_at": 1, "closed_at": 1, "closed_price": 1,
+            "close_reason": 1,
+        },
+    ).sort("pnl_usdt", -1).limit(limit)
+    trades = await cursor.to_list(limit)
+
+    # Cache handle & statistik 30 hari per device (trader bisa muncul 2+ rank).
+    handle_cache: dict[str, str] = {}
+    stats_cache: dict[str, tuple[float, int]] = {}
+
+    async def _handle(device_id: str) -> str:
+        if device_id not in handle_cache:
+            cred = await db.asi_credentials.find_one(
+                {"device_id": device_id}, {"handle": 1})
+            handle_cache[device_id] = (cred or {}).get("handle") or "***"
+        return handle_cache[device_id]
+
+    async def _stats30(device_id: str) -> tuple[float, int]:
+        if device_id not in stats_cache:
+            hist = await db.asi_trades.aggregate([
+                {"$match": {
+                    "device_id": device_id, "status": "closed",
+                    "created_at": {"$gte": _iso_days_ago(30)},
+                }},
+                {"$group": {
+                    "_id": None,
+                    "trades": {"$sum": 1},
+                    "wins": {"$sum": {"$cond": [{"$gt": ["$pnl_usdt", 0]}, 1, 0]}},
+                }},
+            ]).to_list(1)
+            h = hist[0] if hist else {}
+            tr30 = int(h.get("trades") or 0)
+            wr30 = round((h.get("wins") or 0) / tr30 * 100, 1) if tr30 else 0.0
+            stats_cache[device_id] = (wr30, tr30)
+        return stats_cache[device_id]
+
+    out: list[dict[str, Any]] = []
+    for i, tr in enumerate(trades):
+        device_id = tr.get("device_id") or ""
+        pnl = round(tr.get("pnl_usdt") or 0.0, 2)
+        margin = tr.get("margin_usdt") or 0.0
+        if margin <= 0:
+            entry = tr.get("entry_price") or 0.0
+            qty = tr.get("qty") or 0.0
+            lev = max(tr.get("leverage") or 1, 1)
+            margin = (entry * qty / lev) if entry and qty else 0.0
+        pnl_pct = round(pnl / margin * 100.0, 2) if margin > 0 else 0.0
+        wr30, tr30 = await _stats30(device_id)
+        out.append({
+            "rank": i + 1,
+            "handle": await _handle(device_id),
+            "testnet": bool(tr.get("testnet")),
+            "status": tr.get("status"),
+            "symbol": tr.get("symbol"),
+            "side": tr.get("side"),
+            "entry_price": tr.get("entry_price"),
+            "stop_loss": tr.get("stop_loss"),
+            "take_profits": tr.get("take_profits"),
+            "leverage": tr.get("leverage"),
+            "exchange": tr.get("exchange"),
+            "mode": tr.get("mode"),
+            "entry_mode": tr.get("entry_mode"),
+            "created_at": tr.get("created_at"),
+            "closed_at": tr.get("closed_at"),
+            "closed_price": tr.get("closed_price"),
+            "close_reason": tr.get("close_reason"),
+            "pnl_usdt": pnl,
+            "pnl_pct": pnl_pct,
             "wr30d": wr30,
             "trades30d": tr30,
-            "latest_trade": {
-                "symbol": latest.get("symbol"),
-                "side": latest.get("side"),
-                "entry_price": latest.get("entry_price"),
-                "stop_loss": latest.get("stop_loss"),
-                "take_profits": latest.get("take_profits"),
-                "leverage": latest.get("leverage"),
-                "exchange": latest.get("exchange"),
-                "created_at": latest.get("created_at"),
-            },
-            "open_trades": [
-                {
-                    "symbol": x.get("symbol"),
-                    "side": x.get("side"),
-                    "entry_price": x.get("entry_price"),
-                    "stop_loss": x.get("stop_loss"),
-                    "take_profits": x.get("take_profits"),
-                    "leverage": x.get("leverage"),
-                    "exchange": x.get("exchange"),
-                    "created_at": x.get("created_at"),
-                    "pnl_usdt": x.get("pnl_usdt"),
-                }
-                for x in open_trades_sorted
-            ],
-            # v10.0.4 — kartu closed lengkap (symbol/entry/SL/TP/PnL realized)
-            # supaya leaderboard tetap informatif walau tidak bisa di-copy.
-            "closed_trades": [
-                {
-                    "symbol": x.get("symbol"),
-                    "side": x.get("side"),
-                    "entry_price": x.get("entry_price"),
-                    "stop_loss": x.get("stop_loss"),
-                    "take_profits": x.get("take_profits"),
-                    "leverage": x.get("leverage"),
-                    "exchange": x.get("exchange"),
-                    "created_at": x.get("created_at"),
-                    "closed_at": x.get("closed_at"),
-                    "closed_price": x.get("closed_price"),
-                    "close_reason": x.get("close_reason"),
-                    "pnl_usdt": x.get("pnl_usdt"),
-                }
-                for x in closed_trades_sorted
-            ],
         })
-    # v10.0.3 — Rank berdasarkan TOTAL PROFIT $ (realized + unrealized 24h).
-    enriched.sort(key=lambda x: x["total_profit_usdt"], reverse=True)
-    out: list[dict[str, Any]] = []
-    for i, row in enumerate(enriched[:limit]):
-        out.append({"rank": i + 1, **row})
     return out

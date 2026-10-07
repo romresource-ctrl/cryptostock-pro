@@ -2879,3 +2879,14 @@ frontend_v1004:
           2 kartu closed lengkap, 0 tombol EXECUTE utk closed.
           Versi bump 10.0.3 → 10.0.4 (version.ts, app.json, server.py
           APP_LATEST_VERSION + release notes).
+
+
+# ======================================================
+# v10.0.5 — Leaderboard: RANK PER POSISI + badge Recent Trades
+# ======================================================
+# Backend: live_leaderboard per-posisi (find open+closed-24h pnl>0, sort
+#   pnl desc, limit 25; field lengkap + mode/entry_mode). Verified curl:
+#   #1 MANA +$54.17, #2 SAND +$17.01 (trader sama, rank terpisah).
+# Frontend: 1 kartu = 1 posisi; PnL $+% di kanan atas EXECUTE; badge
+#   🤖/🦾 mode, M/L entry, tanggal-jam, "Closed on ..."; EXECUTE hanya
+#   open. AsiLiveTrade dihapus. Screenshot PASS. Versi 10.0.5.
