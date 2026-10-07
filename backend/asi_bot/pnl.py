@@ -128,6 +128,10 @@ async def live_leaderboard(db: Any, limit: int = 25) -> list[dict[str, Any]]:
             }},
             "open_count": {"$sum": 1},
             "latest": {"$first": "$$ROOT"},
+            # v10.0.3 — Kumpulkan SEMUA posisi open trader (bukan hanya 1
+            # terbaru) supaya leaderboard menampilkan tiap posisi sebagai
+            # kartu terpisah (permintaan user: 2 open pos = 2 kartu).
+            "all_trades": {"$push": "$$ROOT"},
         }},
         # v9.7.7 — hanya posisi profit sebelum sorting
         {"$match": {"unrealized_usdt": {"$gt": 0}}},
@@ -180,6 +184,24 @@ async def live_leaderboard(db: Any, limit: int = 25) -> list[dict[str, Any]]:
                 "exchange": latest.get("exchange"),
                 "created_at": latest.get("created_at"),
             },
+            # v10.0.3 — semua posisi open, diurutkan dari PnL terbesar.
+            "open_trades": [
+                {
+                    "symbol": x.get("symbol"),
+                    "side": x.get("side"),
+                    "entry_price": x.get("entry_price"),
+                    "stop_loss": x.get("stop_loss"),
+                    "take_profits": x.get("take_profits"),
+                    "leverage": x.get("leverage"),
+                    "exchange": x.get("exchange"),
+                    "created_at": x.get("created_at"),
+                    "pnl_usdt": x.get("pnl_usdt"),
+                }
+                for x in sorted(
+                    r.get("all_trades") or [],
+                    key=lambda y: y.get("pnl_usdt") or 0, reverse=True,
+                )
+            ],
         })
     # v9.7.7 — sort by percentage desc, assign rank, trim to limit
     enriched.sort(key=lambda x: x["unrealized_pct"], reverse=True)

@@ -571,6 +571,17 @@ export type AsiLeaderRow = {
   // v9.9.7 — badge DEMO/REAL di leaderboard periode
   testnet?: boolean;
 };
+export type AsiLiveTrade = {
+  symbol: string | null;
+  side: "BUY" | "SELL" | null;
+  entry_price: number | null;
+  stop_loss: number | null;
+  take_profits: number[] | null;
+  leverage: number | null;
+  exchange: string | null;
+  created_at: string | null;
+  pnl_usdt?: number | null;
+};
 export type AsiLiveRow = {
   rank: number;
   handle: string;
@@ -581,16 +592,9 @@ export type AsiLiveRow = {
   open_count: number;
   wr30d: number;
   trades30d: number;
-  latest_trade: {
-    symbol: string | null;
-    side: "BUY" | "SELL" | null;
-    entry_price: number | null;
-    stop_loss: number | null;
-    take_profits: number[] | null;
-    leverage: number | null;
-    exchange: string | null;
-    created_at: string | null;
-  };
+  latest_trade: AsiLiveTrade;
+  // v10.0.3 — SEMUA posisi open trader (tiap posisi = kartu terpisah)
+  open_trades?: AsiLiveTrade[];
 };
 export type AsiBotConfig = {
   enabled: boolean;

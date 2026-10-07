@@ -2781,3 +2781,31 @@ backend_v1003:
           diblokir — bisa ditambahkan warning bila diminta.
           Mesin VWAP day/swing sebenarnya sudah HOLD counter-trend
           (3R Rule); gate ini menutup celah mesin CONFLUENCE.
+
+# ======================================================
+# v10.0.3b — Leaderboard: semua posisi open sebagai kartu terpisah
+# ======================================================
+backend_v1003b:
+  - task: "live_leaderboard mengirim open_trades[] (semua posisi, sort PnL desc)"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/pnl.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Group pipeline kini $push semua dokumen open; response menyertakan open_trades dengan symbol/side/entry/SL/TP/leverage/created_at/pnl_usdt per posisi. Diverifikasi: 1 trader 2 posisi -> open_trades [SOL, ENA]."
+frontend_v1003b:
+  - task: "Kartu leaderboard merender tiap posisi open + EXECUTE per posisi"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/copy-trade.tsx, /app/frontend/src/lib/api.ts"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Teks '+1 more open position(s)' dihapus; tiap posisi jadi kartu sendiri dengan PnL live per posisi dan tombol EXECUTE yang menyalin posisi tersebut. preparingRank kini keyed per (rank:symbol). Screenshot-verified: trader 2 OPEN POS menampilkan kartu SOL LONG +$0.42 dan ENA SHORT +$0.06 terpisah."

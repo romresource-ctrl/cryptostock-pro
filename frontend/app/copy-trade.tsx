@@ -8,7 +8,7 @@ import { useTheme } from "@/src/theme/ThemeContext";
 import { useI18n } from "@/src/i18n/I18nContext";
 import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
 import PremiumLocked from "@/src/components/PremiumLocked";
-import { api, type AsiLiveRow } from "@/src/lib/api";
+import { api, type AsiLiveRow, type AsiLiveTrade } from "@/src/lib/api";
 import AsiTradeSheet, { type AsiTradeIntent } from "@/src/components/AsiTradeSheet";
 
 const GOLD = "#F0B90B";
@@ -31,12 +31,14 @@ export default function CopyTradeScreen() {
   // trader yang di-copy dengan harga pasar SAAT INI (bukan entry lama).
   const [sheetOpen, setSheetOpen] = useState(false);
   const [copyIntent, setCopyIntent] = useState<AsiTradeIntent | null>(null);
-  const [preparingRank, setPreparingRank] = useState<number | null>(null);
+  const [preparingRank, setPreparingRank] = useState<string | null>(null);
 
-  const onExecuteCopy = useCallback(async (row: AsiLiveRow) => {
-    const tr = row.latest_trade || {};
+  // v10.0.3 — Terima posisi SPESIFIK (trader bisa punya >1 posisi open;
+  // tiap kartu posisi punya tombol EXECUTE sendiri).
+  const onExecuteCopy = useCallback(async (row: AsiLiveRow, tr: AsiLiveTrade) => {
     if (!tr.symbol || !tr.side) return;
-    setPreparingRank(row.rank);
+    const busyKey = `${row.rank}:${tr.symbol}`;
+    setPreparingRank(busyKey);
     try {
       const base = String(tr.symbol).replace("/USDT", "").replace("USDT", "");
       let entry = tr.entry_price || 0;
@@ -154,7 +156,6 @@ export default function CopyTradeScreen() {
         ) : (
           leader.map((row) => {
             const tr = row.latest_trade || {};
-            const isLong = tr.side === "BUY";
             return (
               <View
                 key={`${row.handle}-${row.rank}`}
@@ -199,60 +200,64 @@ export default function CopyTradeScreen() {
                   </View>
                 </View>
 
-                {tr.symbol && tr.side ? (
-                  <View style={[s.tradeRow, { borderColor: colors.border, backgroundColor: colors.background }]}>
-                    <View style={{ flex: 1, gap: 2 }}>
-                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                        <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 15 }}>
-                          {tr.symbol}/USDT
-                        </Text>
-                        <View style={{
-                          paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
-                          backgroundColor: isLong ? GREEN : RED,
-                        }}>
-                          <Text style={{ color: "#fff", fontWeight: "900", fontSize: 10 }}>
-                            {isLong ? "LONG" : "SHORT"} {tr.leverage ? `${tr.leverage}x` : ""}
+                {/* v10.0.3 — SEMUA posisi open trader sebagai kartu
+                    terpisah (bukan 1 kartu + teks "+N more"). Tiap kartu
+                    punya tombol EXECUTE sendiri untuk posisi itu. */}
+                {(row.open_trades?.length ? row.open_trades : (tr.symbol ? [tr] : [])).map((ot, oi) => {
+                  if (!ot.symbol || !ot.side) return null;
+                  const otLong = ot.side === "BUY";
+                  const busyKey = `${row.rank}:${ot.symbol}`;
+                  const otPnl = ot.pnl_usdt ?? null;
+                  return (
+                    <View key={`${row.rank}-${ot.symbol}-${oi}`} style={[s.tradeRow, { borderColor: colors.border, backgroundColor: colors.background }]}>
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                          <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 15 }}>
+                            {ot.symbol}/USDT
                           </Text>
+                          <View style={{
+                            paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
+                            backgroundColor: otLong ? GREEN : RED,
+                          }}>
+                            <Text style={{ color: "#fff", fontWeight: "900", fontSize: 10 }}>
+                              {otLong ? "LONG" : "SHORT"} {ot.leverage ? `${ot.leverage}x` : ""}
+                            </Text>
+                          </View>
+                          {/* PnL live per posisi */}
+                          {otPnl != null ? (
+                            <Text style={{ color: otPnl >= 0 ? GREEN : RED, fontWeight: "900", fontSize: 11 }}>
+                              {otPnl >= 0 ? "+" : ""}${otPnl.toFixed(2)}
+                            </Text>
+                          ) : null}
                         </View>
+                        <Text style={{ color: colors.textMuted, fontSize: 11 }}>
+                          {t("copy_entry_line")
+                            .replace("{price}", (ot.entry_price || 0).toLocaleString())
+                            .replace("{ago}", timeAgo(ot.created_at))}
+                        </Text>
+                        <Text style={{ color: colors.textMuted, fontSize: 10.5, lineHeight: 15 }} numberOfLines={2}>
+                          <Text style={{ color: RED, fontWeight: "800" }}>
+                            SL {ot.stop_loss ? ot.stop_loss.toLocaleString() : "—"}
+                          </Text>
+                          {"  ·  "}
+                          <Text style={{ color: GREEN, fontWeight: "800" }}>
+                            TP {(ot.take_profits || []).map((x) => x.toLocaleString()).join(" / ") || "—"}
+                          </Text>
+                        </Text>
                       </View>
-                      <Text style={{ color: colors.textMuted, fontSize: 11 }}>
-                        {t("copy_entry_line")
-                          .replace("{price}", (tr.entry_price || 0).toLocaleString())
-                          .replace("{ago}", timeAgo(tr.created_at))}
-                      </Text>
-                      {/* v9.9.9 — Detail lengkap di leaderboard: SL & TP dari
-                          posisi trader (permintaan user: Entry/SL/TP/Lev/PnL
-                          harus terlihat di semua rank 1-25). */}
-                      <Text style={{ color: colors.textMuted, fontSize: 10.5, lineHeight: 15 }} numberOfLines={2}>
-                        <Text style={{ color: RED, fontWeight: "800" }}>
-                          SL {tr.stop_loss ? tr.stop_loss.toLocaleString() : "—"}
-                        </Text>
-                        {"  ·  "}
-                        <Text style={{ color: GREEN, fontWeight: "800" }}>
-                          TP {(tr.take_profits || []).map((x) => x.toLocaleString()).join(" / ") || "—"}
-                        </Text>
-                      </Text>
-                      {/* v9.9.9 — Bila trader punya >1 posisi terbuka,
-                          tunjukkan jumlah sisanya agar pill "N OPEN POS"
-                          tidak membingungkan. */}
-                      {(row.open_count ?? 0) > 1 ? (
-                        <Text style={{ color: BLUE, fontSize: 10, fontWeight: "700", marginTop: 1 }}>
-                          {t("copy_more_positions").replace("{n}", String((row.open_count ?? 1) - 1))}
-                        </Text>
-                      ) : null}
+                      <TouchableOpacity
+                        style={[s.copyBtn, { backgroundColor: GOLD }]}
+                        onPress={() => onExecuteCopy(row, ot)}
+                        disabled={preparingRank === busyKey}
+                        testID={`copy-execute-${row.rank}-${ot.symbol}`}
+                      >
+                        {preparingRank === busyKey
+                          ? <ActivityIndicator size="small" color="#0B0E11" />
+                          : <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 11 }}>{t("copy_execute")}</Text>}
+                      </TouchableOpacity>
                     </View>
-                    <TouchableOpacity
-                      style={[s.copyBtn, { backgroundColor: GOLD }]}
-                      onPress={() => onExecuteCopy(row)}
-                      disabled={preparingRank === row.rank}
-                      testID={`copy-execute-${row.rank}`}
-                    >
-                      {preparingRank === row.rank
-                        ? <ActivityIndicator size="small" color="#0B0E11" />
-                        : <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 11 }}>{t("copy_execute")}</Text>}
-                    </TouchableOpacity>
-                  </View>
-                ) : null}
+                  );
+                })}
               </View>
             );
           })
