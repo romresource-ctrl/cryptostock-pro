@@ -2908,3 +2908,14 @@ frontend_v1004:
 #   10.0.1→10.0.5 (git diff hanya pnl.py) — crash asi-bot di app lama
 #   kemungkinan efek sekunder; perlu konfirmasi user setelah fix ini.
 # Solusi definitif: user install build 10.0.5 (popup update sudah tampil).
+# ======================================================
+# v10.0.5b — Update popup: notes sederhana + tanpa Google Play
+# ======================================================
+# User: notifikasi update menampilkan teknis/formula (ATR, anchor-to-fill,
+#   John Wick, dst) dan menyebut Google Play (app belum di Play Store).
+# FIX backend (langsung ke app lama): APP_UPDATE_NOTES ditulis ulang awam.
+# FIX frontend (build baru): i18n update_body/update_now tanpa Google Play,
+#   ikon download. Title/body/btn app lama baked di APK — hanya berubah
+#   di build 10.0.5. Verified curl /app-version.
+# Leaderboard compat: unrealized_usdt=pnl & open_count=1 → app lama tidak
+#   lagi tampil "+$0.00 / 0 OPEN POS". Repro kode 10.0.2 PASS.

@@ -1674,28 +1674,28 @@ async def search_assets(
 APP_LATEST_VERSION = "10.0.5"
 
 # v10.0.1 — Release notes untuk popup update (per bahasa).
+# v10.0.5 — Ditulis ulang dengan bahasa sederhana untuk pengguna awam:
+# tanpa istilah teknis/formula (ATR, anchor-to-fill, nama strategi, dst).
 APP_UPDATE_NOTES = {
     "id": (
-        "• Entry LIMIT Moderate (-0.5/-0.3 ATR): order bot jauh lebih mudah terisi, tunggu maks 2 candle lalu auto-cancel\n"
-        "• Perbaikan akar masalah close dini: SL/TP kini ter-anchor ke harga fill NYATA (anchor-to-fill) + guard TP salah-sisi\n"
-        "• TP split benar di semua jalur: TP1 ⅓, TP2 ⅓, TP3 sisa (tidak lagi tutup 100% di TP1)\n"
-        "• Floor TP minimum: TP1 tidak bisa lagi 'nempel' di entry\n"
-        "• Mark price REALTIME (2 detik) di samping simbol posisi open\n"
-        "• Frame kartu Recent Trades: hijau = profit, merah = loss, emas = LIMIT antri\n"
-        "• Badge LIMIT + tombol CANCEL untuk order antri; swipe-to-delete kartu history\n"
-        "• Label formula singkat per trade (John Wick, KISS Pivot, Box Theory, dst)\n"
-        "• Leaderboard Copy Trade: 1 rank = 1 POSISI (bukan gabungan per trader) — open & closed tampil lengkap (symbol, entry, SL, TP); PnL di kanan atas tombol EXECUTE; EXECUTE tersedia di semua kartu (closed memakai harga pasar saat ini)"
+        "• Sinyal bot lebih akurat mengikuti tren harian\n"
+        "• Perbaikan posisi yang tertutup terlalu cepat sebelum target profit\n"
+        "• Target profit terbagi otomatis menjadi 3 tahap (sebagian-sebagian, tidak langsung semua)\n"
+        "• Harga berjalan tampil realtime di setiap posisi yang sedang terbuka\n"
+        "• Kartu trade berwarna: hijau = untung, merah = rugi, kuning = order menunggu\n"
+        "• Order yang belum terisi otomatis dibatalkan, bisa juga dibatalkan manual\n"
+        "• Leaderboard Copy Trade: setiap posisi tampil lengkap dengan untung/rugi masing-masing\n"
+        "• Berbagai perbaikan kecil dan peningkatan kestabilan"
     ),
     "en": (
-        "• Moderate LIMIT entries (-0.5/-0.3 ATR): bot orders fill far more often, auto-cancel after 2 candles\n"
-        "• Early-close root fix: SL/TP now anchored to the ACTUAL fill price (anchor-to-fill) + wrong-side TP guard\n"
-        "• Correct TP splitting everywhere: TP1 ⅓, TP2 ⅓, TP3 remainder (no more 100% close at TP1)\n"
-        "• Minimum TP floor: TP1 can no longer sit on top of entry\n"
-        "• REALTIME mark price (2s) next to the symbol of open positions\n"
-        "• Recent Trades card frames: green = profit, red = loss, gold = LIMIT pending\n"
-        "• LIMIT badge + CANCEL button for queued orders; swipe-to-delete history cards\n"
-        "• Short per-trade formula labels (John Wick, KISS Pivot, Box Theory, etc.)\n"
-        "• Copy Trade leaderboard: 1 rank = 1 POSITION (not merged per trader) — open & closed shown with full details (symbol, entry, SL, TP); PnL on the right above EXECUTE; EXECUTE available on every card (closed positions use current market price)"
+        "• Bot signals now follow the daily trend more accurately\n"
+        "• Fixed positions closing too early before reaching profit targets\n"
+        "• Profit targets now close gradually in 3 stages (not all at once)\n"
+        "• Live prices shown in real time on every open position\n"
+        "• Color-coded trade cards: green = profit, red = loss, gold = waiting order\n"
+        "• Unfilled orders cancel automatically, or cancel them manually\n"
+        "• Copy Trade leaderboard: every position shown with its own profit/loss\n"
+        "• Various minor fixes and stability improvements"
     ),
 }
 
