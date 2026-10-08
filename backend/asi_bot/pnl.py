@@ -120,6 +120,11 @@ async def live_leaderboard(db: Any, limit: int = 25) -> list[dict[str, Any]]:
             "mode": 1, "entry_mode": 1,
             "created_at": 1, "closed_at": 1, "closed_price": 1,
             "close_reason": 1,
+            # v10.0.13 — ikut dibawa supaya UI leaderboard bisa:
+            #   (a) hitung PnL realtime dari mark price Futures Perp
+            #       (butuh qty & margin_usdt),
+            #   (b) menampilkan status/harga TP partial (tp_fills).
+            "tp_fills": 1,
         },
     ).sort("pnl_usdt", -1).limit(limit)
     trades = await cursor.to_list(limit)
@@ -208,6 +213,11 @@ async def live_leaderboard(db: Any, limit: int = 25) -> list[dict[str, Any]]:
             "pnl_pct": pnl_pct,
             "wr30d": wr30,
             "trades30d": tr30,
+            # v10.0.13 — Dibutuhkan UI leaderboard untuk hitung PnL realtime
+            # & menampilkan status/harga partial TP.
+            "qty": tr.get("qty"),
+            "margin_usdt": margin,
+            "tp_fills": tr.get("tp_fills") or [],
             # ---- field kompatibilitas untuk app versi lama ----
             # unrealized/total diisi pnl aktual (positif) supaya app lama
             # tidak menampilkan "+$0.00"; open_count=1 agar pill "0 OPEN

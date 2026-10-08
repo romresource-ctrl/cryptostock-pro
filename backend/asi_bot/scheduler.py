@@ -114,6 +114,19 @@ async def _close_soft_trade(db: Any, trade: dict[str, Any], reason: str,
         "qty_remaining": 0.0 if full_close else remaining,
         "updated_at": now,
     }
+    # v10.0.13 — Rekam harga setiap TP hit (atau SL). Dipakai UI untuk
+    # menampilkan "TP1 hit · $xxx", "TP2 hit · $xxx" per baris trade. SL
+    # dan close terakhir juga ikut ter-rekam.
+    if exit_px:
+        tp_fills = list(trade.get("tp_fills") or [])
+        tp_fills.append({
+            "level": reason,             # "TP1" / "TP2" / "TP3" / "SL"
+            "price": round(exit_px, 8),
+            "qty": round(qty, 10),
+            "pnl": round(leg_pnl, 4),
+            "at": now,
+        })
+        upd["tp_fills"] = tp_fills
     if full_close:
         upd.update({
             "status": "closed",

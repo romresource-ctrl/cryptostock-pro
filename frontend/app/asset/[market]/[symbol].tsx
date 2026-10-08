@@ -1206,26 +1206,9 @@ export default function AssetDetail() {
                       </View>
                     ) : null}
 
-                    {/* v10.0.11 — Tombol EXECUTE kontekstual: muncul hanya
-                        bila prediksi punya arah (UP/DOWN) dan market crypto.
-                        Arah & level langsung dari sinyal, membuka sheet
-                        Semi-Auto ASI-Bot untuk konfirmasi. */}
-                    {isCrypto && (isUp || isDown) ? (
-                      <TouchableOpacity
-                        testID="ai-prediction-execute"
-                        onPress={() => executeFromSignal(isUp ? "BUY" : "SELL")}
-                        style={{
-                          marginTop: 12, backgroundColor: dirColor, borderRadius: 8,
-                          paddingVertical: 11, flexDirection: "row",
-                          alignItems: "center", justifyContent: "center", gap: 6,
-                        }}
-                      >
-                        <Ionicons name="flash" size={14} color="#fff" />
-                        <Text style={{ color: "#fff", fontWeight: "900", fontSize: 12, letterSpacing: 0.4 }}>
-                          EXECUTE {isUp ? "LONG" : "SHORT"} · ASI-BOT
-                        </Text>
-                      </TouchableOpacity>
-                    ) : null}
+                    {/* v10.0.13 — Tombol EXECUTE di kartu Predict DIHAPUS.
+                        Satu-satunya CTA eksekusi berada di kartu AI
+                        Consensus (ANALYZE) di bawah, sesuai permintaan user. */}
                     <Text style={{ fontSize: 9, color: colors.textMuted, marginTop: 8, fontStyle: "italic" }}>
                       Instant prediction from technical indicators. Tap {t("detail_ai_btn")} for full multi-model deep analysis.
                     </Text>

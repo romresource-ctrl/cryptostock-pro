@@ -595,6 +595,11 @@ export type AsiLiveRow = {
   pnl_pct?: number;
   wr30d?: number;
   trades30d?: number;
+  // v10.0.13 — Dibutuhkan utk hitung PnL realtime di leaderboard dari
+  // mark price Futures Perp + tampilan status/harga partial TP.
+  qty?: number | null;
+  margin_usdt?: number | null;
+  tp_fills?: Array<{ level: string; price: number | null; qty: number; pnl: number | null; at: string }> | null;
 };
 export type AsiBotConfig = {
   enabled: boolean;

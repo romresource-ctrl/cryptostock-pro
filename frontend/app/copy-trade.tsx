@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -84,6 +84,66 @@ export default function CopyTradeScreen() {
     setRefreshing(true);
     load();
   }, [load]);
+
+  // v10.0.13 — Mark price Binance Futures Perpetual realtime untuk tiap
+  // posisi OPEN di leaderboard. Polling 2s + flash hijau/merah per tick,
+  // sejajar dengan Positions screen dan Recent Trades (ASI-Bot).
+  const [livePx, setLivePx] = useState<Record<string, number>>({});
+  const [flashDir, setFlashDir] = useState<Record<string, "up" | "down">>({});
+  const prevPxRef = useRef<Record<string, number>>({});
+  const flashTimerRef = useRef<any>(null);
+  const openSymsKey = useMemo(() => {
+    const set = new Set<string>();
+    leader.forEach((row) => {
+      if (row.status === "open" && row.symbol) {
+        set.add(String(row.symbol).replace(/USDT$/, ""));
+      }
+    });
+    return Array.from(set).join(",");
+  }, [leader]);
+  useEffect(() => {
+    if (!openSymsKey) { setLivePx({}); return; }
+    const syms = openSymsKey.split(",");
+    let alive = true;
+    const tick = async () => {
+      try {
+        const r = await api.asi.prices(syms);
+        if (!alive) return;
+        const m: Record<string, number> = {};
+        Object.entries(r.prices || {}).forEach(([k, v]) => {
+          m[k.replace(/USDT$/, "")] = v as number;
+        });
+        const f: Record<string, "up" | "down"> = {};
+        Object.entries(m).forEach(([k, v]) => {
+          const prev = prevPxRef.current[k];
+          if (prev != null && v !== prev) f[k] = v > prev ? "up" : "down";
+        });
+        prevPxRef.current = m;
+        setLivePx(m);
+        if (Object.keys(f).length > 0) {
+          setFlashDir((cur) => ({ ...cur, ...f }));
+          if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+          flashTimerRef.current = setTimeout(() => setFlashDir({}), 700);
+        }
+      } catch { /* keep previous */ }
+    };
+    tick();
+    const id = setInterval(tick, 2000);
+    return () => { alive = false; clearInterval(id); };
+  }, [openSymsKey]);
+
+  // v10.0.13 — Format harga adaptif (sama polanya dengan Positions/Recent).
+  const fp = (v: number | null | undefined): string => {
+    if (v == null || isNaN(Number(v))) return "—";
+    const n = Number(v);
+    const abs = Math.abs(n);
+    if (abs >= 1000) return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (abs >= 100) return n.toFixed(2);
+    if (abs >= 1) return n.toFixed(4);
+    if (abs >= 0.01) return n.toFixed(5);
+    if (abs >= 0.0001) return n.toFixed(6);
+    return n.toFixed(8).replace(/\.?0+$/, "");
+  };
 
   // v10.0.5 — Format tanggal/jam & teks penyebab close, sama seperti
   // kartu Recent Trades ("Closed on SL/TP1", "Canceled upon expiry", dst).
@@ -185,7 +245,14 @@ export default function CopyTradeScreen() {
             const isOpen = row.status === "open";
             const isLong = row.side === "BUY";
             const busyKey = String(row.rank);
-            const pnl = row.pnl_usdt ?? 0;
+            // v10.0.13 — PnL realtime dari mark price Futures Perp.
+            const symBase = row.symbol ? String(row.symbol).replace(/USDT$/, "") : "";
+            const lp = symBase ? livePx[symBase] : undefined;
+            let pnl = Number(row.pnl_usdt ?? 0);
+            if (isOpen && lp != null && row.entry_price && (row as any).qty) {
+              pnl = (isLong ? 1 : -1) * (lp - Number(row.entry_price)) * Number((row as any).qty);
+            }
+            const fd = symBase ? flashDir[symBase] : undefined;
             return (
               <View
                 key={`${row.rank}-${row.symbol}-${row.status}`}
@@ -269,6 +336,21 @@ export default function CopyTradeScreen() {
                           {isLong ? "LONG" : "SHORT"} {row.leverage ? `${row.leverage}x` : ""}
                         </Text>
                       </View>
+                      {/* v10.0.13 — Mark price PERP realtime (poll 2s), BESAR
+                          & PUTIH + flash hijau/merah seperti candlestick */}
+                      {isOpen && lp != null ? (
+                        <View style={{
+                          paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4,
+                          backgroundColor: fd === "up" ? GREEN + "33" : fd === "down" ? RED + "33" : "transparent",
+                        }}>
+                          <Text style={{
+                            color: "#FFFFFF", fontWeight: "900", fontSize: 13,
+                            fontVariant: ["tabular-nums"], letterSpacing: 0.3,
+                          }}>
+                            ${fp(lp)}{fd ? (fd === "up" ? " ▲" : " ▼") : ""}
+                          </Text>
+                        </View>
+                      ) : null}
                     </View>
                     <Text style={{ color: colors.textMuted, fontSize: 11 }}>
                       {t("copy_entry_line")
@@ -290,18 +372,48 @@ export default function CopyTradeScreen() {
                         {row.closed_at ? ` · ${fmtDateTime(row.closed_at)}` : ""}
                       </Text>
                     ) : null}
+                    {/* v10.0.13 — TP partial hits: menunjukkan harga close
+                        parsial TP1/TP2. TP3 akan memfinalkan posisi dan
+                        tidak muncul di sini (sudah tutup penuh). */}
+                    {Array.isArray((row as any).tp_fills) && (row as any).tp_fills.length > 0 ? (
+                      <View style={{ marginTop: 2, gap: 1 }}>
+                        {(row as any).tp_fills.map((f: any, i: number) => (
+                          <Text key={i} style={{ fontSize: 10.5, fontWeight: "800", color: "#FFFFFF" }}>
+                            ✓ {String(f.level)} HIT · ${f.price != null ? fp(Number(f.price)) : "—"}
+                            {f.pnl != null ? (
+                              <Text style={{ color: Number(f.pnl) >= 0 ? GREEN : RED, fontWeight: "900" }}>
+                                {"  "}{Number(f.pnl) >= 0 ? "+" : "-"}${Math.abs(Number(f.pnl)).toFixed(2)}
+                              </Text>
+                            ) : null}
+                          </Text>
+                        ))}
+                      </View>
+                    ) : null}
                   </View>
                   {/* v10.0.5 — PnL paling kanan, di atas tombol EXECUTE */}
                   <View style={{ alignItems: "flex-end", gap: 6 }}>
                     <View style={{ alignItems: "flex-end" }}>
-                      <Text style={{ color: pnl >= 0 ? GREEN : RED, fontWeight: "900", fontSize: 17 }}>
-                        {pnl >= 0 ? "+" : "-"}${Math.abs(pnl).toFixed(2)}
-                      </Text>
-                      {row.pnl_pct != null ? (
-                        <Text style={{ color: pnl >= 0 ? GREEN : RED, fontWeight: "700", fontSize: 10 }}>
-                          {row.pnl_pct >= 0 ? "+" : ""}{row.pnl_pct.toFixed(2)}%
+                      {/* v10.0.13 — PnL juga dapat flash background sesuai arah tick */}
+                      <View style={{
+                        paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4,
+                        backgroundColor: isOpen && fd === "up" ? GREEN + "33"
+                          : isOpen && fd === "down" ? RED + "33" : "transparent",
+                      }}>
+                        <Text style={{ color: pnl >= 0 ? GREEN : RED, fontWeight: "900", fontSize: 17, fontVariant: ["tabular-nums"] }}>
+                          {pnl >= 0 ? "+" : "-"}${Math.abs(pnl).toFixed(2)}
                         </Text>
-                      ) : null}
+                      </View>
+                      {(() => {
+                        const pct = isOpen && row.entry_price && (row as any).margin_usdt
+                          ? (pnl / Number((row as any).margin_usdt)) * 100
+                          : row.pnl_pct;
+                        return pct != null ? (
+                          <Text style={{ color: pnl >= 0 ? GREEN : RED, fontWeight: "700", fontSize: 10 }}>
+                            {pct >= 0 ? "+" : ""}{Number(pct).toFixed(2)}%
+                            {isOpen && fd ? (fd === "up" ? " ▲" : " ▼") : ""}
+                          </Text>
+                        ) : null;
+                      })()}
                     </View>
                     {/* v10.0.5 — EXECUTE SELALU tampil di bawah angka PnL,
                         tapi READ-ONLY (abu, nonaktif) untuk posisi closed;

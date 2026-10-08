@@ -3039,3 +3039,84 @@ frontend_v1004:
 #   STX/FLOKI/AGIX premium terverifikasi via curl + screenshot).
 # TINDAKAN: bukan bug kode. User harus klik Publish/Deploy agar production
 #   naik ke 10.0.12. Dashboard fix murni backend → tidak perlu APK baru.
+
+# ======================================================
+# v10.0.13 — Realtime Futures Perp mark price + partial TP fills
+# ======================================================
+backend_v10_0_13:
+  - task: "Native partial TP detection in _refresh_binance"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/asi_bot/engine.py"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          _refresh_binance now compares current positionAmt with the
+          previous snapshot (prev_position_amt field persisted on each
+          refresh) and, when a reduction >=1% is detected, attributes
+          the fill to the next unfilled TP level, writes to tp_filled[]
+          and appends an entry to tp_fills[{level, price, qty, pnl, at}]
+          using br.last_fill_price for the actual exit price.
+          Snapshot `prev_position_amt` is always updated.
+          Does NOT touch soft-watcher path (scheduler.py already writes
+          tp_fills). No regression expected for closed-position path.
+  - task: "live_leaderboard returns qty / margin_usdt / tp_fills"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/asi_bot/pnl.py"
+    needs_retesting: true
+frontend_v10_0_13:
+  - task: "Realtime mark price (BIG/WHITE + candle flash) + TP fills on Positions"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/trades-position.tsx"
+    needs_retesting: true
+  - task: "Recent Trades (asi-bot): big white mark price + flash on PnL + tp_fills row"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/asi-bot.tsx"
+    needs_retesting: true
+  - task: "Leaderboard (copy-trade): realtime polling + flash + mark price pill + tp_fills"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/copy-trade.tsx"
+    needs_retesting: true
+  - task: "Asset detail: remove duplicate EXECUTE from Predict, keep only ANALYZE card"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/asset/[market]/[symbol].tsx"
+    needs_retesting: true
+  - task: "useBinanceRealtime now uses Binance Futures (fstream) as primary WS"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/hooks/useBinanceRealtime.ts"
+    needs_retesting: true
+metadata_v10_0_13:
+  created_by: "main_agent"
+  version: "10.0.12"
+  test_sequence: 38
+  run_ui: false
+agent_communication:
+  - agent: "main"
+    message: |
+      v10.0.13 UI changes (version pin stays at 10.0.12 for user build):
+      1. Positions, Recent Trades (asi-bot), and Leaderboard (copy-trade)
+         now display mark price from Binance Futures Perpetual (via
+         /asi/prices which hits fapi.binance.com) BIG / WHITE / BOLD with
+         a green-up / red-down 700ms flash background on tick change,
+         mirroring the "candlestick" live feeling the user asked for.
+      2. PnL also flashes with the same direction and remains green/red
+         based on sign; realized/closed trades keep their historical PnL.
+      3. TP partial fills: UI shows "✓ TP1 HIT · $price" / "✓ TP2 HIT · $price"
+         rows wherever tp_fills exists. Soft-watcher path already writes
+         tp_fills; native Binance path now writes tp_fills in
+         _refresh_binance when positionAmt reduction is detected.
+      4. Chart detail (useBinanceRealtime): fstream (Futures) is the
+         primary WS; data-stream/stream.binance.com stay as fallbacks.
+         This also restores the "Buy the Dip / Sell the Top" ladder badges
+         because WS now connects for perp-only symbols too.
+      5. Asset detail Predict box: EXECUTE button removed per user; the
+         only EXECUTE CTA is now inside the ANALYZE / AI Consensus card.
+      Do NOT bump app version; user requested 10.0.12 for current build.

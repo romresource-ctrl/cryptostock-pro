@@ -1454,6 +1454,55 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
         actual_mm = str(pos.get("marginType") or "").lower()
         mark = pos.get("markPrice")
         actual_lev = int(float(pos.get("leverage") or trade.get("leverage") or 0))
+        # v10.0.13 — Deteksi PARTIAL TP native (Binance bracket). Posisi
+        # masih terbuka tetapi positionAmt menurun dari tick sebelumnya
+        # (atau dari qty awal) → TP level berikutnya sudah ter-isi di
+        # exchange. Catat level + harga ke `tp_fills` supaya UI dapat
+        # menampilkan "TP1 HIT · $xxx" / "TP2 HIT · $xxx" sama seperti
+        # jalur soft watcher.
+        _native_partial_upd: dict[str, Any] = {}
+        try:
+            new_qty = abs(amt)
+            tps = [float(x) for x in (trade.get("take_profits") or []) if x]
+            prev_amt = float(trade.get("prev_position_amt") or trade.get("qty") or 0)
+            tp_filled_list = list(trade.get("tp_filled") or [])
+            while len(tp_filled_list) < len(tps):
+                tp_filled_list.append(False)
+            # Hanya proses bila (a) ada TP ladder dan (b) qty berkurang
+            # minimal 1% (hindari noise rounding).
+            if (tps and prev_amt > 0 and new_qty > 0
+                    and new_qty < prev_amt * 0.99):
+                reduction = prev_amt - new_qty
+                # Cari TP level unfilled berikutnya.
+                next_idx = next((i for i, f in enumerate(tp_filled_list) if not f), None)
+                if next_idx is not None and next_idx < len(tps):
+                    tp_filled_list[next_idx] = True
+                    fill_px = None
+                    try:
+                        fill_px = await br.last_fill_price(
+                            api_key, api_secret, is_testnet, bin_sym)
+                    except Exception:
+                        fill_px = None
+                    entry_px = float(trade.get("entry_price") or 0)
+                    sign = 1.0 if trade.get("side") == "BUY" else -1.0
+                    leg_pnl = ((fill_px - entry_px) * reduction * sign
+                               if fill_px else None)
+                    tp_fills = list(trade.get("tp_fills") or [])
+                    tp_fills.append({
+                        "level": f"TP{next_idx + 1}",
+                        "price": round(fill_px, 8) if fill_px else None,
+                        "qty": round(reduction, 10),
+                        "pnl": round(leg_pnl, 4) if leg_pnl is not None else None,
+                        "at": datetime.now(timezone.utc).isoformat(),
+                    })
+                    _native_partial_upd["tp_fills"] = tp_fills
+                    _native_partial_upd["tp_filled"] = tp_filled_list
+                    _native_partial_upd["qty_remaining"] = round(new_qty, 10)
+            # Selalu simpan snapshot positionAmt untuk perbandingan tick
+            # berikutnya (dipakai untuk deteksi partial di atas).
+            _native_partial_upd["prev_position_amt"] = round(new_qty, 10)
+        except Exception:
+            _native_partial_upd = {"prev_position_amt": round(abs(amt), 10)}
         # Verify bracket still armed in openAlgoOrders
         try:
             openalgos = await br.open_algo_orders(api_key, api_secret, is_testnet, bin_sym)
@@ -1510,6 +1559,7 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
             "mark_price": float(mark) if mark else None,
             "actual_margin_mode": actual_mm,
             "actual_leverage": actual_lev,
+            **_native_partial_upd,
         }
         if bracket_live is not None:
             upd["bracket_live"] = bracket_live

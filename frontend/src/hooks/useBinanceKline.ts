@@ -73,6 +73,9 @@ export function useBinanceKline(
     // read-only mirror hosted on Cloudflare — allowed from most regions
     // including preview pods). Fallback to main + US mirror if it drops.
     const urls = [
+      // v10.0.13 — Futures kline (fstream) didahulukan sehingga grafik
+      // live mengikuti harga perp. Jatuh ke spot bila futures tak tersedia.
+      `wss://fstream.binance.com/ws/${streamPath}`,
       `wss://data-stream.binance.vision/ws/${streamPath}`,
       `wss://stream.binance.com:9443/ws/${streamPath}`,
       `wss://stream.binance.us:9443/ws/${streamPath}`,

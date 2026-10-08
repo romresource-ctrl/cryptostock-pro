@@ -66,11 +66,14 @@ export function useBinanceRealtime(
     }
 
     const streamPath = `${upper.toLowerCase()}${quote}@ticker`;
-    // v8.6.7 — Lead with `data-stream.binance.vision` (Cloudflare-fronted
-    // read-only mirror, works from more regions than the main endpoint).
-    // The other URLs remain as fallbacks — including the US mirror so
-    // US-restricted pods can still subscribe.
+    // v10.0.13 — Prioritaskan Binance FUTURES (fstream) sebagai sumber WS
+    // utama supaya harga realtime = perp mark/last (bukan spot). Ini juga
+    // yang membuat hook useDipTopAlert kembali terpicu — beberapa simbol
+    // (contoh: PENGU, WIF versi lama) tidak ada di spot tapi ada di
+    // perpetual futures, sehingga WS spot gagal konek dan dip/top tidak
+    // pernah menerima tick. Spot tetap sebagai fallback terakhir.
     const urls = [
+      `wss://fstream.binance.com/ws/${streamPath}`,
       `wss://data-stream.binance.vision/ws/${streamPath}`,
       `wss://stream.binance.com:9443/ws/${streamPath}`,
       `wss://stream.binance.us:9443/ws/${streamPath}`,

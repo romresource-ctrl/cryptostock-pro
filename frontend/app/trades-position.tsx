@@ -188,7 +188,6 @@ export default function TradesPositionScreen() {
       pnl = (isLong ? 1 : -1) * (live - Number(tr.entry_price)) * Number(tr.qty);
     }
     const flashDir = symKey ? flash[symKey] : undefined;
-    const priceColor = flashDir === "up" ? GREEN : flashDir === "down" ? RED : colors.textMuted;
     const borderColor = isPending ? YELLOW
       : (isOpen ? (pnl >= 0 ? GREEN : RED) : colors.border);
     const canDelete = !isOpen && !isPending;
@@ -228,10 +227,21 @@ export default function TradesPositionScreen() {
             </Text>
           </View>
           {live != null ? (
-            <Text style={{ color: priceColor, fontSize: 11, fontWeight: "900" }}>
-              · ${fp(live)}
-              {flashDir ? (flashDir === "up" ? " ▲" : " ▼") : ""}
-            </Text>
+            // v10.0.13 — Mark price PERP: besar, putih terang, berkedip
+            // (background flash hijau/merah 700ms) saat tick berubah. Angka
+            // menonjol seperti harga di detail aset.
+            <View style={{
+              paddingHorizontal: 7, paddingVertical: 2, borderRadius: 5,
+              backgroundColor: flashDir === "up" ? GREEN + "33"
+                : flashDir === "down" ? RED + "33" : "transparent",
+            }}>
+              <Text style={{
+                color: "#FFFFFF", fontSize: 15, fontWeight: "900",
+                fontVariant: ["tabular-nums"], letterSpacing: 0.3,
+              }}>
+                ${fp(live)}{flashDir ? (flashDir === "up" ? " ▲" : " ▼") : ""}
+              </Text>
+            </View>
           ) : null}
         </View>
 
@@ -255,6 +265,23 @@ export default function TradesPositionScreen() {
                 Margin ${Number(tr.margin_usdt).toFixed(2)}
               </Text>
             ) : null}
+            {/* v10.0.13 — Riwayat TP hit: tampilkan tiap level yang sudah
+                terisi dengan harga closed-nya (putih terang). TP3 selalu
+                menutup posisi penuh dan sudah masuk PnL total di atas. */}
+            {Array.isArray(tr.tp_fills) && tr.tp_fills.length > 0 ? (
+              <View style={{ marginTop: 2 }}>
+                {tr.tp_fills.map((f: any, i: number) => (
+                  <Text key={i} style={{ fontSize: 10.5, fontWeight: "800", color: "#FFFFFF" }}>
+                    ✓ {String(f.level)} hit · ${fp(Number(f.price))}
+                    {f.pnl != null ? (
+                      <Text style={{ color: Number(f.pnl) >= 0 ? GREEN : RED, fontWeight: "900" }}>
+                        {"  "}{Number(f.pnl) >= 0 ? "+" : "-"}${Math.abs(Number(f.pnl)).toFixed(2)}
+                      </Text>
+                    ) : null}
+                  </Text>
+                ))}
+              </View>
+            ) : null}
             {!isOpen && !isPending ? (
               <Text style={{ color: colors.textMuted, fontSize: 10.5 }}>
                 {closedReason(tr.close_reason)}
@@ -271,9 +298,17 @@ export default function TradesPositionScreen() {
               </View>
             ) : (
               <View style={{ alignItems: "flex-end" }}>
-                <Text style={{ color: pnl >= 0 ? GREEN : RED, fontWeight: "900", fontSize: 17 }}>
-                  {pnl >= 0 ? "+" : "-"}${Math.abs(pnl).toFixed(2)}
-                </Text>
+                {/* v10.0.13 — PnL juga mendapat background flash saat tick
+                    berubah supaya 'hidup' seperti chart. */}
+                <View style={{
+                  paddingHorizontal: 7, paddingVertical: 2, borderRadius: 5,
+                  backgroundColor: flashDir === "up" ? GREEN + "33"
+                    : flashDir === "down" ? RED + "33" : "transparent",
+                }}>
+                  <Text style={{ color: pnl >= 0 ? GREEN : RED, fontWeight: "900", fontSize: 19, fontVariant: ["tabular-nums"] }}>
+                    {pnl >= 0 ? "+" : "-"}${Math.abs(pnl).toFixed(2)}
+                  </Text>
+                </View>
                 {/* v10.0.10 — % PnL realtime terhadap margin + indikator LIVE
                     yang berkedip mengikuti arah tick harga. */}
                 {isOpen && tr.margin_usdt ? (

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -107,6 +107,11 @@ export default function ASIBotScreen() {
   // (backend cache 1 detik via proxy SG). Angka harga di samping symbol
   // berubah live, dan frame kartu hijau/merah mengikuti PnL live.
   const [livePx, setLivePx] = useState<Record<string, number>>({});
+  // v10.0.13 — Flash direction (naik=hijau, turun=merah) agar harga & PnL
+  // "berkedip hidup" tiap tick, seperti efek candlestick di chart.
+  const prevPxRef = useRef<Record<string, number>>({});
+  const flashTimerRef = useRef<any>(null);
+  const [flashDir, setFlashDir] = useState<Record<string, "up" | "down">>({});
   const openSymsKey = trades
     .filter((t2) => String(t2.status || "").toLowerCase() === "open")
     .map((t2) => t2.symbol)
@@ -124,7 +129,19 @@ export default function ASIBotScreen() {
         Object.entries(r.prices || {}).forEach(([k, v]) => {
           m[k.replace(/USDT$/, "")] = v;
         });
+        // Arah flash per simbol untuk tick ini
+        const f: Record<string, "up" | "down"> = {};
+        Object.entries(m).forEach(([k, v]) => {
+          const prev = prevPxRef.current[k];
+          if (prev != null && v !== prev) f[k] = v > prev ? "up" : "down";
+        });
+        prevPxRef.current = m;
         setLivePx(m);
+        if (Object.keys(f).length > 0) {
+          setFlashDir((cur) => ({ ...cur, ...f }));
+          if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+          flashTimerRef.current = setTimeout(() => setFlashDir({}), 700);
+        }
       } catch { /* pertahankan harga terakhir */ }
     };
     tick();
@@ -885,23 +902,40 @@ export default function ASIBotScreen() {
                     </TouchableOpacity>
                   ) : null}
                   <Text numberOfLines={1} style={{ color: colors.textPrimary, fontWeight: "700", flexShrink: 1 }}>{tr.symbol}</Text>
-                  {/* v9.9.13 — Mark price REALTIME di samping symbol (posisi
-                      open): polling 2 detik, hijau/merah vs entry. */}
+                  {/* v10.0.13 — Mark price PERP realtime (poll 2s), BESAR,
+                      putih terang, dengan efek flash hijau/merah seperti
+                      candlestick saat tick naik/turun. */}
                   {isOpen ? (() => {
                     const lp = livePx[symBase] ?? (tr as any).mark_price ?? null;
                     if (!lp || !tr.entry_price) return null;
-                    const profitSide = tr.side === "BUY" ? lp >= tr.entry_price : lp <= tr.entry_price;
+                    const fd = flashDir[symBase];
+                    const bg = fd === "up" ? GREEN + "33" : fd === "down" ? RED + "33" : "transparent";
                     return (
-                      <Text style={{ color: profitSide ? GREEN : RED, fontWeight: "900", fontSize: 11 }}>
-                        {formatPrice(lp, "crypto")}
-                      </Text>
+                      <View style={{
+                        paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4,
+                        backgroundColor: bg,
+                      }}>
+                        <Text style={{
+                          color: "#FFFFFF", fontWeight: "900", fontSize: 14,
+                          fontVariant: ["tabular-nums"], letterSpacing: 0.3,
+                        }}>
+                          {formatPrice(lp, "crypto")}{fd ? (fd === "up" ? " ▲" : " ▼") : ""}
+                        </Text>
+                      </View>
                     );
                   })() : null}
                   <View style={{ flex: 1 }} />
                   <View style={{ alignItems: "flex-end", flexShrink: 0 }}>
-                    <Text style={{ color: pos ? GREEN : RED, fontWeight: "800" }}>
-                      {pos ? "+" : ""}${dispPnl.toFixed(2)}
-                    </Text>
+                    {/* v10.0.13 — PnL juga flash background sesuai arah tick */}
+                    <View style={{
+                      paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4,
+                      backgroundColor: isOpen && flashDir[symBase] === "up" ? GREEN + "33"
+                        : isOpen && flashDir[symBase] === "down" ? RED + "33" : "transparent",
+                    }}>
+                      <Text style={{ color: pos ? GREEN : RED, fontWeight: "900", fontSize: 15, fontVariant: ["tabular-nums"] }}>
+                        {pos ? "+" : ""}${dispPnl.toFixed(2)}
+                      </Text>
+                    </View>
                     <Text style={{ color: pos ? GREEN : RED, fontSize: 10, fontWeight: "700" }}>
                       {pos ? "+" : ""}{pct.toFixed(1)}%
                     </Text>
@@ -994,6 +1028,24 @@ export default function ASIBotScreen() {
                         </Text>
                       ) : null}
                     </View>
+                    {/* v10.0.13 — TP partial hits: tiap level yang sudah
+                        terisi (TP1/TP2) tampil putih dengan harga + PnL
+                        leg-nya. TP3 akan memfinalkan trade dan masuk
+                        ke total PnL atas kartu. */}
+                    {Array.isArray((tr as any).tp_fills) && (tr as any).tp_fills.length > 0 ? (
+                      <View style={{ gap: 1 }}>
+                        {(tr as any).tp_fills.map((f: any, i: number) => (
+                          <Text key={i} style={{ fontSize: 10.5, fontWeight: "800", color: "#FFFFFF" }}>
+                            ✓ {String(f.level)} HIT · ${f.price != null ? formatPrice(Number(f.price), "crypto") : "—"}
+                            {f.pnl != null ? (
+                              <Text style={{ color: Number(f.pnl) >= 0 ? GREEN : RED, fontWeight: "900" }}>
+                                {"  "}{Number(f.pnl) >= 0 ? "+" : "-"}${Math.abs(Number(f.pnl)).toFixed(2)}
+                              </Text>
+                            ) : null}
+                          </Text>
+                        ))}
+                      </View>
+                    ) : null}
                   </View>
                 ) : (
                   /* v10.0.1 — Trade CLOSED: badge DEMO/REAL sudah dipindah
