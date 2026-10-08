@@ -1371,6 +1371,87 @@ async def _maybe_activate_trailing(
         return {"trailing_activated": False, "trailing_error": str(e)[:200]}
 
 
+async def move_sl_to_breakeven(
+    doc: dict[str, Any], trade: dict[str, Any],
+) -> dict[str, Any]:
+    """v10.0.13 — Pindahkan SL native Binance ke harga entry (break-even)
+    setelah TP1 ter-isi. Dipakai untuk Semi/Full Auto supaya trade yang
+    sudah profit tidak balik menjadi loss ketika sisa posisi tersapu SL.
+
+    Hanya aktif untuk Binance (native). Trade yang pakai trailing
+    (trailing_callback_rate > 0) tidak masuk ke jalur ini — trailing
+    sudah mengambil alih via `_maybe_activate_trailing`.
+
+    Returns {"ok": bool, "new_sl": float|None, "detail": str}.
+    """
+    if (doc.get("exchange") or "").lower() != "binance":
+        return {"ok": False, "detail": "not binance"}
+    entry = float(trade.get("entry_price") or 0)
+    side = trade.get("side")
+    if not entry or side not in ("BUY", "SELL"):
+        return {"ok": False, "detail": "no entry/side"}
+    api_key = decrypt(doc["api_key_enc"])
+    api_secret = decrypt(doc["api_secret_enc"])
+    is_testnet = bool(doc.get("testnet", True))
+    sym = str(trade.get("symbol") or "").upper()
+    base = sym.split("/")[0].split("USDT")[0].split("-")[0]
+    bin_sym = base + "USDT"
+    # Rounding harga ke tickSize supaya triggerPrice tidak ditolak -1111.
+    be_price = entry
+    try:
+        from .whitelist import binance_symbol_filters, round_to_tick
+        filters = await binance_symbol_filters() or {}
+        tick = (filters.get(base) or {}).get("tick") or 0.0
+        if tick > 0:
+            be_price = round_to_tick(entry, tick)
+    except Exception:
+        pass
+    close_side = "SELL" if side == "BUY" else "BUY"
+    # Cancel SL lama (STOP_MARKET closePosition searah).
+    try:
+        openalgos = await br.open_algo_orders(
+            api_key, api_secret, is_testnet, bin_sym)
+    except Exception:
+        openalgos = []
+    for a in openalgos or []:
+        if (a.get("orderType") == "STOP_MARKET"
+                and a.get("side") == close_side
+                and a.get("closePosition") in (True, "true", "True")):
+            try:
+                await br.cancel_algo(
+                    api_key, api_secret, is_testnet, algo_id=a.get("algoId"))
+            except Exception:
+                pass
+    # Legacy conditional orders (TP/SL manual) juga dibersihkan.
+    try:
+        legacy = await br.open_orders_legacy(
+            api_key, api_secret, is_testnet, bin_sym)
+    except Exception:
+        legacy = []
+    for o in legacy or []:
+        if (bool(o.get("closePosition"))
+                and str(o.get("type", "")).startswith("STOP")
+                and o.get("side") == close_side):
+            try:
+                await br.cancel_order(
+                    api_key, api_secret, is_testnet,
+                    symbol=bin_sym, order_id=o.get("orderId"))
+            except Exception:
+                pass
+    # Pasang SL baru di harga entry (closePosition=True).
+    try:
+        resp = await br.place_algo(
+            api_key, api_secret, is_testnet,
+            symbol=bin_sym, side=close_side,
+            order_type="STOP_MARKET", trigger_price=be_price,
+            close_position=True,
+        )
+        return {"ok": True, "new_sl": be_price,
+                "algo_id": resp.get("algoId"), "detail": "moved"}
+    except Exception as e:
+        return {"ok": False, "new_sl": be_price, "detail": str(e)[:200]}
+
+
 
 async def refresh_trade_pnl(doc: dict[str, Any], trade: dict[str, Any]) -> dict[str, Any]:
     """Query exchange untuk status order & hitung PnL realized/unrealized.
@@ -1487,9 +1568,14 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
                     sign = 1.0 if trade.get("side") == "BUY" else -1.0
                     leg_pnl = ((fill_px - entry_px) * reduction * sign
                                if fill_px else None)
+                    # v10.0.13 — Jika harga fill benar-benar di sisi loss
+                    # (slippage/wick), label TPx keliru → relabel "SL".
+                    level_label = f"TP{next_idx + 1}"
+                    if fill_px and leg_pnl is not None and leg_pnl < 0:
+                        level_label = "SL"
                     tp_fills = list(trade.get("tp_fills") or [])
                     tp_fills.append({
-                        "level": f"TP{next_idx + 1}",
+                        "level": level_label,
                         "price": round(fill_px, 8) if fill_px else None,
                         "qty": round(reduction, 10),
                         "pnl": round(leg_pnl, 4) if leg_pnl is not None else None,
@@ -1498,6 +1584,21 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
                     _native_partial_upd["tp_fills"] = tp_fills
                     _native_partial_upd["tp_filled"] = tp_filled_list
                     _native_partial_upd["qty_remaining"] = round(new_qty, 10)
+                    # v10.0.13 — BREAK-EVEN AUTO: hanya saat TP1 (index 0)
+                    # ter-isi dan user TIDAK memakai trailing. Pindahkan
+                    # SL native ke harga entry supaya sisa posisi tidak
+                    # kembali rugi. be_moved mencegah pemicu ganda.
+                    if (next_idx == 0 and not trade.get("be_moved")
+                            and level_label != "SL"
+                            and float(trade.get("trailing_callback_rate") or 0) <= 0):
+                        try:
+                            be_res = await move_sl_to_breakeven(doc, trade)
+                        except Exception as _e:  # noqa: BLE001
+                            be_res = {"ok": False, "detail": str(_e)[:200]}
+                        _native_partial_upd["be_moved"] = True
+                        _native_partial_upd["be_detail"] = be_res.get("detail")
+                        if be_res.get("ok") and be_res.get("new_sl"):
+                            _native_partial_upd["stop_loss"] = float(be_res["new_sl"])
             # Selalu simpan snapshot positionAmt untuk perbandingan tick
             # berikutnya (dipakai untuk deteksi partial di atas).
             _native_partial_upd["prev_position_amt"] = round(new_qty, 10)

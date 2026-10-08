@@ -280,6 +280,11 @@ export default function TradesPositionScreen() {
                     ) : null}
                   </Text>
                 ))}
+                {tr.be_moved ? (
+                  <Text style={{ fontSize: 10, fontWeight: "800", color: BLUE, marginTop: 1 }}>
+                    🛡️ SL moved to break-even (entry)
+                  </Text>
+                ) : null}
               </View>
             ) : null}
             {!isOpen && !isPending ? (

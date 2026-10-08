@@ -31,6 +31,7 @@ from .engine import (
     close_position,
     close_position_partial,
     execute_trade,
+    move_sl_to_breakeven,
     refresh_trade_pnl,
     resolve_credential,
 )
@@ -105,6 +106,14 @@ async def _close_soft_trade(db: Any, trade: dict[str, Any], reason: str,
     entry = float(trade.get("entry_price") or 0)
     sign = 1.0 if trade["side"] == "BUY" else -1.0
     leg_pnl = ((exit_px or 0.0) - entry) * qty * sign if exit_px else 0.0
+    # v10.0.13 — Fix label bug: watcher memicu "TPx" tapi harga fill
+    # ternyata di sisi loss (slippage/wick/stale ticker). Relabel ke
+    # "SL" supaya tp_fills + close_reason mencerminkan hasil nyata,
+    # bukan intensi trigger. SL/manual tetap pakai reason asli.
+    effective_reason = reason
+    if (exit_px and reason and reason.startswith("TP")
+            and leg_pnl < 0):
+        effective_reason = "SL"
     acc = float(trade.get("soft_realized_pnl") or 0.0) + leg_pnl
     remaining = qty_remaining - qty
     full_close = qty_to_close is None or remaining <= 1e-12
@@ -116,11 +125,12 @@ async def _close_soft_trade(db: Any, trade: dict[str, Any], reason: str,
     }
     # v10.0.13 — Rekam harga setiap TP hit (atau SL). Dipakai UI untuk
     # menampilkan "TP1 hit · $xxx", "TP2 hit · $xxx" per baris trade. SL
-    # dan close terakhir juga ikut ter-rekam.
+    # dan close terakhir juga ikut ter-rekam. Pakai `effective_reason`
+    # agar label TPx tidak dicatat ketika fill ternyata loss.
     if exit_px:
         tp_fills = list(trade.get("tp_fills") or [])
         tp_fills.append({
-            "level": reason,             # "TP1" / "TP2" / "TP3" / "SL"
+            "level": effective_reason,  # "TP1" / "TP2" / "TP3" / "SL"
             "price": round(exit_px, 8),
             "qty": round(qty, 10),
             "pnl": round(leg_pnl, 4),
@@ -131,17 +141,18 @@ async def _close_soft_trade(db: Any, trade: dict[str, Any], reason: str,
         upd.update({
             "status": "closed",
             "closed_at": now,
-            "close_reason": reason,
+            "close_reason": effective_reason,
             "exit_price": exit_px,
             "closed_price": exit_px,
             "pnl_usdt": round(acc, 2),
         })
     await db.asi_trades.update_one({"_id": trade["_id"]}, {"$set": upd})
-    logger.info("soft-bracket %s trade=%s reason=%s qty=%.8f pnl=%.2f",
+    logger.info("soft-bracket %s trade=%s reason=%s (eff=%s) qty=%.8f pnl=%.2f",
                 "closed" if full_close else "partial",
-                trade.get("_id"), reason, qty, acc)
+                trade.get("_id"), reason, effective_reason, qty, acc)
     return {"full": full_close, "remaining": remaining,
-            "exit_px": exit_px, "acc": acc}
+            "exit_px": exit_px, "acc": acc,
+            "effective_reason": effective_reason}
 
 
 async def _watch_soft_brackets(db: Any) -> None:
@@ -219,6 +230,36 @@ async def _watch_soft_brackets(db: Any) -> None:
                 t["soft_realized_pnl"] = res.get("acc", t.get("soft_realized_pnl"))
                 await db.asi_trades.update_one(
                     {"_id": t["_id"]}, {"$set": {"tp_filled": filled}})
+                # v10.0.13 — BREAK-EVEN AUTOMATIS: ketika TP1 (index 0)
+                # ter-isi dan sisanya masih open, geser SL ke harga entry
+                # supaya sisa posisi tidak balik menjadi loss. Hanya
+                # dijalankan sekali per trade (field be_moved). Trade yang
+                # memakai trailing stop (trailing_callback_rate > 0) sudah
+                # ditangani _maybe_activate_trailing — di-skip di sini.
+                # Jika effective_reason berubah menjadi SL (fill ternyata
+                # adverse), BE tidak dipicu — trade sudah dianggap loss.
+                if (i == 0 and not res.get("full")
+                        and not t.get("be_moved")
+                        and res.get("effective_reason") != "SL"
+                        and float(t.get("trailing_callback_rate") or 0) <= 0):
+                    cred_be = await resolve_credential(
+                        db, t["device_id"], t["exchange"],
+                        bool(t.get("testnet", True)))
+                    if cred_be:
+                        try:
+                            be_res = await move_sl_to_breakeven(cred_be, t)
+                        except Exception as _e:  # noqa: BLE001
+                            be_res = {"ok": False, "detail": str(_e)[:200]}
+                        be_upd: dict[str, Any] = {"be_moved": True,
+                                                  "be_detail": be_res.get("detail")}
+                        if be_res.get("ok") and be_res.get("new_sl"):
+                            be_upd["stop_loss"] = float(be_res["new_sl"])
+                            t["stop_loss"] = float(be_res["new_sl"])
+                        await db.asi_trades.update_one(
+                            {"_id": t["_id"]}, {"$set": be_upd})
+                        logger.info(
+                            "BE moved trade=%s ok=%s detail=%s",
+                            t.get("_id"), be_res.get("ok"), be_res.get("detail"))
                 if res.get("full"):
                     break
         except Exception as e:  # noqa: BLE001
