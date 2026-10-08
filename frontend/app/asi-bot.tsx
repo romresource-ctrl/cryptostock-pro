@@ -19,6 +19,10 @@ import {
 } from "@/src/lib/api";
 
 const GOLD = "#4ADE80"; // v9.4.1 — primary ASI-Bot accent (hijau muda)
+// v10.1.1 — Warna chip BOT ENGINE ASI-Bot dibuat biru terang supaya tidak
+// monoton hijau (diminta user): beda dari Titan-Bot (ungu), Full-Auto
+// (oranye), Semi-Auto (hijau).
+const ASI_BLUE = "#3B82F6";
 const YELLOW = "#F0B90B"; // v10.0.1 — kuning asli utk Limit Price / chip LIMIT
 const ORANGE = "#F97316"; // v9.6.3 — Full-Auto active accent
 const PINK = "#EC4899"; // v9.7.4 — START BOT button
@@ -464,7 +468,7 @@ export default function ASIBotScreen() {
             ] as const).map((opt) => {
               const isDisabled = (opt as any).disabled === true;
               const active = (bot.signal_source ?? "asi_bot") === opt.k;
-              const accent = opt.k === "cloud_pro" ? "#8B5CF6" : GOLD;
+              const accent = opt.k === "cloud_pro" ? "#8B5CF6" : ASI_BLUE;
               return (
                 <TouchableOpacity
                   key={opt.k}
