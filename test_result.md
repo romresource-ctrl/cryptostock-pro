@@ -3010,3 +3010,21 @@ frontend_v1004:
 #   & konsensus ANALYZE — muncul hanya saat ada arah (UP/DOWN atau
 #   BUY/SELL), membuka sheet Semi-Auto dengan side/entry/SL/TP terisi.
 #   Terverifikasi: SIDEWAYS/HOLD -> tombol tidak tampil (benar).
+# ======================================================
+# v10.0.12 — Dashboard default kembali pra-9.2.4 (sinyal lebih banyak)
+# ======================================================
+# AKAR MASALAH "sinyal sedikit": v9.2.4 menaikkan gerbang Confluence
+#   5 -> 8 faktor ("sinyal jauh lebih jarang"). Threshold premium 85->70
+#   (v10.0.11) tidak membantu karena 97/98 koin memang HOLD (bukan soal badge).
+# FIX (indicators.py compute_signal): min_score default di-resolve per
+#   profile → profile=None (dashboard default) = 5 (gaya v5.1.8);
+#   profile="longterm" (Confluence v9) = 8 (tetap ketat). Backtest yang
+#   pass min_score eksplisit tidak terpengaruh.
+# VERIFIED backend: default=7 sinyal aktif (naik dari 1), longterm=0
+#   (ketat), scalper VWAP tidak berubah.
+# VERIFIED frontend wiring: klik profile → _notify() instan → apiProfile
+#   berubah → load() re-fetch dashboard langsung (sudah ada, tidak diubah).
+# VERIFIED screenshot: dashboard default menampilkan 68 PREMIUM, 10 LONG,
+#   11 SHORT; kolom crypto penuh badge PREMIUM (AVAX/NEAR/INJ/STX).
+# Hanya ubah param gerbang dashboard default; formula VWAP profile &
+#   ASI-Bot entry/exit TIDAK disentuh.

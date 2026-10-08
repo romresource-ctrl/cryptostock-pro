@@ -1177,7 +1177,11 @@ def compute_signal(
     timeframe: str | None = None,
     # v9.2.4 — Opsi C: Confluence butuh 8 faktor confluence (dari 5).
     # Sinyal jauh lebih jarang tapi WR target 70-75% (validasi backtest).
-    min_score: int = 8,
+    # v10.0.12 — Default None = AUTO per profile (lihat resolusi di bawah):
+    #   • profile=None (dashboard default)  → 5  (gaya v5.1.8, sinyal lebih banyak)
+    #   • profile="longterm" (Confluence v9) → 8  (ketat, klik eksplisit)
+    # Backtest scripts tetap bisa override eksplisit via argumen ini.
+    min_score: int | None = None,
     htf_gate: bool = False,
     zone_cap: float = 1.5,
     macd_required: bool = False,
@@ -1240,6 +1244,17 @@ def compute_signal(
     _require_ema200 = bool(_prof.get("require_ema200"))
     _sl_atr_mult = float(_prof["sl_atr_mult"])
     _tp_ladder = tuple(_prof.get("tp_ladder", (1.0, 2.0, 3.0)))
+
+    # v10.0.12 — Resolusi gerbang confluence (min_score) otomatis per profile
+    # bila caller tidak menge-override eksplisit:
+    #   • Default dashboard (profile=None)      → 5  → gaya v5.1.8: lebih
+    #     banyak sinyal BUY/SELL tampil (yang diingat user dari versi lama).
+    #   • Confluence v9 (profile="longterm")    → 8  → tetap ketat, hanya
+    #     aktif saat user sengaja klik profile Confluence v9.
+    #   • Profile scalper/day/swing memakai mesin VWAP (return lebih awal),
+    #     jadi min_score tidak relevan di sana.
+    if min_score is None:
+        min_score = 5 if profile is None else 8
 
     closes = [c["close"] for c in candles]
     highs = [c["high"] for c in candles]

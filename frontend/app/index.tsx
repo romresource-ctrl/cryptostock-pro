@@ -743,7 +743,7 @@ export default function Dashboard() {
                 borderWidth: 1.5,
               },
             ]}
-            accessibilityLabel={apiProfile ? `Trader Profile: ${PROFILE_META[traderProfile].label}` : "Trader Profile: Default (Confluence)"}
+            accessibilityLabel={apiProfile ? `Trader Profile: ${PROFILE_META[traderProfile].label}` : "Trader Profile: Default"}
           >
             <Text style={{ fontSize: 15 }}>
               {hasAccess

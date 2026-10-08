@@ -1681,7 +1681,7 @@ async def search_assets(
 # v8.12.69 — Latest published Android build. The /app-version endpoint
 # serves this so outdated installs get an update prompt. Bump together
 # with frontend APP_VERSION / app.json version on every release.
-APP_LATEST_VERSION = "10.0.11"
+APP_LATEST_VERSION = "10.0.12"
 
 # v10.0.1 — Release notes untuk popup update (per bahasa).
 # v10.0.5 — Ditulis ulang dengan bahasa sederhana untuk pengguna awam:
