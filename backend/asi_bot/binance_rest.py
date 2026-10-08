@@ -82,6 +82,19 @@ async def position_risk(
     return data[0] if data else None
 
 
+async def all_position_risks(
+    api_key: str, api_secret: str, testnet: bool,
+) -> list[dict[str, Any]]:
+    """v10.0.15 — Semua posisi OPEN di akun (tanpa filter symbol).
+    Dipakai Titan Relay untuk membaca posisi akun master WunderTrading."""
+    code, data = await _request(
+        "GET", "/fapi/v2/positionRisk", api_key, api_secret, testnet, {},
+    )
+    if code != 200 or not isinstance(data, list):
+        raise RuntimeError(f"positionRisk(all) failed: {data}")
+    return [p for p in data if abs(float(p.get("positionAmt") or 0)) > 0]
+
+
 async def set_leverage(
     api_key: str, api_secret: str, testnet: bool, *,
     symbol: str, leverage: int,

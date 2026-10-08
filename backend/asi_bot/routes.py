@@ -954,3 +954,27 @@ def _attach_trade_routes(db: Any) -> None:
             d["engine"] = "Titan-Bot"
             rows.append(d)
         return {"items": rows}
+
+    # v10.0.15 — Status Titan Relay (read-only, tanpa auth: hanya info
+    # kesehatan publik — tidak mengekspos credential/saldo sensitif).
+    @router.get("/titan/status")
+    async def titan_status():
+        cfg = await db.asi_titan_config.find_one({"_id": "titan_master"})
+        if not cfg or not cfg.get("enabled"):
+            return {"configured": False, "relay": "off"}
+        try:
+            k = decrypt(cfg["api_key_enc"])
+            s = decrypt(cfg["api_secret_enc"])
+            tn = bool(cfg.get("testnet", False))
+            positions = await br.all_position_risks(k, s, tn)
+        except Exception as e:
+            return {"configured": True, "relay": "error",
+                    "detail": str(e)[:200]}
+        relayed = await db.asi_titan_state.count_documents({})
+        return {
+            "configured": True,
+            "relay": "active",
+            "network": "testnet" if tn else "mainnet",
+            "master_open_positions": len(positions),
+            "positions_relayed": relayed,
+        }

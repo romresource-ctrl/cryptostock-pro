@@ -44,6 +44,7 @@ logger = logging.getLogger("asi_bot.scheduler")
 # Tunables (seconds).
 WATCHER_INTERVAL = 20
 SCANNER_INTERVAL = 300  # 5 min
+TITAN_RELAY_INTERVAL = 25  # v10.0.15 — polling posisi master Titan-Bot
 # Minimum confidence required for full-auto execution.
 MIN_FULL_AUTO_CONFIDENCE = 70
 
@@ -658,6 +659,186 @@ async def _run_full_auto_scanner(
             logger.warning("full-auto scan error: %s", e)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# v10.0.15 — TITAN RELAY (Cara 1)
+# WunderTrading mengeksekusi bot di akun Binance MASTER → scheduler ini membaca
+# posisi master tiap ~25 detik → setiap posisi BARU direplikasi (fan-out) ke
+# semua user Full-Auto yang memilih engine "Titan-Bot" (signal_source="cloud_pro").
+#
+# Aturan:
+#  • Entry  = harga mark SAAT INI (market mode) — tidak memakai harga entry
+#    historis master supaya user tidak masuk di harga basi.
+#  • SL/TP  = disalin PERSIS dari bracket master (openAlgoOrders / legacy).
+#    Jika master tidak punya SL → SKIP (tidak boleh open posisi tanpa proteksi
+#    di akun user).
+#  • Risk %, leverage, margin mode → tetap dari setting masing-masing user.
+#  • Dedup  = collection `asi_titan_state` melacak posisi master yang sudah
+#    pernah direlay (key = symbol:side).
+#  • Master CLOSED → TIDAK force-close user; bracket SL/TP native masing-masing
+#    user yang bekerja (sesuai pilihan aman default).
+# ─────────────────────────────────────────────────────────────────────────────
+async def _run_titan_relay(db: Any) -> None:
+    cfg = await db.asi_titan_config.find_one({"_id": "titan_master", "enabled": True})
+    if not cfg:
+        return  # relay belum dikonfigurasi
+    api_key = decrypt(cfg["api_key_enc"])
+    api_secret = decrypt(cfg["api_secret_enc"])
+    testnet = bool(cfg.get("testnet", False))
+    try:
+        positions = await br.all_position_risks(api_key, api_secret, testnet)
+    except Exception as e:
+        logger.warning("titan relay: master positionRisk gagal: %s", e)
+        return
+    if not positions:
+        # Master flat → bersihkan state lama supaya entry baru bisa direlay.
+        await db.asi_titan_state.delete_many({})
+        return
+    # User target: Full-Auto ON + engine Titan-Bot (cloud_pro).
+    users = await db.asi_bot_config.find({
+        "full_enabled": True, "signal_source": "cloud_pro",
+    }).to_list(200)
+    if not users:
+        return
+
+    for p in positions:
+        try:
+            amt = float(p.get("positionAmt") or 0)
+            if abs(amt) <= 0:
+                continue
+            symbol_raw = str(p.get("symbol") or "").upper()  # e.g. "BTCUSDT"
+            base = symbol_raw.replace("USDT", "")
+            if not base:
+                continue
+            side: str = "BUY" if amt > 0 else "SELL"
+            state_key = f"{base}:{side}"
+            # Dedup: posisi master ini sudah pernah direlay?
+            state = await db.asi_titan_state.find_one({"_id": state_key})
+            if state:
+                continue  # posisi lama — biarkan bracket user bekerja
+            # Baca bracket SL/TP master dari Algo Orders (+ legacy fallback).
+            sl_price: float | None = None
+            tps: list[float] = []
+            close_side = "SELL" if side == "BUY" else "BUY"
+            try:
+                algos = await br.open_algo_orders(
+                    api_key, api_secret, testnet, symbol_raw)
+            except Exception:
+                algos = []
+            for a in algos or []:
+                if a.get("side") != close_side:
+                    continue
+                trig = float(a.get("triggerPrice") or 0)
+                if not trig:
+                    continue
+                otype = a.get("orderType") or ""
+                if otype == "STOP_MARKET" and sl_price is None:
+                    sl_price = trig
+                elif otype == "TAKE_PROFIT_MARKET":
+                    tps.append(trig)
+            if sl_price is None or not tps:
+                try:
+                    legacy = await br.open_orders_legacy(
+                        api_key, api_secret, testnet, symbol_raw)
+                except Exception:
+                    legacy = []
+                for o in legacy or []:
+                    if o.get("side") != close_side:
+                        continue
+                    trig = float(o.get("stopPrice") or 0)
+                    if not trig:
+                        continue
+                    otype = str(o.get("type") or "")
+                    if otype.startswith("STOP") and sl_price is None:
+                        sl_price = trig
+                    elif otype.startswith("TAKE_PROFIT"):
+                        tps.append(trig)
+            if sl_price is None:
+                logger.warning("titan relay: %s %s master tanpa SL — SKIP",
+                               base, side)
+                continue
+            if not tps:
+                # Fallback aman: TP1 sederhana 1R dari entry master.
+                entry_m = float(p.get("entryPrice") or 0)
+                if not entry_m:
+                    continue
+                dist = abs(entry_m - sl_price)
+                tps = [entry_m + dist if side == "BUY" else entry_m - dist]
+            tps = sorted(set(round(float(x), 8) for x in tps if x > 0))[:3]
+            tps = [x for x in tps if (x > sl_price if side == "BUY" else x < sl_price)]
+            if not tps:
+                continue
+            mark = float(p.get("markPrice") or 0)
+            if not mark:
+                continue
+            now = datetime.now(timezone.utc).isoformat()
+            # Fan-out ke setiap user Titan-Bot.
+            for u in users:
+                dev = u.get("device_id") or u.get("_id")
+                if not dev:
+                    continue
+                try:
+                    dup = await db.asi_trades.find_one(
+                        {"device_id": dev, "symbol": base,
+                         "status": {"$in": ["open", "pending_entry"]}})
+                    if dup:
+                        continue
+                    net = bool(u["active_testnet"]) if "active_testnet" in u else None
+                    exchange = u.get("exchange") or "binance"
+                    cred = await resolve_credential(db, dev, exchange, net)
+                    if not cred:
+                        continue
+                    res = await execute_trade(
+                        cred, base, side,
+                        mark, sl_price, tps,
+                        float(u.get("risk_pct") or 5.0),
+                        int(u.get("leverage") or 10),
+                        mode="full",
+                        tp_count=int(u.get("tp_count") or 3),
+                        trailing_callback_rate=float(u.get("trailing_callback_rate") or 0.0),
+                        margin_mode=str(u.get("margin_mode") or "isolated"),
+                        profile=None,
+                        formula_tag="Titan-Bot",
+                        entry_mode="market",  # relay selalu market (follow master)
+                    )
+                    if not res.get("ok"):
+                        continue
+                    margin_usdt = round(
+                        float(res["qty"]) * float(res["entry_price"])
+                        / max(1, int(res["leverage"])), 2)
+                    rec = {**res, "device_id": dev, "margin_usdt": margin_usdt,
+                           "signal_source": "cloud_pro",
+                           "formula_tag": "Titan-Bot",
+                           "titan_master_entry": float(p.get("entryPrice") or 0)}
+                    if res.get("entry_order_id"):
+                        rec["_id"] = f"{dev}:{res['entry_order_id']}"
+                        await db.asi_trades.replace_one(
+                            {"_id": rec["_id"]}, rec, upsert=True)
+                    logger.info("titan relay: %s %s fanned out to %s",
+                                side, base, dev)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("titan relay fan-out %s %s: %s", dev, base, e)
+                    continue
+            # Tandai posisi master sudah direlay supaya tidak di-retry
+            # tiap siklus.
+            await db.asi_titan_state.replace_one(
+                {"_id": state_key},
+                {"_id": state_key, "symbol": base, "side": side,
+                 "entry_master": float(p.get("entryPrice") or 0),
+                 "sl": sl_price, "tps": tps, "relayed_at": now},
+                upsert=True)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("titan relay pos err: %s", e)
+            continue
+    # Bersihkan state untuk posisi master yang SUDAH TUTUP supaya entry
+    # berikutnya di symbol yang sama bisa direlay lagi.
+    open_keys = {f"{str(p.get('symbol') or '').upper().replace('USDT', '')}:"
+                 f"{'BUY' if float(p.get('positionAmt') or 0) > 0 else 'SELL'}"
+                 for p in positions}
+    async for st in db.asi_titan_state.find({}):
+        if st.get("_id") not in open_keys:
+            await db.asi_titan_state.delete_one({"_id": st["_id"]})
+
+
 class ASIScheduler:
     """Lightweight asyncio loop runner. Started on FastAPI startup."""
 
@@ -679,8 +860,9 @@ class ASIScheduler:
             asyncio.create_task(self._loop_watcher()),
             asyncio.create_task(self._loop_pnl()),
             asyncio.create_task(self._loop_scanner()),
+            asyncio.create_task(self._loop_titan_relay()),
         ]
-        logger.info("ASI-Bot scheduler started: watcher + pnl + scanner")
+        logger.info("ASI-Bot scheduler started: watcher + pnl + scanner + titan_relay")
 
     async def stop(self) -> None:
         self._running = False
@@ -724,3 +906,18 @@ class ASIScheduler:
             except Exception as e:  # noqa: BLE001
                 logger.exception("scanner loop crash: %s", e)
             await asyncio.sleep(SCANNER_INTERVAL)
+
+    async def _loop_titan_relay(self) -> None:
+        """v10.0.15 — Titan Relay (Cara 1): membaca posisi akun master
+        (Binance yang dieksekusi WunderTrading) dan mem-broadcast-nya ke
+        semua user Full-Auto dengan signal_source="cloud_pro" (Titan-Bot).
+        Entry memakai harga mark saat ini; SL/TP disalin persis dari
+        bracket master. Kalau master tidak punya SL/TP, relay di-skip
+        demi keamanan (tidak open posisi telanjang di akun user)."""
+        await asyncio.sleep(20)  # startup delay
+        while self._running:
+            try:
+                await _run_titan_relay(self.db)
+            except Exception as e:  # noqa: BLE001
+                logger.exception("titan relay loop crash: %s", e)
+            await asyncio.sleep(TITAN_RELAY_INTERVAL)
