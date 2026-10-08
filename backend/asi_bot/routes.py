@@ -193,7 +193,10 @@ class BotConfigPayload(BaseModel):
     risk_pct: float = Field(5.0, ge=1.0, le=30.0)
     leverage: int = Field(10, ge=1, le=125)
     whitelist: list[str] = Field(default_factory=list)
-    profile: Literal["confluence", "scalper", "day", "swing"] | None = None
+    # v10.0.16 — "longterm" = Confluence v9 (gate ketat) sesuai label UI
+    # Trader Profile; "confluence" = legacy default (dipetakan ke None di
+    # scheduler → dashboard default gate 5).
+    profile: Literal["confluence", "scalper", "day", "swing", "longterm"] | None = None
     # v9.4.0 — Minimum confidence required to auto-execute (0-100).
     min_confidence: int = Field(75, ge=50, le=100)
     # v9.4.1 — Daily loss limit (USDT, absolute). 0 = disabled.

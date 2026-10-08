@@ -47,7 +47,6 @@ export default function UpdatePrompt() {
   const { colors } = useTheme();
   const { t, lang } = useI18n();
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
-  const [notes, setNotes] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -59,11 +58,10 @@ export default function UpdatePrompt() {
         const latest = String(data?.latest_version ?? "");
         if (alive && latest && isOutdated(APP_VERSION, latest)) {
           setLatestVersion(latest);
-          // v9.9.9 — tampilkan release notes per bahasa bila tersedia.
-          const n = data?.notes;
-          if (n && typeof n === "object") {
-            setNotes(n[lang] || n.en || n.id || null);
-          }
+          // v10.0.15 — Release notes TIDAK lagi ditampilkan di sini.
+          // Daftar changelog yang panjang membuat modal lebih tinggi dari
+          // layar sehingga tombol Update/Later tidak bisa ditekan. Modal
+          // kini sengaja dibuat kecil & compact (sesuai permintaan user).
         }
       } catch {
         /* offline / backend down — never block the app */
@@ -109,13 +107,6 @@ export default function UpdatePrompt() {
               .replace("{cur}", APP_VERSION)
               .replace("{latest}", latestVersion)}
           </Text>
-          {notes ? (
-            <View style={[styles.notesBox, { borderColor: colors.border, backgroundColor: colors.background }]}>
-              <Text style={{ color: colors.textPrimary, fontSize: 11, lineHeight: 17, fontWeight: "600" }}>
-                {notes}
-              </Text>
-            </View>
-          ) : null}
           <TouchableOpacity
             onPress={openStore}
             style={[styles.updateBtn, { backgroundColor: colors.accentBlue }]}
@@ -167,13 +158,6 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     textAlign: "center",
     marginTop: 8,
-  },
-  notesBox: {
-    width: "100%",
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 10,
-    marginTop: 12,
   },
   updateBtn: {
     marginTop: 16,

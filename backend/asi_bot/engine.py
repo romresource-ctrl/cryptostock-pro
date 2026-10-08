@@ -53,26 +53,21 @@ Side = Literal["BUY", "SELL"]
 # MARKET. Order limit di harga entry moderate sinyal menunggu maksimal
 # 2 candle (sinyal bot = 1h) lalu dibatalkan otomatis oleh scheduler.
 ENTRY_LIMIT_TTL_SEC = 7200
-# v9.6.0 — split dinamis mengikuti jumlah TP yang user pilih.
+# v10.0.16 — Komposisi split baru (keputusan user): TP1 menutup 50%,
+# TP2 25%, TP3 25% (bukan lagi 33/33/34). Untuk 2 TP tetap 50/50.
 TP_SPLITS: dict[int, tuple[float, ...]] = {
     1: (1.0,),
     2: (0.5, 0.5),
-    3: (1 / 3, 1 / 3, 1 / 3),  # TP3 kebagian sisa step-aligned remainder
+    3: (0.5, 0.25, 0.25),
 }
 
 
 def _shift_tp_ladder(tps: list[float] | None, tp_count: int) -> list[float]:
-    """v10.0.9 — Ladder TP DIGESER ke level lebih tinggi saat user memilih
-    lebih sedikit TP (keputusan user):
-      tp_count=3 → [TP1, TP2, TP3]  (tidak berubah)
-      tp_count=2 → [TP2, TP3]       (target pertama = level TP2)
-      tp_count=1 → [TP2]            (target tunggal = level TP2)
-    Backward-compat: bila ladder yang masuk < 3 level (app lama yang sudah
-    pre-slice), pakai slice depan seperti semula."""
+    """v10.0.16 — Ladder TIDAK lagi digeser: memilih N TP memakai TP1..TPN
+    persis (keputusan user). tp_count=2 → [TP1, TP2], close terakhir 100%
+    di harga TP2 (bukan lagi di titik TP3). tp_count=1 → [TP1]."""
     full = [float(x) for x in (tps or []) if x]
     n = max(1, min(3, int(tp_count)))
-    if len(full) >= 3 and n < 3:
-        return full[1:1 + n]
     return full[:n]
 
 
@@ -1373,10 +1368,17 @@ async def _maybe_activate_trailing(
 
 async def move_sl_to_breakeven(
     doc: dict[str, Any], trade: dict[str, Any],
+    target_price: float | None = None,
 ) -> dict[str, Any]:
-    """v10.0.13 — Pindahkan SL native Binance ke harga entry (break-even)
-    setelah TP1 ter-isi. Dipakai untuk Semi/Full Auto supaya trade yang
-    sudah profit tidak balik menjadi loss ketika sisa posisi tersapu SL.
+    """v10.0.13/16 — SL GUARD: pindahkan SL native Binance ke harga target.
+
+    • target_price=None → break-even (harga entry).
+    • target_price=TPx  → SL guard mengikuti TP yang baru ter-isi
+      (v10.0.16: TP1 hit → SL=TP1; TP2 hit → SL=TP2).
+
+    Buffer 0.1% diberikan ke arah aman supaya Binance tidak menolak
+    trigger yang persis sama dengan mark (error -2021 "would immediately
+    trigger").
 
     Hanya aktif untuk Binance (native). Trade yang pakai trailing
     (trailing_callback_rate > 0) tidak masuk ke jalur ini — trailing
@@ -1390,6 +1392,9 @@ async def move_sl_to_breakeven(
     side = trade.get("side")
     if not entry or side not in ("BUY", "SELL"):
         return {"ok": False, "detail": "no entry/side"}
+    raw_target = float(target_price) if target_price else entry
+    # Buffer 0.1% ke sisi aman (di bawah target utk LONG, di atas utk SHORT).
+    guard_px = raw_target * (0.999 if side == "BUY" else 1.001)
     api_key = decrypt(doc["api_key_enc"])
     api_secret = decrypt(doc["api_secret_enc"])
     is_testnet = bool(doc.get("testnet", True))
@@ -1397,13 +1402,13 @@ async def move_sl_to_breakeven(
     base = sym.split("/")[0].split("USDT")[0].split("-")[0]
     bin_sym = base + "USDT"
     # Rounding harga ke tickSize supaya triggerPrice tidak ditolak -1111.
-    be_price = entry
+    be_price = guard_px
     try:
         from .whitelist import binance_symbol_filters, round_to_tick
         filters = await binance_symbol_filters() or {}
         tick = (filters.get(base) or {}).get("tick") or 0.0
         if tick > 0:
-            be_price = round_to_tick(entry, tick)
+            be_price = round_to_tick(guard_px, tick)
     except Exception:
         pass
     close_side = "SELL" if side == "BUY" else "BUY"
@@ -1584,21 +1589,25 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
                     _native_partial_upd["tp_fills"] = tp_fills
                     _native_partial_upd["tp_filled"] = tp_filled_list
                     _native_partial_upd["qty_remaining"] = round(new_qty, 10)
-                    # v10.0.13 — BREAK-EVEN AUTO: hanya saat TP1 (index 0)
-                    # ter-isi dan user TIDAK memakai trailing. Pindahkan
-                    # SL native ke harga entry supaya sisa posisi tidak
-                    # kembali rugi. be_moved mencegah pemicu ganda.
-                    if (next_idx == 0 and not trade.get("be_moved")
+                    # v10.0.16 — SL GUARD (native path): SL mengikuti TP
+                    # yang baru ter-isi (TP1→SL=TP1, TP2→SL=TP2). Skip bila
+                    # trailing aktif atau fill ternyata adverse (label SL).
+                    if (not trade.get("trailing_activated")
                             and level_label != "SL"
-                            and float(trade.get("trailing_callback_rate") or 0) <= 0):
+                            and float(trade.get("trailing_callback_rate") or 0) <= 0
+                            and int(trade.get("sl_guard_idx") or 0) <= next_idx):
                         try:
-                            be_res = await move_sl_to_breakeven(doc, trade)
+                            sg_res = await move_sl_to_breakeven(
+                                doc, trade, target_price=tps[next_idx])
                         except Exception as _e:  # noqa: BLE001
-                            be_res = {"ok": False, "detail": str(_e)[:200]}
-                        _native_partial_upd["be_moved"] = True
-                        _native_partial_upd["be_detail"] = be_res.get("detail")
-                        if be_res.get("ok") and be_res.get("new_sl"):
-                            _native_partial_upd["stop_loss"] = float(be_res["new_sl"])
+                            sg_res = {"ok": False, "detail": str(_e)[:200]}
+                        _native_partial_upd["sl_guard_idx"] = next_idx + 1
+                        _native_partial_upd["sl_guard_detail"] = sg_res.get("detail")
+                        _native_partial_upd["be_moved"] = True  # kompat UI
+                        if sg_res.get("ok") and sg_res.get("new_sl"):
+                            _native_partial_upd["stop_loss"] = float(sg_res["new_sl"])
+                        else:
+                            _native_partial_upd["stop_loss"] = float(tps[next_idx])
             # Selalu simpan snapshot positionAmt untuk perbandingan tick
             # berikutnya (dipakai untuk deteksi partial di atas).
             _native_partial_upd["prev_position_amt"] = round(new_qty, 10)

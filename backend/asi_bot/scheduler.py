@@ -231,36 +231,47 @@ async def _watch_soft_brackets(db: Any) -> None:
                 t["soft_realized_pnl"] = res.get("acc", t.get("soft_realized_pnl"))
                 await db.asi_trades.update_one(
                     {"_id": t["_id"]}, {"$set": {"tp_filled": filled}})
-                # v10.0.13 — BREAK-EVEN AUTOMATIS: ketika TP1 (index 0)
-                # ter-isi dan sisanya masih open, geser SL ke harga entry
-                # supaya sisa posisi tidak balik menjadi loss. Hanya
-                # dijalankan sekali per trade (field be_moved). Trade yang
-                # memakai trailing stop (trailing_callback_rate > 0) sudah
-                # ditangani _maybe_activate_trailing — di-skip di sini.
-                # Jika effective_reason berubah menjadi SL (fill ternyata
-                # adverse), BE tidak dipicu — trade sudah dianggap loss.
-                if (i == 0 and not res.get("full")
-                        and not t.get("be_moved")
+                # v10.0.16 — SL GUARD: setiap partial TP ter-isi, SL geser
+                # ke harga TP yang baru hit (TP1→SL=TP1, TP2→SL=TP2).
+                # Menggantikan logika BE lama (SL=entry) — lebih agresif
+                # mengamankan profit. Hanya untuk partial (bukan full close),
+                # tidak double (sl_guard_idx), dan skip bila trailing aktif.
+                # Guard arah: SL baru harus LEBIH BAIK dari SL lama.
+                if (not res.get("full")
+                        and int(t.get("sl_guard_idx") or 0) <= i
                         and res.get("effective_reason") != "SL"
                         and float(t.get("trailing_callback_rate") or 0) <= 0):
-                    cred_be = await resolve_credential(
-                        db, t["device_id"], t["exchange"],
-                        bool(t.get("testnet", True)))
-                    if cred_be:
-                        try:
-                            be_res = await move_sl_to_breakeven(cred_be, t)
-                        except Exception as _e:  # noqa: BLE001
-                            be_res = {"ok": False, "detail": str(_e)[:200]}
-                        be_upd: dict[str, Any] = {"be_moved": True,
-                                                  "be_detail": be_res.get("detail")}
-                        if be_res.get("ok") and be_res.get("new_sl"):
-                            be_upd["stop_loss"] = float(be_res["new_sl"])
-                            t["stop_loss"] = float(be_res["new_sl"])
-                        await db.asi_trades.update_one(
-                            {"_id": t["_id"]}, {"$set": be_upd})
-                        logger.info(
-                            "BE moved trade=%s ok=%s detail=%s",
-                            t.get("_id"), be_res.get("ok"), be_res.get("detail"))
+                    cur_sl = float(t.get("stop_loss") or 0)
+                    new_sl = float(tp)
+                    better = (new_sl > cur_sl) if side == "BUY" else (new_sl < cur_sl or cur_sl == 0)
+                    if better:
+                        cred_sg = await resolve_credential(
+                            db, t["device_id"], t["exchange"],
+                            bool(t.get("testnet", True)))
+                        if cred_sg:
+                            try:
+                                sg_res = await move_sl_to_breakeven(
+                                    cred_sg, t, target_price=new_sl)
+                            except Exception as _e:  # noqa: BLE001
+                                sg_res = {"ok": False, "detail": str(_e)[:200]}
+                            sg_upd: dict[str, Any] = {
+                                "sl_guard_idx": i + 1,
+                                "sl_guard_detail": sg_res.get("detail"),
+                                "be_moved": True,  # kompat UI badge lama
+                            }
+                            if sg_res.get("ok") and sg_res.get("new_sl"):
+                                sg_upd["stop_loss"] = float(sg_res["new_sl"])
+                                t["stop_loss"] = float(sg_res["new_sl"])
+                            else:
+                                # Native gagal → tetap guard via soft watcher.
+                                t["stop_loss"] = new_sl
+                                sg_upd["stop_loss"] = new_sl
+                            await db.asi_trades.update_one(
+                                {"_id": t["_id"]}, {"$set": sg_upd})
+                            logger.info(
+                                "SL guard trade=%s tp_idx=%d ok=%s new_sl=%s",
+                                t.get("_id"), i, sg_res.get("ok"),
+                                sg_upd.get("stop_loss"))
                 if res.get("full"):
                     break
         except Exception as e:  # noqa: BLE001
@@ -585,12 +596,10 @@ async def _run_full_auto_scanner(
             # v9.7.3 — BUG FIX: empty whitelist silently disabled the bot
             # ("ACTIVE" tapi tidak pernah scan). Default ke Top-100 futures
             # agar Full-Auto langsung bekerja tanpa konfigurasi tambahan.
-            # v10.0.6 — FULL-AUTO terbatas BIG-CAPS (Top-50 saja) untuk
-            # menghindari eksekusi otomatis di low-caps yang volatil & tipis
-            # likuiditasnya. Semi-Auto (via trade sheet) tetap bebas semua
-            # aset — scheduler ini hanya dipakai mode=full.
-            whitelist = cfg.get("whitelist") or list(TOP_50_FUTURES)
-            whitelist = [s for s in whitelist if s in TOP_50_FUTURES]
+            # v10.0.16 — FULL-AUTO kembali scan Top-100 (keputusan user,
+            # sebelumnya Top-50). Semi-Auto tetap bebas semua aset.
+            whitelist = cfg.get("whitelist") or list(TOP_100_FUTURES)
+            whitelist = [s for s in whitelist if s in TOP_100_FUTURES]
             if not whitelist:
                 continue
             exchange = cfg.get("exchange") or "binance"
@@ -603,9 +612,14 @@ async def _run_full_auto_scanner(
             risk = float(cfg.get("risk_pct") or 5.0)
             lev = int(cfg.get("leverage") or 10)
             user_min_conf = int(cfg.get("min_confidence") or MIN_FULL_AUTO_CONFIDENCE)
-            # v9.6.1 — Hormati profil strategi user: scalper→VWAP-SCALPER,
-            # day→VWAP-INTRADAY, swing→VWAP-SWING, confluence→mesin default.
+            # v10.0.16 — Bot MENGIKUTI Trader Profile pilihan user
+            # (scalper/day/swing/longterm). Legacy "confluence" (default
+            # lama saat user belum memilih) dipetakan ke None → dashboard
+            # default gate 5 (gaya v5.1.8). "longterm" = Confluence v9
+            # gate 8 (ketat, hanya bila user eksplisit memilihnya).
             bot_profile = cfg.get("profile") or None
+            if bot_profile == "confluence":
+                bot_profile = None
             budget = max_tr - placed
             for sym in whitelist[: budget * 3]:  # try ≤3x slots so we have options
                 if not is_allowed(sym):

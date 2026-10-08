@@ -248,10 +248,20 @@ export default function TradesPositionScreen() {
 
         <View style={{ marginTop: 6, flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
           <View style={{ flex: 1, gap: 2 }}>
+            {/* v10.0.16 — Entry price PUTIH TERANG (bukan abu) mengikuti
+                gaya kartu Recent Trades. */}
             <Text style={{ color: colors.textMuted, fontSize: 11 }}>
-              Entry {tr.entry_price ? fp(tr.entry_price) : "—"}
+              <Text style={{ color: "#FFFFFF", fontWeight: "900" }}>
+                Entry {tr.entry_price ? fp(tr.entry_price) : "—"}
+              </Text>
               {tr.filled_at ? ` · filled ${fmtDateTime(tr.filled_at)}` : (tr.created_at ? ` · ${fmtDateTime(tr.created_at)}` : "")}
             </Text>
+            {/* v10.0.16 — Formula yang dipakai (persis kartu Recent Trades) */}
+            {(tr.profile || tr.formula_tag) ? (
+              <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: "700", color: colors.textMuted }}>
+                ⚙️ Formula: {String(tr.formula_tag || tr.profile)}
+              </Text>
+            ) : null}
             <Text style={{ fontSize: 10.5, lineHeight: 15 }}>
               <Text style={{ color: RED, fontWeight: "800" }}>
                 SL {tr.stop_loss ? fp(tr.stop_loss) : "—"}

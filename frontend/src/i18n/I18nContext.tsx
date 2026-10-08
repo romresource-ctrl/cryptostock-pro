@@ -632,7 +632,7 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   },
   asi_tp_1_label: { id: "1 TP · 100%", en: "1 TP · 100%", ru: "1 TP · 100%", cn: "1 TP · 100%" },
   asi_tp_2_label: { id: "2 TP · 50/50", en: "2 TP · 50/50", ru: "2 TP · 50/50", cn: "2 TP · 50/50" },
-  asi_tp_3_label: { id: "3 TP · 33/33/34", en: "3 TP · 33/33/34", ru: "3 TP · 33/33/34", cn: "3 TP · 33/33/34" },
+  asi_tp_3_label: { id: "3 TP · 50/25/25", en: "3 TP · 50/25/25", ru: "3 TP · 50/25/25", cn: "3 TP · 50/25/25" },
   asi_trailing_label: { id: "Trailing Stop Callback", en: "Trailing Stop Callback", ru: "Trailing Stop Callback", cn: "追踪止损回调" },
   asi_trailing_hint: {
     id: "SL otomatis mengikuti harga puncak dengan jarak X% (native Binance). 0 = nonaktif. Aktif setelah TP1.",

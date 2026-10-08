@@ -243,7 +243,9 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
         margin_mode: marginMode,
         testnet: activeTestnet,
         // v9.9.13 — label formula di kartu Recent Trades
-        profile: apiProfile ?? "confluence",
+        // v10.0.16 — Label formula mengikuti Trader Profile apa adanya;
+        // null = dashboard default (bukan lagi dipaksa "confluence").
+        profile: apiProfile ?? null,
         formula_tag: intent.formula_tag ?? formulaTagFromSignal(null, null, apiProfile),
         entry_mode: entryMode,
       });
@@ -544,7 +546,7 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
                 <View style={{ flexDirection: "row", gap: 6, marginTop: 10 }}>
                   {([1, 2, 3] as const).map((n) => {
                     const act = tpCount === n;
-                    const lbl = n === 1 ? "1 TP · 100%" : n === 2 ? "2 TP · 50/50" : "3 TP · 33/33/34";
+                    const lbl = n === 1 ? "1 TP · 100%" : n === 2 ? "2 TP · 50/50" : "3 TP · 50/25/25";
                     return (
                       <TouchableOpacity key={n} onPress={() => setTpCount(n)}
                         style={[s.exChip, { flex: 1, alignItems: "center", backgroundColor: act ? MINT : colors.background, borderColor: act ? MINT : colors.border }]}>

@@ -9,7 +9,7 @@ import * as Clipboard from "expo-clipboard";
 import { useTheme } from "@/src/theme/ThemeContext";
 import { useI18n } from "@/src/i18n/I18nContext";
 import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
-import { useTraderProfile } from "@/src/lib/useTraderProfile";
+import { useTraderProfile, PROFILE_META } from "@/src/lib/useTraderProfile";
 import PremiumLocked from "@/src/components/PremiumLocked";
 import AISuggestionsSheet from "@/src/components/AISuggestionsSheet";
 import { getDeviceId } from "@/src/lib/deviceId";
@@ -151,16 +151,16 @@ export default function ASIBotScreen() {
     return () => { alive = false; clearInterval(id); };
   }, [openSymsKey]);
 
-  // v9.8.0 — Sinkronkan Trader Profile global ke bot.profile saat berubah.
-  // Full-Auto scanner akan membaca field ini di scheduler → sinyal yang
+  // v10.0.16 — Sinkronkan Trader Profile global ke bot.profile PERSIS
+  // apa adanya: scalper / day (Intraday) / swing / longterm (Confluence
+  // v9). Belum memilih → null (dashboard default gate 5, gaya v5.1.8).
+  // Full-Auto scanner membaca field ini di scheduler → sinyal yang
   // dieksekusi otomatis mengikuti profil yang user pilih di header.
   useEffect(() => {
     if (!deviceId || !credsLoaded) return;
-    const target: "scalper" | "day" | "swing" | "confluence" =
-      traderExplicit && (traderProfile === "scalper" || traderProfile === "day" || traderProfile === "swing")
-        ? traderProfile
-        : "confluence";
-    if (bot.profile === target) return;
+    const target: "scalper" | "day" | "swing" | "longterm" | null =
+      traderExplicit ? (traderProfile as any) : null;
+    if ((bot.profile ?? null) === target) return;
     saveBot({ profile: target }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [traderProfile, traderExplicit, deviceId, credsLoaded]);
@@ -444,7 +444,15 @@ export default function ASIBotScreen() {
           </Text>
           <View style={{ flexDirection: "row", gap: 8 }}>
             {([
-              { k: "asi_bot", label: "ASI-Bot", emoji: "🧠", sub: "Internal AI · Confluence/VWAP" },
+              { k: "asi_bot",
+                // v10.0.16 — Chip ASI-Bot menampilkan Trader Profile yang
+                // sedang dipilih (bukan selalu "Confluence/VWAP"), sehingga
+                // user tahu engine mana yang menggerakkan eksekusi.
+                label: "ASI-Bot",
+                emoji: "🧠",
+                sub: traderExplicit && traderProfile
+                  ? `${PROFILE_META[traderProfile]?.emoji ?? ""} ${PROFILE_META[traderProfile]?.label ?? traderProfile}`.trim()
+                  : "Default · Confluence (longgar)" },
               { k: "cloud_pro", label: "Titan-Bot", emoji: "⚡", sub: "Pro Engine · Entry/SL/TP auto" },
             ] as const).map((opt) => {
               const active = (bot.signal_source ?? "asi_bot") === opt.k;
@@ -482,7 +490,7 @@ export default function ASIBotScreen() {
           <Text style={{ color: colors.textMuted, fontSize: 10, marginTop: 6, lineHeight: 14 }}>
             {bot.signal_source === "cloud_pro"
               ? "⚡ Titan-Bot: begitu Full-Auto ON, posisi dibuka otomatis mengikuti sinyal Titan — Entry, SL, TP1-3 100% dari engine Titan. Risk %, Leverage & Margin mode tetap dari setting Anda."
-              : "🧠 ASI-Bot: formula internal (Confluence v9 / VWAP engines) dengan level Entry/SL/TP dari kalkulasi teknikal."}
+              : `🧠 ASI-Bot aktif dengan formula: ${traderExplicit && traderProfile ? (PROFILE_META[traderProfile]?.label ?? traderProfile) : "Default (Confluence longgar)"}. Semua eksekusi Semi/Full-Auto mengikuti sinyal dari profil ini.`}
           </Text>
         </View>
 

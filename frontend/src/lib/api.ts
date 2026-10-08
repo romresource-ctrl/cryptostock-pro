@@ -609,7 +609,7 @@ export type AsiBotConfig = {
   risk_pct: number;
   leverage: number;
   whitelist: string[];
-  profile?: "confluence" | "scalper" | "day" | "swing" | null;
+  profile?: "confluence" | "scalper" | "day" | "swing" | "longterm" | null;
   min_confidence?: number;
   daily_loss_limit_usdt?: number;
   // v9.6.0 — TP flexibility & trailing stop

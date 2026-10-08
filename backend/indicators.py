@@ -21,8 +21,8 @@ from typing import Any
 #                          v9.0.0 backtest (30d, 9 aset, 302 trade):
 #                          TP1=1.0R → WR 57.1%, +0.136R/trade (TERBAIK)
 #                          TP1=1.5R → WR 42.1%, +0.048R/trade
-#                          → ladder (1.0, 2.0, 3.0): TP1 bank cepat,
-#                            TP2/TP3 untuk runner.
+#                          → ladder (1.0, 1.5, 2.0) [v10.0.16]: TP2/TP3
+#                            didekatkan (dulu 2R/3R jarang kena).
 #   description          — shown in the picker modal
 #
 # It NEVER forces or vetoes a signal direction. The v3 confidence gate
@@ -37,8 +37,8 @@ TRADER_PROFILES: dict[str, dict[str, Any]] = {
         "ema_slow": 21,
         "require_ema200": False,
         "sl_atr_mult": 0.5,
-        "tp_ladder": (1.0, 2.0, 3.0),
-        "vwap_tp_ladder": (1.0, 2.0, 3.0),
+        "tp_ladder": (1.0, 1.5, 2.0),
+        "vwap_tp_ladder": (1.0, 1.5, 2.0),
         "description": "5m–15m intraday moves",
     },
     "day": {  # default — balanced horizon
@@ -46,8 +46,8 @@ TRADER_PROFILES: dict[str, dict[str, Any]] = {
         "ema_slow": 50,
         "require_ema200": False,
         "sl_atr_mult": 0.5,
-        "tp_ladder": (1.0, 2.0, 3.0),
-        "vwap_tp_ladder": (1.0, 2.0, 3.0),
+        "tp_ladder": (1.0, 1.5, 2.0),
+        "vwap_tp_ladder": (1.0, 1.5, 2.0),
         "description": "1h–4h day trading",
     },
     "swing": {
@@ -55,8 +55,8 @@ TRADER_PROFILES: dict[str, dict[str, Any]] = {
         "ema_slow": 50,
         "require_ema200": True,
         "sl_atr_mult": 0.5,
-        "tp_ladder": (1.0, 2.0, 3.0),
-        "vwap_tp_ladder": (1.0, 2.0, 3.0),
+        "tp_ladder": (1.0, 1.5, 2.0),
+        "vwap_tp_ladder": (1.0, 1.5, 2.0),
         "description": "4h–24h multi-day",
     },
     "longterm": {
@@ -64,8 +64,8 @@ TRADER_PROFILES: dict[str, dict[str, Any]] = {
         "ema_slow": 100,
         "require_ema200": True,
         "sl_atr_mult": 0.5,
-        "tp_ladder": (1.0, 2.0, 3.0),
-        "vwap_tp_ladder": (1.0, 2.0, 3.0),
+        "tp_ladder": (1.0, 1.5, 2.0),
+        "vwap_tp_ladder": (1.0, 1.5, 2.0),
         "description": "1D+ position hold",
     },
 }
@@ -273,7 +273,7 @@ def _compute_deep_levels(
     market: str = "crypto",
     regime: str = "UNKNOWN",
     sl_mult: float = 1.5,
-    tp_ladder: tuple[float, float, float] = (1.0, 2.0, 3.0),
+    tp_ladder: tuple[float, float, float] = (1.0, 1.5, 2.0),
 ) -> dict[str, Any]:
     """v9.0.0 — ATR-laddered entries with minimum R:R 1:1.5.
 
@@ -916,7 +916,7 @@ def _compute_vwap_signal(
     sl_mult = float(prof["sl_atr_mult"])
     # v9.2.4 — VWAP engine pakai vwap_tp_ladder (TP1 lebih rapat) agar WR
     # profile berbayar lebih tinggi dari Confluence.
-    tp_ladder = tuple(prof.get("vwap_tp_ladder", prof.get("tp_ladder", (1.0, 2.0, 3.0))))
+    tp_ladder = tuple(prof.get("vwap_tp_ladder", prof.get("tp_ladder", (1.0, 1.5, 2.0))))
     peaks, valleys = _find_swings(highs, lows, window=10)
     # v9.2.4 — Anchor level = harga candle TUTUP (deterministik).
     # Live-anchor v9.1.4 dicabut: dashboard (batch fetch) dan detail
@@ -1204,9 +1204,8 @@ def compute_signal(
          produces HOLD ("wait for pullback"), never a counter-trend trade.
       4. Honest confidence: additive weighted score (50–95), no artificial
          baseline or boosts.
-      5. TP ladder 1R / 2R / 3R — dipilih dari backtest 30 hari
-         (302 trade, 9 aset): TP1=1R memberi WR 57.1% & expectancy
-         +0.136R/trade, jauh di atas varian 1.5R (42.1%, +0.048R).
+      5. TP ladder 1R / 1.5R / 2R [v10.0.16 — didekatkan dari 2R/3R
+         per keputusan user karena TP2/TP3 lama jarang tersentuh].
     """
     if not candles or len(candles) < 35:
         return {
@@ -1243,7 +1242,7 @@ def compute_signal(
     _ema_slow_n = int(_prof["ema_slow"])
     _require_ema200 = bool(_prof.get("require_ema200"))
     _sl_atr_mult = float(_prof["sl_atr_mult"])
-    _tp_ladder = tuple(_prof.get("tp_ladder", (1.0, 2.0, 3.0)))
+    _tp_ladder = tuple(_prof.get("tp_ladder", (1.0, 1.5, 2.0)))
 
     # v10.0.12 — Resolusi gerbang confluence (min_score) otomatis per profile
     # bila caller tidak menge-override eksplisit:
