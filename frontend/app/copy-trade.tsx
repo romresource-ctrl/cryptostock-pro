@@ -295,7 +295,7 @@ export default function CopyTradeScreen() {
                   <View style={{ alignItems: "flex-end", gap: 6 }}>
                     <View style={{ alignItems: "flex-end" }}>
                       <Text style={{ color: pnl >= 0 ? GREEN : RED, fontWeight: "900", fontSize: 17 }}>
-                        {pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}
+                        {pnl >= 0 ? "+" : "-"}${Math.abs(pnl).toFixed(2)}
                       </Text>
                       {row.pnl_pct != null ? (
                         <Text style={{ color: pnl >= 0 ? GREEN : RED, fontWeight: "700", fontSize: 10 }}>

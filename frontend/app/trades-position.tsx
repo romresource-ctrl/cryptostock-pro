@@ -68,6 +68,11 @@ export default function TradesPositionScreen() {
     )), [trades]);
 
   const openSymsKey = openSyms.join(",");
+  // v10.0.10 — Flash direction per simbol (naik=hijau, turun=merah) supaya
+  // harga & PnL "berkedip hidup" tiap ada perubahan tick.
+  const prevPricesRef = useRef<Record<string, number>>({});
+  const flashTimerRef = useRef<any>(null);
+  const [flash, setFlash] = useState<Record<string, "up" | "down">>({});
   useEffect(() => {
     if (!openSyms.length) {
       if (priceRef.current) { clearInterval(priceRef.current); priceRef.current = null; }
@@ -80,7 +85,19 @@ export default function TradesPositionScreen() {
         Object.entries(r.prices || {}).forEach(([k, v]) => {
           m[k.replace(/USDT$/, "")] = v as number;
         });
+        // Bandingkan dengan tick sebelumnya → tentukan arah kedip.
+        const f: Record<string, "up" | "down"> = {};
+        Object.entries(m).forEach(([k, v]) => {
+          const prev = prevPricesRef.current[k];
+          if (prev != null && v !== prev) f[k] = v > prev ? "up" : "down";
+        });
+        prevPricesRef.current = m;
         setPrices(m);
+        if (Object.keys(f).length > 0) {
+          setFlash((cur) => ({ ...cur, ...f }));
+          if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+          flashTimerRef.current = setTimeout(() => setFlash({}), 700);
+        }
       } catch { /* ignore */ }
     };
     tick();
@@ -160,8 +177,18 @@ export default function TradesPositionScreen() {
     const isOpen = tr.status === "open";
     const isPending = tr.status === "pending_entry";
     const isLong = tr.side === "BUY";
-    const pnl = Number(tr.pnl_usdt ?? 0);
-    const live = tr.symbol ? prices[String(tr.symbol).replace("USDT", "")] : undefined;
+    const symKey = tr.symbol ? String(tr.symbol).replace("USDT", "") : "";
+    const live = symKey ? prices[symKey] : undefined;
+    // v10.0.10 — PnL REALTIME: dihitung ulang dari mark price live tiap
+    // tick 2 detik (bukan menunggu refresh DB 10 detik). Fallback ke
+    // nilai DB bila harga belum masuk. Catatan: memakai qty awal; setelah
+    // partial TP, nilai DB (10s) yang lebih akurat.
+    let pnl = Number(tr.pnl_usdt ?? 0);
+    if (isOpen && live != null && tr.entry_price && tr.qty) {
+      pnl = (isLong ? 1 : -1) * (live - Number(tr.entry_price)) * Number(tr.qty);
+    }
+    const flashDir = symKey ? flash[symKey] : undefined;
+    const priceColor = flashDir === "up" ? GREEN : flashDir === "down" ? RED : colors.textMuted;
     const borderColor = isPending ? YELLOW
       : (isOpen ? (pnl >= 0 ? GREEN : RED) : colors.border);
     const canDelete = !isOpen && !isPending;
@@ -201,8 +228,9 @@ export default function TradesPositionScreen() {
             </Text>
           </View>
           {live != null ? (
-            <Text style={{ color: colors.textMuted, fontSize: 11, fontWeight: "700" }}>
+            <Text style={{ color: priceColor, fontSize: 11, fontWeight: "900" }}>
               · ${fp(live)}
+              {flashDir ? (flashDir === "up" ? " ▲" : " ▼") : ""}
             </Text>
           ) : null}
         </View>
@@ -242,9 +270,28 @@ export default function TradesPositionScreen() {
                 <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 10 }}>LIMIT WAITING</Text>
               </View>
             ) : (
-              <Text style={{ color: pnl >= 0 ? GREEN : RED, fontWeight: "900", fontSize: 17 }}>
-                {pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}
-              </Text>
+              <View style={{ alignItems: "flex-end" }}>
+                <Text style={{ color: pnl >= 0 ? GREEN : RED, fontWeight: "900", fontSize: 17 }}>
+                  {pnl >= 0 ? "+" : "-"}${Math.abs(pnl).toFixed(2)}
+                </Text>
+                {/* v10.0.10 — % PnL realtime terhadap margin + indikator LIVE
+                    yang berkedip mengikuti arah tick harga. */}
+                {isOpen && tr.margin_usdt ? (
+                  <Text style={{ color: pnl >= 0 ? GREEN : RED, fontWeight: "700", fontSize: 10 }}>
+                    {pnl >= 0 ? "+" : ""}{(pnl / Number(tr.margin_usdt) * 100).toFixed(2)}%
+                    {flashDir ? (flashDir === "up" ? " ▲" : " ▼") : ""}
+                  </Text>
+                ) : null}
+                {isOpen ? (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 3, marginTop: 1 }}>
+                    <View style={{
+                      width: 6, height: 6, borderRadius: 3,
+                      backgroundColor: flashDir ? (flashDir === "up" ? GREEN : RED) : colors.textMuted,
+                    }} />
+                    <Text style={{ color: colors.textMuted, fontSize: 8.5, fontWeight: "800", letterSpacing: 0.5 }}>LIVE</Text>
+                  </View>
+                ) : null}
+              </View>
             )}
             {(isOpen || isPending) ? (
               <TouchableOpacity

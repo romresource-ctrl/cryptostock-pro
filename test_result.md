@@ -2986,3 +2986,15 @@ frontend_v1004:
 #   Frontend kirim ladder penuh + tampilkan level bergeser di grid sheet.
 #   Backward-compat: app lama (pre-sliced <3 level) tidak terpengaruh.
 #   Unit test helper: PASS semua skenario.
+# ======================================================
+# v10.0.10 — Positions page: mark price & PnL realtime "hidup"
+# ======================================================
+# - PnL posisi open dihitung ulang client-side dari mark price tiap tick
+#   2 detik (tidak menunggu refresh DB 10s). % PnL vs margin ditambah.
+# - Efek kedip: harga & % berkedip hijau ▲ / merah ▼ saat tick berubah
+#   (flash 700ms), dot LIVE ikut berubah warna.
+# - Fix format negatif "$-76.51" -> "-$76.51" (positions + leaderboard).
+# - Verified: BTC live $83,270.00 -> $83,245.40 antar tick, PnL realtime
+#   terhitung (DB 0.00), border ikut merah. Seed dibersihkan.
+# - Side-effect terkonfirmasi: orphan sweeper v10.0.6 berjalan benar
+#   (trade >1 jam tanpa credential otomatis keluar dari OPEN).
