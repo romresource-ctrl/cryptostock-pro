@@ -2998,3 +2998,15 @@ frontend_v1004:
 #   terhitung (DB 0.00), border ikut merah. Seed dibersihkan.
 # - Side-effect terkonfirmasi: orphan sweeper v10.0.6 berjalan benar
 #   (trade >1 jam tanpa credential otomatis keluar dari OPEN).
+# ======================================================
+# v10.0.11 — Dashboard 100 koin + threshold 70 + Execute dari AI result
+# ======================================================
+# - DEFAULT_CRYPTO 50 -> 100 koin (verified: dashboard crypto mengembalikan
+#   98 aset). Threshold premium crypto 85 -> 70. Performa: batch paralel +
+#   cache 75s; cold-start +1-2 detik, warm hampir sama.
+# - Label profile UI: Day Trader -> Intraday, Long-term -> Confluence v9
+#   (mapping backend day/longterm TIDAK berubah; engine signal TIDAK diubah).
+# - Detail aset (crypto): tombol EXECUTE kontekstual di kartu AI PREDICTION
+#   & konsensus ANALYZE — muncul hanya saat ada arah (UP/DOWN atau
+#   BUY/SELL), membuka sheet Semi-Auto dengan side/entry/SL/TP terisi.
+#   Terverifikasi: SIDEWAYS/HOLD -> tombol tidak tampil (benar).

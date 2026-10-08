@@ -385,6 +385,36 @@ export default function AssetDetail() {
   const ticker = chart?.ticker ?? {};
   const sig = chart?.signal;
   const sigColors = signalColors(colors, sig?.action || "HOLD");
+
+  // v10.0.11 — Execute Semi-Auto LANGSUNG dari hasil AI Prediction /
+  // Analyze (keputusan user: tidak perlu 2 tombol terpisah; sinyal AI yang
+  // sudah menentukan arah LONG/SHORT langsung bisa dieksekusi).
+  // Arah: BUY=LONG, SELL=SHORT. Entry = harga live/mark; SL/TP dari
+  // technical signal bila tersedia, fallback 1%/2%; ladder TP 3 tingkat.
+  const executeFromSignal = (action: "BUY" | "SELL") => {
+    if (market !== "crypto") return;
+    const s = chart?.signal;
+    const isBuy = action === "BUY";
+    const price = Number(
+      (rt.connected && Number.isFinite(rt.price) ? rt.price : 0)
+      || s?.entry || ticker.price || 0
+    );
+    if (!price || price <= 0) return;
+    const sl = Number(s?.stop_loss) || (isBuy ? price * 0.99 : price * 1.01);
+    const spread = Math.max(Math.abs(Number(s?.take_profit || 0) - price), price * 0.005);
+    const tps = isBuy
+      ? [price + spread, price + spread * 2, price + spread * 3]
+      : [price - spread, price - spread * 2, price - spread * 3];
+    setAsiIntent({
+      symbol: String(symbol).replace(/[-/].*$/, ""),
+      side: isBuy ? "BUY" : "SELL",
+      entry: price,
+      stop_loss: sl,
+      take_profits: tps,
+      source: "asset-detail",
+      formula_tag: formulaTagFromSignal(s?.indicators, (s as any)?.reasons, apiProfile),
+    });
+  };
   // v8.5.0 — Realtime Binance ticker for crypto assets.  When connected,
   // overrides `ticker.price` / `change_pct_24h` so the header updates every
   // 100-200 ms.  Non-crypto markets keep the REST snapshot.
@@ -1020,6 +1050,10 @@ export default function AssetDetail() {
                   </>
                 )}
               </TouchableOpacity>
+              {/* v10.0.11 — Execute Semi-Auto dipindah ke DALAM hasil AI
+                  Prediction / Analyze (tombol kontekstual mengikuti arah
+                  sinyal), bukan 2 tombol statis di header. Lihat blok
+                  "ai-prediction-execute" & "consensus-execute" di bawah. */}
             </View>
           </View>
 
@@ -1171,6 +1205,27 @@ export default function AssetDetail() {
                         ))}
                       </View>
                     ) : null}
+
+                    {/* v10.0.11 — Tombol EXECUTE kontekstual: muncul hanya
+                        bila prediksi punya arah (UP/DOWN) dan market crypto.
+                        Arah & level langsung dari sinyal, membuka sheet
+                        Semi-Auto ASI-Bot untuk konfirmasi. */}
+                    {isCrypto && (isUp || isDown) ? (
+                      <TouchableOpacity
+                        testID="ai-prediction-execute"
+                        onPress={() => executeFromSignal(isUp ? "BUY" : "SELL")}
+                        style={{
+                          marginTop: 12, backgroundColor: dirColor, borderRadius: 8,
+                          paddingVertical: 11, flexDirection: "row",
+                          alignItems: "center", justifyContent: "center", gap: 6,
+                        }}
+                      >
+                        <Ionicons name="flash" size={14} color="#fff" />
+                        <Text style={{ color: "#fff", fontWeight: "900", fontSize: 12, letterSpacing: 0.4 }}>
+                          EXECUTE {isUp ? "LONG" : "SHORT"} · ASI-BOT
+                        </Text>
+                      </TouchableOpacity>
+                    ) : null}
                     <Text style={{ fontSize: 9, color: colors.textMuted, marginTop: 8, fontStyle: "italic" }}>
                       Instant prediction from technical indicators. Tap {t("detail_ai_btn")} for full multi-model deep analysis.
                     </Text>
@@ -1232,6 +1287,32 @@ export default function AssetDetail() {
                     🌐 {analysis.consensus.macro_context}
                   </Text>
                 ) : null}
+                {/* v10.0.11 — Tombol EXECUTE kontekstual di hasil ANALYZE
+                    (konsensus multi-model): muncul hanya bila konsensus
+                    BUY/SELL dan market crypto. */}
+                {(() => {
+                  const raw = String(analysis.consensus.action || "").toUpperCase();
+                  const dir = raw === "BUY" || raw === "LONG" ? "BUY"
+                    : raw === "SELL" || raw === "SHORT" ? "SELL" : null;
+                  if (market !== "crypto" || !dir) return null;
+                  const c = dir === "BUY" ? colors.accentUp : colors.accentDown;
+                  return (
+                    <TouchableOpacity
+                      testID="consensus-execute"
+                      onPress={() => executeFromSignal(dir)}
+                      style={{
+                        marginTop: 10, backgroundColor: c, borderRadius: 8,
+                        paddingVertical: 11, flexDirection: "row",
+                        alignItems: "center", justifyContent: "center", gap: 6,
+                      }}
+                    >
+                      <Ionicons name="flash" size={14} color="#fff" />
+                      <Text style={{ color: "#fff", fontWeight: "900", fontSize: 12, letterSpacing: 0.4 }}>
+                        EXECUTE {dir === "BUY" ? "LONG" : "SHORT"} · ASI-BOT
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })()}
               </View>
 
               {/* Per-model */}

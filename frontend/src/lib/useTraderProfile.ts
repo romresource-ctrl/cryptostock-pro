@@ -94,7 +94,9 @@ export const PROFILE_META: Record<
   },
   day: {
     emoji: "⚡",
-    label: "Day Trader",
+    // v10.0.11 — Label UI "Intraday" (dulu "Day Trader") per permintaan
+    // user. Mapping backend tetap `day` → tidak mengubah formula.
+    label: "Intraday",
     timeframe: "1h–4h",
     description: "VWAP reclaim/rejection + box-20 · intraday",
     color: "#F0B90B",
@@ -107,10 +109,13 @@ export const PROFILE_META: Record<
     color: "#22C55E",
   },
   longterm: {
-    emoji: "🐢",
-    label: "Long-term",
-    timeframe: "1D+",
-    description: "Confluence EMA 50/100/200 · position hold",
+    emoji: "🧠",
+    // v10.0.11 — Label UI "Confluence v9" (dulu "Long-term"). Backend
+    // profile `longterm` memakai engine Confluence default (sama dengan
+    // profile=null). Rename murni di UI untuk kejelasan user.
+    label: "Confluence v9",
+    timeframe: "Multi-TF",
+    description: "Confluence EMA 50/100/200 — mesin default v9",
     color: "#3B82F6",
   },
 };

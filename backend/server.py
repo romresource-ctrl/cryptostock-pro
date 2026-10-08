@@ -249,7 +249,11 @@ _TOP_N = 50
 #   Search endpoint `/api/search` scans the FULL universe (not just these
 #   50) so users can still find any symbol they type — even if it's not
 #   shown on the dashboard.
-DEFAULT_CRYPTO = list(CRYPTO_BINANCE_MAP.keys())[:50]
+# v10.0.11 — Dashboard crypto dinaikkan dari 50 → 100 koin (per permintaan
+# user: "signal lebih banyak seperti versi lama"). Pasar lain tetap 50 agar
+# cold-start cepat. Formula strategi TIDAK diubah; hanya UNIVERSE yang
+# diperlebar supaya daftar signal crypto di dashboard lebih kaya.
+DEFAULT_CRYPTO = list(CRYPTO_BINANCE_MAP.keys())[:100]
 DEFAULT_STOCKS = list(STOCK_YAHOO_MAP.keys())[:50]
 DEFAULT_ETF = list(ETF_YAHOO_MAP.keys())[:50]
 DEFAULT_STOCK_US = list(STOCK_US_YAHOO_MAP.keys())[:50]
@@ -968,7 +972,13 @@ _MARKET_THRESHOLDS: dict[str, tuple[int, float]] = {
     # Gate lama (WR>=72-75%) dikalibrasi untuk formula v1 dan praktis
     # mustahil dicapai → badge premium hilang total. Bar untuk aset tanpa
     # histori juga diturunkan dari +5 ke +3 (lihat _build_signal).
-    "crypto":               (85, 55.0),
+    # v10.0.11 — Threshold premium crypto diturunkan 85 → 70 (keputusan
+    # user: "formula seperti versi lama, signal lebih banyak"). Dashboard
+    # menampilkan DAFTAR LENGKAP tanpa dipotong threshold; nilai ini hanya
+    # memengaruhi badge "PREMIUM" dan filter `premium_only`. Jadi lebih
+    # banyak koin akan mendapat badge premium dan terasa "lebih banyak
+    # signal", tanpa menyentuh formula entry/exit ASI-Bot.
+    "crypto":               (70, 55.0),
     "stock_id":             (85, 55.0),
     "stock_us":             (85, 55.0),
     "world_stocks":         (85, 55.0),
@@ -1671,7 +1681,7 @@ async def search_assets(
 # v8.12.69 — Latest published Android build. The /app-version endpoint
 # serves this so outdated installs get an update prompt. Bump together
 # with frontend APP_VERSION / app.json version on every release.
-APP_LATEST_VERSION = "10.0.10"
+APP_LATEST_VERSION = "10.0.11"
 
 # v10.0.1 — Release notes untuk popup update (per bahasa).
 # v10.0.5 — Ditulis ulang dengan bahasa sederhana untuk pengguna awam:
@@ -1687,6 +1697,8 @@ APP_UPDATE_NOTES = {
         "• Leaderboard Copy Trade: setiap posisi tampil lengkap dengan untung/rugi masing-masing\n"
         "• Mode Full-Auto kini hanya memperdagangkan aset besar (top-50) demi keamanan\n"
         "• Halaman Positions baru: cek semua posisi, tutup/batalkan order langsung dari dashboard\n"
+        "• Dashboard crypto menampilkan 100 koin dengan lebih banyak sinyal premium\n"
+        "• Detail aset: hasil AI Prediction/Analyze kini punya tombol Execute ke ASI-Bot Semi-Auto\n"
         "• Berbagai perbaikan kecil dan peningkatan kestabilan"
     ),
     "en": (
@@ -1699,6 +1711,8 @@ APP_UPDATE_NOTES = {
         "• Copy Trade leaderboard: every position shown with its own profit/loss\n"
         "• Full-Auto mode now trades only large-cap assets (top 50) for safety\n"
         "• New Positions page: review all positions and close/cancel right from the dashboard\n"
+        "• Crypto dashboard now lists 100 coins with more premium signals\n"
+        "• Asset detail: AI Prediction/Analyze results now include an Execute button for the ASI-Bot Semi-Auto\n"
         "• Various minor fixes and stability improvements"
     ),
 }
