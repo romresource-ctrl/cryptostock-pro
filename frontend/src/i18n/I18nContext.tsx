@@ -749,6 +749,22 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     ru: "Не удалось закрыть позицию",
     cn: "平仓失败",
   },
+  // v10.0.15 — Dialog konfirmasi di halaman Positions (mengikuti bahasa user).
+  pos_close_title: {
+    id: "Tutup Posisi", en: "Close Position", ru: "Закрыть позицию", cn: "平仓",
+  },
+  pos_close_body: {
+    id: "Tutup posisi ini di harga pasar?", en: "Close this position at market price?",
+    ru: "Закрыть эту позицию по рыночной цене?", cn: "以市价平掉该仓位？",
+  },
+  pos_cancel_title: {
+    id: "Batalkan Order", en: "Cancel Order", ru: "Отменить ордер", cn: "取消订单",
+  },
+  pos_cancel_body: {
+    id: "Batalkan order LIMIT yang masih pending?", en: "Cancel this pending LIMIT order?",
+    ru: "Отменить этот ожидающий LIMIT ордер?", cn: "取消该挂单 LIMIT 订单？",
+  },
+  pos_btn_back: { id: "Kembali", en: "Back", ru: "Назад", cn: "返回" },
   // v9.7.7 — Semi tidak punya STOP; cukup READY + tombol PILIH SINYAL.
   asi_semi_ready: { id: "SIAP", en: "READY", ru: "ГОТОВО", cn: "就绪" },
   asi_card_semi_sub_ready: {
@@ -957,6 +973,62 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     en: "Position size ${size} is below the exchange minimum (${min}). Raise Risk % or Leverage.",
     ru: "Размер позиции ${size} ниже минимума биржи (${min}). Увеличьте риск % или плечо.",
     cn: "仓位规模 ${size} 低于交易所最小值（${min}）。请提高风险 % 或杠杆。",
+  },
+  // v10.0.15 — Pesan error eksekusi berdasar `reason` code backend,
+  // terlokalisasi penuh mengikuti bahasa pilihan user di dashboard.
+  ats_err_qty_zero: {
+    id: "Margin terlalu kecil untuk 1 step kontrak. Naikkan Risk % atau Leverage.",
+    en: "Margin too small for 1 contract step. Raise Risk % or Leverage.",
+    ru: "Маржа слишком мала для минимального шага контракта. Увеличьте риск % или плечо.",
+    cn: "保证金太小，低于 1 个合约步长。请提高风险 % 或杠杆。",
+  },
+  ats_err_balance: {
+    id: "Gagal membaca saldo exchange. Periksa koneksi API Anda.",
+    en: "Failed to read exchange balance. Check your API connection.",
+    ru: "Не удалось прочитать баланс биржи. Проверьте подключение API.",
+    cn: "无法读取交易所余额。请检查您的 API 连接。",
+  },
+  ats_err_filters: {
+    id: "Filter tick/step simbol belum termuat. Coba lagi beberapa detik.",
+    en: "Symbol tick/step filters not loaded yet. Retry in a few seconds.",
+    ru: "Фильтры шага цены/объёма ещё не загружены. Повторите через пару секунд.",
+    cn: "交易对价格/数量步长尚未加载。请几秒后重试。",
+  },
+  ats_err_unreachable: {
+    id: "Tidak bisa terhubung ke exchange. Coba lagi.",
+    en: "Could not reach the exchange. Please try again.",
+    ru: "Не удалось связаться с биржей. Попробуйте снова.",
+    cn: "无法连接交易所。请重试。",
+  },
+  ats_err_mm_mismatch: {
+    id: "Simbol ini punya posisi dengan margin mode berbeda. Tutup posisi dulu atau samakan margin mode.",
+    en: "This symbol has an active position with a different margin mode. Close it first or match the margin mode.",
+    ru: "По этому символу есть активная позиция с другим режимом маржи. Закройте её или выберите тот же режим.",
+    cn: "该交易对已有不同保证金模式的持仓。请先平仓或选择相同的保证金模式。",
+  },
+  ats_err_opposite: {
+    id: "Masih ada posisi terbuka dengan arah berlawanan. Eksekusi ini akan mengurangi posisi Anda (one-way mode).",
+    en: "An open position in the opposite direction still exists. This execution would reduce your position (one-way mode).",
+    ru: "Есть открытая позиция в противоположном направлении. Это исполнение сократит вашу позицию (односторонний режим).",
+    cn: "仍存在相反方向的持仓。此操作将减少您的仓位（单向模式）。",
+  },
+  ats_err_mm_failed: {
+    id: "Gagal mengatur margin mode di exchange. Coba lagi atau atur manual di Binance.",
+    en: "Failed to set margin mode on the exchange. Retry or set it manually on Binance.",
+    ru: "Не удалось установить режим маржи на бирже. Повторите или настройте вручную на Binance.",
+    cn: "无法在交易所设置保证金模式。请重试或在 Binance 手动设置。",
+  },
+  ats_err_pos_not_visible: {
+    id: "Order terkirim tapi posisi belum terlihat di akun. Periksa Binance secara manual.",
+    en: "Order was sent but the position is not visible in the account. Please check Binance manually.",
+    ru: "Ордер отправлен, но позиция не отображается на счёте. Проверьте Binance вручную.",
+    cn: "订单已发送，但账户中未显示持仓。请手动检查 Binance。",
+  },
+  ats_err_execute_generic: {
+    id: "Eksekusi gagal. Silakan coba lagi.",
+    en: "Execution failed. Please try again.",
+    ru: "Ошибка исполнения. Попробуйте снова.",
+    cn: "执行失败。请重试。",
   },
   // v9.9.2 — Auto-rollback & margin mismatch dialogs
   ats_bracket_rollback_title: {

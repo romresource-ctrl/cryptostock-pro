@@ -31,7 +31,7 @@ type AnyTrade = AsiTradeResp & Record<string, any>;
 export default function TradesPositionScreen() {
   const router = useRouter();
   const { colors } = useTheme();
-  const { t, tEN } = useI18n();
+  const { t } = useI18n();
   const insets = useSafeAreaInsets();
   const [deviceId, setDeviceId] = useState<string>("");
   const [trades, setTrades] = useState<AnyTrade[]>([]);
@@ -108,16 +108,17 @@ export default function TradesPositionScreen() {
 
   const onClose = useCallback(async (tr: AnyTrade) => {
     const isPending = tr.status === "pending_entry";
+    // v10.0.15 — Semua teks dialog mengikuti bahasa pilihan user.
     const confirmMsg = isPending
-      ? "Cancel this pending LIMIT order?"
-      : "Close this position at market price?";
+      ? t("pos_cancel_body")
+      : t("pos_close_body");
     const ask = Platform.OS === "web"
       ? Promise.resolve(window.confirm(confirmMsg))
       : new Promise<boolean>((resolve) => Alert.alert(
-          isPending ? "Cancel order" : "Close position",
+          isPending ? t("pos_cancel_title") : t("pos_close_title"),
           confirmMsg,
-          [{ text: "Back", style: "cancel", onPress: () => resolve(false) },
-           { text: isPending ? "Cancel order" : "Close",
+          [{ text: t("pos_btn_back"), style: "cancel", onPress: () => resolve(false) },
+           { text: isPending ? t("asi_btn_cancel") : t("asi_recent_close"),
              style: "destructive", onPress: () => resolve(true) }]
         ));
     const ok = await ask;
@@ -127,9 +128,9 @@ export default function TradesPositionScreen() {
       await api.asi.closeTrade(deviceId, tr.id || tr._id);
       await load();
     } catch (e: any) {
-      Alert.alert(tEN("asi_close_failed") || "Action failed", String(e?.message || e));
+      Alert.alert(t("asi_close_failed") || "Action failed", String(e?.message || e));
     } finally { setBusyId(null); }
-  }, [deviceId, load, tEN]);
+  }, [deviceId, load, t]);
 
   const onDelete = useCallback(async (tr: AnyTrade) => {
     try {

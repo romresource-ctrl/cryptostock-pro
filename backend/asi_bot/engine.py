@@ -307,8 +307,8 @@ async def preview_trade(
                 "size_usdt": size_usdt, "qty": 0,
                 "leverage": leverage, "risk_pct": risk_pct,
                 "est_loss_usdt": 0, "tp_estimations": [],
-                "message": (f"Ukuran posisi ${size_usdt:.2f} di bawah minimum "
-                            f"exchange (${float(min_cost):.2f}). Naikkan Risk % atau Leverage."),
+                "message": (f"Position size ${size_usdt:.2f} is below the "
+                            f"exchange minimum (${float(min_cost):.2f}). Raise Risk % or Leverage."),
             }
     finally:
         await client.close()
@@ -383,14 +383,14 @@ async def execute_trade(
     step = float(f.get("step") or 0.0)
     if tick <= 0 or step <= 0:
         return {"ok": False, "reason": "symbol_filters_missing",
-                "message": f"Filter tick/step {bin_sym} tidak ditemukan. Coba ulang beberapa detik lagi."}
+                "message": f"Tick/step filters for {bin_sym} not found. Retry in a few seconds."}
 
     # (2) Margin mode: baca posisi saat ini (bisa Nil) → set target
     try:
         pos = await br.position_risk(api_key, api_secret, is_testnet, bin_sym)
     except Exception as e:
         return {"ok": False, "reason": "exchange_unreachable",
-                "message": f"Tidak bisa membaca status posisi: {str(e)[:160]}"}
+                "message": f"Could not read position status: {str(e)[:160]}"}
 
     existing_amt = float((pos or {}).get("positionAmt") or 0)
     current_mt = str((pos or {}).get("marginType") or "").lower()  # "cross"|"isolated"
@@ -403,9 +403,9 @@ async def execute_trade(
                 "ok": False, "reason": "margin_mode_mismatch",
                 "requested": margin_mode, "actual": current_mt,
                 "message": (
-                    f"{bin_sym} punya posisi {current_mt.upper()} aktif. "
-                    f"Tidak bisa buka trade baru dalam mode {margin_mode.upper()}. "
-                    "Tutup posisi dulu atau pilih margin mode yang sama."
+                    f"{bin_sym} has an active {current_mt.upper()} position. "
+                    f"Cannot open a new trade in {margin_mode.upper()} mode. "
+                    "Close the position first or pick the same margin mode."
                 ),
             }
         # v9.9.4 — LAYERING (averaging): hanya boleh searah. Sinyal
@@ -416,9 +416,9 @@ async def execute_trade(
             return {
                 "ok": False, "reason": "opposite_position",
                 "message": (
-                    f"Posisi {'LONG' if existing_side == 'BUY' else 'SHORT'} {bin_sym} "
-                    "masih aktif. Eksekusi berlawanan arah akan MENGURANGI posisi Anda "
-                    "(one-way mode). Tutup posisi dulu bila ingin ganti arah."
+                    f"A {'LONG' if existing_side == 'BUY' else 'SHORT'} position on {bin_sym} "
+                    "is still active. An opposite-side execution would REDUCE your position "
+                    "(one-way mode). Close the position first if you want to flip direction."
                 ),
             }
         layering = True
@@ -432,7 +432,7 @@ async def execute_trade(
             return {
                 "ok": False, "reason": "margin_mode_set_failed",
                 "requested": margin_mode,
-                "message": f"Gagal set margin mode {margin_mode.upper()}: {set_mt.get('msg')}",
+                "message": f"Failed to set margin mode {margin_mode.upper()}: {set_mt.get('msg')}",
             }
         # v9.9.10 — Posisi flat: bersihkan bracket BASI dari posisi lama
         # yang sudah tertutup (SL/TP closePosition sisa, baik algo maupun
@@ -474,14 +474,14 @@ async def execute_trade(
     qty = round_to_step(qty_raw, step)
     if qty <= 0:
         return {"ok": False, "reason": "qty_zero",
-                "message": "Margin terlalu kecil utk 1 step kontrak. Naikkan Risk% / Leverage."}
+                "message": "Margin too small for 1 contract step. Raise Risk % or Leverage."}
 
     # Min notional check (approx — Binance default $5-$20 for USD-M)
     notional = qty * entry
     if notional < 5.0:
         return {"ok": False, "reason": "min_notional",
                 "min_notional": 5.0,
-                "message": f"Nilai posisi ${notional:.2f} di bawah minimum $5. Naikkan Risk%/Leverage."}
+                "message": f"Position value ${notional:.2f} is below the $5 minimum. Raise Risk % or Leverage."}
 
     # Round trigger prices to tick
     sl_price = round_to_tick(float(stop_loss), tick)
@@ -582,7 +582,7 @@ async def execute_trade(
     if not pos_final or abs(float(pos_final.get("positionAmt") or 0)) <= 0:
         # Posisi tidak materialize? Market order mungkin instan direverse.
         return {"ok": False, "reason": "position_not_opened",
-                "message": "Market order terkirim tapi posisi tidak muncul di akun. Cek Binance manual."}
+                "message": "Market order sent but position did not appear in the account. Check Binance manually."}
 
     actual_qty = abs(float(pos_final.get("positionAmt") or 0))
     actual_entry = float(pos_final.get("entryPrice") or entry)

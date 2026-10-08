@@ -392,7 +392,7 @@ def register(app_api: APIRouter, db: Any) -> None:
                               testnet: bool | None = Query(None)):
         doc = await resolve_credential(db, device_id, exchange, testnet)
         if not doc:
-            raise HTTPException(404, "Credential tidak ditemukan untuk jaringan ini")
+            raise HTTPException(404, "Credential not found for this network")
         res = await validate_credentials(
             exchange,
             decrypt(doc["api_key_enc"]), decrypt(doc["api_secret_enc"]),
@@ -420,7 +420,7 @@ async def get_price(symbol: str = Query(..., min_length=2, max_length=20)):
     async with _hx.AsyncClient(proxy=os.environ.get("ASI_PROXY_URL"), timeout=10.0) as c:
         r = await c.get(f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={base}")
     if r.status_code != 200:
-        raise HTTPException(400, f"Simbol {base} tidak ditemukan di Binance Futures")
+        raise HTTPException(400, f"Symbol {base} not found on Binance Futures")
     return {"symbol": base, "price": float(r.json()["price"])}
 
 
@@ -524,7 +524,7 @@ def _attach_trade_routes(db: Any) -> None:
         # simbol secara dinamis terhadap daftar pasar exchange user.
         doc = await _resolve_trade_cred(db, device_id, payload.exchange, payload.testnet)
         if not doc:
-            raise HTTPException(404, "Hubungkan API exchange untuk jaringan ini terlebih dahulu.")
+            raise HTTPException(404, "Connect your exchange API for this network first.")
         return await preview_trade(
             doc, payload.symbol, payload.side,
             payload.entry, payload.stop_loss, payload.take_profits,
@@ -537,7 +537,7 @@ def _attach_trade_routes(db: Any) -> None:
         # v9.8.2 — whitelist statis Top-100 DIHAPUS (lihat engine._ensure_tradable).
         doc = await _resolve_trade_cred(db, device_id, payload.exchange, payload.testnet)
         if not doc:
-            raise HTTPException(404, "Hubungkan API exchange untuk jaringan ini terlebih dahulu.")
+            raise HTTPException(404, "Connect your exchange API for this network first.")
         res = await execute_trade(
             doc, payload.symbol, payload.side,
             payload.entry, payload.stop_loss, payload.take_profits,
@@ -715,14 +715,14 @@ def _attach_trade_routes(db: Any) -> None:
             ).sort("created_at", -1).limit(10)
         ]
         if not trades:
-            raise HTTPException(404, f"Tidak ada trade {sym} di {exchange}.")
+            raise HTTPException(404, f"No trade {sym} on {exchange}.")
         open_trades = [t for t in trades
                        if str(t.get("status", "")).lower() == "open"]
         ref = open_trades[0] if open_trades else trades[0]
         cred = await resolve_credential(
             db, device_id, exchange, bool(ref.get("testnet", True)))
         if not cred:
-            raise HTTPException(404, "Hubungkan API exchange untuk jaringan ini terlebih dahulu.")
+            raise HTTPException(404, "Connect your exchange API for this network first.")
         try:
             await close_position(
                 cred, ref["symbol"], ref["side"], float(ref.get("qty") or 0),
@@ -793,11 +793,11 @@ def _attach_trade_routes(db: Any) -> None:
     async def refresh_trade(trade_id: str, device_id: str = Query(..., min_length=4)):
         doc = await db.asi_trades.find_one({"_id": f"{device_id}:{trade_id}"})
         if not doc:
-            raise HTTPException(404, "Trade tidak ditemukan")
+            raise HTTPException(404, "Trade not found")
         cred = await resolve_credential(
             db, device_id, doc["exchange"], bool(doc.get("testnet", True)))
         if not cred:
-            raise HTTPException(404, "Credential exchange tidak ditemukan untuk jaringan ini")
+            raise HTTPException(404, "Exchange credential not found for this network")
         update = await refresh_trade_pnl(cred, doc)
         update["updated_at"] = _now_iso()
         await db.asi_trades.update_one({"_id": doc["_id"]}, {"$set": update})

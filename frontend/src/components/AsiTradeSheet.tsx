@@ -282,8 +282,25 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
       // response body JSON {code, message, rollback_done, ...}.
       const code: string | undefined = e?.code;
       const msg: string = e?.detail?.message || e?.message || String(e);
-      // v10.0.6 — Notifikasi eksekusi SELALU English (aplikasi global).
-      let title = tEN("ats_exec_failed");
+      // v10.0.15 — Notifikasi MENGIKUTI BAHASA pilihan user (dashboard):
+      // reason code backend dipetakan ke string i18n; fallback ke pesan
+      // English backend (backend tidak pernah kirim Bahasa Indonesia lagi).
+      const localizedBody = ((): string => {
+        if (code === "qty_zero") return t("ats_err_qty_zero");
+        if (code === "min_notional") return t("ats_err_min_notional")
+          .replace("{size}", String((e?.detail?.size_usdt ?? 0).toFixed?.(2) ?? "0.00"))
+          .replace("{min}", String((e?.detail?.min_notional ?? 5).toFixed?.(2) ?? "5.00"));
+        if (code === "balance_fetch_failed") return t("ats_err_balance");
+        if (code === "symbol_filters_missing") return t("ats_err_filters");
+        if (code === "exchange_unreachable") return t("ats_err_unreachable");
+        if (code === "margin_mode_mismatch") return t("ats_err_mm_mismatch");
+        if (code === "opposite_position") return t("ats_err_opposite");
+        if (code === "margin_mode_set_failed") return t("ats_err_mm_failed");
+        if (code === "position_not_visible") return t("ats_err_pos_not_visible");
+        if (code === "execute_failed") return t("ats_err_execute_generic");
+        return msg || t("ats_err_execute_generic");
+      })();
+      let title = t("ats_exec_failed");
       let infoOnly = false;
       if (code === "bracket_sl_failed" || code === "bracket_tp_incomplete"
           || code === "bracket_sl_not_verified") {
@@ -295,13 +312,13 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
         }
       } else if (code === "margin_mode_mismatch"
                  || code === "margin_mode_set_failed") {
-        title = tEN("ats_margin_mismatch_title");
+        title = t("ats_margin_mismatch_title");
         infoOnly = true;
       } else if (code === "bracket_failed_rollback_failed"
                  || e?.detail?.requires_manual_action) {
         title = tEN("ats_rollback_failed_title");
       }
-      setExecResult({ ok: false, title, body: msg, infoOnly } as any);
+      setExecResult({ ok: false, title, body: localizedBody, infoOnly } as any);
     } finally { setExecuting(false); }
   };
 
@@ -581,6 +598,15 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
                             .replace("{size}", (preview?.size_usdt ?? 0).toFixed(2))
                             .replace("{min}", (preview?.min_notional ?? 0).toFixed(2));
                         }
+                        // v10.0.15 — Reason code lain terlokalisasi (bahasa
+                        // mengikuti pilihan user di dashboard).
+                        if (reason === "qty_zero") return t("ats_err_qty_zero");
+                        if (reason === "balance_fetch_failed") return t("ats_err_balance");
+                        if (reason === "symbol_filters_missing") return t("ats_err_filters");
+                        if (reason === "exchange_unreachable") return t("ats_err_unreachable");
+                        if (reason === "margin_mode_mismatch") return t("ats_err_mm_mismatch");
+                        if (reason === "opposite_position") return t("ats_err_opposite");
+                        if (reason === "margin_mode_set_failed") return t("ats_err_mm_failed");
                         return preview?.message || t("ats_no_preview");
                       })()}
                     </Text>
