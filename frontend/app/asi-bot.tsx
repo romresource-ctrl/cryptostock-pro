@@ -445,28 +445,39 @@ export default function ASIBotScreen() {
           <View style={{ flexDirection: "row", gap: 8 }}>
             {([
               { k: "asi_bot",
-                // v10.0.16 — Chip ASI-Bot menampilkan Trader Profile yang
-                // sedang dipilih (bukan selalu "Confluence/VWAP"), sehingga
-                // user tahu engine mana yang menggerakkan eksekusi.
+                // v10.0.16 — Chip ASI-Bot: label DAN emoji mengikuti Trader
+                // Profile yang dipilih (🏃 Scalper / ⚡ Intraday / 📈 Swing /
+                // 🧠 Confluence v9). Belum memilih → emoji 🧠 + label default.
                 label: "ASI-Bot",
-                emoji: "🧠",
+                emoji: traderExplicit && traderProfile
+                  ? (PROFILE_META[traderProfile]?.emoji ?? "🧠")
+                  : "🧠",
                 sub: traderExplicit && traderProfile
-                  ? `${PROFILE_META[traderProfile]?.emoji ?? ""} ${PROFILE_META[traderProfile]?.label ?? traderProfile}`.trim()
+                  ? (PROFILE_META[traderProfile]?.label ?? traderProfile)
                   : "Default · Confluence (longgar)" },
-              { k: "cloud_pro", label: "Titan-Bot", emoji: "⚡", sub: "Pro Engine · Entry/SL/TP auto" },
+              // v10.1.1 — Titan-Bot DIBEKUKAN SEMENTARA (keputusan user):
+              // tombol tetap tampil tetapi redup & tidak bisa diklik sampai
+              // user meminta dinyalakan. Setting signal_source="cloud_pro"
+              // yang sudah tersimpan TETAP berfungsi di backend (relay jalan
+              // terus); hanya pemilihan baru via UI yang dikunci.
+              { k: "cloud_pro", label: "Titan-Bot", emoji: "⚡", sub: "Segera Hadir", disabled: true },
             ] as const).map((opt) => {
+              const isDisabled = (opt as any).disabled === true;
               const active = (bot.signal_source ?? "asi_bot") === opt.k;
               const accent = opt.k === "cloud_pro" ? "#8B5CF6" : GOLD;
               return (
                 <TouchableOpacity
                   key={opt.k}
-                  onPress={() => saveBot({ signal_source: opt.k })}
+                  onPress={() => { if (!isDisabled) saveBot({ signal_source: opt.k }); }}
+                  disabled={isDisabled}
+                  activeOpacity={isDisabled ? 1 : 0.7}
                   style={{
                     flex: 1, paddingVertical: 12, paddingHorizontal: 8,
                     borderRadius: 12, borderWidth: 1.5,
                     borderColor: active ? accent : colors.border,
                     backgroundColor: active ? accent : colors.surface,
                     alignItems: "center",
+                    opacity: isDisabled ? 0.45 : 1,
                   }}
                   testID={`asi-engine-${opt.k}`}
                 >
@@ -483,6 +494,16 @@ export default function ASIBotScreen() {
                   }}>
                     {opt.sub}
                   </Text>
+                  {isDisabled ? (
+                    <View style={{
+                      marginTop: 4, paddingHorizontal: 6, paddingVertical: 1,
+                      borderRadius: 4, backgroundColor: colors.border,
+                    }}>
+                      <Text style={{ color: colors.textMuted, fontSize: 8, fontWeight: "800" }}>
+                        COMING SOON
+                      </Text>
+                    </View>
+                  ) : null}
                 </TouchableOpacity>
               );
             })}

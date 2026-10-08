@@ -1681,38 +1681,28 @@ async def search_assets(
 # v8.12.69 — Latest published Android build. The /app-version endpoint
 # serves this so outdated installs get an update prompt. Bump together
 # with frontend APP_VERSION / app.json version on every release.
-APP_LATEST_VERSION = "10.0.12"
+APP_LATEST_VERSION = "10.1.1"
 
-# v10.0.1 — Release notes untuk popup update (per bahasa).
-# v10.0.5 — Ditulis ulang dengan bahasa sederhana untuk pengguna awam:
-# tanpa istilah teknis/formula (ATR, anchor-to-fill, nama strategi, dst).
+# v10.1.1 — Release notes untuk popup update (per bahasa).
 APP_UPDATE_NOTES = {
     "id": (
-        "• Sinyal bot lebih akurat mengikuti tren harian\n"
-        "• Perbaikan posisi yang tertutup terlalu cepat sebelum target profit\n"
-        "• Target profit terbagi otomatis menjadi 3 tahap (sebagian-sebagian, tidak langsung semua)\n"
-        "• Harga berjalan tampil realtime di setiap posisi yang sedang terbuka\n"
-        "• Kartu trade berwarna: hijau = untung, merah = rugi, kuning = order menunggu\n"
-        "• Order yang belum terisi otomatis dibatalkan, bisa juga dibatalkan manual\n"
-        "• Leaderboard Copy Trade: setiap posisi tampil lengkap dengan untung/rugi masing-masing\n"
-        "• Mode Full-Auto kini hanya memperdagangkan aset besar (top-50) demi keamanan\n"
-        "• Halaman Positions baru: cek semua posisi, tutup/batalkan order langsung dari dashboard\n"
-        "• Dashboard crypto menampilkan 100 koin dengan lebih banyak sinyal premium\n"
-        "• Detail aset: hasil AI Prediction/Analyze kini punya tombol Execute ke ASI-Bot Semi-Auto\n"
+        "• Target profit lebih dekat (1R/1.5R/2R) dengan komposisi TP1 50%, TP2 25%, TP3 25%\n"
+        "• SL Guard otomatis mengunci profit: TP1 hit → SL pindah ke TP1, TP2 hit → SL pindah ke TP2\n"
+        "• Full-Auto kembali memindai Top-100 koin\n"
+        "• Bot mengikuti Trader Profile pilihan Anda (Scalper/Intraday/Swing/Confluence)\n"
+        "• Kartu Positions kini bergaya sama dengan Recent Trades + label formula\n"
+        "• Notifikasi error mengikuti bahasa pilihan Anda\n"
+        "• Pilihan engine: ASI-Bot (aktif) dan Titan-Bot (segera hadir)\n"
         "• Berbagai perbaikan kecil dan peningkatan kestabilan"
     ),
     "en": (
-        "• Bot signals now follow the daily trend more accurately\n"
-        "• Fixed positions closing too early before reaching profit targets\n"
-        "• Profit targets now close gradually in 3 stages (not all at once)\n"
-        "• Live prices shown in real time on every open position\n"
-        "• Color-coded trade cards: green = profit, red = loss, gold = waiting order\n"
-        "• Unfilled orders cancel automatically, or cancel them manually\n"
-        "• Copy Trade leaderboard: every position shown with its own profit/loss\n"
-        "• Full-Auto mode now trades only large-cap assets (top 50) for safety\n"
-        "• New Positions page: review all positions and close/cancel right from the dashboard\n"
-        "• Crypto dashboard now lists 100 coins with more premium signals\n"
-        "• Asset detail: AI Prediction/Analyze results now include an Execute button for the ASI-Bot Semi-Auto\n"
+        "• Closer profit targets (1R/1.5R/2R) with 50%/25%/25% TP split\n"
+        "• SL Guard auto-locks profit: TP1 hit → SL moves to TP1, TP2 hit → SL moves to TP2\n"
+        "• Full-Auto scans the Top-100 coins again\n"
+        "• Bot follows your chosen Trader Profile (Scalper/Intraday/Swing/Confluence)\n"
+        "• Positions cards now match Recent Trades styling with formula labels\n"
+        "• Error notifications now follow your chosen language\n"
+        "• Engine selector: ASI-Bot (live) and Titan-Bot (coming soon)\n"
         "• Various minor fixes and stability improvements"
     ),
 }
