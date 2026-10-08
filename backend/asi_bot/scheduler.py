@@ -568,6 +568,12 @@ async def _run_full_auto_scanner(
             device_id = cfg.get("device_id") or cfg.get("_id")
             if not device_id:
                 continue
+            # v10.0.14 — Hormati signal_source: "cloud_pro" HANYA menerima
+            # sinyal dari webhook /asi/webhook/cloud, scanner internal
+            # di-skip. "hybrid" menerima dari KEDUA sumber (scanner tetap
+            # jalan). "asi_bot" (default) → scanner internal saja.
+            if (cfg.get("signal_source") or "asi_bot") == "cloud_pro":
+                continue
             max_tr = int(cfg.get("max_trades_per_day") or 5)
             # v9.9.5 — network aktif ditentukan lebih awal supaya kuota
             # harian juga dihitung per jaringan.

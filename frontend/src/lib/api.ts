@@ -627,6 +627,11 @@ export type AsiBotConfig = {
   // v9.9.5 — network aktif (testnet/mainnet). Credential per jaringan
   // disimpan di slot terpisah; switching tidak meminta API key ulang.
   active_testnet?: boolean;
+  // v10.0.14 — Sumber sinyal:
+  //   "asi_bot"   → formula internal (Confluence v9 / VWAP engines)
+  //   "cloud_pro" → sinyal eksternal "Cloud Pro Engine" via webhook
+  //   "hybrid"    → terima dari keduanya
+  signal_source?: "asi_bot" | "cloud_pro" | "hybrid";
   auto_disabled_reason?: string | null;
   auto_disabled_at?: string | null;
 };

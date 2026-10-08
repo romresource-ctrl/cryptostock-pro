@@ -62,6 +62,8 @@ export default function ASIBotScreen() {
     disclaimer_ack: false,
     // v9.9.5 — network aktif (credential mainnet/testnet slot terpisah)
     active_testnet: true,
+    // v10.0.14 — Sumber sinyal default = formula internal ASI-Bot
+    signal_source: "asi_bot",
   });
   const [pnl, setPnl] = useState<AsiPnl | null>(null);
   const [trades, setTrades] = useState<AsiTradeResp[]>([]);
@@ -429,6 +431,61 @@ export default function ASIBotScreen() {
               </TouchableOpacity>
             );
           })}
+        </View>
+
+        {/* v10.0.14 — Signal Source: pilih sumber sinyal untuk eksekusi.
+            White-label: "Cloud Pro Engine" di belakang layar memakai
+            webhook eksternal (WunderTrading / TradingView). */}
+        <View style={{ marginTop: 14 }}>
+          <Text style={{ color: colors.textMuted, fontSize: 11, fontWeight: "700", marginBottom: 6 }}>
+            SIGNAL SOURCE
+          </Text>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            {([
+              { k: "asi_bot", label: "ASI-Bot AI", emoji: "🧠", sub: "Confluence v9 · VWAP" },
+              { k: "cloud_pro", label: "Cloud Pro", emoji: "⚡", sub: "Pro Engine · Live" },
+              { k: "hybrid", label: "Hybrid", emoji: "🔄", sub: "Keduanya aktif" },
+            ] as const).map((opt) => {
+              const active = (bot.signal_source ?? "asi_bot") === opt.k;
+              const accent = opt.k === "cloud_pro" ? "#8B5CF6"
+                : opt.k === "hybrid" ? "#06B6D4" : GOLD;
+              return (
+                <TouchableOpacity
+                  key={opt.k}
+                  onPress={() => saveBot({ signal_source: opt.k })}
+                  style={{
+                    flex: 1, paddingVertical: 10, paddingHorizontal: 6,
+                    borderRadius: 10, borderWidth: 1.5,
+                    borderColor: active ? accent : colors.border,
+                    backgroundColor: active ? accent : colors.surface,
+                    alignItems: "center",
+                  }}
+                  testID={`asi-signal-source-${opt.k}`}
+                >
+                  <Text style={{ fontSize: 18 }}>{opt.emoji}</Text>
+                  <Text style={{
+                    color: active ? ACCENT_TEXT : colors.textPrimary,
+                    fontWeight: "900", fontSize: 11, marginTop: 2,
+                  }}>
+                    {opt.label}
+                  </Text>
+                  <Text style={{
+                    color: active ? ACCENT_TEXT : colors.textMuted,
+                    fontSize: 8.5, marginTop: 1, textAlign: "center",
+                  }}>
+                    {opt.sub}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <Text style={{ color: colors.textMuted, fontSize: 10, marginTop: 6, lineHeight: 14 }}>
+            {bot.signal_source === "cloud_pro"
+              ? "⚡ Full-Auto hanya menerima sinyal dari Cloud Pro Engine (eksternal). Formula ASI-Bot internal di-skip."
+              : bot.signal_source === "hybrid"
+                ? "🔄 Bot menerima sinyal dari ASI-Bot AI DAN Cloud Pro Engine."
+                : "🧠 Bot memakai formula internal (Confluence v9 / VWAP engines)."}
+          </Text>
         </View>
 
         {/* Parameters */}

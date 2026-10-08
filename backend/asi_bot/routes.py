@@ -15,7 +15,7 @@ import asyncio
 import logging
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -168,6 +168,23 @@ class TradePayload(BaseModel):
     testnet: bool | None = None
 
 
+# v10.0.14 — Payload sinyal masuk dari engine eksternal (WunderTrading)
+# via webhook POST /asi/webhook/cloud. Nama di UI = "Cloud Pro Engine"
+# (white-label). Secret token dibagikan ke engine untuk mencegah spam.
+class CloudSignalPayload(BaseModel):
+    secret: str = Field(..., min_length=8, max_length=256)
+    symbol: str = Field(..., min_length=2, max_length=20)
+    side: Literal["BUY", "SELL", "LONG", "SHORT", "buy", "sell", "long", "short"]
+    entry: float = Field(..., gt=0)
+    stop_loss: float = Field(..., gt=0)
+    take_profits: list[float] = Field(..., min_length=1, max_length=3)
+    risk_pct: float | None = Field(None, ge=0.1, le=30.0)
+    leverage: int | None = Field(None, ge=1, le=125)
+    confidence: int | None = Field(None, ge=0, le=100)
+    source_tag: str | None = Field(None, max_length=64)
+    strategy_name: str | None = Field(None, max_length=64)
+
+
 class BotConfigPayload(BaseModel):
     enabled: bool = False
     exchange: Literal["binance", "bybit", "okx", "bitget"]
@@ -203,6 +220,13 @@ class BotConfigPayload(BaseModel):
     # Diubah via switch jaringan di halaman ASI-Bot; credential tiap
     # jaringan disimpan di slot terpisah.
     active_testnet: bool = True
+    # v10.0.14 — Sumber sinyal eksekusi.
+    #   asi_bot    → formula internal (Confluence v9 / VWAP engines)
+    #   cloud_pro  → sinyal eksternal "Cloud Pro Engine" via webhook
+    #   hybrid     → terima dari keduanya
+    # White-label: nama "Cloud Pro Engine" di UI, backend memakai webhook
+    # eksternal (WunderTrading) sebagai salah satu feeder.
+    signal_source: Literal["asi_bot", "cloud_pro", "hybrid"] = "asi_bot"
 
 
 def register(app_api: APIRouter, db: Any) -> None:
@@ -811,3 +835,122 @@ def _attach_trade_routes(db: Any) -> None:
         doc["updated_at"] = _now_iso()
         await db.asi_bot_config.replace_one({"_id": device_id}, doc, upsert=True)
         return {"ok": True, **doc}
+
+    # v10.0.14 — Webhook penerima sinyal dari Cloud Pro Engine
+    # (white-label: WunderTrading / TradingView alert / strategy eksternal).
+    # Secret token dishare dengan pengirim; mencegah pihak tak dikenal
+    # mengirim sinyal palsu. Setelah divalidasi, sinyal:
+    #   1. Disimpan di collection `asi_cloud_signals` (dibaca Semi-Auto
+    #      user via sheet "Cloud Pro Signals" untuk 1-tap execute),
+    #   2. Dieksekusi otomatis untuk setiap user Full-Auto yang memilih
+    #      signal_source ∈ {"cloud_pro", "hybrid"} — risk/leverage/margin
+    #      ikut config masing-masing user, bukan payload.
+    @router.post("/webhook/cloud")
+    async def webhook_cloud(payload: CloudSignalPayload):
+        want = os.environ.get("WUNDER_WEBHOOK_SECRET") or ""
+        if not want or payload.secret != want:
+            raise HTTPException(401, "unauthorized")
+        side_up = payload.side.upper()
+        side_norm: Literal["BUY", "SELL"] = "BUY" if side_up in ("BUY", "LONG") else "SELL"
+        symbol_norm = payload.symbol.upper().replace("/", "").replace("USDT", "").split("-")[0]
+        if not symbol_norm:
+            raise HTTPException(400, "invalid symbol")
+        now = _now_iso()
+        sig_doc: dict[str, Any] = {
+            "symbol": symbol_norm,
+            "side": side_norm,
+            "entry": float(payload.entry),
+            "stop_loss": float(payload.stop_loss),
+            "take_profits": [float(x) for x in payload.take_profits],
+            "confidence": int(payload.confidence or 85),
+            "source": "cloud_pro",
+            # Internal only — tidak dikirim ke client (white-label).
+            "source_tag": payload.source_tag or payload.strategy_name,
+            "received_at": now,
+            "expires_at": (datetime.now(timezone.utc)
+                           + timedelta(minutes=10)).isoformat(),
+            "status": "new",
+            "fan_out": {"attempted": 0, "ok": 0, "fail": 0},
+        }
+        result = await db.asi_cloud_signals.insert_one(sig_doc)
+        sig_id = str(result.inserted_id)
+        # Fan-out ke semua user Full-Auto yang pilih cloud_pro / hybrid.
+        attempted = ok_cnt = fail_cnt = 0
+        cursor = db.asi_bot_config.find({
+            "full_enabled": True,
+            "signal_source": {"$in": ["cloud_pro", "hybrid"]},
+        })
+        async for cfg in cursor:
+            dev = cfg.get("device_id") or cfg.get("_id")
+            if not dev:
+                continue
+            attempted += 1
+            try:
+                net = bool(cfg["active_testnet"]) if "active_testnet" in cfg else None
+                exchange = cfg.get("exchange") or "binance"
+                cred = await resolve_credential(db, dev, exchange, net)
+                if not cred:
+                    fail_cnt += 1
+                    continue
+                dup = await db.asi_trades.find_one(
+                    {"device_id": dev, "symbol": symbol_norm,
+                     "status": {"$in": ["open", "pending_entry"]}}
+                )
+                if dup:
+                    fail_cnt += 1
+                    continue
+                risk = float(cfg.get("risk_pct") or 5.0)
+                lev = int(cfg.get("leverage") or 10)
+                res = await execute_trade(
+                    cred, symbol_norm, side_norm,
+                    float(payload.entry), float(payload.stop_loss),
+                    [float(x) for x in payload.take_profits],
+                    risk, lev, mode="full",
+                    tp_count=int(cfg.get("tp_count") or 3),
+                    trailing_callback_rate=float(cfg.get("trailing_callback_rate") or 0.0),
+                    margin_mode=str(cfg.get("margin_mode") or "isolated"),
+                    profile=None,
+                    formula_tag="Cloud Pro Engine",
+                    entry_mode=str(cfg.get("entry_mode") or "limit"),
+                )
+                if not res.get("ok"):
+                    fail_cnt += 1
+                    continue
+                margin_usdt = round(
+                    float(res["qty"]) * float(res["entry_price"])
+                    / max(1, int(res["leverage"])), 2)
+                rec = {**res, "device_id": dev, "margin_usdt": margin_usdt,
+                       "signal_source": "cloud_pro", "signal_id": sig_id,
+                       "formula_tag": "Cloud Pro Engine"}
+                if res.get("entry_order_id"):
+                    rec["_id"] = f"{dev}:{res['entry_order_id']}"
+                    await db.asi_trades.replace_one(
+                        {"_id": rec["_id"]}, rec, upsert=True)
+                ok_cnt += 1
+            except Exception as e:  # noqa: BLE001
+                logger.warning("cloud fan-out fail %s: %s", dev, e)
+                fail_cnt += 1
+                continue
+        await db.asi_cloud_signals.update_one(
+            {"_id": result.inserted_id},
+            {"$set": {"fan_out": {"attempted": attempted, "ok": ok_cnt, "fail": fail_cnt},
+                      "status": "dispatched"}})
+        return {"ok": True, "signal_id": sig_id,
+                "fan_out": {"attempted": attempted, "ok": ok_cnt, "fail": fail_cnt}}
+
+    @router.get("/signals/cloud")
+    async def list_cloud_signals(limit: int = Query(20, ge=1, le=100)):
+        """List sinyal Cloud Pro aktif (belum expired). Dipakai halaman
+        ASI-Bot untuk kartu rekomendasi Semi-Auto 1-tap execute."""
+        now = datetime.now(timezone.utc).isoformat()
+        rows = []
+        cursor = db.asi_cloud_signals.find(
+            {"expires_at": {"$gte": now}}
+        ).sort("received_at", -1).limit(limit)
+        async for d in cursor:
+            d["_id"] = str(d.get("_id"))
+            # White-label: jangan ekspos source_tag asli ke client.
+            d.pop("source_tag", None)
+            d["engine"] = "Cloud Pro Engine"
+            rows.append(d)
+        return {"items": rows}
