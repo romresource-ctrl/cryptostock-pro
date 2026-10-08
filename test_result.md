@@ -3028,3 +3028,14 @@ frontend_v1004:
 #   11 SHORT; kolom crypto penuh badge PREMIUM (AVAX/NEAR/INJ/STX).
 # Hanya ubah param gerbang dashboard default; formula VWAP profile &
 #   ASI-Bot entry/exit TIDAK disentuh.
+# ======================================================
+# v10.0.12 — Diagnosis "preview masih all HOLD no premium"
+# ======================================================
+# User lihat semua HOLD di "preview". Investigasi: yang dibuka user adalah
+#   PRODUCTION (cryptostock-pro.emergent.host) yang masih v10.0.9 (50 koin,
+#   thr 85, min_score 8) — BELUM di-deploy ulang.
+# Dev preview (cryptostock-pro.preview.emergentagent.com) SUDAH benar:
+#   v10.0.12, 99 koin, thr 70, min_score 5, 7 sinyal aktif (AVAX/NEAR/INJ/
+#   STX/FLOKI/AGIX premium terverifikasi via curl + screenshot).
+# TINDAKAN: bukan bug kode. User harus klik Publish/Deploy agar production
+#   naik ke 10.0.12. Dashboard fix murni backend → tidak perlu APK baru.
