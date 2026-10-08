@@ -433,45 +433,45 @@ export default function ASIBotScreen() {
           })}
         </View>
 
-        {/* v10.0.14 — Signal Source: pilih sumber sinyal untuk eksekusi.
-            White-label: "Cloud Pro Engine" di belakang layar memakai
-            webhook eksternal (WunderTrading / TradingView). */}
+        {/* v10.0.14 — Bot Engine: 2 pilihan eksklusif untuk Semi & Full-Auto.
+            • ASI-Bot  → formula internal (Confluence v9 / VWAP engines)
+            • Titan-Bot → engine cloud eksternal (white-label WunderTrading);
+              Entry/SL/TP 100% mengikuti sinyal Titan-Bot, risk & leverage
+              tetap dari setting user. */}
         <View style={{ marginTop: 14 }}>
           <Text style={{ color: colors.textMuted, fontSize: 11, fontWeight: "700", marginBottom: 6 }}>
-            SIGNAL SOURCE
+            BOT ENGINE
           </Text>
           <View style={{ flexDirection: "row", gap: 8 }}>
             {([
-              { k: "asi_bot", label: "ASI-Bot AI", emoji: "🧠", sub: "Confluence v9 · VWAP" },
-              { k: "cloud_pro", label: "Cloud Pro", emoji: "⚡", sub: "Pro Engine · Live" },
-              { k: "hybrid", label: "Hybrid", emoji: "🔄", sub: "Keduanya aktif" },
+              { k: "asi_bot", label: "ASI-Bot", emoji: "🧠", sub: "Internal AI · Confluence/VWAP" },
+              { k: "cloud_pro", label: "Titan-Bot", emoji: "⚡", sub: "Pro Engine · Entry/SL/TP auto" },
             ] as const).map((opt) => {
               const active = (bot.signal_source ?? "asi_bot") === opt.k;
-              const accent = opt.k === "cloud_pro" ? "#8B5CF6"
-                : opt.k === "hybrid" ? "#06B6D4" : GOLD;
+              const accent = opt.k === "cloud_pro" ? "#8B5CF6" : GOLD;
               return (
                 <TouchableOpacity
                   key={opt.k}
                   onPress={() => saveBot({ signal_source: opt.k })}
                   style={{
-                    flex: 1, paddingVertical: 10, paddingHorizontal: 6,
-                    borderRadius: 10, borderWidth: 1.5,
+                    flex: 1, paddingVertical: 12, paddingHorizontal: 8,
+                    borderRadius: 12, borderWidth: 1.5,
                     borderColor: active ? accent : colors.border,
                     backgroundColor: active ? accent : colors.surface,
                     alignItems: "center",
                   }}
-                  testID={`asi-signal-source-${opt.k}`}
+                  testID={`asi-engine-${opt.k}`}
                 >
-                  <Text style={{ fontSize: 18 }}>{opt.emoji}</Text>
+                  <Text style={{ fontSize: 22 }}>{opt.emoji}</Text>
                   <Text style={{
                     color: active ? ACCENT_TEXT : colors.textPrimary,
-                    fontWeight: "900", fontSize: 11, marginTop: 2,
+                    fontWeight: "900", fontSize: 13, marginTop: 3,
                   }}>
                     {opt.label}
                   </Text>
                   <Text style={{
                     color: active ? ACCENT_TEXT : colors.textMuted,
-                    fontSize: 8.5, marginTop: 1, textAlign: "center",
+                    fontSize: 9, marginTop: 2, textAlign: "center",
                   }}>
                     {opt.sub}
                   </Text>
@@ -481,10 +481,8 @@ export default function ASIBotScreen() {
           </View>
           <Text style={{ color: colors.textMuted, fontSize: 10, marginTop: 6, lineHeight: 14 }}>
             {bot.signal_source === "cloud_pro"
-              ? "⚡ Full-Auto hanya menerima sinyal dari Cloud Pro Engine (eksternal). Formula ASI-Bot internal di-skip."
-              : bot.signal_source === "hybrid"
-                ? "🔄 Bot menerima sinyal dari ASI-Bot AI DAN Cloud Pro Engine."
-                : "🧠 Bot memakai formula internal (Confluence v9 / VWAP engines)."}
+              ? "⚡ Titan-Bot: begitu Full-Auto ON, posisi dibuka otomatis mengikuti sinyal Titan — Entry, SL, TP1-3 100% dari engine Titan. Risk %, Leverage & Margin mode tetap dari setting Anda."
+              : "🧠 ASI-Bot: formula internal (Confluence v9 / VWAP engines) dengan level Entry/SL/TP dari kalkulasi teknikal."}
           </Text>
         </View>
 

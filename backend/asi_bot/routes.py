@@ -169,7 +169,7 @@ class TradePayload(BaseModel):
 
 
 # v10.0.14 — Payload sinyal masuk dari engine eksternal (WunderTrading)
-# via webhook POST /asi/webhook/cloud. Nama di UI = "Cloud Pro Engine"
+# via webhook POST /asi/webhook/cloud. Nama di UI = "Titan-Bot"
 # (white-label). Secret token dibagikan ke engine untuk mencegah spam.
 class CloudSignalPayload(BaseModel):
     secret: str = Field(..., min_length=8, max_length=256)
@@ -222,9 +222,9 @@ class BotConfigPayload(BaseModel):
     active_testnet: bool = True
     # v10.0.14 — Sumber sinyal eksekusi.
     #   asi_bot    → formula internal (Confluence v9 / VWAP engines)
-    #   cloud_pro  → sinyal eksternal "Cloud Pro Engine" via webhook
+    #   cloud_pro  → sinyal eksternal "Titan-Bot" via webhook
     #   hybrid     → terima dari keduanya
-    # White-label: nama "Cloud Pro Engine" di UI, backend memakai webhook
+    # White-label: nama "Titan-Bot" di UI, backend memakai webhook
     # eksternal (WunderTrading) sebagai salah satu feeder.
     signal_source: Literal["asi_bot", "cloud_pro", "hybrid"] = "asi_bot"
 
@@ -836,12 +836,12 @@ def _attach_trade_routes(db: Any) -> None:
         await db.asi_bot_config.replace_one({"_id": device_id}, doc, upsert=True)
         return {"ok": True, **doc}
 
-    # v10.0.14 — Webhook penerima sinyal dari Cloud Pro Engine
+    # v10.0.14 — Webhook penerima sinyal dari Titan-Bot
     # (white-label: WunderTrading / TradingView alert / strategy eksternal).
     # Secret token dishare dengan pengirim; mencegah pihak tak dikenal
     # mengirim sinyal palsu. Setelah divalidasi, sinyal:
     #   1. Disimpan di collection `asi_cloud_signals` (dibaca Semi-Auto
-    #      user via sheet "Cloud Pro Signals" untuk 1-tap execute),
+    #      user via sheet "Titan-Bot Signals" untuk 1-tap execute),
     #   2. Dieksekusi otomatis untuk setiap user Full-Auto yang memilih
     #      signal_source ∈ {"cloud_pro", "hybrid"} — risk/leverage/margin
     #      ikut config masing-masing user, bukan payload.
@@ -910,7 +910,7 @@ def _attach_trade_routes(db: Any) -> None:
                     trailing_callback_rate=float(cfg.get("trailing_callback_rate") or 0.0),
                     margin_mode=str(cfg.get("margin_mode") or "isolated"),
                     profile=None,
-                    formula_tag="Cloud Pro Engine",
+                    formula_tag="Titan-Bot",
                     entry_mode=str(cfg.get("entry_mode") or "limit"),
                 )
                 if not res.get("ok"):
@@ -921,7 +921,7 @@ def _attach_trade_routes(db: Any) -> None:
                     / max(1, int(res["leverage"])), 2)
                 rec = {**res, "device_id": dev, "margin_usdt": margin_usdt,
                        "signal_source": "cloud_pro", "signal_id": sig_id,
-                       "formula_tag": "Cloud Pro Engine"}
+                       "formula_tag": "Titan-Bot"}
                 if res.get("entry_order_id"):
                     rec["_id"] = f"{dev}:{res['entry_order_id']}"
                     await db.asi_trades.replace_one(
@@ -940,7 +940,7 @@ def _attach_trade_routes(db: Any) -> None:
 
     @router.get("/signals/cloud")
     async def list_cloud_signals(limit: int = Query(20, ge=1, le=100)):
-        """List sinyal Cloud Pro aktif (belum expired). Dipakai halaman
+        """List sinyal Titan-Bot aktif (belum expired). Dipakai halaman
         ASI-Bot untuk kartu rekomendasi Semi-Auto 1-tap execute."""
         now = datetime.now(timezone.utc).isoformat()
         rows = []
@@ -951,6 +951,6 @@ def _attach_trade_routes(db: Any) -> None:
             d["_id"] = str(d.get("_id"))
             # White-label: jangan ekspos source_tag asli ke client.
             d.pop("source_tag", None)
-            d["engine"] = "Cloud Pro Engine"
+            d["engine"] = "Titan-Bot"
             rows.append(d)
         return {"items": rows}
