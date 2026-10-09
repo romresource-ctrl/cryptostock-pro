@@ -783,8 +783,12 @@ def _attach_trade_routes(db: Any) -> None:
 
     @router.get("/trades")
     async def list_trades(device_id: str = Query(..., min_length=4), limit: int = 50):
+        # v10.1.2 — Kecualikan slot "placing" (klaim anti-duplikat scanner)
+        # supaya tidak tampil sebagai kartu berkedip di Positions.
         rows: list[dict[str, Any]] = []
-        async for d in db.asi_trades.find({"device_id": device_id}).sort("created_at", -1).limit(limit):
+        async for d in db.asi_trades.find(
+            {"device_id": device_id, "status": {"$ne": "placing"}}
+        ).sort("created_at", -1).limit(limit):
             # v9.7.6 — keep `_id` so frontend can call POST /trades/{id}/close
             tid = d.pop("_id", None)
             if tid is not None:
