@@ -424,11 +424,32 @@ async def execute_trade(
             symbol=bin_sym, margin_type=desired_mt_upper,
         )
         if not set_mt.get("ok"):
-            return {
-                "ok": False, "reason": "margin_mode_set_failed",
-                "requested": margin_mode,
-                "message": f"Failed to set margin mode {margin_mode.upper()}: {set_mt.get('msg')}",
-            }
+            # v10.1.2 — Binance menolak ganti margin mode bila MASIH ADA
+            # open orders di simbol ini ("Position side cannot be changed
+            # if there exists open orders"). Bersihkan order menggantung
+            # (algo + legacy) lalu coba SEKALI lagi — tanpa ini, sinyal
+            # valid di simbol dengan order basi tidak pernah tereksekusi.
+            if "open orders" in str(set_mt.get("msg") or "").lower():
+                try:
+                    await br.cancel_all_algo(
+                        api_key, api_secret, is_testnet, bin_sym)
+                except Exception:
+                    pass
+                try:
+                    await br.cancel_all_legacy(
+                        api_key, api_secret, is_testnet, bin_sym)
+                except Exception:
+                    pass
+                set_mt = await br.set_margin_type(
+                    api_key, api_secret, is_testnet,
+                    symbol=bin_sym, margin_type=desired_mt_upper,
+                )
+            if not set_mt.get("ok"):
+                return {
+                    "ok": False, "reason": "margin_mode_set_failed",
+                    "requested": margin_mode,
+                    "message": f"Failed to set margin mode {margin_mode.upper()}: {set_mt.get('msg')}",
+                }
         # v9.9.10 — Posisi flat: bersihkan bracket BASI dari posisi lama
         # yang sudah tertutup (SL/TP closePosition sisa, baik algo maupun
         # legacy). Tanpa ini, penempatan SL closePosition baru ditolak
