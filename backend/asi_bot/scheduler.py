@@ -571,6 +571,10 @@ async def _run_full_auto_scanner(
     # is a UI gate for 1-tap manual executes and does NOT trigger scans.
     # Fallback to legacy single flag `{enabled: True, mode: "full"}` for
     # pre-v9.7.6 docs that have not been resaved yet.
+    # v10.1.2 — Audit counters untuk statistik scan (lihat asi_scan_status).
+    scanned = 0
+    sigs_found = 0
+    total_placed = 0
     cursor = db.asi_bot_config.find({
         "$or": [
             {"full_enabled": True},
@@ -589,6 +593,7 @@ async def _run_full_auto_scanner(
             # jalan). "asi_bot" (default) → scanner internal saja.
             if (cfg.get("signal_source") or "asi_bot") == "cloud_pro":
                 continue
+            scanned += 1
             max_tr = int(cfg.get("max_trades_per_day") or 5)
             # v9.9.5 — network aktif ditentukan lebih awal supaya kuota
             # harian juga dihitung per jaringan.
@@ -633,6 +638,7 @@ async def _run_full_auto_scanner(
                     continue
                 if not sig or not sig.get("side"):
                     continue
+                sigs_found += 1
                 if int(sig.get("confidence") or 0) < user_min_conf:
                     continue
                 # Guard: skip if an OPEN/pending trade on same symbol exists.
@@ -665,15 +671,36 @@ async def _run_full_auto_scanner(
                     / max(1, int(res["leverage"])), 2,
                 )
                 rec = {**res, "device_id": device_id, "margin_usdt": margin_usdt}
-                if res.get("entry_order_id"):
-                    rec["_id"] = f"{device_id}:{res['entry_order_id']}"
-                    await db.asi_trades.replace_one({"_id": rec["_id"]}, rec, upsert=True)
+                # v10.1.2 — SELALU simpan record walau entry_order_id kosong
+                # (bug lama: trade tereksekusi di Binance tapi tak pernah
+                # masuk DB → user mengira bot tidak eksekusi). Fallback _id
+                # memakai timestamp supaya tetap unik.
+                oid = res.get("entry_order_id")
+                rec["_id"] = (f"{device_id}:{oid}" if oid
+                              else f"{device_id}:auto:{res.get('created_at')}")
+                await db.asi_trades.replace_one(
+                    {"_id": rec["_id"]}, rec, upsert=True)
                 placed += 1
+                total_placed += 1
                 logger.info("full-auto placed %s %s %s", device_id, sym, sig["side"])
                 if placed >= max_tr:
                     break
         except Exception as e:  # noqa: BLE001
             logger.warning("full-auto scan error: %s", e)
+    # v10.1.2 — Audit trail: simpan statistik scan terakhir supaya user/
+    # admin bisa cek "kapan bot terakhir jalan & kenapa tidak eksekusi"
+    # via GET /asi/bot/status.
+    try:
+        await db.asi_scan_status.replace_one(
+            {"_id": "scanner"},
+            {"_id": "scanner",
+             "last_scan_at": datetime.now(timezone.utc).isoformat(),
+             "devices_scanned": scanned,
+             "signals_found": sigs_found,
+             "placed": total_placed},
+            upsert=True)
+    except Exception:
+        pass
 
 
 # ─────────────────────────────────────────────────────────────────────────────

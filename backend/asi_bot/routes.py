@@ -958,6 +958,22 @@ def _attach_trade_routes(db: Any) -> None:
             rows.append(d)
         return {"items": rows}
 
+    # v10.1.2 — Status scanner Full-Auto: kapan scan terakhir, berapa
+    # sinyal ditemukan, berapa trade ditempatkan. Dipakai UI untuk
+    # menunjukkan bot benar-benar hidup (bukan diam tanpa jejak).
+    @router.get("/bot/status")
+    async def bot_status():
+        doc = await db.asi_scan_status.find_one({"_id": "scanner"})
+        if not doc:
+            return {"scanner": "no_data"}
+        return {
+            "scanner": "running",
+            "last_scan_at": doc.get("last_scan_at"),
+            "devices_scanned": doc.get("devices_scanned", 0),
+            "signals_found": doc.get("signals_found", 0),
+            "placed": doc.get("placed", 0),
+        }
+
     # v10.0.15 — Status Titan Relay (read-only, tanpa auth: hanya info
     # kesehatan publik — tidak mengekspos credential/saldo sensitif).
     @router.get("/titan/status")
