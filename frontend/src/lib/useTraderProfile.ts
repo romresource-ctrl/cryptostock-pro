@@ -23,10 +23,32 @@
  */
 import { useEffect, useSyncExternalStore } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { api } from "./api";
+import { getDeviceId } from "./deviceId";
 
 export type TraderProfile = "scalper" | "day" | "swing" | "longterm";
 
 const STORAGE_KEY = "@ai-crypto-stock-pro:trader-profile:v1";
+
+// v10.1.1 — Sinkron GLOBAL ke bot config: setiap kali user ganti Trader
+// Profile di MANA PUN (dashboard header, modal picker, dsb) langsung
+// panggil backend untuk update field bot.profile. Sebelumnya sync hanya
+// terjadi saat user membuka layar ASI-Bot — menyebabkan Full-Auto scanner
+// terus memakai profile lama (mis. tetap "scalper" walau user ganti ke
+// "day" di header), sehingga sinyal profile baru tidak pernah dieksekusi.
+async function _syncProfileToBot(apiProfile: TraderProfile | null): Promise<void> {
+  try {
+    const deviceId = await getDeviceId();
+    if (!deviceId) return;
+    const current = await api.asi.getBot(deviceId).catch(() => null);
+    if (!current) return;
+    const targetBackend = apiProfile; // null → confluence default
+    if ((current.profile ?? null) === targetBackend) return;
+    await api.asi.saveBot(deviceId, { ...current, profile: targetBackend as any });
+  } catch {
+    /* fire-and-forget: UI tetap pakai pilihan user walau sync gagal */
+  }
+}
 
 // ---- Shared module-level store (single source of truth) ----
 let _profile: TraderProfile = "day";
@@ -146,6 +168,9 @@ export function useTraderProfile(): {
       AsyncStorage.removeItem(STORAGE_KEY).catch(() => {
         /* ignore */
       });
+      // v10.1.1 — Lepas profile = sync bot ke null (default Confluence
+      // longgar gate 5), bukan ke "longterm"/legacy.
+      _syncProfileToBot(null);
       return;
     }
     _profile = p;
@@ -154,6 +179,9 @@ export function useTraderProfile(): {
     AsyncStorage.setItem(STORAGE_KEY, p).catch(() => {
       /* ignore */
     });
+    // v10.1.1 — Push ke bot config SEGERA supaya Full-Auto scanner
+    // berikutnya (≤90 detik) sudah memakai profile baru.
+    _syncProfileToBot(p);
   };
 
   return {
