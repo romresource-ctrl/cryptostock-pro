@@ -43,7 +43,10 @@ logger = logging.getLogger("asi_bot.scheduler")
 
 # Tunables (seconds).
 WATCHER_INTERVAL = 20
-SCANNER_INTERVAL = 300  # 5 min
+# v10.1.1 — Scanner dipercepat 300s → 90s (keputusan user: Full-Auto
+# tidak eksekusi padahal AI Suggestions sudah penuh sinyal; selisih
+# 5 menit terlalu lama). 90s cukup untuk tetap aman rate-limit API.
+SCANNER_INTERVAL = 90
 TITAN_RELAY_INTERVAL = 25  # v10.0.15 — polling posisi master Titan-Bot
 # Minimum confidence required for full-auto execution.
 MIN_FULL_AUTO_CONFIDENCE = 70
@@ -913,7 +916,8 @@ class ASIScheduler:
             await asyncio.sleep(60)  # unrealized PnL every 60s
 
     async def _loop_scanner(self) -> None:
-        await asyncio.sleep(30)
+        # v10.1.1 — Scanner langsung jalan saat startup (tanpa delay 30s)
+        # supaya user yang baru nyalakan Full-Auto tidak menunggu lama.
         while self._running:
             try:
                 await _run_full_auto_scanner(self.db, self.signal_fetcher)

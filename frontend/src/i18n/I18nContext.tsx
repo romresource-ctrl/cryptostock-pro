@@ -1081,6 +1081,25 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   asi_closed_on: { id: "Closed on", en: "Closed on", ru: "Закрыто на", cn: "平仓于" },
   asi_balance_label: { id: "Saldo Tersedia", en: "Available Balance", ru: "Доступный баланс", cn: "可用余额" },
   // v9.9.9 — popup update terlokalisasi
+  // v10.1.1 — Caption BOT ENGINE (ikut bahasa pilihan user).
+  asi_engine_caption_asi: {
+    id: "🧠 ASI-Bot aktif dengan formula: {profile}. Semua eksekusi Semi/Full-Auto mengikuti sinyal dari profil ini.",
+    en: "🧠 ASI-Bot active with formula: {profile}. All Semi/Full-Auto executions follow this profile's signals.",
+    ru: "🧠 ASI-Bot активен с формулой: {profile}. Все исполнения Semi/Full-Auto следуют сигналам этого профиля.",
+    cn: "🧠 ASI-Bot 已启用公式：{profile}。所有 Semi/Full-Auto 执行均按此配置的信号运行。",
+  },
+  asi_engine_caption_cloud: {
+    id: "⚡ Titan-Bot: begitu Full-Auto ON, posisi dibuka otomatis mengikuti sinyal Titan — Entry, SL, TP1-3 100% dari engine Titan. Risk %, Leverage & Margin mode tetap dari setting Anda.",
+    en: "⚡ Titan-Bot: once Full-Auto is ON, positions open automatically following Titan signals — Entry, SL, TP1-3 come 100% from the Titan engine. Risk %, Leverage & Margin mode stay from your settings.",
+    ru: "⚡ Titan-Bot: при включении Full-Auto позиции открываются автоматически по сигналам Titan — вход, SL, TP1-3 на 100% от движка Titan. Риск %, плечо и режим маржи остаются из ваших настроек.",
+    cn: "⚡ Titan-Bot：开启 Full-Auto 后，仓位将按 Titan 信号自动打开——入场、SL、TP1-3 100% 来自 Titan 引擎。风险 %、杠杆和保证金模式仍依您的设置。",
+  },
+  asi_engine_default_profile: {
+    id: "Default (Confluence longgar)",
+    en: "Default (loose Confluence)",
+    ru: "По умолчанию (мягкий Confluence)",
+    cn: "默认（宽松 Confluence）",
+  },
   update_title: { id: "Update Tersedia", en: "Update Available", ru: "Доступно обновление", cn: "有可用更新" },
   update_body: {
     id: "Versi baru AI Crypto Stock Pro telah dirilis.\n\nTerpasang: v{cur} → Terbaru: v{latest}\n\nMinta file APK terbaru dari admin untuk mendapatkan fitur & perbaikan terbaru.",

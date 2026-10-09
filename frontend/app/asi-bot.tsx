@@ -514,8 +514,11 @@ export default function ASIBotScreen() {
           </View>
           <Text style={{ color: colors.textMuted, fontSize: 10, marginTop: 6, lineHeight: 14 }}>
             {bot.signal_source === "cloud_pro"
-              ? "⚡ Titan-Bot: begitu Full-Auto ON, posisi dibuka otomatis mengikuti sinyal Titan — Entry, SL, TP1-3 100% dari engine Titan. Risk %, Leverage & Margin mode tetap dari setting Anda."
-              : `🧠 ASI-Bot aktif dengan formula: ${traderExplicit && traderProfile ? (PROFILE_META[traderProfile]?.label ?? traderProfile) : "Default (Confluence longgar)"}. Semua eksekusi Semi/Full-Auto mengikuti sinyal dari profil ini.`}
+              ? t("asi_engine_caption_cloud")
+              : t("asi_engine_caption_asi")
+                  .replace("{profile}", traderExplicit && traderProfile
+                    ? (PROFILE_META[traderProfile]?.label ?? traderProfile)
+                    : t("asi_engine_default_profile"))}
           </Text>
         </View>
 

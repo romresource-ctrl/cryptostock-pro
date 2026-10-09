@@ -1683,29 +1683,12 @@ async def search_assets(
 # with frontend APP_VERSION / app.json version on every release.
 APP_LATEST_VERSION = "10.1.1"
 
-# v10.1.1 — Release notes untuk popup update (per bahasa).
-APP_UPDATE_NOTES = {
-    "id": (
-        "• Target profit lebih dekat (1R/1.5R/2R) dengan komposisi TP1 50%, TP2 25%, TP3 25%\n"
-        "• SL Guard otomatis mengunci profit: TP1 hit → SL pindah ke TP1, TP2 hit → SL pindah ke TP2\n"
-        "• Full-Auto kembali memindai Top-100 koin\n"
-        "• Bot mengikuti Trader Profile pilihan Anda (Scalper/Intraday/Swing/Confluence)\n"
-        "• Kartu Positions kini bergaya sama dengan Recent Trades + label formula\n"
-        "• Notifikasi error mengikuti bahasa pilihan Anda\n"
-        "• Pilihan engine: ASI-Bot (aktif) dan Titan-Bot (segera hadir)\n"
-        "• Berbagai perbaikan kecil dan peningkatan kestabilan"
-    ),
-    "en": (
-        "• Closer profit targets (1R/1.5R/2R) with 50%/25%/25% TP split\n"
-        "• SL Guard auto-locks profit: TP1 hit → SL moves to TP1, TP2 hit → SL moves to TP2\n"
-        "• Full-Auto scans the Top-100 coins again\n"
-        "• Bot follows your chosen Trader Profile (Scalper/Intraday/Swing/Confluence)\n"
-        "• Positions cards now match Recent Trades styling with formula labels\n"
-        "• Error notifications now follow your chosen language\n"
-        "• Engine selector: ASI-Bot (live) and Titan-Bot (coming soon)\n"
-        "• Various minor fixes and stability improvements"
-    ),
-}
+# v10.1.1 — User minta popup update HANYA kotak kecil tanpa daftar
+# perubahan (list panjang bikin tombol OK tidak tersentuh di layar
+# pendek). Backend sengaja mengirim notes KOSONG supaya baik app lama
+# (v10.0.12 yang membaca field notes) maupun app baru hanya menampilkan
+# modal ringkas berisi tombol GET LATEST APK / Later.
+APP_UPDATE_NOTES = {"id": "", "en": ""}
 
 
 @api.get("/app-version")

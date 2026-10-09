@@ -718,15 +718,15 @@ def _compute_vwap_signal(
             label = ("LONG" if market == "crypto" else "BUY") if action == "BUY" else ("SHORT" if market == "crypto" else "SELL")
             confidence = 70
             reasons = [
-                f"[SCALP 15M] Manipulasi open terdeteksi (range 15M pertama ≥ 20% Daily ATR) "
+                f"[SCALP 15M] 15M-open manipulation detected (first 15M range ≥ 20% Daily ATR) "
                 f"+ {scalp['pattern']} terkonfirmasi → {action}."
             ]
             if daily_bias and ((action == "BUY" and daily_bias == "BULLISH") or (action == "SELL" and daily_bias == "BEARISH")):
                 confidence = min(95, confidence + 12)
-                reasons.append(f"Searah bias harian 50 SMA ({daily_bias}) — full risk.")
+                reasons.append(f"Aligned with daily 50 SMA bias ({daily_bias}) — full risk.")
             elif daily_bias:
                 confidence -= 12
-                reasons.append(f"Counter-trend vs bias harian ({daily_bias}) — half risk (scalp cepat).")
+                reasons.append(f"Counter-trend vs daily bias ({daily_bias}) — half risk (quick scalp).")
             # Level PERSIS dari formula: entry pola, SL sisi lain, TP ujung range 15M
             e, sl_, tp_ = scalp["entry"], scalp["sl"], scalp["tp"]
             # v9.9.12 — floor jarak TP pola scalp (mencegah TP nempel entry)
@@ -797,16 +797,16 @@ def _compute_vwap_signal(
     if engine == "SCALPER":
         if price_dev <= -dev_thresh and bull_rev and vol_ok:
             action = "BUY"
-            triggers.append(f"deviasi {price_dev*100:+.2f}% di bawah VWAP + " + "/".join(_bull_patterns()))
+            triggers.append(f"deviation {price_dev*100:+.2f}% below VWAP + " + "/".join(_bull_patterns()))
         elif box_break_long and price > vwap and bull_rev and vol_ok:
             action = "BUY"
-            triggers.append(f"breakout box-{box_len} di atas VWAP + " + "/".join(_bull_patterns()))
+            triggers.append(f"box-{box_len} breakout above VWAP + " + "/".join(_bull_patterns()))
         elif price_dev >= dev_thresh and bear_rev and vol_ok:
             action = "SELL"
-            triggers.append(f"deviasi {price_dev*100:+.2f}% di atas VWAP + " + "/".join(_bear_patterns()))
+            triggers.append(f"deviation {price_dev*100:+.2f}% above VWAP + " + "/".join(_bear_patterns()))
         elif box_break_short and price < vwap and bear_rev and vol_ok:
             action = "SELL"
-            triggers.append(f"breakdown box-{box_len} di bawah VWAP + " + "/".join(_bear_patterns()))
+            triggers.append(f"box-{box_len} breakdown below VWAP + " + "/".join(_bear_patterns()))
     elif engine == "INTRADAY":
         # v9.2.4 — Reclaim/rejection kini WAJIB disertai pola reversal.
         reclaim = ((row["low"] <= vwap and price > vwap and bull_rev)
@@ -826,10 +826,10 @@ def _compute_vwap_signal(
         # Backtest: gate volume membuat swing hanya 19 trade/24bln, WR 52%.
         if price > vwap and box_break_long and bull_rev:
             action = "BUY"
-            triggers.append(f"breakout box-{box_len} di atas VWAP + " + "/".join(_bull_patterns()))
+            triggers.append(f"box-{box_len} breakout above VWAP + " + "/".join(_bull_patterns()))
         elif price < vwap and box_break_short and bear_rev:
             action = "SELL"
-            triggers.append(f"breakdown box-{box_len} di bawah VWAP + " + "/".join(_bear_patterns()))
+            triggers.append(f"box-{box_len} breakdown below VWAP + " + "/".join(_bear_patterns()))
 
     label = "HOLD"
     if action == "BUY":
@@ -839,10 +839,10 @@ def _compute_vwap_signal(
 
     # --- Confidence jujur dari komponen yang benar-benar menyala ---
     if action == "HOLD":
-        side = "atas" if price_dev >= 0 else "bawah"
+        side = "above" if price_dev >= 0 else "below"
         reasons = [
-            f"[{engine}] Harga {abs(price_dev)*100:.2f}% di {side} VWAP — "
-            f"belum ada trigger (box-{box_len} breakout / reversal). Tunggu setup."
+            f"[{engine}] Price {abs(price_dev)*100:.2f}% {side} VWAP — "
+            f"no trigger yet (box-{box_len} breakout / reversal). Wait for setup."
         ]
         confidence = 45
     else:
@@ -882,16 +882,16 @@ def _compute_vwap_signal(
                     (action == "SELL" and daily_bias == "BEARISH")
         if with_bias:
             confidence = min(95, confidence + 6)
-            reasons.append(f"Searah bias harian 50 SMA ({daily_bias}) — full risk.")
+            reasons.append(f"Aligned with daily 50 SMA bias ({daily_bias}) — full risk.")
         elif engine == "SCALPER":
             confidence = max(50, confidence - 12)
-            reasons.append(f"Counter-trend scalp vs bias harian ({daily_bias}) — half risk, keluar cepat.")
+            reasons.append(f"Counter-trend scalp vs daily bias ({daily_bias}) — half risk, quick exit.")
         else:
             action = "HOLD"
             label = "HOLD"
             confidence = 48
             reasons = [
-                f"[{engine}] Setup melawan bias harian 50 SMA ({daily_bias}) — "
+                f"[{engine}] Setup against daily 50 SMA bias ({daily_bias}) — "
                 f"3R Rule: posisi {engine.lower()} hanya searah bias makro. Tunggu harga kembali searah."
             ]
 
@@ -906,7 +906,7 @@ def _compute_vwap_signal(
         label = "HOLD"
         confidence = 50
         reasons = [
-            f"[{engine}] Trigger terdeteksi tapi konfluens belum cukup kuat "
+            f"[{engine}] Trigger detected but confluence not strong enough "
             f"(confidence < {_conf_floor}) — HOLD, tunggu setup berkualitas lebih tinggi."
         ]
 
@@ -939,7 +939,7 @@ def _compute_vwap_signal(
             label = "HOLD"
             confidence = 46
             reasons = [
-                f"[{engine}] Choke Risk Protection: jarak TP1 melebihi 80% Daily ATR — "
+                f"[{engine}] Choke Risk Protection: TP1 distance exceeds 80% Daily ATR — "
                 f"target tidak realistis untuk horizon harian, eksekusi dibatalkan (3R Rule)."
             ]
             levels = _compute_vwap_levels("HOLD", _anchor, atr, peaks, valleys, market, sl_mult, tp_ladder)
