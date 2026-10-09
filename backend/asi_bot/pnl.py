@@ -97,19 +97,14 @@ async def leaderboard(db: Any, period_days: int = 7, limit: int = 25) -> list[di
 
 
 async def live_leaderboard(db: Any, limit: int = 25) -> list[dict[str, Any]]:
-    """v10.0.5 — RANK PER POSISI (bukan per trader): setiap posisi open
-    maupun closed (24 jam terakhir) menjadi SATU entri leaderboard dengan
-    PnL masing-masing — tidak digabung per trader/aset. Nama trader yang
-    sama bisa muncul di beberapa rank bila punya banyak posisi profit.
-    Hanya posisi ber-PnL positif; EXECUTE hanya untuk status open."""
-    since = _iso_days_ago(1)
+    """v10.1.1 — RANK PER POSISI ALL-TIME (bukan per trader): setiap posisi
+    open maupun closed dengan PnL POSITIF menjadi SATU entri leaderboard.
+    Tidak ada lagi batas 24 jam (v10.0.5) yang membuat rank auto-hilang —
+    rank hanya tergantikan bila ada posisi lain dengan PnL lebih tinggi.
+    EXECUTE hanya untuk status open."""
     cursor = db.asi_trades.find(
         {
-            "$or": [
-                {"status": "open"},
-                {"status": "closed", "closed_at": {"$gte": since}},
-                {"status": "closed", "created_at": {"$gte": since}},
-            ],
+            "status": {"$in": ["open", "closed"]},
             "pnl_usdt": {"$gt": 0},
         },
         {
