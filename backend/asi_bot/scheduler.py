@@ -676,6 +676,47 @@ async def _run_full_auto_scanner(
                 )
                 if dup:
                     continue
+                # v10.1.2 — ANTI-DUPLIKAT ATOMIK (root cause "2 trade TRX
+                # identik"): dua proses scanner (multi-replica / restart)
+                # bisa sama-sama lolos dup-check lalu sama-sama eksekusi.
+                # Solusinya klaim slot DULU dengan insert unik per
+                # (device, symbol) SEBELUM eksekusi — proses kedua gagal
+                # insert dan otomatis skip.
+                slot_id = f"{device_id}:{sym}:active"
+                now_claim = datetime.now(timezone.utc).isoformat()
+                try:
+                    await db.asi_trades.insert_one({
+                        "_id": slot_id, "device_id": device_id,
+                        "symbol": sym, "side": sig["side"],
+                        "status": "placing", "mode": "full",
+                        "created_at": now_claim, "updated_at": now_claim,
+                    })
+                except Exception:
+                    # Slot sudah diklaim; jika basi (>5 menit, proses mati
+                    # di tengah jalan) ambil alih.
+                    stale = await db.asi_trades.find_one({"_id": slot_id})
+                    stale_at = str((stale or {}).get("updated_at") or "")
+                    is_stale = False
+                    if stale_at:
+                        try:
+                            is_stale = (datetime.now(timezone.utc)
+                                        - datetime.fromisoformat(stale_at)
+                                        ).total_seconds() > 300
+                        except Exception:
+                            is_stale = False
+                    if (stale or {}).get("status") == "placing" and is_stale:
+                        await db.asi_trades.delete_one({"_id": slot_id})
+                        try:
+                            await db.asi_trades.insert_one({
+                                "_id": slot_id, "device_id": device_id,
+                                "symbol": sym, "side": sig["side"],
+                                "status": "placing", "mode": "full",
+                                "created_at": now_claim, "updated_at": now_claim,
+                            })
+                        except Exception:
+                            continue
+                    else:
+                        continue
                 try:
                     res = await execute_trade(
                         cred, sym, sig["side"],
@@ -691,11 +732,13 @@ async def _run_full_auto_scanner(
                     )
                 except Exception as e:
                     logger.warning("full-auto execute failed %s/%s: %s", device_id, sym, e)
+                    await db.asi_trades.delete_one({"_id": slot_id})
                     continue
                 if not res.get("ok"):
                     # v10.1.2 — Log alasan skip supaya tidak jadi black box.
                     logger.info("full-auto skip %s/%s: %s | %s", device_id, sym,
                                 res.get("reason"), str(res.get("message") or "")[:120])
+                    await db.asi_trades.delete_one({"_id": slot_id})
                     continue
                 margin_usdt = round(
                     float(res["qty"]) * float(res["entry_price"])
@@ -705,12 +748,14 @@ async def _run_full_auto_scanner(
                 # v10.1.2 — SELALU simpan record walau entry_order_id kosong
                 # (bug lama: trade tereksekusi di Binance tapi tak pernah
                 # masuk DB → user mengira bot tidak eksekusi). Fallback _id
-                # memakai timestamp supaya tetap unik.
+                # memakai timestamp supaya tetap unik. Slot klaim lalu
+                # dilepas supaya bisa dipakai trade berikutnya.
                 oid = res.get("entry_order_id")
                 rec["_id"] = (f"{device_id}:{oid}" if oid
                               else f"{device_id}:auto:{res.get('created_at')}")
                 await db.asi_trades.replace_one(
                     {"_id": rec["_id"]}, rec, upsert=True)
+                await db.asi_trades.delete_one({"_id": slot_id})
                 placed += 1
                 total_placed += 1
                 logger.info("full-auto placed %s %s %s", device_id, sym, sig["side"])
