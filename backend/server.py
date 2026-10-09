@@ -3137,18 +3137,11 @@ async def _asi_signal_fetcher(market: str, symbol: str, profile: str | None = No
                 entry = entry_mod
                 sl = sl + shift
                 tps = [t + shift for t in tps]
-            # v10.0.3 — FILTER SEARAH TREND HARIAN (keputusan user): bot
-            # hanya LONG bila harga di atas 50-SMA Daily, SHORT bila di
-            # bawahnya. Counter-trend → sinyal dibuang. Bias dari sinyal
-            # (mesin VWAP) atau dihitung dari klines harian (cache 30m).
-            bias = (d.get("indicators") or {}).get("daily_bias")
-            if not bias:
-                bias = await _daily_trend_bias(symbol)
-            if bias and (
-                (side == "BUY" and bias != "BULLISH")
-                or (side == "SELL" and bias != "BEARISH")
-            ):
-                return None
+            # v10.1.2 — FILTER BIAS HARIAN DIHAPUS (keputusan user terbaru):
+            # sinyal executable yang tampil di AI Suggestions harus LANGSUNG
+            # memicu eksekusi Full-Auto tanpa kondisi filter tambahan.
+            # Sebelumnya counter-trend vs SMA-50 Daily dibuang di sini,
+            # menyebabkan sinyal yang terlihat di UI tidak pernah dieksekusi.
             return {
                 "side": side, "entry": entry, "stop_loss": sl,
                 "take_profits": tps,

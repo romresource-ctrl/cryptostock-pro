@@ -90,22 +90,31 @@ async def binance_perp_tradable() -> set[str] | None:
 # 0.1051625 padahal tick 0.0001) ditolak Algo API → SL/TP native gagal
 # terpasang. Cache 10 menit, public endpoint (no auth).
 # ---------------------------------------------------------------------------
-_FILTERS_CACHE: tuple[float, dict[str, dict[str, float]] | None] = (0.0, None)
+_FILTERS_CACHE: dict[bool, tuple[float, dict[str, dict[str, float]] | None]] = {
+    False: (0.0, None), True: (0.0, None),
+}
 
 
-async def binance_symbol_filters() -> dict[str, dict[str, float]] | None:
+async def binance_symbol_filters(testnet: bool = False) -> dict[str, dict[str, float]] | None:
     """Return { "MANA": {"tick": 0.0001, "step": 1.0}, ... } utk semua
-    USDT perpetual TRADING. None bila fetch gagal."""
-    global _FILTERS_CACHE
+    USDT perpetual TRADING. None bila fetch gagal.
+
+    v10.1.2 — NETWORK-AWARE: filter di-cache TERPISAH untuk mainnet vs
+    testnet. Bug lama: cache mainnet dipakai untuk eksekusi testnet padahal
+    stepSize berbeda (mis. ONDO mainnet 0.1 vs testnet 1) → Binance menolak
+    order dengan -4023 "Qty not increased by step size" dan sinyal valid
+    tidak pernah tereksekusi."""
     now = _time.monotonic()
-    cached_at, cached = _FILTERS_CACHE
+    cached_at, cached = _FILTERS_CACHE[testnet]
     if cached is not None and (now - cached_at) < _PERPS_TTL:
         return cached
+    base_url = ("https://testnet.binancefuture.com" if testnet
+                else "https://fapi.binance.com")
     try:
         import httpx  # noqa: PLC0415
         proxy = _os.environ.get("ASI_PROXY_URL") or _os.environ.get("HTTPS_PROXY")
         async with httpx.AsyncClient(proxy=proxy, timeout=15) as c:
-            r = await c.get("https://fapi.binance.com/fapi/v1/exchangeInfo")
+            r = await c.get(f"{base_url}/fapi/v1/exchangeInfo")
             r.raise_for_status()
             data = r.json()
         out: dict[str, dict[str, float]] = {}
@@ -125,7 +134,7 @@ async def binance_symbol_filters() -> dict[str, dict[str, float]] | None:
                 if base:
                     out[base] = {"tick": tick or 0.0, "step": step or 0.0}
         if out:
-            _FILTERS_CACHE = (now, out)
+            _FILTERS_CACHE[testnet] = (now, out)
             return out
     except Exception:
         pass

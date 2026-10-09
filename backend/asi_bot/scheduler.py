@@ -629,18 +629,46 @@ async def _run_full_auto_scanner(
             if bot_profile == "confluence":
                 bot_profile = None
             budget = max_tr - placed
-            for sym in whitelist[: budget * 3]:  # try ≤3x slots so we have options
+            # v10.1.2 — MULTI-PROFILE SCAN (keputusan user): sinyal
+            # executable yang muncul di AI Suggestions dari MANA PUN
+            # (Scalper / Intraday / Swing / Confluence v9) harus langsung
+            # memicu eksekusi Full-Auto, tanpa dibatasi 1 profile dan
+            # tanpa filter tambahan. Keempat engine dievaluasi PARALEL
+            # per koin; sinyal dengan confidence tertinggi yang lolos
+            # threshold user yang dipakai.
+            _ENGINES = ["scalper", "day", "swing", "longterm"]
+            async def _fetch_signal(s: str, p: str) -> dict[str, Any] | None:
+                try:
+                    return await signal_fetcher("crypto", s, p)
+                except Exception:
+                    return None
+            # v10.1.2 — FIX BUG UNIVERSE TERPOTONG: slice `[: budget*3]`
+            # membuat scanner hanya melihat ±57 koin pertama; sinyal valid
+            # di koin urutan belakang (mis. ONDO #84) tidak pernah dievaluasi.
+            # Sekarang scan SELURUH whitelist; loop berhenti sendiri saat
+            # kuota harian habis (break di dalam).
+            for sym in whitelist:
                 if not is_allowed(sym):
                     continue
                 try:
-                    sig = await signal_fetcher("crypto", sym, bot_profile)
+                    results = await asyncio.gather(
+                        *[_fetch_signal(sym, p) for p in _ENGINES],
+                        return_exceptions=True,
+                    )
                 except Exception:
                     continue
-                if not sig or not sig.get("side"):
+                best = None
+                for sig in results:
+                    if not isinstance(sig, dict) or not sig.get("side"):
+                        continue
+                    if int(sig.get("confidence") or 0) < user_min_conf:
+                        continue
+                    sigs_found += 1
+                    if best is None or int(sig.get("confidence") or 0) > int(best.get("confidence") or 0):
+                        best = sig
+                if not best:
                     continue
-                sigs_found += 1
-                if int(sig.get("confidence") or 0) < user_min_conf:
-                    continue
+                sig = best
                 # Guard: skip if an OPEN/pending trade on same symbol exists.
                 dup = await db.asi_trades.find_one(
                     {"device_id": device_id, "symbol": sym,
@@ -665,6 +693,9 @@ async def _run_full_auto_scanner(
                     logger.warning("full-auto execute failed %s/%s: %s", device_id, sym, e)
                     continue
                 if not res.get("ok"):
+                    # v10.1.2 — Log alasan skip supaya tidak jadi black box.
+                    logger.info("full-auto skip %s/%s: %s | %s", device_id, sym,
+                                res.get("reason"), str(res.get("message") or "")[:120])
                     continue
                 margin_usdt = round(
                     float(res["qty"]) * float(res["entry_price"])

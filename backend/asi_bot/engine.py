@@ -372,7 +372,7 @@ async def execute_trade(
     bin_sym = base + "USDT"
 
     # (1) Market filters (tick/step/minNotional)
-    filters = await binance_symbol_filters() or {}
+    filters = await binance_symbol_filters(is_testnet) or {}
     f = filters.get(base) or {}
     tick = float(f.get("tick") or 0.0)
     step = float(f.get("step") or 0.0)
@@ -985,7 +985,7 @@ async def attach_brackets(
     actual_lev = int(float(pos.get("leverage") or trade.get("leverage") or 0))
 
     # Filters for rounding
-    filters = await binance_symbol_filters() or {}
+    filters = await binance_symbol_filters(is_testnet) or {}
     f = filters.get(base) or {}
     tick = float(f.get("tick") or 0.0)
     step = float(f.get("step") or 0.0)
@@ -1405,7 +1405,7 @@ async def move_sl_to_breakeven(
     be_price = guard_px
     try:
         from .whitelist import binance_symbol_filters, round_to_tick
-        filters = await binance_symbol_filters() or {}
+        filters = await binance_symbol_filters(is_testnet) or {}
         tick = (filters.get(base) or {}).get("tick") or 0.0
         if tick > 0:
             be_price = round_to_tick(guard_px, tick)
