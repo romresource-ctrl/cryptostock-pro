@@ -32,11 +32,15 @@ TRADER_PROFILES: dict[str, dict[str, Any]] = {
     # v10.0.2 — Keputusan user: SL diperketat ke 0.5×ATR (semua profil)
     # dan ladder TP diratakan 1R/2R/3R (sebelumnya TP1 0.5–0.7R terlalu
     # dekat → sering close dini di profit kecil sebelum TP2/TP3).
+    # v10.1.1 — Keputusan user (setelah audit SL terlalu dekat di koin
+    # harga besar saat ATR 1H mengecil): SL dilonggarkan ke 1.2×ATR agar
+    # tidak tersenggol noise/spread normal 0.1–0.2%. Ladder TP dalam
+    # kelipatan R ikut menyesuaikan otomatis.
     "scalper": {
         "ema_fast": 9,
         "ema_slow": 21,
         "require_ema200": False,
-        "sl_atr_mult": 0.5,
+        "sl_atr_mult": 1.2,
         "tp_ladder": (1.0, 1.5, 2.0),
         "vwap_tp_ladder": (1.0, 1.5, 2.0),
         "description": "5m–15m intraday moves",
@@ -45,7 +49,7 @@ TRADER_PROFILES: dict[str, dict[str, Any]] = {
         "ema_fast": 20,
         "ema_slow": 50,
         "require_ema200": False,
-        "sl_atr_mult": 0.5,
+        "sl_atr_mult": 1.2,
         "tp_ladder": (1.0, 1.5, 2.0),
         "vwap_tp_ladder": (1.0, 1.5, 2.0),
         "description": "1h–4h day trading",
@@ -54,7 +58,7 @@ TRADER_PROFILES: dict[str, dict[str, Any]] = {
         "ema_fast": 20,
         "ema_slow": 50,
         "require_ema200": True,
-        "sl_atr_mult": 0.5,
+        "sl_atr_mult": 1.2,
         "tp_ladder": (1.0, 1.5, 2.0),
         "vwap_tp_ladder": (1.0, 1.5, 2.0),
         "description": "4h–24h multi-day",
@@ -63,7 +67,7 @@ TRADER_PROFILES: dict[str, dict[str, Any]] = {
         "ema_fast": 50,
         "ema_slow": 100,
         "require_ema200": True,
-        "sl_atr_mult": 0.5,
+        "sl_atr_mult": 1.2,
         "tp_ladder": (1.0, 1.5, 2.0),
         "vwap_tp_ladder": (1.0, 1.5, 2.0),
         "description": "1D+ position hold",

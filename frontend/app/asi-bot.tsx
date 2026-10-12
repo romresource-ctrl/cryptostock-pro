@@ -930,6 +930,7 @@ export default function ASIBotScreen() {
                     else if (rc === "bracket_failed_after_fill") txt = "Closed upon bracket failure";
                     else if (rc === "MANUAL") txt = "Closed Manually";
                     else if (rc === "TRAILING") txt = "Closed on Trailing Stop";
+                    else if (rc === "BREAK_EVEN") txt = "Closed on Break-Even";
                     else if (rc === "position_closed_externally") txt = "Closed on exchange";
                     else txt = rc ? `Closed on ${rc}` : "Closed";
                     return (
@@ -1154,10 +1155,17 @@ export default function ASIBotScreen() {
                     {/* v10.0.13 — TP partial hits: tiap level yang sudah
                         terisi (TP1/TP2) tampil putih dengan harga + PnL
                         leg-nya. TP3 akan memfinalkan trade dan masuk
-                        ke total PnL atas kartu. */}
-                    {Array.isArray((tr as any).tp_fills) && (tr as any).tp_fills.length > 0 ? (
+                        ke total PnL atas kartu.
+                        v10.1.1 — HANYA level TP yang ditampilkan (keputusan
+                        user): catatan parsial berlabel SL disembunyikan
+                        supaya posisi OPEN yang profit tidak tampak kena SL. */}
+                    {(() => {
+                      const tpOnly = (Array.isArray((tr as any).tp_fills) ? (tr as any).tp_fills : [])
+                        .filter((f: any) => String(f?.level || "").startsWith("TP"));
+                      if (!tpOnly.length) return null;
+                      return (
                       <View style={{ gap: 1 }}>
-                        {(tr as any).tp_fills.map((f: any, i: number) => (
+                        {tpOnly.map((f: any, i: number) => (
                           <Text key={i} style={{ fontSize: 10.5, fontWeight: "800", color: "#FFFFFF" }}>
                             ✓ {String(f.level)} HIT · ${f.price != null ? formatPrice(Number(f.price), "crypto") : "—"}
                             {f.pnl != null ? (
@@ -1168,7 +1176,8 @@ export default function ASIBotScreen() {
                           </Text>
                         ))}
                       </View>
-                    ) : null}
+                      );
+                    })()}
                   </View>
                 ) : (
                   /* v10.0.1 — Trade CLOSED: badge DEMO/REAL sudah dipindah

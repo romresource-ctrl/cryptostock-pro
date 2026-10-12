@@ -1681,7 +1681,7 @@ async def search_assets(
 # v8.12.69 — Latest published Android build. The /app-version endpoint
 # serves this so outdated installs get an update prompt. Bump together
 # with frontend APP_VERSION / app.json version on every release.
-APP_LATEST_VERSION = "10.1.1"
+APP_LATEST_VERSION = "10.1.2"
 
 # v10.1.1 — User minta popup update HANYA kotak kecil tanpa daftar
 # perubahan (list panjang bikin tombol OK tidak tersentuh di layar
@@ -3083,8 +3083,11 @@ def _asi_formula_tag(ind: dict | None, reasons: list[str] | None,
         tags.append("Box Theory")
     if tags:
         return " · ".join(tags[:2])
+    # v10.1.1 — Fallback label untuk engine Confluence (sebelumnya None →
+    # kartu trade tidak menampilkan baris formula sama sekali, mis. WIF).
     return {"scalper": "7 Fast VWAP", "day": "5 KISS VWAP",
-            "swing": "5 Multi-day Trend"}.get(profile or "")
+            "swing": "5 Multi-day Trend",
+            "longterm": "Confluence v9"}.get(profile or "", "Confluence")
 
 
 async def _asi_signal_fetcher(market: str, symbol: str, profile: str | None = None) -> dict[str, Any] | None:

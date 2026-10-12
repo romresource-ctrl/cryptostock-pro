@@ -1760,6 +1760,12 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
                     if closed_px <= tp * (1 + tol):
                         reason = f"TP{i}"
                         break
+        # v10.1.1 — BREAK-EVEN (keputusan user): harga tutup ≈ harga entry
+        # (±0.2%) dan tidak menyentuh SL/TP → label jujur "BREAK_EVEN",
+        # bukan "position_closed_externally" yang membingungkan.
+        if reason is None and entry_px \
+                and abs(closed_px - entry_px) / entry_px <= 0.002:
+            reason = "BREAK_EVEN"
         # v10.1.1 — Trailing stop native menutup posisi di luar level
         # SL/TP tersimpan → label khusus (bukan "closed externally").
         if reason is None and trade.get("trailing_activated"):

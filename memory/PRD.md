@@ -1291,3 +1291,22 @@ ditemukan → diperbaiki, test PASS. Versi 9.9.13.
   touchable (diperbaiki, self-test ulang PASS: CLOSE/CANCEL tanpa navigasi,
   dialog tetap muncul, tap kartu navigasi, swipe-delete tanpa navigasi).
 - Versi TETAP 10.1.1 (tidak bump, sesuai instruksi user).
+
+## v10.1.2 — SL 1.2×ATR + Label Bersih (Keputusan User, Okt 2026)
+- **SL multiplier 0.5×ATR → 1.2×ATR** (semua profil, keputusan user Opsi A):
+  akar masalah SL terlalu dekat (BNB $1/0.12%, XRP 0.18%) adalah ATR 1H
+  mengecil saat konsolidasi; 1.2×ATR memberi jarak wajar (BNB kini ~0.60%).
+  Ladder TP dalam kelipatan R menyesuaikan otomatis.
+- **Baris parsial posisi OPEN hanya menampilkan ✓ TP HIT** (keputusan user):
+  catatan parsial berlabel SL (fill adverse/slippage) disembunyikan di
+  Positions & Recent Trades agar posisi profit tidak tampak kena SL.
+- **Reason baru BREAK_EVEN**: harga tutup ≈ entry (±0.2%) tanpa menyentuh
+  SL/TP → "Closed on Break-Even" (bukan "Closed on exchange"). Kasus ORDI.
+- **Label formula Confluence**: _asi_formula_tag fallback kini mengembalikan
+  "Confluence v9" (longterm) / "Confluence" (default) — trade seperti WIF
+  tidak lagi tampil tanpa nama formula.
+- Penjelasan ARB BRACKET_FAILED_AFTER_FILL: Binance menolak bracket setelah
+  entry fill → emergency rollback menutup posisi di $0.00 demi keamanan.
+- Versi di-bump 10.1.1 → 10.1.2 (version.ts, app.json, APP_LATEST_VERSION).
+  Catatan: fungsionalitas penuh via Deploy/Publish; build baru hanya untuk
+  label versi di device.

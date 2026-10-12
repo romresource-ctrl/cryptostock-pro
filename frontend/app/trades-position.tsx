@@ -174,6 +174,7 @@ export default function TradesPositionScreen() {
     if (x === "orphaned_no_credential") return "No credential (orphaned)";
     if (x === "MANUAL") return "Closed manually";
     if (x === "TRAILING") return "Closed on Trailing Stop";
+    if (x === "BREAK_EVEN") return "Closed on Break-Even";
     if (x === "position_closed_externally") return "Closed on exchange";
     return x ? `Closed: ${x}` : "Closed";
   };
@@ -289,10 +290,17 @@ export default function TradesPositionScreen() {
             ) : null}
             {/* v10.0.13 — Riwayat TP hit: tampilkan tiap level yang sudah
                 terisi dengan harga closed-nya (putih terang). TP3 selalu
-                menutup posisi penuh dan sudah masuk PnL total di atas. */}
-            {Array.isArray(tr.tp_fills) && tr.tp_fills.length > 0 ? (
+                menutup posisi penuh dan sudah masuk PnL total di atas.
+                v10.1.1 — HANYA baris TP yang ditampilkan; catatan parsial
+                berlabel SL (fill adverse/slippage) disembunyikan agar
+                posisi OPEN tidak tampak seolah kena SL. */}
+            {(() => {
+              const tpOnly = (Array.isArray(tr.tp_fills) ? tr.tp_fills : [])
+                .filter((f: any) => String(f?.level || "").startsWith("TP"));
+              if (!tpOnly.length && !tr.be_moved) return null;
+              return (
               <View style={{ marginTop: 2 }}>
-                {tr.tp_fills.map((f: any, i: number) => (
+                {tpOnly.map((f: any, i: number) => (
                   <Text key={i} style={{ fontSize: 10.5, fontWeight: "800", color: "#FFFFFF" }}>
                     ✓ {String(f.level)} hit · ${fp(Number(f.price))}
                     {f.pnl != null ? (
@@ -308,7 +316,8 @@ export default function TradesPositionScreen() {
                   </Text>
                 ) : null}
               </View>
-            ) : null}
+              );
+            })()}
             {!isOpen && !isPending ? (
               <Text style={{ color: colors.textMuted, fontSize: 10.5 }}>
                 {closedReason(tr.close_reason)}

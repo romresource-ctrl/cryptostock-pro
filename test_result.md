@@ -3265,3 +3265,58 @@ agent_communication:
       4. Bug siklus trade (QNT TP1 negatif) diperbaiki untuk trade BARU;
          data historis lama tetap salah label (tidak di-rewrite).
       5. Versi TETAP 10.1.1 — jangan bump.
+
+# ======================================================
+# v10.1.2 — SL 1.2xATR + label bersih (user-approved)
+# ======================================================
+backend_v1012:
+  - task: "sl_atr_mult 0.5 -> 1.2 semua profil"
+    implemented: true
+    working: true
+    file: "/app/backend/indicators.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Keputusan user (Opsi A). Verified live: BNB SELL entry 748.49 SL 753.00 -> jarak 0.602% (sebelumnya ~0.25%). TP ladder kelipatan R ikut menyesuaikan."
+  - task: "Reason BREAK_EVEN + fallback label Confluence"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/asi_bot/engine.py, /app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "closed_px dalam +-0.2% dari entry tanpa sentuh SL/TP -> BREAK_EVEN. _asi_formula_tag fallback: longterm->Confluence v9, None->Confluence (fix WIF tanpa formula)."
+frontend_v1012:
+  - task: "Baris parsial OPEN hanya TP HIT + label Break-Even"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/trades-position.tsx, /app/frontend/app/asi-bot.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "tp_fills difilter level TP* saja di kedua halaman; label 'Closed on Break-Even' ditambahkan. Lint bersih."
+  - task: "Bump 10.1.2"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/lib/version.ts, /app/frontend/app.json, /app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Verified: /api/app-version -> 10.1.2; bundle frontend memuat 10.1.2."
+metadata_v1012:
+  created_by: "main_agent"
+  version: "10.1.2"
+  test_sequence: 40
+  run_ui: false
