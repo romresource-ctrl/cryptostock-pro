@@ -1701,27 +1701,53 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
                 upd["soft_bracket"] = False
                 upd["soft_bracket_reason"] = None
         return upd
-    # Position closed. Compute realized from stored data.
+    # Position closed.
+    # v10.1.1 — PnL & harga close diambil dari FILLS AKTUAL exchange
+    # (sum realizedPnl fills penutup sejak trade dibuka). Sebelumnya
+    # pnl_usdt = unrealized STALE dari refresh terakhir (bisa jauh dari
+    # realized, mis. tercatat -26.88 padahal TP1 profit) dan closed_price
+    # = fill terakhir simbol (bisa milik trade/layer lain).
     realized = float(trade.get("pnl_usdt") or 0.0)
-    # v9.9.9 — Rekam harga close aktual (fill terakhir) untuk history.
     closed_px = None
     try:
-        closed_px = await br.last_fill_price(api_key, api_secret, is_testnet, bin_sym)
+        _since = None
+        _ca = trade.get("filled_at") or trade.get("created_at")
+        if _ca:
+            _since = int(datetime.fromisoformat(
+                str(_ca).replace("Z", "+00:00")).timestamp() * 1000)
+        info = await br.realized_close_info(
+            api_key, api_secret, is_testnet, bin_sym, _since)
+        if info:
+            realized = info["pnl"]
+            closed_px = info["price"]
     except Exception:
         pass
+    if closed_px is None:
+        # v9.9.9 — Fallback lama: harga fill terakhir simbol.
+        try:
+            closed_px = await br.last_fill_price(api_key, api_secret, is_testnet, bin_sym)
+        except Exception:
+            pass
     # v10.0.5 — Simpulkan ALASAN close dari harga fill vs level SL/TP
     # (sebelumnya None → kartu history tidak tahu kenapa tertutup) dan
     # SELALU catat closed_at (dibutuhkan leaderboard 24h).
     now_c = datetime.now(timezone.utc).isoformat()
     reason = None
     if closed_px:
+        # v10.1.1 — Label TP HANYA bila fill benar-benar FAVORABLE vs
+        # entry (LONG: exit > entry; SHORT: exit < entry). Fill yang
+        # kebetulan dekat level TP tapi merugi (slippage/wick/akuntansi
+        # layer) TIDAK boleh dilabeli TP — dilaporkan netral.
+        entry_px = float(trade.get("entry_price") or 0)
+        sign_c = 1.0 if trade.get("side") == "BUY" else -1.0
+        favorable = bool(entry_px) and ((closed_px - entry_px) * sign_c) > 0
         sl = float(trade.get("stop_loss") or 0)
         tps = [float(x) for x in (trade.get("take_profits") or []) if x]
         tol = 0.004  # toleransi 0.4% utk slippage trigger
         if trade.get("side") == "BUY":
             if sl and closed_px <= sl * (1 + tol):
                 reason = "SL"
-            else:
+            elif favorable:
                 for i, tp in enumerate(tps, 1):
                     if closed_px >= tp * (1 - tol):
                         reason = f"TP{i}"
@@ -1729,11 +1755,15 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
         else:
             if sl and closed_px >= sl * (1 - tol):
                 reason = "SL"
-            else:
+            elif favorable:
                 for i, tp in enumerate(tps, 1):
                     if closed_px <= tp * (1 + tol):
                         reason = f"TP{i}"
                         break
+        # v10.1.1 — Trailing stop native menutup posisi di luar level
+        # SL/TP tersimpan → label khusus (bukan "closed externally").
+        if reason is None and trade.get("trailing_activated"):
+            reason = "TRAILING"
     upd_closed: dict[str, Any] = {
         "status": "closed",
         "pnl_usdt": round(realized, 2),

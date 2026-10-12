@@ -502,8 +502,8 @@ async def _get_server_ip() -> dict[str, Any]:
         "ip": ip,
         "via_proxy": bool(proxy),
         "instructions": (
-            "Masukkan IP ini ke 'Restrict access to trusted IPs only' "
-            "di menu API Management Binance/exchange Anda."
+            "Add this IP under 'Restrict access to trusted IPs only' "
+            "in your Binance/exchange API Management menu."
         ),
     }
 
@@ -640,7 +640,7 @@ def _attach_trade_routes(db: Any) -> None:
             raise HTTPException(404, "trade not found")
         if str(t.get("status") or "").lower() in ("open", "pending_entry"):
             raise HTTPException(
-                400, "Posisi aktif tidak bisa dihapus — tutup/batalkan dulu.")
+                400, "active position cannot be deleted — close/cancel it first")
         await db.asi_trades.delete_one({"_id": t["_id"]})
         return {"ok": True}
 
@@ -767,7 +767,7 @@ def _attach_trade_routes(db: Any) -> None:
                     db, device_id, exchange, bool(tr.get("testnet", True)))
                 if not cred:
                     res = {"ok": False, "symbol": tr.get("symbol"),
-                           "errors": ["credential missing untuk jaringan trade ini"]}
+                           "errors": ["credential missing for this trade's network"]}
                 else:
                     res = await attach_brackets(cred, tr)
             except Exception as e:  # noqa: BLE001

@@ -84,10 +84,10 @@ export default function TraderProfileModal({ visible, onClose, onOpenAISuggestio
             <View style={styles.header}>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.title, { color: colors.textPrimary }]}>
-                  Trader Profile
+                  {t("profile_modal_title")}
                 </Text>
                 <Text style={[styles.subtitle, { color: colors.textMuted }]}>
-                  Tune signals to your trading horizon
+                  {t("profile_modal_sub")}
                 </Text>
               </View>
               <TouchableOpacity onPress={onClose} hitSlop={8}>
@@ -126,7 +126,9 @@ export default function TraderProfileModal({ visible, onClose, onOpenAISuggestio
                         </Text>
                       </View>
                       <Text style={[styles.desc, { color: colors.textMuted }]}>
-                        {meta.description}
+                        {/* v10.1.1 — Deskripsi profil terlokalisasi
+                            (sebelumnya hardcode Bahasa Indonesia). */}
+                        {t(`profile_desc_${p}`)}
                       </Text>
                     </View>
                     {active ? (

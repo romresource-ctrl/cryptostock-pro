@@ -268,7 +268,7 @@ export default function CopyTradeScreen() {
                         backgroundColor: row.testnet ? BLUE : GREEN,
                       }}>
                         <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 8.5, letterSpacing: 0.4 }}>
-                          {row.testnet ? t("asi_demo_badge") : "REAL"}
+                          {row.testnet ? "D" : "R"}
                         </Text>
                       </View>
                       {!isOpen ? (

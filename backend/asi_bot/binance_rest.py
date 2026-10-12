@@ -290,6 +290,44 @@ async def last_fill_price(
     except Exception:
         return None
 
+async def realized_close_info(
+    api_key: str, api_secret: str, testnet: bool, symbol: str,
+    since_ms: int | None = None,
+) -> dict[str, float] | None:
+    """v10.1.1 — Realized PnL AKTUAL + harga penutup dari fills exchange.
+
+    Mengambil /fapi/v1/userTrades sejak posisi dibuka; hanya fills dengan
+    realizedPnl != 0 yang benar-benar MENUTUP (mengurangi) posisi.
+    Menjumlahkan realizedPnl → PnL realized yang sebenarnya, dan memakai
+    harga fill penutup terakhir sebagai closed_price. Menggantikan pola
+    lama: pnl_usdt stale dari refresh terakhir + last_fill_price (fill
+    terakhir simbol — bisa milik trade/layer lain pada simbol yang sama).
+    """
+    params: dict[str, Any] = {"symbol": symbol.upper(), "limit": 200}
+    if since_ms:
+        params["startTime"] = int(since_ms)
+    code, data = await _request(
+        "GET", "/fapi/v1/userTrades", api_key, api_secret, testnet, params)
+    if code != 200 or not isinstance(data, list) or not data:
+        return None
+    realized = 0.0
+    close_px: float | None = None
+    for f in data:
+        try:
+            rp = float(f.get("realizedPnl") or 0)
+        except Exception:
+            rp = 0.0
+        if abs(rp) > 1e-12:
+            realized += rp
+            try:
+                close_px = float(f.get("price") or 0) or close_px
+            except Exception:
+                pass
+    if close_px is None:
+        return None
+    return {"pnl": realized, "price": close_px}
+
+
 
 async def open_orders_legacy(
     api_key: str, api_secret: str, testnet: bool, symbol: str,

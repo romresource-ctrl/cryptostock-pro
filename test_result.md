@@ -3120,3 +3120,148 @@ agent_communication:
       5. Asset detail Predict box: EXECUTE button removed per user; the
          only EXECUTE CTA is now inside the ANALYZE / AI Consensus card.
       Do NOT bump app version; user requested 10.0.12 for current build.
+
+# ======================================================
+# v10.1.1 — Repair batch: Positions/Recent UI, lifecycle accounting, i18n
+# ======================================================
+backend_v1011:
+  - task: "Native close path memakai realized PnL & harga close AKTUAL dari fills exchange"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/asi_bot/binance_rest.py (realized_close_info), /app/backend/asi_bot/engine.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Root cause "QNT Closed on TP1 tapi PnL -26.88": native close path
+          menyimpan pnl_usdt = unrealized STALE dari refresh terakhir dan
+          closed_price = last_fill_price (fill terakhir simbol, bisa milik
+          trade/layer lain). Fix: helper br.realized_close_info menjumlahkan
+          realizedPnl fills penutup (realizedPnl != 0) sejak trade dibuka;
+          closed_price = harga fill penutup terakhir. Label TP kini HANYA
+          bila fill favorable vs entry (LONG exit>entry, SHORT exit<entry);
+          jika tidak → tidak dilabeli TP. Reason baru "TRAILING" untuk posisi
+          yang ditutup trailing stop native (sebelumnya salah label
+          position_closed_externally).
+  - task: "Scanner guards: level valid + profile = engine pemenang + drop record entry_price=0"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/asi_bot/scheduler.py, /app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          (1) Guard entry>0, sl>0, tps non-empty sebelum execute (bug: ada
+          trade tersimpan entry_price=0.0: ETH/LINK/SNX). (2) _asi_signal_
+          fetcher mengembalikan "profile" engine; scanner menyimpan profile=
+          sig.profile (engine pemenang), BUKAN profile config user — statistik
+          WR per profile kini valid. (3) Record dengan entry_price<=0 (selain
+          pending_entry) tidak disimpan, slot dilepas.
+  - task: "3 string backend Indonesia -> English"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/routes.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "server-ip instructions, delete-trade 400 detail, repair credential-missing kini English."
+frontend_v1011:
+  - task: "Positions: W:L & P:L harian reset 00:00 JAM DEVICE + nominal $"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/trades-position.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Reset harian kini pakai tanggal LOKAL device (bukan UTC) sesuai keputusan user. P:L menampilkan nominal $ DAN % (hijau/merah). Screenshot-verified dengan seed (W:L 1:1, +$12.50/-$8.40)."
+  - task: "Kartu tapable -> detail aset + swipe-delete tidak bentrok (RNGH touchable)"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/trades-position.tsx, /app/frontend/app/asi-bot.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Kartu Positions & Recent Trades dibungkus TouchableOpacity dari
+          react-native-gesture-handler (CardTouchable) yang bernegosiasi
+          dengan ReanimatedSwipeable. Verified via Playwright mouse-drag:
+          swipe kiri -> DELETE muncul TANPA navigasi; tap biasa -> navigasi
+          ke /asset/crypto/{symbol}; tombol CLOSE/CANCEL tidak ikut navigasi.
+          Symbol dinormalisasi (strip suffix USDT) sebelum push route.
+  - task: "Warning SL/TP: tekan ⚠️ memicu repair+refresh (bukan info saja)"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/asi-bot.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "⚠️ press -> api.asi.repairBrackets + refresh; popup hanya bila kegagalan nyata. Warning auto-hilang saat backend verifikasi bracket_live=true (sudah ada di engine v9.9.10)."
+  - task: "TraderProfileModal terlokalisasi penuh (judul/sub/deskripsi profil)"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/components/TraderProfileModal.tsx, /app/frontend/src/i18n/I18nContext.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "6 key baru (profile_modal_title/sub, profile_desc_scalper/day/swing/longterm) 4 bahasa. Deskripsi kartu profil tidak lagi hardcode Bahasa Indonesia saat user memilih English."
+metadata_v1011:
+  created_by: "main_agent"
+  version: "10.1.1"
+  test_sequence: 39
+  run_ui: false
+
+test_plan_v1011:
+  current_focus:
+    - "Positions page: Running Positions count, W:L/P:L strip, badge D/R, tap-to-detail, swipe-delete"
+    - "Recent Trades: tap-to-detail, swipe-delete, badge D/R, warning repair press"
+    - "TraderProfileModal localization EN/ID"
+    - "Backend: /api/asi/trades list normal, leaderboard positive-only"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: |
+      v10.1.1 repair batch siap ditest. KONTEKS PENTING:
+      1. Seed test sebelumnya dipakai device_id 'web:uitest-v1011' via
+         localStorage 'cryptostock.device_fingerprint' (web preview).
+         Seed SUDAH dibersihkan; buat seed baru bila perlu & bersihkan lagi.
+      2. JANGAN sentuh Mainnet: tidak ada order/close/cancel mainnet.
+         Binance testnet credential ada di /app/memory/test_credentials.md.
+      3. Yang harus divalidasi:
+         a. /trades-position: judul 'Running Positions · N' (N=open+pending),
+            strip 'W : L' + 'P : L' nominal+$ dan %, badge D biru/R oranye,
+            kartu tap -> /asset/crypto/{SYM}, swipe kiri -> DELETE tanpa
+            navigasi, tombol CLOSE/CANCEL tidak memicu navigasi.
+         b. /asi-bot Recent Trades: hal yang sama untuk kartu trade.
+         c. TraderProfileModal: pilih bahasa EN -> SEMUA teks (judul,
+            subtitle, deskripsi 4 kartu profil) English; pilih ID ->
+            Indonesia. Tidak ada campuran.
+         d. Backend: GET /api/asi/trades?device_id=... tetap mengembalikan
+            list normal; GET /api/asi/leaderboard hanya PnL positif.
+         e. Scheduler backend tidak crash setelah restart (cek log).
+      4. Bug siklus trade (QNT TP1 negatif) diperbaiki untuk trade BARU;
+         data historis lama tetap salah label (tidak di-rewrite).
+      5. Versi TETAP 10.1.1 — jangan bump.

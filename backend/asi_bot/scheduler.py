@@ -669,6 +669,20 @@ async def _run_full_auto_scanner(
                 if not best:
                     continue
                 sig = best
+                # v10.1.2 — GUARD LEVEL: jangan pernah eksekusi sinyal
+                # tanpa level valid (bug: ada trade tersimpan dgn
+                # entry_price=0.0). Skip & log supaya tidak jadi black box.
+                try:
+                    _entry = float(sig.get("entry") or 0)
+                    _sl = float(sig.get("stop_loss") or 0)
+                    _tps = [float(x) for x in sig.get("take_profits") or [] if float(x) > 0]
+                except Exception:
+                    continue
+                if _entry <= 0 or _sl <= 0 or not _tps:
+                    logger.info("full-auto skip %s/%s: level tidak valid (entry=%s sl=%s tps=%s)",
+                                device_id, sym, sig.get("entry"), sig.get("stop_loss"),
+                                sig.get("take_profits"))
+                    continue
                 # Guard: skip if an OPEN/pending trade on same symbol exists.
                 dup = await db.asi_trades.find_one(
                     {"device_id": device_id, "symbol": sym,
@@ -720,13 +734,15 @@ async def _run_full_auto_scanner(
                 try:
                     res = await execute_trade(
                         cred, sym, sig["side"],
-                        float(sig["entry"]), float(sig["stop_loss"]),
-                        [float(x) for x in sig.get("take_profits") or []],
+                        _entry, _sl, _tps,
                         risk, lev, mode="full",
                         tp_count=int(cfg.get("tp_count") or 3),
                         trailing_callback_rate=float(cfg.get("trailing_callback_rate") or 0.0),
                         margin_mode=str(cfg.get("margin_mode") or "isolated"),
-                        profile=bot_profile,
+                        # v10.1.2 — Rekam ENGINE yang menghasilkan sinyal
+                        # (bukan profile config user) agar statistik WR
+                        # per profile & label kartu akurat.
+                        profile=sig.get("profile") or bot_profile,
                         formula_tag=sig.get("formula_tag"),
                         entry_mode=str(cfg.get("entry_mode") or "limit"),
                     )
@@ -738,6 +754,13 @@ async def _run_full_auto_scanner(
                     # v10.1.2 — Log alasan skip supaya tidak jadi black box.
                     logger.info("full-auto skip %s/%s: %s | %s", device_id, sym,
                                 res.get("reason"), str(res.get("message") or "")[:120])
+                    await db.asi_trades.delete_one({"_id": slot_id})
+                    continue
+                # v10.1.2 — GUARD: jangan simpan record tanpa fill nyata
+                # (entry_price 0 = order gagal tapi ok=True). Lepas slot.
+                if float(res.get("entry_price") or 0) <= 0 \
+                        and res.get("status") != "pending_entry":
+                    logger.warning("full-auto drop %s/%s: entry_price=0 pada res ok", device_id, sym)
                     await db.asi_trades.delete_one({"_id": slot_id})
                     continue
                 margin_usdt = round(

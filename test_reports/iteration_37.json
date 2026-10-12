@@ -1,0 +1,66 @@
+{
+  "summary": "v10.1.1 repair batch tested (both). BACKEND 6/6 PASS: app-version=10.1.1, /api/asi/trades (device web:qmeqflw0e2d-mui5ar38) 200 with NO 'placing' status (routes.py:786 excludes anti-dup claim slots), leaderboard all-positive & <=25 (1 entry, +261.45 USDT), regression dashboard?market=crypto + search?q=BTC 200, scheduler running clean (no crash; latest log: pending entry filled+bracketed LINKUSDT). Code-verified v10.1.1 backend items: engine.py:1705-1775 native close writes realized PnL & closed_price from actual exchange fills (realized_close_info binance_rest.py:293), TP label only when favorable (sign check vs entry), TRAILING reason for trailing-activated closes; scheduler.py:672-685 scanner guard rejects signals with invalid levels (entry/sl<=0 or empty TPs), profile=sig.get('profile') (winning engine) at execute_trade call. FRONTEND: trades-position PASS on title 'Running Positions · 9', daily strip 'W : L 13 : 10' + 'P : L +$346.28 (+169.2%) : -$186.51 (-73.1%)' (green/red, resets 00:00 device-local via dayKey(local Date)), D(blue)/R(orange) badges, white Entry + formula line, TAP card -> /asset/crypto/LINK PASS, SWIPE-left history card -> DELETE revealed WITHOUT navigation PASS. asi-bot Recent Trades: TAP card -> /asset/crypto/LINK PASS, SWIPE-left -> DELETE no-nav PASS, no 'placing' shown. TraderProfileModal 16/16 PASS: EN all-English (title/subtitle/4 profile desc, no ID leakage), ID all-Indonesian (no EN leakage). ONE REAL BUG: CLOSE/CANCEL buttons navigate. Playwright precise-center clicks: asi-bot CLOSE -> navigated to /asset/crypto/LINK (FAIL), trades-position CANCEL -> navigated to /asset/crypto/FIL (FAIL), even with window.confirm stubbed to false (so no trade was harmed). RCA: card uses RNGH TouchableOpacity (CardTouchable) while inner CLOSE/CANCEL/warn buttons use RN-core TouchableOpacity; on web the two gesture systems do not negotiate, so BOTH the button onPress (confirm dialog fired in unstubbed run) and the card onPress (router.push) fire. Likely native-only negotiation works; web preview is broken.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/asi/trades/repair-brackets",
+        "issue": "Not exercised live: seed device has a REAL (mainnet) credential configured (REAL balance $12.63 visible in UI) and instructions forbid touching mainnet. Endpoint exists (routes.py:746) and frontend wiring (api.ts:434, asi-bot.tsx:1005 warn-icon -> repairBrackets + refresh + failure alert) verified by code review only.",
+        "priority": "LOW"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "asi-bot.tsx Recent Trades CLOSE/CANCEL button",
+        "issue": "Tapping CLOSE (precise center click) fires BOTH the confirm dialog AND the parent card onPress -> navigates to /asset/crypto/{SYM}. RN-core TouchableOpacity (line 1115) nested inside RNGH CardTouchable (line 894) double-fires on web. Reference: /app/frontend/app/asi-bot.tsx:894,1115",
+        "testID": "asi-close-{symbol}",
+        "priority": "HIGH"
+      },
+      {
+        "component": "trades-position.tsx CANCEL/CLOSE button",
+        "issue": "Same nested-touchable double-fire: tapping CANCEL on a pending card navigates to /asset/crypto/FIL while also opening the confirm dialog. Reference: /app/frontend/app/trades-position.tsx:200 (CardTouchable) vs :359 (RN TouchableOpacity)",
+        "testID": "(no testID on close/cancel button)",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Warning icon tap -> repairBrackets + refresh",
+        "issue": "Not UI-testable: no trade currently has bracket_live=false / soft bracket (all show 'SL/TP on Binance'). Code path verified (asi-bot.tsx:995-1025 calls api.asi.repairBrackets then refresh and alerts failures).",
+        "affected_testIDs": ["asi-soft-{symbol}"]
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter38_v1011_positions_ui_backend.py",
+    "/app/test_reports/pytest/iter39.xml",
+    "/root/.emergent/.screenshots/iter39_tp_loaded.jpeg",
+    "/root/.emergent/.screenshots/iter39_tp_swipe.jpeg",
+    "/root/.emergent/.screenshots/iter39_asibot_swipe2.jpeg",
+    "/root/.emergent/.screenshots/iter39_profile_en.jpeg",
+    "/root/.emergent/.screenshots/iter39_profile_id.jpeg"
+  ],
+  "action_items": [
+    "Fix nested-touchable double-fire on WEB for both screens: make inner CLOSE/CANCEL/warn buttons use RNGH TouchableOpacity as well (react-native-gesture-handler), OR wrap them in a View with onStartShouldSetResponder={() => true} / e.stopPropagation() so the parent CardTouchable onPress (router.push) does not fire. Files: /app/frontend/app/asi-bot.tsx:997,1115 and /app/frontend/app/trades-position.tsx:359,382. Verify on web preview: tap CLOSE -> confirm dialog appears, NO navigation; confirm -> trade closes.",
+    "Add testID to the CLOSE/CANCEL buttons in trades-position.tsx (currently untargetable except by text).",
+    "Optional follow-up: exercise POST /api/asi/trades/repair-brackets and the warn-icon flow with a testnet-only device once a soft-bracket/failed-bracket trade exists."
+  ],
+  "critical_code_review_comments": [
+    "engine.py native-close path (1705-1775) is correct: realized PnL summed from exchange fills since trade creation with safe fallback to last_fill_price; TP label gated by favorable=(closed-entry)*sign>0 prevents mislabeled losing TP fills (old QNT TP1-negative class of bug); TRAILING reason only when trailing_activated and no SL/TP match; closed_at always written (leaderboard 24h dependency).",
+    "scheduler.py scanner: level guard (entry>0, sl>0, >=1 TP) + anti-duplicate atomic slot claim (_id device:sym:active, stale>5min takeover) + drop-on-entry_price=0 guard + profile=winning engine recorded. 'placing' rows correctly hidden from /api/asi/trades (routes.py:786-790 status $ne placing).",
+    "routes.py repair-brackets verifies both algo & legacy orders before reporting failure; trades-position/asi-bot warn icon only shown when bracket genuinely unverified (bracket_live===false or soft && !bracket_live).",
+    "trades-position.tsx daily strip uses device-local day boundaries (dayKey from local Date) — matches 'reset 00:00 jam device' requirement.",
+    "Mixing RNGH TouchableOpacity (card) with RN-core TouchableOpacity (buttons) works on native via gesture negotiation but double-fires on web — the one bug found this iteration."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (6/6 pytest)", "frontend": "86% (6/7 flows; CLOSE/CANCEL no-nav FAILS on web preview)"},
+  "seed_data_creation": "None. All UI tests ran against existing device web:qmeqflw0e2d-mui5ar38 via localStorage seeding (cryptostock.device_fingerprint, aicryptostockpro:lang, @ai-crypto-stock-pro:disclaimer-accepted=1) in ephemeral browser contexts. window.confirm was stubbed to false before tapping CLOSE/CANCEL so NO real trade was closed/cancelled; swipe only revealed DELETE (never tapped). Nothing to clean up.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run backend regression: cd /app && EXPO_PUBLIC_BACKEND_URL=$(grep EXPO_PUBLIC_BACKEND_URL frontend/.env | cut -d= -f2) python3 -m pytest backend/tests/test_iter38_v1011_positions_ui_backend.py -v. UI retest after fix: seed localStorage keys cryptostock.device_fingerprint=web:qmeqflw0e2d-mui5ar38, aicryptostockpro:lang, @ai-crypto-stock-pro:disclaimer-accepted=1 BEFORE app load; stub window.confirm=()=>false before clicking CLOSE/CANCEL to avoid mutating real testnet trades; expect dialog-fire WITHOUT route change on both /trades-position and /asi-bot. Screenshots land in /root/.emergent/.screenshots (relative paths are redirected). Note: clicking a card symbol on /asi-bot — symbols render as base name ('LINK', not 'LINKUSDT'). PnL Summary TODAY/WEEK/MONTH excludes demo/testnet by design; trades-position W:L strip includes them — not a discrepancy bug.",
+  "rca_of_issue": "BUG RCA (CLOSE/CANCEL navigates on web): Card container is TouchableOpacity from react-native-gesture-handler (CardTouchable, asi-bot.tsx:894 / trades-position.tsx:200) whose web implementation subscribes to raw DOM pointer events; inner action buttons use RN-core TouchableOpacity (asi-bot.tsx:1115, trades-position.tsx:359) which uses the RN-web responder system. The two systems do not negotiate on web, so a tap on the button dispatches to BOTH: button onPress opens the confirm dialog (observed: 'Cancel this pending LIMIT order?') and card onPress executes router.push('/asset/crypto/{SYM}') — user is navigated away regardless of confirm outcome. Reproduction (web preview, mobile viewport): seed device localStorage, stub window.confirm=()=>false, mouse-click exact center of CANCEL on a pending card -> URL becomes /asset/crypto/FIL; same for CLOSE on /asi-bot -> /asset/crypto/LINK. Mitigation until fix: none on web; native likely unaffected. Fix: use RNGH TouchableOpacity for inner buttons too (single gesture system negotiates deepest-wins) or stop propagation on the button wrapper (onStartShouldSetResponder -> true / onTouchEnd stopPropagation)."
+}

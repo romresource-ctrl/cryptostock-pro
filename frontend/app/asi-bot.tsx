@@ -3,6 +3,9 @@ import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextIn
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
+// v10.1.1 — Touchable dari RNGH untuk KARTU trade: bernegosiasi dengan
+// gesture Swipeable sehingga swipe-delete TIDAK memicu navigasi tap.
+import { TouchableOpacity as CardTouchable } from "react-native-gesture-handler";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 
@@ -881,18 +884,25 @@ export default function ASIBotScreen() {
               const borderColor = isPending ? GOLD : (dispPnl >= 0 ? GREEN : RED);
               // v9.9.13 — Kartu dibungkus Swipeable HANYA untuk history
               // (closed/expired/cancelled/layered): geser kiri → HAPUS.
+              // v10.1.1 — Seluruh kartu dapat DITEKAN → detail aset/chart.
+              // Tombol di dalam (CLOSE/CANCEL/⚠️) tetap menang karena
+              // touchable terdalam yang menerima tap.
+              const openDetail = () => {
+                if (symBase) router.push(`/asset/crypto/${encodeURIComponent(symBase)}` as any);
+              };
               const rowBody = (
-                <View style={[s.leaderRow, { backgroundColor: colors.surface, borderColor }]}>
+                <CardTouchable activeOpacity={0.8} onPress={openDetail}
+                  style={[s.leaderRow, { backgroundColor: colors.surface, borderColor }]}>
                 {/* v10.0.1 — Baris paling atas: badge DEMO/REAL (REAL
                     kuning) + tanggal/jam eksekusi — dipindah dari baris
                     badge agar baris utama tidak sempit. */}
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 }}>
                   <View style={{
                     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
-                    backgroundColor: tr.testnet ? LIGHT_BLUE : YELLOW,
+                    backgroundColor: tr.testnet ? "#60A5FA" : "#F97316",
                   }}>
                     <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 9, letterSpacing: 0.4 }}>
-                      {tr.testnet ? t("asi_demo_badge") : "REAL"}
+                      {tr.testnet ? "D" : "R"}
                     </Text>
                   </View>
                   <Text style={{ fontSize: 9, fontWeight: "700", color: colors.textMuted }}>
@@ -919,6 +929,8 @@ export default function ASIBotScreen() {
                     else if (rc === "merged_into_layer") txt = "Merged into layer";
                     else if (rc === "bracket_failed_after_fill") txt = "Closed upon bracket failure";
                     else if (rc === "MANUAL") txt = "Closed Manually";
+                    else if (rc === "TRAILING") txt = "Closed on Trailing Stop";
+                    else if (rc === "position_closed_externally") txt = "Closed on exchange";
                     else txt = rc ? `Closed on ${rc}` : "Closed";
                     return (
                       <Text numberOfLines={1} style={{ fontSize: 9, fontWeight: "800", color: colors.textPrimary, flexShrink: 1 }}>
@@ -982,15 +994,35 @@ export default function ASIBotScreen() {
                       ada di Binance) tidak lagi ditandai ⚠️. */}
                   {isOpen && ((tr.bracket_live === false)
                       || (tr.bracket_type === "soft" && tr.bracket_live !== true)) ? (
-                    <TouchableOpacity
-                      onPress={() => Alert.alert(
-                        t("asi_soft_warn_title"),
-                        tr.soft_bracket_reason || t("asi_soft_warn_body"),
-                      )}
+                    <CardTouchable
+                      onPress={async () => {
+                        // v10.1.1 — Menekan ⚠️ kini MEMICU verifikasi/
+                        // repair bracket (bukan hanya menampilkan info).
+                        // Bila exchange mengonfirmasi SL/TP ada, banner
+                        // hilang otomatis setelah refresh; bila gagal
+                        // nyata, tampilkan alasannya.
+                        try {
+                          const res = await api.asi.repairBrackets(
+                            deviceId, tr.exchange || bot.exchange);
+                          const failed = (res.results || []).filter((r) => !r.ok);
+                          await refresh();
+                          if (failed.length > 0) {
+                            Alert.alert(
+                              t("asi_repair_title"),
+                              failed.map((f) => `${f.symbol}: ${(f.errors || []).join(" | ")}`).join("\n"),
+                            );
+                          }
+                        } catch (e: any) {
+                          Alert.alert(
+                            t("asi_soft_warn_title"),
+                            String(e?.message || tr.soft_bracket_reason || t("asi_soft_warn_body")),
+                          );
+                        }
+                      }}
                       testID={`asi-soft-${tr.symbol}`}
                     >
                       <Text style={{ fontSize: 13 }}>⚠️</Text>
-                    </TouchableOpacity>
+                    </CardTouchable>
                   ) : null}
                   <Text numberOfLines={1} style={{ color: colors.textPrimary, fontWeight: "700", flexShrink: 1 }}>{tr.symbol}</Text>
                   {/* v10.0.13 — Mark price PERP realtime (poll 2s), BESAR,
@@ -1080,7 +1112,7 @@ export default function ASIBotScreen() {
                       {/* v9.9.13 — LIMIT pending: tombol = CANCEL (emas)
                           membatalkan order antri; setelah posisi OPEN
                           berubah menjadi CLOSE (merah) menutup posisi. */}
-                      <TouchableOpacity
+                      <CardTouchable
                         onPress={() => closeOneTrade(tr)}
                         disabled={isClosing}
                         style={{
@@ -1096,7 +1128,7 @@ export default function ASIBotScreen() {
                             ? (isPending ? t("asi_cancelling") : t("asi_recent_closing"))
                             : (isPending ? t("asi_btn_cancel") : t("asi_recent_close"))}
                         </Text>
-                      </TouchableOpacity>
+                      </CardTouchable>
                     </View>
                     {/* v9.9.13 — Baris ketiga SATU BARIS: status proteksi
                         (kiri) + formula singkat (kanan, tidak keluar
@@ -1190,7 +1222,7 @@ export default function ASIBotScreen() {
                     </View>
                   </View>
                 )}
-                </View>
+                </CardTouchable>
               );
               if (isOpen || isPending || !tid) {
                 return <React.Fragment key={tid || i}>{rowBody}</React.Fragment>;

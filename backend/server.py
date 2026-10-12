@@ -3146,6 +3146,11 @@ async def _asi_signal_fetcher(market: str, symbol: str, profile: str | None = No
                 "side": side, "entry": entry, "stop_loss": sl,
                 "take_profits": tps,
                 "confidence": int(d.get("confidence") or 0),
+                # v10.1.2 — Engine yang BENAR-BENAR menghasilkan sinyal
+                # (scanner multi-profil memanggil fetcher per engine;
+                # tanpa ini trade terekam dgn profile config user dan
+                # statistik WR per profile menjadi tidak valid).
+                "profile": profile,
                 "formula_tag": _asi_formula_tag(
                     d.get("indicators"), d.get("reasons"), profile),
             }

@@ -1249,3 +1249,45 @@ ditemukan → diperbaiki, test PASS. Versi 9.9.13.
   diperbarui 4 bahasa. Versi 10.0.5 (version.ts, app.json,
   APP_LATEST_VERSION + release notes). Verified curl + screenshot.
 
+
+## v10.1.1 — Repair Positions/Recent Trades + Lifecycle Accounting + i18n (Okt 2026)
+- **Positions**: judul "Running Positions · N" (N=open+pending), strip harian
+  "W : L" + "P : L" nominal $ dan % (hijau/merah) yang reset pukul 00:00
+  **jam device user** (bukan UTC — keputusan user). Entry putih terang +
+  formula sejajar Recent Trades. Badge Demo="D" biru muda, Real="R" oranye.
+- **Kartu tapable + swipe-delete hidup berdampingan**: kartu Positions &
+  Recent Trades dibungkus TouchableOpacity dari react-native-gesture-handler
+  (CardTouchable) — swipe kiri menampilkan DELETE TANPA navigasi; tap biasa
+  menuju /asset/crypto/{symbol} (symbol dinormalisasi, strip suffix USDT).
+  Tombol CLOSE/CANCEL/⚠️ di dalam kartu juga RNGH touchable (fix temuan
+  testing agent: RN-core touchable di dalam RNGH touchable memicu dua
+  onPress sekaligus di web).
+- **Lifecycle accounting fix (root cause "QNT Closed on TP1 tapi PnL
+  -26.88")**: native close path di engine.py dulu menyimpan pnl_usdt =
+  unrealized STALE dari refresh terakhir dan closed_price = fill terakhir
+  simbol (bisa milik trade lain). Kini br.realized_close_info menjumlahkan
+  realizedPnl fills penutup aktual sejak trade dibuka. Label TP HANYA bila
+  fill favorable vs entry. Reason baru TRAILING (trailing stop native —
+  sebelumnya salah label position_closed_externally). Data historis lama
+  TIDAK di-rewrite.
+- **"Position_Closed_Externally"** = posisi exchange tertutup di luar jalur
+  trade tsb: duplikasi trade simbol sama berbagi 1 posisi Binance (one-way
+  mode), bracket trade lain menutup posisi gabungan / user tutup manual di
+  app Binance / likuidasi.
+- **Analisis loss formula day** (sampel DB preview): day WR 23.8% (-400.58)
+  vs scalper 94.4% (+395.16), longterm 66.7%, confluence 55.6%. Sebagian
+  besar loss day terkonsentrasi 1 sesi (9-10 Okt, ~12 SHORT serentak saat
+  market rally) + bug akuntansi + label profile trade terekam dari config
+  user BUKAN engine pemenang (sudah fix: sig.profile). User memutuskan Full
+  Auto tetap multi-profile "sinyal terbaik & confidence tinggi" (msg #729).
+- **Scanner guards**: skip sinyal entry<=0/SL<=0/tanpa TP (bug trade
+  entry_price=0.0: ETH/LINK/SNX); record entry_price=0 tidak disimpan.
+- **Warning SL/TP sticky**: menekan ⚠️ kini memicu repairBrackets+refresh
+  (bukan hanya popup info); warning auto-hilang saat bracket terverifikasi.
+- **i18n**: TraderProfileModal 100% terlokalisasi (judul/subtitle/deskripsi
+  4 profil, 4 bahasa — sebelumnya deskripsi hardcode Indonesia); 3 string
+  backend Indonesia → English (routes.py). Testing agent: 16/16 check lulus.
+- Testing agent iter37: backend 6/6 PASS; frontend PASS kecuali bug nested
+  touchable (diperbaiki, self-test ulang PASS: CLOSE/CANCEL tanpa navigasi,
+  dialog tetap muncul, tap kartu navigasi, swipe-delete tanpa navigasi).
+- Versi TETAP 10.1.1 (tidak bump, sesuai instruksi user).

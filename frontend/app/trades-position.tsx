@@ -12,6 +12,9 @@ import {
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
+// v10.1.1 — Touchable dari RNGH untuk KARTU: bernegosiasi dengan gesture
+// Swipeable sehingga swipe-delete TIDAK lagi memicu navigasi tap.
+import { TouchableOpacity as CardTouchable } from "react-native-gesture-handler";
 import { Ionicons } from "@expo/vector-icons";
 
 import { useTheme } from "@/src/theme/ThemeContext";
@@ -170,6 +173,7 @@ export default function TradesPositionScreen() {
     if (x === "bracket_failed_after_fill") return "Closed: bracket fail";
     if (x === "orphaned_no_credential") return "No credential (orphaned)";
     if (x === "MANUAL") return "Closed manually";
+    if (x === "TRAILING") return "Closed on Trailing Stop";
     if (x === "position_closed_externally") return "Closed on exchange";
     return x ? `Closed: ${x}` : "Closed";
   };
@@ -193,7 +197,14 @@ export default function TradesPositionScreen() {
       : (isOpen ? (pnl >= 0 ? GREEN : RED) : colors.border);
     const canDelete = !isOpen && !isPending;
     const inner = (
-      <View style={[s.card, { backgroundColor: colors.surface, borderColor }]}>
+      <CardTouchable activeOpacity={0.75}
+        onPress={() => {
+          // v10.1.1 — Normalisasi symbol ("XRPUSDT" → "XRP") sebelum
+          // membuka detail aset/chart.
+          const base = String(tr.symbol || "").replace(/USDT$/, "");
+          if (base) router.push(`/asset/crypto/${encodeURIComponent(base)}` as any);
+        }}
+        style={[s.card, { backgroundColor: colors.surface, borderColor }]}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           {/* Mode & entry badges, same vocab as Recent Trades */}
           {tr.mode ? (
@@ -213,9 +224,9 @@ export default function TradesPositionScreen() {
             </View>
           ) : null}
           <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
-                         backgroundColor: tr.testnet ? BLUE : GREEN }}>
+                         backgroundColor: tr.testnet ? "#60A5FA" : "#F97316" }}>
             <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 9 }}>
-              {tr.testnet ? "DEMO" : "REAL"}
+              {tr.testnet ? "D" : "R"}
             </Text>
           </View>
           <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 15 }}>
@@ -345,7 +356,7 @@ export default function TradesPositionScreen() {
               </View>
             )}
             {(isOpen || isPending) ? (
-              <TouchableOpacity
+              <CardTouchable
                 style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6,
                          backgroundColor: isPending ? YELLOW : RED }}
                 onPress={() => onClose(tr)}
@@ -356,11 +367,11 @@ export default function TradesPositionScreen() {
                   : <Text style={{ color: isPending ? "#0B0E11" : "#fff", fontWeight: "900", fontSize: 11 }}>
                       {isPending ? "CANCEL" : "CLOSE"}
                     </Text>}
-              </TouchableOpacity>
+              </CardTouchable>
             ) : null}
           </View>
         </View>
-      </View>
+      </CardTouchable>
     );
 
     if (!canDelete) return <View key={tr.id || tr._id}>{inner}</View>;
@@ -395,7 +406,7 @@ export default function TradesPositionScreen() {
           <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 16 }}>
-          Positions
+          Running Positions · {openList.length + pendList.length}
         </Text>
         <TouchableOpacity onPress={load} style={s.backBtn}>
           <Ionicons name="refresh" size={20} color={colors.textPrimary} />
@@ -415,14 +426,45 @@ export default function TradesPositionScreen() {
           </View>
         ) : (
           <>
-            {openList.length > 0 && (
-              <>
-                <Text style={[s.section, { color: colors.textMuted }]}>
-                  OPEN POSITIONS · {openList.length}
-                </Text>
-                {openList.map(renderCard)}
-              </>
-            )}
+            {/* v10.1.3 — Statistik harian menggantikan baris "OPEN
+                POSITIONS · n" (sudah ter-cover total di header). Format:
+                W : L (jumlah) · P : L ($% kumulatif) reset tiap 00:00. */}
+            {(() => {
+              // v10.1.1 — Reset harian pukul 00:00 mengikuti JAM DEVICE
+              // user (bukan UTC): kunci tanggal dihitung dari Date lokal
+              // perangkat, begitu pula saat mengelompokkan trade closed.
+              const pad2 = (n: number) => String(n).padStart(2, "0");
+              const dayKey = (d: Date) =>
+                `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+              const today = dayKey(new Date());
+              let wins = 0, losses = 0, pUsd = 0, lUsd = 0, pPct = 0, lPct = 0;
+              histList.forEach((t2: any) => {
+                const iso = t2.closed_at || t2.updated_at;
+                if (!iso) return;
+                const d = new Date(iso);
+                if (isNaN(d.getTime()) || dayKey(d) !== today) return;
+                const pnl2 = Number(t2.pnl_usdt || 0);
+                const marg = Math.max(1, Number(t2.margin_usdt || 1));
+                if (pnl2 > 0) { wins++; pUsd += pnl2; pPct += (pnl2 / marg) * 100; }
+                else if (pnl2 < 0) { losses++; lUsd += pnl2; lPct += (pnl2 / marg) * 100; }
+              });
+              return (
+                <View style={{ paddingHorizontal: 2, paddingVertical: 4, gap: 2 }}>
+                  <Text style={{ color: colors.textMuted, fontSize: 11, fontWeight: "800" }}>
+                    W : L <Text style={{ color: GREEN }}>{wins}</Text>
+                    <Text style={{ color: colors.textMuted }}> : </Text>
+                    <Text style={{ color: RED }}>{losses}</Text>
+                  </Text>
+                  <Text style={{ fontSize: 11, fontWeight: "800" }}>
+                    <Text style={{ color: colors.textMuted }}>P : L </Text>
+                    <Text style={{ color: GREEN }}>+${pUsd.toFixed(2)} (+{pPct.toFixed(1)}%)</Text>
+                    <Text style={{ color: colors.textMuted }}> : </Text>
+                    <Text style={{ color: RED }}>-${Math.abs(lUsd).toFixed(2)} ({lPct.toFixed(1)}%)</Text>
+                  </Text>
+                </View>
+              );
+            })()}
+            {openList.length > 0 && openList.map(renderCard)}
             {pendList.length > 0 && (
               <>
                 <Text style={[s.section, { color: YELLOW }]}>

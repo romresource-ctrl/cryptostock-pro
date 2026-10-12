@@ -559,6 +559,40 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     ru: "Окно остаётся открытым после выбора — сразу нажмите AI Suggestions. Нажмите активный профиль, чтобы снять выбор (движок по умолчанию: Confluence).",
     cn: "选择后弹窗保持打开——可立即点击 AI 建议。再次点击已选档案可取消（默认引擎：Confluence）。",
   },
+  // v10.1.1 — Trader Profile modal & deskripsi kartu profil (sebelumnya
+  // hardcoded: judul/subtitle Inggris, deskripsi Indonesia — keluhan user
+  // "masih ada Bahasa Indonesia saat memilih English").
+  profile_modal_title: { id: "Profil Trader", en: "Trader Profile", ru: "Профиль трейдера", cn: "交易员档案" },
+  profile_modal_sub: {
+    id: "Sesuaikan sinyal dengan horizon trading Anda",
+    en: "Tune signals to your trading horizon",
+    ru: "Настройте сигналы под ваш торговый горизонт",
+    cn: "根据您的交易周期调整信号",
+  },
+  profile_desc_scalper: {
+    id: "VWAP deviasi + breakout box-10 · entry kilat",
+    en: "VWAP deviation + box-10 breakout · lightning entries",
+    ru: "Отклонение VWAP + пробой бокса-10 · молниеносные входы",
+    cn: "VWAP 偏离 + box-10 突破 · 闪电入场",
+  },
+  profile_desc_day: {
+    id: "VWAP reclaim/rejection + box-20 · intraday",
+    en: "VWAP reclaim/rejection + box-20 · intraday",
+    ru: "Возврат/отклонение VWAP + бокс-20 · внутри дня",
+    cn: "VWAP 收复/拒绝 + box-20 · 日内",
+  },
+  profile_desc_swing: {
+    id: "VWAP + breakout box-50 + reversal · multi-hari",
+    en: "VWAP + box-50 breakout + reversal · multi-day",
+    ru: "VWAP + пробой бокса-50 + разворот · несколько дней",
+    cn: "VWAP + box-50 突破 + 反转 · 多日",
+  },
+  profile_desc_longterm: {
+    id: "Confluence EMA 50/100/200 — mesin default v9",
+    en: "Confluence EMA 50/100/200 — default v9 engine",
+    ru: "Confluence EMA 50/100/200 — движок по умолчанию v9",
+    cn: "Confluence EMA 50/100/200 — 默认 v9 引擎",
+  },
   ai_sheet_sub: {
     id: "Peluang terkuat hasil pindaian formula — lengkap Entry · SL · TP",
     en: "Strongest setups from the formula scan — full Entry · SL · TP",
