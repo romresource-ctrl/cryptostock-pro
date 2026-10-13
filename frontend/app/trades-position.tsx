@@ -514,11 +514,21 @@ export default function TradesPositionScreen() {
               );
               return (
                 <View style={{
-                  flexDirection: "row", gap: 14,
-                  paddingHorizontal: 4, paddingVertical: 6,
+                  paddingHorizontal: 4, paddingVertical: 6, gap: 4,
                 }}>
-                  {col("DEMO", BLUE, demo, demoBal)}
-                  {col("REAL", ORANGE, real, realBal)}
+                  <View style={{ flexDirection: "row", gap: 14 }}>
+                    {col("DEMO", BLUE, demo, demoBal)}
+                    {col("REAL", ORANGE, real, realBal)}
+                  </View>
+                  {/* v10.1.6 — Penjelasan reset harian (Q2 user): statistik
+                      P:L adalah harian & direset 00:00 jam perangkat; bot
+                      Full-Auto TIDAK berhenti, tetap berjalan 24/7. */}
+                  <Text style={{
+                    color: colors.textMuted, fontSize: 9.5, fontWeight: "600",
+                    lineHeight: 13, opacity: 0.85,
+                  }}>
+                    ⏱ {t("pos_daily_reset_note")}
+                  </Text>
                 </View>
               );
             })()}

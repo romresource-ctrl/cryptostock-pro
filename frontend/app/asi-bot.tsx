@@ -222,17 +222,20 @@ export default function ASIBotScreen() {
   }
 
   const saveBot = async (next: Partial<AsiBotConfig>) => {
-    // v9.7.4 — Functional setState: always merge from the LATEST state so
-    // rapid successive taps (toggle + risk +/-) can never overwrite each
-    // other with a stale snapshot (this silently re-disabled the bot).
-    return new Promise<void>((resolve) => {
-      setBot((prev) => {
-        const merged = { ...prev, ...next };
-        api.asi.saveBot(deviceId, merged).catch(() => {});
-        return merged;
-      });
-      resolve();
-    });
+    // v9.7.4 — Functional setState: merge dari state TERBARU agar tap
+    // berurutan tidak saling menimpa snapshot basi.
+    // v10.1.6 — JANGAN telan error simpan (`.catch(()=>{})` lama): bila
+    // simpan gagal, UI tampak berubah tapi server tetap menjalankan bot
+    // (kasus user: STOP tidak tersimpan → bot tetap eksekusi semalaman).
+    // Kini kita await & beri tahu user bila gagal agar bisa retry.
+    let merged: AsiBotConfig = { ...bot, ...next };
+    setBot((prev) => { merged = { ...prev, ...next }; return merged; });
+    try {
+      await api.asi.saveBot(deviceId, merged);
+    } catch (e: any) {
+      Alert.alert(t("asi_save_failed_title"), t("asi_save_failed_body"));
+      throw e;
+    }
   };
 
   const openSignalPicker = () => {

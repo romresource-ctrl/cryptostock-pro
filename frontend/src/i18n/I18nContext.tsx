@@ -1149,6 +1149,25 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   },
   update_now: { id: "UPDATE SEKARANG", en: "UPDATE NOW", ru: "ОБНОВИТЬ СЕЙЧАС", cn: "立即更新" },
   update_later: { id: "Nanti", en: "Later", ru: "Позже", cn: "稍后" },
+  // v10.1.6 — Catatan reset harian di Running Positions (Q2 user).
+  pos_daily_reset_note: {
+    id: "Statistik harian (P:L) direset pukul 00:00 jam perangkat. Bot Full-Auto tetap berjalan 24/7.",
+    en: "Daily stats (P:L) reset at 00:00 device time. Full-Auto bot keeps running 24/7.",
+    ru: "Дневная статистика (P:L) сбрасывается в 00:00 по времени устройства. Бот Full-Auto работает 24/7.",
+    cn: "每日统计 (P:L) 于设备时间 00:00 重置。Full-Auto 机器人全天候 24/7 运行。",
+  },
+  // v10.1.6 — Jangan telan error simpan konfigurasi bot (Q5 user: bot tetap
+  // jalan setelah STOP karena simpan gagal diam-diam).
+  asi_save_failed_title: {
+    id: "Gagal Menyimpan", en: "Save Failed",
+    ru: "Ошибка сохранения", cn: "保存失败",
+  },
+  asi_save_failed_body: {
+    id: "Perubahan bot mungkin BELUM tersimpan di server. Periksa koneksi lalu coba lagi — jika ini STOP, bot bisa tetap berjalan.",
+    en: "Bot change may NOT be saved to the server. Check connection and retry — if this was STOP, the bot may still be running.",
+    ru: "Изменение бота может НЕ быть сохранено на сервере. Проверьте соединение и повторите — если это STOP, бот может продолжать работать.",
+    cn: "机器人设置可能未保存到服务器。请检查连接并重试——如果这是停止操作，机器人可能仍在运行。",
+  },
 
   // v9.6.9 — Credential validation error codes (backend returns {code, message})
   asi_err_ip_or_key_invalid: {

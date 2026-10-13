@@ -63,13 +63,17 @@ TRADER_PROFILES: dict[str, dict[str, Any]] = {
         "vwap_tp_ladder": (1.0, 1.5, 2.0),
         "description": "4h–24h multi-day",
     },
-    "longterm": {
+    "longterm": {  # Confluence v9
         "ema_fast": 50,
         "ema_slow": 100,
         "require_ema200": True,
-        "sl_atr_mult": 1.2,
-        "tp_ladder": (1.0, 1.5, 2.0),
-        "vwap_tp_ladder": (1.0, 1.5, 2.0),
+        # v10.1.6 — Keputusan user (Q1): engine long-term butuh SL lebih
+        # lebar agar tahan noise multi-hari → 2.0×ATR (profil lain tetap
+        # 1.2×ATR). TP ladder dinaikkan ke 1.5R/3R/4.5R karena tren kuat
+        # bisa berjalan jauh → R:R & ekspektasi long-term lebih baik.
+        "sl_atr_mult": 2.0,
+        "tp_ladder": (1.5, 3.0, 4.5),
+        "vwap_tp_ladder": (1.0, 1.5, 2.0),  # tidak dipakai (bukan mesin VWAP)
         "description": "1D+ position hold",
     },
 }
@@ -1359,6 +1363,37 @@ def compute_signal(
     higher_low = len(_vl) >= 2 and _vl[-1] > _vl[-2]
     lower_high = len(_pk) >= 2 and _pk[-1] < _pk[-2]
 
+    # v10.1.6 — CONFLUENCE LATE-ENTRY GUARD + FRESHNESS (keputusan user Q4).
+    # Engine confluence (EMA50/100/200) lambat: sinyal sering muncul SETELAH
+    # harga bergerak jauh → entry di dekat puncak → kena SL saat reversal.
+    #   (a) Anti-chase: tolak bila harga over-extended dari EMA21
+    #       (> +1.5 ATR utk BUY / < -1.5 ATR utk SELL). RSI>68/<32 sudah
+    #       ditolak oleh rsi_buy_ok / rsi_sell_ok yang ada.
+    #   (b) Freshness: hanya entry bila struktur BULL/BEAR baru terbentuk
+    #       ≤ 3 candle terakhir (tren segar, bukan tren tua yang tinggal
+    #       menunggu reversal).
+    ema21 = _ema(closes, 21)[-1]
+    _ema_fast_series = _ema(closes, _ema_fast_n)
+    _ema_slow_series = _ema(closes, _ema_slow_n)
+
+    def _struct_at(i: int, want_bull: bool) -> bool:
+        f, s, c = _ema_fast_series[i], _ema_slow_series[i], closes[i]
+        return (f > s and c > s) if want_bull else (f < s and c < s)
+
+    def _fresh(want_bull: bool, max_age: int = 3) -> bool:
+        cnt = 0
+        for i in range(len(closes) - 1, -1, -1):
+            if _struct_at(i, want_bull):
+                cnt += 1
+            else:
+                break
+        return 1 <= cnt <= max_age
+
+    bull_fresh = _fresh(True)
+    bear_fresh = _fresh(False)
+    buy_not_late = price <= (ema21 + 1.5 * atr)
+    sell_not_late = price >= (ema21 - 1.5 * atr)
+
     # ---- Confluence scoring ----
     # Every component votes WITH the dominant structure only. There is no
     # mean-reversion flip: an overextended trend earns a HOLD ("wait for
@@ -1405,6 +1440,16 @@ def compute_signal(
                 f"Tren BULL tapi overextended (RSI {rsi:.0f}, jarak {dist_slow:+.1f} ATR dari EMA{_ema_slow_n}) — tunggu pullback, jangan kejar harga."
                 if rsi is not None else
                 f"Tren BULL tapi overextended ({dist_slow:+.1f} ATR dari EMA{_ema_slow_n}) — tunggu pullback."
+            )
+            confidence = 55
+        elif not bull_fresh:
+            reasons.append(
+                "Tren BULL sudah berjalan > 3 candle (sinyal terlambat — tren tua rawan reversal) — skip, tunggu setup segar."
+            )
+            confidence = 52
+        elif not buy_not_late:
+            reasons.append(
+                f"Harga sudah +{(price - ema21) / atr:.1f} ATR di atas EMA21 (anti-chase) — jangan kejar, tunggu pullback ke area EMA."
             )
             confidence = 55
         elif not htf_buy_ok:
@@ -1461,6 +1506,16 @@ def compute_signal(
                 f"Tren BEAR tapi sudah capitulasi (RSI {rsi:.0f}, jarak {dist_slow:+.1f} ATR dari EMA{_ema_slow_n}) — jangan short di dasar, tunggu pantulan."
                 if rsi is not None else
                 f"Tren BEAR tapi sudah capitulasi ({dist_slow:+.1f} ATR dari EMA{_ema_slow_n}) — tunggu pantulan."
+            )
+            confidence = 55
+        elif not bear_fresh:
+            reasons.append(
+                "Tren BEAR sudah berjalan > 3 candle (sinyal terlambat — tren tua rawan pantulan) — skip, tunggu setup segar."
+            )
+            confidence = 52
+        elif not sell_not_late:
+            reasons.append(
+                f"Harga sudah {(ema21 - price) / atr:.1f} ATR di bawah EMA21 (anti-chase) — jangan kejar short di dasar, tunggu rally ke area EMA."
             )
             confidence = 55
         elif not htf_sell_ok:

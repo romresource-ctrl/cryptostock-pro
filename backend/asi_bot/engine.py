@@ -1583,10 +1583,12 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
                 # Cari TP level unfilled berikutnya.
                 next_idx = next((i for i, f in enumerate(tp_filled_list) if not f), None)
                 if next_idx is not None and next_idx < len(tps):
-                    tp_filled_list[next_idx] = True
+                    # v10.1.6 — Harga fill dari fill yang MENGURANGI posisi
+                    # (realizedPnl != 0), BUKAN last_fill_price sembarang
+                    # (yang bisa milik trade lain → harga salah).
                     fill_px = None
                     try:
-                        fill_px = await br.last_fill_price(
+                        fill_px = await br.last_reduce_fill_price(
                             api_key, api_secret, is_testnet, bin_sym)
                     except Exception:
                         fill_px = None
@@ -1594,41 +1596,64 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
                     sign = 1.0 if trade.get("side") == "BUY" else -1.0
                     leg_pnl = ((fill_px - entry_px) * reduction * sign
                                if fill_px else None)
-                    # v10.0.13 — Jika harga fill benar-benar di sisi loss
-                    # (slippage/wick), label TPx keliru → relabel "SL".
-                    level_label = f"TP{next_idx + 1}"
-                    if fill_px and leg_pnl is not None and leg_pnl < 0:
-                        level_label = "SL"
-                    tp_fills = list(trade.get("tp_fills") or [])
-                    tp_fills.append({
-                        "level": level_label,
-                        "price": round(fill_px, 8) if fill_px else None,
-                        "qty": round(reduction, 10),
-                        "pnl": round(leg_pnl, 4) if leg_pnl is not None else None,
-                        "at": datetime.now(timezone.utc).isoformat(),
-                    })
-                    _native_partial_upd["tp_fills"] = tp_fills
-                    _native_partial_upd["tp_filled"] = tp_filled_list
-                    _native_partial_upd["qty_remaining"] = round(new_qty, 10)
-                    # v10.0.16 — SL GUARD (native path): SL mengikuti TP
-                    # yang baru ter-isi (TP1→SL=TP1, TP2→SL=TP2). Skip bila
-                    # trailing aktif atau fill ternyata adverse (label SL).
-                    if (not trade.get("trailing_activated")
-                            and level_label != "SL"
-                            and float(trade.get("trailing_callback_rate") or 0) <= 0
-                            and int(trade.get("sl_guard_idx") or 0) <= next_idx):
-                        try:
-                            sg_res = await move_sl_to_breakeven(
-                                doc, trade, target_price=tps[next_idx])
-                        except Exception as _e:  # noqa: BLE001
-                            sg_res = {"ok": False, "detail": str(_e)[:200]}
-                        _native_partial_upd["sl_guard_idx"] = next_idx + 1
-                        _native_partial_upd["sl_guard_detail"] = sg_res.get("detail")
-                        _native_partial_upd["be_moved"] = True  # kompat UI
-                        if sg_res.get("ok") and sg_res.get("new_sl"):
-                            _native_partial_upd["stop_loss"] = float(sg_res["new_sl"])
+                    # v10.1.6 — VALIDASI HARGA: reduksi qty HANYA dicatat
+                    # sebagai "TPx hit" bila harga fill benar-benar MENCAPAI
+                    # level TP tsb (LONG fill>=TP·(1-tol); SHORT fill<=TP·(1+tol)).
+                    # Sebelumnya reduksi APAPUN dilabeli TP1/TP2 meski harga
+                    # jauh dari levelnya → baris membingungkan seperti
+                    # "TP1 hit 0.65450" & "TP2 hit 0.65450" (RUNE) padahal
+                    # TP1/TP2 sebenarnya 0.66410 / 0.66910.
+                    tp_level = float(tps[next_idx])
+                    _tol = 0.004
+                    reached = False
+                    if fill_px:
+                        if trade.get("side") == "BUY":
+                            reached = fill_px >= tp_level * (1 - _tol)
                         else:
-                            _native_partial_upd["stop_loss"] = float(tps[next_idx])
+                            reached = fill_px <= tp_level * (1 + _tol)
+                    if not reached:
+                        # Reduksi bukan dari level TP (manual partial close /
+                        # adjustment exchange / sumber lain). JANGAN tandai
+                        # tp_filled & jangan tampilkan baris TP menyesatkan;
+                        # cukup perbarui qty. SL-guard tidak digerakkan.
+                        _native_partial_upd["qty_remaining"] = round(new_qty, 10)
+                    else:
+                        tp_filled_list[next_idx] = True
+                        # v10.0.13 — Jika harga fill benar-benar di sisi loss
+                        # (slippage/wick), label TPx keliru → relabel "SL".
+                        level_label = f"TP{next_idx + 1}"
+                        if fill_px and leg_pnl is not None and leg_pnl < 0:
+                            level_label = "SL"
+                        tp_fills = list(trade.get("tp_fills") or [])
+                        tp_fills.append({
+                            "level": level_label,
+                            "price": round(fill_px, 8) if fill_px else None,
+                            "qty": round(reduction, 10),
+                            "pnl": round(leg_pnl, 4) if leg_pnl is not None else None,
+                            "at": datetime.now(timezone.utc).isoformat(),
+                        })
+                        _native_partial_upd["tp_fills"] = tp_fills
+                        _native_partial_upd["tp_filled"] = tp_filled_list
+                        _native_partial_upd["qty_remaining"] = round(new_qty, 10)
+                        # v10.0.16 — SL GUARD (native path): SL mengikuti TP
+                        # yang baru ter-isi (TP1→SL=TP1, TP2→SL=TP2). Skip bila
+                        # trailing aktif atau fill ternyata adverse (label SL).
+                        if (not trade.get("trailing_activated")
+                                and level_label != "SL"
+                                and float(trade.get("trailing_callback_rate") or 0) <= 0
+                                and int(trade.get("sl_guard_idx") or 0) <= next_idx):
+                            try:
+                                sg_res = await move_sl_to_breakeven(
+                                    doc, trade, target_price=tps[next_idx])
+                            except Exception as _e:  # noqa: BLE001
+                                sg_res = {"ok": False, "detail": str(_e)[:200]}
+                            _native_partial_upd["sl_guard_idx"] = next_idx + 1
+                            _native_partial_upd["sl_guard_detail"] = sg_res.get("detail")
+                            _native_partial_upd["be_moved"] = True  # kompat UI
+                            if sg_res.get("ok") and sg_res.get("new_sl"):
+                                _native_partial_upd["stop_loss"] = float(sg_res["new_sl"])
+                            else:
+                                _native_partial_upd["stop_loss"] = float(tps[next_idx])
             # Selalu simpan snapshot positionAmt untuk perbandingan tick
             # berikutnya (dipakai untuk deteksi partial di atas).
             _native_partial_upd["prev_position_amt"] = round(new_qty, 10)

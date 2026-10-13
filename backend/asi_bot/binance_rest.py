@@ -290,6 +290,29 @@ async def last_fill_price(
     except Exception:
         return None
 
+
+async def last_reduce_fill_price(
+    api_key: str, api_secret: str, testnet: bool, symbol: str,
+) -> float | None:
+    """v10.1.6 — Harga fill TERAKHIR yang benar-benar MENGURANGI posisi
+    (realizedPnl != 0). Berbeda dari `last_fill_price` yang mengambil fill
+    terakhir simbol — bisa milik trade lain atau fill penambah posisi,
+    sehingga harga yang terekam keliru (mis. RUNE tercatat "TP1 hit 0.65450"
+    padahal TP1 sebenarnya 0.66410). Dipakai untuk validasi partial TP."""
+    code, data = await _request(
+        "GET", "/fapi/v1/userTrades", api_key, api_secret, testnet,
+        {"symbol": symbol.upper(), "limit": 30},
+    )
+    if code != 200 or not isinstance(data, list) or not data:
+        return None
+    for f in reversed(data):  # terbaru dulu
+        try:
+            if abs(float(f.get("realizedPnl") or 0)) > 1e-12:
+                return float(f.get("price") or 0) or None
+        except Exception:
+            continue
+    return None
+
 async def realized_close_info(
     api_key: str, api_secret: str, testnet: bool, symbol: str,
     since_ms: int | None = None,
