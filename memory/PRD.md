@@ -1372,3 +1372,32 @@ ditemukan → diperbaiki, test PASS. Versi 9.9.13.
   melihat teks lama sampai mereka update ke v10.1.5 (keterbatasan APK lama
   yang tidak bisa diubah dari server).
 - Verified: `GET /api/app-version` mengembalikan `prompt` lengkap 4 bahasa.
+
+## v10.1.6 — Fix Deployment Blockers (Okt 2026)
+Build EAS Android gagal dengan "No lockfile found in the project directory".
+Investigasi: frontend/yarn.lock ADA, valid (yarn install --frozen-lockfile
+sukses lokal), ter-track git. Penyebab: snapshot deploy stale tidak memuat
+lockfile terkini. Fix: commit bersih seluruh perubahan → snapshot Publish
+berikutnya memuat yarn.lock valid. Deployment agent (dipakai user) juga
+menemukan 3 blocker policy yang DIPERBAIKI:
+1. EXPO_BACKEND_REACH — AuthContext.tsx punya fallback hardcoded
+   "https://cryptostock-pro.emergent.host" (2 tempat) yang bypass
+   EXPO_PUBLIC_BACKEND_URL. DIHAPUS; auth kini hanya lewat backendBase()
+   (env-driven). Trade-off: preview tidak lagi fallback ke host prod utk
+   auth code — perilaku produksi yang benar.
+2. DESTRUCTIVE_DB_STARTUP — scheduler _run_titan_relay memakai
+   delete_many/delete_one pada asi_titan_state. Diubah jadi SOFT-disable
+   (update active:False); dedup hanya cocokkan record aktif. Tidak ada
+   hard delete di alur startup.
+3. DESTRUCTIVE_DB_STARTUP — scanner _run_full_auto_scanner memakai
+   delete_one pada asi_trades untuk slot klaim anti-duplikat. Klaim
+   dipindah ke collection KHUSUS asi_scan_claims, dilepas SOFT
+   (status→"released"); satu doc per (device,symbol) di-reuse. TIDAK ada
+   delete_one/delete_many tersisa di alur scheduler/startup.
+   (delete di routes.py = endpoint aksi eksplisit user: disconnect
+   credential, swipe-delete trade, migrasi device — diizinkan policy.)
+Hasil deployment agent: status FAIL → WARN (blocker 0). Sisa warning:
+iOS push belum punya GoogleService-Info.plist (hanya relevan utk build
+iOS; build Android tidak terpengaruh).
+Versi di-bump 10.1.5 → 10.1.6 (version.ts, app.json, APP_LATEST_VERSION).
+Aksi user: Publish ulang lalu generate build Android baru.
