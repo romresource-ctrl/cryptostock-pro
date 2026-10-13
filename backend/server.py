@@ -1690,6 +1690,31 @@ APP_LATEST_VERSION = "10.1.5"
 # modal ringkas berisi tombol GET LATEST APK / Later.
 APP_UPDATE_NOTES = {"id": "", "en": ""}
 
+# v10.1.5 — Teks popup update dikirim dari SERVER supaya bisa diubah kapan
+# saja via Publish TANPA build APK baru (menjawab keluhan: pengguna versi
+# lama selalu melihat teks lama yang tertanam di APK). Frontend v10.1.5+
+# memprioritaskan string ini; bila field tidak ada (backend lama), ia
+# fallback ke i18n hardcoded agar tetap jalan.
+APP_UPDATE_PROMPT = {
+    "title": {
+        "id": "Update Tersedia", "en": "Update Available",
+        "ru": "Доступно обновление", "cn": "有可用更新",
+    },
+    "body": {
+        "id": "Pembaruan baru tersedia di Google Play Store.",
+        "en": "New Update is available on Google Play Store.",
+        "ru": "Новое обновление доступно в Google Play Store.",
+        "cn": "Google Play Store 上有新版本可用。",
+    },
+    "button": {
+        "id": "UPDATE SEKARANG", "en": "UPDATE NOW",
+        "ru": "ОБНОВИТЬ СЕЙЧАС", "cn": "立即更新",
+    },
+    "later": {
+        "id": "Nanti", "en": "Later", "ru": "Позже", "cn": "稍后",
+    },
+}
+
 
 @api.get("/app-version")
 async def app_version() -> dict[str, Any]:
@@ -1698,11 +1723,14 @@ async def app_version() -> dict[str, Any]:
     The Android client compares this against its own build version on
     every cold start and nags the user to update when outdated. Bump
     APP_LATEST_VERSION here whenever a new APK/AAB is released.
+    v10.1.5 — Sertakan APP_UPDATE_PROMPT agar teks popup bisa dikendalikan
+    dari server (frontend lama yang belum membaca field ini tetap aman).
     """
     return {
         "latest_version": APP_LATEST_VERSION,
         "play_store_url": "https://play.google.com/store/apps/details?id=com.cryptostockapps.aicryptostockpro",
         "notes": APP_UPDATE_NOTES,
+        "prompt": APP_UPDATE_PROMPT,
     }
 
 

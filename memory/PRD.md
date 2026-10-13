@@ -1357,3 +1357,18 @@ ditemukan → diperbaiki, test PASS. Versi 9.9.13.
   (biru/oranye) dengan Balance; kartu BNB formula "Confluence v9";
   ORDI "Closed on exchange" tanpa kode internal; Recent Trades tanpa
   banner soft watcher dan tanpa POSITION_CLOSED_EXTERNALLY.
+
+## v10.1.5 (patch) — Teks popup Update jadi SERVER-DRIVEN (Okt 2026)
+- Masalah: popup update menampilkan teks yang TERTANAM di APK versi lama
+  (mis. v10.1.2), sehingga pengguna lama selalu melihat teks lama ("Ask the
+  admin for the latest APK...") walau kode baru sudah menggantinya. App TIDAK
+  memakai OTA (expo-updates tidak terinstal, tidak ada runtimeVersion).
+- Solusi permanen: backend `/api/app-version` kini mengembalikan object
+  `prompt` berisi title/body/button/later terlokalisasi (id/en/ru/cn).
+  Frontend `UpdatePrompt.tsx` v10.1.5+ memprioritaskan string server ini;
+  bila field kosong/backend lama → fallback ke i18n hardcoded (aman).
+- Hasil: mulai v10.1.5, teks popup update dapat diubah kapan saja cukup
+  dengan Publish (tanpa build APK). Pengguna yang MASIH di v10.1.2 tetap
+  melihat teks lama sampai mereka update ke v10.1.5 (keterbatasan APK lama
+  yang tidak bisa diubah dari server).
+- Verified: `GET /api/app-version` mengembalikan `prompt` lengkap 4 bahasa.

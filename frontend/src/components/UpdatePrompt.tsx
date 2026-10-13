@@ -47,6 +47,10 @@ export default function UpdatePrompt() {
   const { colors } = useTheme();
   const { t, lang } = useI18n();
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
+  // v10.1.5 — Teks popup dari SERVER (bila ada) supaya bisa diubah via
+  // Publish tanpa build APK baru. Fallback ke i18n hardcoded bila backend
+  // lama / field kosong.
+  const [serverPrompt, setServerPrompt] = useState<Record<string, any> | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -58,10 +62,9 @@ export default function UpdatePrompt() {
         const latest = String(data?.latest_version ?? "");
         if (alive && latest && isOutdated(APP_VERSION, latest)) {
           setLatestVersion(latest);
-          // v10.0.15 — Release notes TIDAK lagi ditampilkan di sini.
-          // Daftar changelog yang panjang membuat modal lebih tinggi dari
-          // layar sehingga tombol Update/Later tidak bisa ditekan. Modal
-          // kini sengaja dibuat kecil & compact (sesuai permintaan user).
+          if (data?.prompt && typeof data.prompt === "object") {
+            setServerPrompt(data.prompt);
+          }
         }
       } catch {
         /* offline / backend down — never block the app */
@@ -73,6 +76,18 @@ export default function UpdatePrompt() {
   }, [lang]);
 
   if (!latestVersion) return null;
+
+  // Pilih string server sesuai bahasa aktif; jatuh kembali ke i18n lokal.
+  const srv = (key: string): string | null => {
+    const node = serverPrompt?.[key];
+    if (!node || typeof node !== "object") return null;
+    const s = node[lang] || node.en || node.id;
+    return typeof s === "string" && s.trim() ? s : null;
+  };
+  const titleText = srv("title") || t("update_title");
+  const bodyText = srv("body") || t("update_body");
+  const buttonText = srv("button") || t("update_now");
+  const laterText = srv("later") || t("update_later");
 
   const openStore = () => {
     // market:// opens the Play Store app directly on Android; the HTTPS
@@ -100,10 +115,10 @@ export default function UpdatePrompt() {
             <Ionicons name="rocket" size={26} color={colors.accentBlue} />
           </View>
           <Text style={[styles.title, { color: colors.textPrimary }]}>
-            {t("update_title")}
+            {titleText}
           </Text>
           <Text style={[styles.body, { color: colors.textMuted }]}>
-            {t("update_body")}
+            {bodyText}
           </Text>
           <Text style={[styles.bodyVersion, { color: colors.textMuted }]}>
             {t("update_body_versions")
@@ -116,14 +131,14 @@ export default function UpdatePrompt() {
             testID="update-now-button"
           >
             <Ionicons name="download-outline" size={16} color="#fff" />
-            <Text style={styles.updateBtnText}>{t("update_now")}</Text>
+            <Text style={styles.updateBtnText}>{buttonText}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => setLatestVersion(null)}
             style={styles.laterBtn}
             testID="update-later-button"
           >
-            <Text style={[styles.laterText, { color: colors.textMuted }]}>{t("update_later")}</Text>
+            <Text style={[styles.laterText, { color: colors.textMuted }]}>{laterText}</Text>
           </TouchableOpacity>
         </View>
       </View>
