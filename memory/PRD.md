@@ -1401,3 +1401,28 @@ iOS push belum punya GoogleService-Info.plist (hanya relevan utk build
 iOS; build Android tidak terpengaruh).
 Versi di-bump 10.1.5 → 10.1.6 (version.ts, app.json, APP_LATEST_VERSION).
 Aksi user: Publish ulang lalu generate build Android baru.
+
+## v10.1.6 (patch 2) — ROOT CAUSE EAS build "No lockfile found" (Okt 2026)
+Build gagal LAGI dgn error sama walau yarn.lock valid & ter-commit. Investigasi
+decisif: build me-resolve expo-router@5.0.7 & @expo/vector-icons@14.1.0 → itu
+versi dari admin-app/package.json (UnlockKeyGen), BUKAN frontend (expo-router
+~6.0.24, vector-icons 15.1.1). Buildspec mendeteksi MOBILE_DIR dari package.json
+PERTAMA yg punya app.json/app.config/eas.json; urutan `find` tidak deterministik
+→ di environment build admin-app terpilih (admin-app TIDAK punya lockfile) →
+"No lockfile found". Berisiko juga mem-build aplikasi yang salah.
+FIX (code-level, reversible): `git mv admin-app/app.json admin-app/app.json.build`
+→ detektor kini HANYA menemukan frontend (yang punya yarn.lock). Diverifikasi
+lokal: hanya ./frontend yang terdeteksi.
+REGRESSION CHECK (memastikan tidak mengganggu yg lain):
+- Offline admin workflow pakai ZIP STATIS pre-built (backend/static/
+  CryptoStock-Admin-Source.zip, sudah berisi app.json sendiri) → TIDAK terpengaruh.
+- /api/admin-tool HTTP 200, /api/admin-source.zip HTTP 200.
+- Tidak ada import admin-app dari frontend/backend (grep kosong).
+- Backend & expo RUNNING stabil, tidak ada Traceback scheduler/titan/claims.
+- AuthContext utuh (login/backendBase/unlock logic tidak tersentuh; hanya
+  fallback hardcoded host yang dihapus), EXPO_PUBLIC_BACKEND_URL ada di .env.
+- App utama load normal (screenshot: disclaimer + versi 10.1.6).
+- Catatan ditambahkan di admin-app/README.md (cara restore app.json.build bila
+  ingin build APK admin-app manual).
+Aksi user: Publish ulang → generate build Android v10.1.6. Build kini memilih
+frontend dgn yarn.lock → seharusnya lolos.
