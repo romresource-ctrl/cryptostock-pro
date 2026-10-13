@@ -1695,9 +1695,18 @@ APP_UPDATE_NOTES = {"id": "", "en": ""}
 # lama selalu melihat teks lama yang tertanam di APK). Frontend v10.1.5+
 # memprioritaskan string ini; bila field tidak ada (backend lama), ia
 # fallback ke i18n hardcoded agar tetap jalan.
+#
+# v10.1.6 — ANTI-PHISHING: teks popup lama ("Ask the admin for the latest
+# APK" / "Get latest APK") menakutkan user karena banyak scam APK. Teks
+# baru EKSPLISIT merujuk Google Play Store, URL target dikirim dari server
+# dan DITAMPILKAN di popup (user bisa verifikasi tujuan sebelum menekan).
+APP_UPDATE_PLAY_URL = (
+    "https://play.google.com/store/apps/details?"
+    "id=com.cryptostockapps.aicryptostockpro"
+)
 APP_UPDATE_PROMPT = {
     "title": {
-        "id": "Update Tersedia", "en": "Update Available",
+        "id": "Pembaruan Tersedia", "en": "Update Available",
         "ru": "Доступно обновление", "cn": "有可用更新",
     },
     "body": {
@@ -1707,11 +1716,25 @@ APP_UPDATE_PROMPT = {
         "cn": "Google Play Store 上有新版本可用。",
     },
     "button": {
-        "id": "UPDATE SEKARANG", "en": "UPDATE NOW",
-        "ru": "ОБНОВИТЬ СЕЙЧАС", "cn": "立即更新",
+        "id": "Update Now", "en": "Update Now",
+        "ru": "Обновить сейчас", "cn": "立即更新",
     },
     "later": {
         "id": "Nanti", "en": "Later", "ru": "Позже", "cn": "稍后",
+    },
+    # v10.1.6 — Teks sumber (anti-phishing). Ditampilkan sebagai label kecil
+    # di bawah tombol supaya user yakin tujuan = Play Store, bukan file APK.
+    "source_label": {
+        "id": "Membuka Google Play Store",
+        "en": "Opens Google Play Store",
+        "ru": "Открывает Google Play Store",
+        "cn": "将打开 Google Play Store",
+    },
+    # URL tujuan + chip "Google Play" supaya user bisa verifikasi.
+    "url": APP_UPDATE_PLAY_URL,
+    "store_hint": {
+        "id": "Google Play", "en": "Google Play",
+        "ru": "Google Play", "cn": "Google Play",
     },
 }
 
@@ -1725,10 +1748,14 @@ async def app_version() -> dict[str, Any]:
     APP_LATEST_VERSION here whenever a new APK/AAB is released.
     v10.1.5 — Sertakan APP_UPDATE_PROMPT agar teks popup bisa dikendalikan
     dari server (frontend lama yang belum membaca field ini tetap aman).
+    v10.1.6 — Sertakan juga `prompt.url` eksplisit (Google Play Store)
+    agar frontend yang telah mendukung server-driven langsung membuka
+    tujuan yang benar; serta `play_store_url` top-level dipertahankan utk
+    backward-compat.
     """
     return {
         "latest_version": APP_LATEST_VERSION,
-        "play_store_url": "https://play.google.com/store/apps/details?id=com.cryptostockapps.aicryptostockpro",
+        "play_store_url": APP_UPDATE_PLAY_URL,
         "notes": APP_UPDATE_NOTES,
         "prompt": APP_UPDATE_PROMPT,
     }
