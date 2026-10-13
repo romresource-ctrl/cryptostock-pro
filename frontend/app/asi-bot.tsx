@@ -1146,11 +1146,13 @@ export default function ASIBotScreen() {
                             : t("asi_bracket_soft_short")}
                       </Text>
                       <View style={{ flex: 1 }} />
-                      {((tr as any).profile || (tr as any).formula_tag) ? (
-                        <Text numberOfLines={1} style={{ fontSize: 9, fontWeight: "700", color: colors.textMuted, flexShrink: 1, textAlign: "right" }}>
-                          {`⚙️ ${t("asi_formula_label")}: ${formulaLines(t, (tr as any).profile, (tr as any).formula_tag)[0]}`}
-                        </Text>
-                      ) : null}
+                      {/* v10.1.2 — Formula SELALU tampil (keputusan user):
+                          formulaLines sudah fallback tag→profil→Confluence,
+                          sehingga kartu lama tanpa tag (mis. BNB) tidak
+                          lagi tampil tanpa formula. */}
+                      <Text numberOfLines={1} style={{ fontSize: 9, fontWeight: "700", color: colors.textMuted, flexShrink: 1, textAlign: "right" }}>
+                        {`⚙️ ${t("asi_formula_label")}: ${formulaLines(t, (tr as any).profile, (tr as any).formula_tag)[0]}`}
+                      </Text>
                     </View>
                     {/* v10.0.13 — TP partial hits: tiap level yang sudah
                         terisi (TP1/TP2) tampil putih dengan harga + PnL
@@ -1223,11 +1225,13 @@ export default function ASIBotScreen() {
                         </Text>
                       </Text>
                       <View style={{ flex: 1 }} />
-                      {((tr as any).profile || (tr as any).formula_tag) ? (
-                        <Text numberOfLines={1} style={{ fontSize: 9, fontWeight: "700", color: colors.textMuted, flexShrink: 1, textAlign: "right" }}>
-                          {`⚙️ ${t("asi_formula_label")}: ${formulaLines(t, (tr as any).profile, (tr as any).formula_tag)[0]}`}
-                        </Text>
-                      ) : null}
+                      {/* v10.1.2 — Formula SELALU tampil (keputusan user):
+                          formulaLines sudah fallback tag→profil→Confluence,
+                          sehingga kartu lama tanpa tag (mis. BNB) tidak
+                          lagi tampil tanpa formula. */}
+                      <Text numberOfLines={1} style={{ fontSize: 9, fontWeight: "700", color: colors.textMuted, flexShrink: 1, textAlign: "right" }}>
+                        {`⚙️ ${t("asi_formula_label")}: ${formulaLines(t, (tr as any).profile, (tr as any).formula_tag)[0]}`}
+                      </Text>
                     </View>
                   </View>
                 )}

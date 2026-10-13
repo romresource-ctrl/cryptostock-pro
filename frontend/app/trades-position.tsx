@@ -268,12 +268,14 @@ export default function TradesPositionScreen() {
               </Text>
               {tr.filled_at ? ` · filled ${fmtDateTime(tr.filled_at)}` : (tr.created_at ? ` · ${fmtDateTime(tr.created_at)}` : "")}
             </Text>
-            {/* v10.0.16 — Formula yang dipakai (persis kartu Recent Trades) */}
-            {(tr.profile || tr.formula_tag) ? (
-              <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: "700", color: colors.textMuted }}>
-                ⚙️ Formula: {String(tr.formula_tag || tr.profile)}
-              </Text>
-            ) : null}
+            {/* v10.0.16 — Formula yang dipakai (persis kartu Recent Trades).
+                v10.1.2 — SELALU tampil dgn fallback tag→profil→"Confluence"
+                agar kartu lama tanpa tag (mis. BNB) tetap berlabel. */}
+            <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: "700", color: colors.textMuted }}>
+              ⚙️ {t("asi_formula_label")}: {String(tr.formula_tag
+                || ({ scalper: "7 Fast VWAP", day: "5 KISS VWAP", swing: "5 Multi-day Trend", longterm: "Confluence v9" } as Record<string, string>)[String(tr.profile || "")]
+                || "Confluence")}
+            </Text>
             <Text style={{ fontSize: 10.5, lineHeight: 15 }}>
               <Text style={{ color: RED, fontWeight: "800" }}>
                 SL {tr.stop_loss ? fp(tr.stop_loss) : "—"}

@@ -1310,3 +1310,15 @@ ditemukan → diperbaiki, test PASS. Versi 9.9.13.
 - Versi di-bump 10.1.1 → 10.1.2 (version.ts, app.json, APP_LATEST_VERSION).
   Catatan: fungsionalitas penuh via Deploy/Publish; build baru hanya untuk
   label versi di device.
+
+## v10.1.2 (patch) — Formula SELALU tampil di kartu trade (Okt 2026)
+- User report: kartu lama (mis. BNB, WIF) tampil tanpa formula karena
+  formula_tag=null & profile=null di DB (trade dibuat sebelum fix backend;
+  fix backend hanya berlaku untuk trade baru).
+- Fix frontend: baris formula kini SELALU dirender dengan rantai fallback
+  formula_tag → label profile → "Confluence" (Positions) dan formulaLines
+  fallback → "Confluence v9" (Recent Trades). Kondisi render
+  `(profile || formula_tag)` dihapus.
+- Verified via seed (BNB null-formula open → "Formula: Confluence";
+  WIF longterm closed → "Formula: Confluence v9") di kedua halaman.
+  Seed dibersihkan. Versi tetap 10.1.2.
