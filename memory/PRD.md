@@ -1451,3 +1451,29 @@ menakuti user karena banyak scam APK → banyak uninstall. Perbaikan:
   di APK mereka). Mulai 10.1.6 ke depan, popup selalu memakai teks server.
 Verified via /api/app-version: semua field body/button/source_label/store_hint/
 url sesuai; frontend memparse dengan benar.
+
+## v10.1.6 (patch 4) — Tuning Confluence v9 + Fix Lifecycle (Okt 2026)
+Keputusan user atas 5 pertanyaan:
+- Q1 (Confluence SL): longterm sl_atr_mult 1.2→2.0×ATR, tp_ladder (1,1.5,2)→
+  (1.5,3.0,4.5)R. HANYA profil longterm; profil lain tetap 1.2×ATR. Verified
+  live: BTC SELL SL distance 1.043%, TP1 tepat 1.5R.
+- Q4 (sinyal Confluence terlambat / beli di puncak): engine sudah punya RSI
+  band & zone gate, TAPI belum ada freshness. Ditambah: (a) Anti-chase guard
+  — tolak BUY bila harga > EMA21+1.5×ATR, tolak SELL bila < EMA21-1.5×ATR
+  (RSI>68/<32 sudah ditolak rsi_buy_ok/sell_ok); (b) Freshness filter —
+  hanya entry bila struktur BULL/BEAR terbentuk ≤3 candle terakhir. Keduanya
+  khusus jalur Confluence (compute_signal). Verified: tidak crash, sinyal
+  valid, default dashboard tetap jalan.
+- Q3 (RUNE TP1/TP2 harga sama): BUG pencatatan — reduksi qty apapun dulu
+  dilabeli "TP hit" tanpa validasi harga & harga fill diambil dari fill
+  terakhir simbol (bisa milik trade lain). Fix: harga fill dari fill yang
+  benar-benar mengurangi posisi (last_reduce_fill_price, realizedPnl!=0) +
+  baris TP hanya dicatat bila harga fill benar-benar mencapai level TP.
+- Q2 (reset harian): caption ditambahkan di Running Positions — statistik
+  P:L harian direset 00:00 jam device, bot Full-Auto TIDAK berhenti (24/7).
+- Q5 (bot tetap jalan setelah STOP): akar = (1) saveBot menelan error
+  diam-diam (`.catch(()=>{})`) → STOP gagal simpan tak terlihat. Fix: kini
+  await + Alert "Save Failed" agar user bisa retry. (2) dual-flag
+  enabled vs full_enabled — scanner jalan bila full_enabled=true; bila ada
+  device_id LAMA (HP sebelum reinstall) dengan full_enabled:true + API key
+  valid, bot itu tetap jalan. User diminta verifikasi di produksi.
