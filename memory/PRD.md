@@ -1426,3 +1426,28 @@ REGRESSION CHECK (memastikan tidak mengganggu yg lain):
   ingin build APK admin-app manual).
 Aksi user: Publish ulang → generate build Android v10.1.6. Build kini memilih
 frontend dgn yarn.lock → seharusnya lolos.
+
+## v10.1.6 (patch 3) — Anti-Phishing Popup Update (Okt 2026)
+Keluhan user: popup lama ("Ask the admin for the latest APK" / "Get Latest APK")
+menakuti user karena banyak scam APK → banyak uninstall. Perbaikan:
+- Backend `/api/app-version` kini mengembalikan `prompt` dengan:
+  - body (4 bahasa): "New Update is available on Google Play Store."
+  - button (4 bahasa): "Update Now" (bukan uppercase menakutkan).
+  - source_label: "Opens Google Play Store" (ditampilkan di bawah tombol).
+  - store_hint: "Google Play" (chip badge).
+  - url: HTTPS Play Store Anda — eksplisit, bisa diubah via Publish.
+- Frontend UpdatePrompt.tsx (v10.1.6):
+  - Chip badge "📱 Google Play" DI ATAS judul (bukan roket) → user langsung tahu tujuan.
+  - Tombol "Update Now" dengan ikon Google Play.
+  - Baris anti-phishing di bawah tombol: ✓ "Opens Google Play Store" +
+    URL target tampil `play.google.com/store/apps/details?id=...` → user
+    bisa verifikasi SEBELUM menekan.
+  - URL dari server (prompt.url), fallback play_store_url, fallback hard-coded.
+  - Linking.openURL pakai HTTPS Play Store langsung (bukan skema market://
+    yang bisa terkesan mencurigakan di beberapa device).
+- Server-driven: perubahan teks berikutnya tidak butuh build APK baru,
+  cukup Publish backend.
+- Catatan: user APK versi lama (<10.1.6) TETAP tampil teks lama (tertanam
+  di APK mereka). Mulai 10.1.6 ke depan, popup selalu memakai teks server.
+Verified via /api/app-version: semua field body/button/source_label/store_hint/
+url sesuai; frontend memparse dengan benar.
