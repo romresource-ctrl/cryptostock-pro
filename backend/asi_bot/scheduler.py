@@ -833,8 +833,11 @@ async def _run_titan_relay(db: Any) -> None:
         logger.warning("titan relay: master positionRisk gagal: %s", e)
         return
     if not positions:
-        # Master flat → bersihkan state lama supaya entry baru bisa direlay.
-        await db.asi_titan_state.delete_many({})
+        # Master flat → nonaktifkan state lama supaya entry baru bisa
+        # direlay. v10.1.6 — SOFT-disable (bukan hard delete) sesuai
+        # deployment policy: scheduler startup tidak boleh menghapus
+        # record MongoDB secara otomatis. Record dipertahankan.
+        await db.asi_titan_state.update_many({}, {"$set": {"active": False}})
         return
     # User target: Full-Auto ON + engine Titan-Bot (cloud_pro).
     users = await db.asi_bot_config.find({
@@ -855,7 +858,10 @@ async def _run_titan_relay(db: Any) -> None:
             side: str = "BUY" if amt > 0 else "SELL"
             state_key = f"{base}:{side}"
             # Dedup: posisi master ini sudah pernah direlay?
-            state = await db.asi_titan_state.find_one({"_id": state_key})
+            # v10.1.6 — Hanya state AKTIF yang menghalangi relay ulang
+            # (state lama di-soft-disable saat posisi tutup / master flat).
+            state = await db.asi_titan_state.find_one(
+                {"_id": state_key, "active": {"$ne": False}})
             if state:
                 continue  # posisi lama — biarkan bracket user bekerja
             # Baca bracket SL/TP master dari Algo Orders (+ legacy fallback).
@@ -967,7 +973,8 @@ async def _run_titan_relay(db: Any) -> None:
                 {"_id": state_key},
                 {"_id": state_key, "symbol": base, "side": side,
                  "entry_master": float(p.get("entryPrice") or 0),
-                 "sl": sl_price, "tps": tps, "relayed_at": now},
+                 "sl": sl_price, "tps": tps, "relayed_at": now,
+                 "active": True},
                 upsert=True)
         except Exception as e:  # noqa: BLE001
             logger.warning("titan relay pos err: %s", e)
@@ -979,7 +986,9 @@ async def _run_titan_relay(db: Any) -> None:
                  for p in positions}
     async for st in db.asi_titan_state.find({}):
         if st.get("_id") not in open_keys:
-            await db.asi_titan_state.delete_one({"_id": st["_id"]})
+            # v10.1.6 — SOFT-disable (bukan delete_one) sesuai policy.
+            await db.asi_titan_state.update_one(
+                {"_id": st["_id"]}, {"$set": {"active": False}})
 
 
 class ASIScheduler:
