@@ -2,6 +2,12 @@
 
 Aplikasi terpisah untuk generate unlock code KevinAI Pro. **ADMIN ONLY — Jangan distribusikan APK ini ke user.**
 
+> **⚠️ CATATAN PENTING (v10.1.6):** File konfigurasi Expo app ini sengaja disimpan sebagai **`app.json.build`** (BUKAN `app.json`), dan `eas.json` sebagai `eas.json.disabled`.
+>
+> **Alasan:** Repo ini juga memuat aplikasi utama di `/app/frontend`. Build production (Emergent/EAS) memakai auto-deteksi "folder pertama yang punya `app.json`" — dan urutannya tidak deterministik, sehingga build sempat salah memilih `admin-app` (yang tidak punya lockfile) → error *"No lockfile found"* dan berisiko mem-build aplikasi yang salah (UnlockKeyGen). Dengan menonaktifkan `app.json` di sini, build production selalu memilih `frontend`.
+>
+> **Jika ingin build APK admin-app:** rename dulu `app.json.build` → `app.json` (dan `eas.json.disabled` → `eas.json` bila perlu), build, lalu kembalikan. Workflow offline via **`/api/admin-source.zip`** (file statis pre-built) TIDAK terpengaruh — ZIP itu sudah berisi `app.json` sendiri.
+
 ## Cara kerja
 Algoritma sama dengan main app (`SHA-256(SECRET || "::" || email)` → 12 hex char format `XXXX-XXXX-XXXX`). Karena algoritmanya deterministik dan offline:
 - Email **A** selalu menghasilkan code **A1**.
