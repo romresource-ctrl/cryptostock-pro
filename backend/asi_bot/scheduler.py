@@ -693,44 +693,59 @@ async def _run_full_auto_scanner(
                 # v10.1.2 — ANTI-DUPLIKAT ATOMIK (root cause "2 trade TRX
                 # identik"): dua proses scanner (multi-replica / restart)
                 # bisa sama-sama lolos dup-check lalu sama-sama eksekusi.
-                # Solusinya klaim slot DULU dengan insert unik per
-                # (device, symbol) SEBELUM eksekusi — proses kedua gagal
-                # insert dan otomatis skip.
-                slot_id = f"{device_id}:{sym}:active"
-                now_claim = datetime.now(timezone.utc).isoformat()
+                # Solusinya klaim slot DULU per (device, symbol) SEBELUM
+                # eksekusi — proses kedua gagal klaim dan otomatis skip.
+                # v10.1.6 — Klaim dipindah ke collection KHUSUS
+                # `asi_scan_claims` dan dilepas secara SOFT (status→
+                # "released"), BUKAN delete dari asi_trades. Sesuai
+                # deployment policy: tidak ada hard-delete record MongoDB di
+                # alur scheduler startup. Record klaim dipertahankan sebagai
+                # audit; satu doc per (device,symbol) di-reuse (tidak
+                # menumpuk).
+                slot_id = f"{device_id}:{sym}"
+                now_dt = datetime.now(timezone.utc)
+                now_claim = now_dt.isoformat()
+
+                async def _release_claim() -> None:
+                    await db.asi_scan_claims.update_one(
+                        {"_id": slot_id},
+                        {"$set": {"status": "released", "released_at":
+                                  datetime.now(timezone.utc).isoformat()}},
+                    )
+
+                claimed = False
                 try:
-                    await db.asi_trades.insert_one({
+                    await db.asi_scan_claims.insert_one({
                         "_id": slot_id, "device_id": device_id,
                         "symbol": sym, "side": sig["side"],
-                        "status": "placing", "mode": "full",
+                        "status": "active",
                         "created_at": now_claim, "updated_at": now_claim,
                     })
+                    claimed = True
                 except Exception:
-                    # Slot sudah diklaim; jika basi (>5 menit, proses mati
-                    # di tengah jalan) ambil alih.
-                    stale = await db.asi_trades.find_one({"_id": slot_id})
-                    stale_at = str((stale or {}).get("updated_at") or "")
-                    is_stale = False
-                    if stale_at:
-                        try:
-                            is_stale = (datetime.now(timezone.utc)
-                                        - datetime.fromisoformat(stale_at)
-                                        ).total_seconds() > 300
-                        except Exception:
-                            is_stale = False
-                    if (stale or {}).get("status") == "placing" and is_stale:
-                        await db.asi_trades.delete_one({"_id": slot_id})
-                        try:
-                            await db.asi_trades.insert_one({
-                                "_id": slot_id, "device_id": device_id,
-                                "symbol": sym, "side": sig["side"],
-                                "status": "placing", "mode": "full",
-                                "created_at": now_claim, "updated_at": now_claim,
-                            })
-                        except Exception:
-                            continue
-                    else:
-                        continue
+                    # Sudah ada klaim → ambil alih bila released / basi
+                    # (>5 menit, proses mati di tengah jalan).
+                    cur = await db.asi_scan_claims.find_one({"_id": slot_id})
+                    reusable = False
+                    if cur:
+                        if cur.get("status") != "active":
+                            reusable = True
+                        else:
+                            up = str(cur.get("updated_at") or "")
+                            try:
+                                reusable = (now_dt - datetime.fromisoformat(up)
+                                            ).total_seconds() > 300
+                            except Exception:
+                                reusable = False
+                    if reusable:
+                        r = await db.asi_scan_claims.update_one(
+                            {"_id": slot_id},
+                            {"$set": {"device_id": device_id, "symbol": sym,
+                                      "side": sig["side"], "status": "active",
+                                      "updated_at": now_claim}})
+                        claimed = r.matched_count > 0
+                if not claimed:
+                    continue
                 try:
                     res = await execute_trade(
                         cred, sym, sig["side"],
@@ -748,20 +763,20 @@ async def _run_full_auto_scanner(
                     )
                 except Exception as e:
                     logger.warning("full-auto execute failed %s/%s: %s", device_id, sym, e)
-                    await db.asi_trades.delete_one({"_id": slot_id})
+                    await _release_claim()
                     continue
                 if not res.get("ok"):
                     # v10.1.2 — Log alasan skip supaya tidak jadi black box.
                     logger.info("full-auto skip %s/%s: %s | %s", device_id, sym,
                                 res.get("reason"), str(res.get("message") or "")[:120])
-                    await db.asi_trades.delete_one({"_id": slot_id})
+                    await _release_claim()
                     continue
                 # v10.1.2 — GUARD: jangan simpan record tanpa fill nyata
                 # (entry_price 0 = order gagal tapi ok=True). Lepas slot.
                 if float(res.get("entry_price") or 0) <= 0 \
                         and res.get("status") != "pending_entry":
                     logger.warning("full-auto drop %s/%s: entry_price=0 pada res ok", device_id, sym)
-                    await db.asi_trades.delete_one({"_id": slot_id})
+                    await _release_claim()
                     continue
                 margin_usdt = round(
                     float(res["qty"]) * float(res["entry_price"])
@@ -778,7 +793,7 @@ async def _run_full_auto_scanner(
                               else f"{device_id}:auto:{res.get('created_at')}")
                 await db.asi_trades.replace_one(
                     {"_id": rec["_id"]}, rec, upsert=True)
-                await db.asi_trades.delete_one({"_id": slot_id})
+                await _release_claim()
                 placed += 1
                 total_placed += 1
                 logger.info("full-auto placed %s %s %s", device_id, sym, sig["side"])
