@@ -103,7 +103,10 @@ export default function UpdatePrompt() {
             {t("update_title")}
           </Text>
           <Text style={[styles.body, { color: colors.textMuted }]}>
-            {t("update_body")
+            {t("update_body")}
+          </Text>
+          <Text style={[styles.bodyVersion, { color: colors.textMuted }]}>
+            {t("update_body_versions")
               .replace("{cur}", APP_VERSION)
               .replace("{latest}", latestVersion)}
           </Text>
@@ -158,6 +161,13 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     textAlign: "center",
     marginTop: 8,
+  },
+  bodyVersion: {
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: "center",
+    marginTop: 6,
+    opacity: 0.85,
   },
   updateBtn: {
     marginTop: 16,

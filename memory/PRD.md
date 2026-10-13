@@ -1322,3 +1322,38 @@ ditemukan → diperbaiki, test PASS. Versi 9.9.13.
 - Verified via seed (BNB null-formula open → "Formula: Confluence";
   WIF longterm closed → "Formula: Confluence v9") di kedua halaman.
   Seed dibersihkan. Versi tetap 10.1.2.
+
+## v10.1.5 — UI Polish Batch (Okt 2026)
+1. **Update modal**: body diganti "New Update is available on Google Play
+   Store" (lokalisasi 4 bahasa) + baris versi kecil di bawahnya; tombol
+   biru diganti "UPDATE NOW" (sebelumnya "GET LATEST APK"). File:
+   UpdatePrompt.tsx, I18nContext.tsx.
+2. **Formula Running Positions**: fallback terakhir diganti
+   "Confluence v9" (konsisten dengan Recent Trades). Trades-position.tsx.
+3. **Banner & ikon soft watcher dihilangkan**: banner global "⚠ Open
+   positions WITHOUT native SL/TP" dan ikon per-kartu "⚠" + label
+   "SL/TP on soft watcher — tap REPAIR banner" disembunyikan (set
+   kondisi `false`). Soft watcher di BACKEND tetap aktif melindungi;
+   hanya UI yang disembunyikan sesuai permintaan user. Asi-bot.tsx.
+4. **POSITION_CLOSED_EXTERNALLY** tidak lagi diperlihatkan sebagai
+   kode internal; kartu Recent Trades hanya menampilkan "Closed on
+   Binance" dan trades-position menampilkan "Closed on exchange".
+5. **Ringkasan harian** diubah dari 2 baris menjadi 2 KOLOM:
+   kolom DEMO (biru #38BDF8) & kolom REAL (oranye #F97316) sesuai
+   mockup user. Isi tiap kolom: P:L jumlah (W×/L×), P nominal $ + %,
+   L nominal $ + %, dan Balance USDT available baris paling bawah.
+   Reset tiap 00:00 jam DEVICE user (keputusan sebelumnya).
+   Trades-position.tsx (fetch api.asi.balance ditambahkan).
+6. **History limit 25 → 50**: listTrades(50) di trades-position dan
+   asi-bot (sebelumnya 20 di asi-bot; user meminta 50 agar lebih
+   banyak transaksi terlihat).
+7. **Fix kartu jiggling 1INCH**: panel PnL kanan di asi-bot dibuat
+   width TETAP 88, dan box mark price mendapat minWidth 92 +
+   fontVariant tabular-nums supaya tidak membesar/mengecil saat
+   digit berubah. Panel PnL di trades-position width tetap 110.
+8. **Bump versi 10.1.5**: version.ts, app.json, APP_LATEST_VERSION
+   di server.py. Verified via /api/app-version → 10.1.5.
+- Verified via screenshot: Running Positions tampil 2 kolom DEMO/REAL
+  (biru/oranye) dengan Balance; kartu BNB formula "Confluence v9";
+  ORDI "Closed on exchange" tanpa kode internal; Recent Trades tanpa
+  banner soft watcher dan tanpa POSITION_CLOSED_EXTERNALLY.

@@ -1136,12 +1136,18 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   },
   update_title: { id: "Update Tersedia", en: "Update Available", ru: "Доступно обновление", cn: "有可用更新" },
   update_body: {
-    id: "Versi baru AI Crypto Stock Pro telah dirilis.\n\nTerpasang: v{cur} → Terbaru: v{latest}\n\nMinta file APK terbaru dari admin untuk mendapatkan fitur & perbaikan terbaru.",
-    en: "A new version of AI Crypto Stock Pro has been released.\n\nInstalled: v{cur} → Latest: v{latest}\n\nAsk the admin for the latest APK to get new features and fixes.",
-    ru: "Выпущена новая версия AI Crypto Stock Pro.\n\nУстановлена: v{cur} → Последняя: v{latest}\n\nЗапросите у администратора последний APK, чтобы получить новые функции и исправления.",
-    cn: "AI Crypto Stock Pro 新版本已发布。\n\n当前版本：v{cur} → 最新版本：v{latest}\n\n请向管理员获取最新 APK,以获取新功能和修复。",
+    id: "Pembaruan baru tersedia di Google Play Store.",
+    en: "New Update is available on Google Play Store.",
+    ru: "Новое обновление доступно в Google Play Store.",
+    cn: "Google Play Store 上有新版本可用。",
   },
-  update_now: { id: "DAPATKAN APK TERBARU", en: "GET LATEST APK", ru: "ПОЛУЧИТЬ ПОСЛЕДНИЙ APK", cn: "获取最新 APK" },
+  update_body_versions: {
+    id: "Terpasang: v{cur} → Terbaru: v{latest}",
+    en: "Installed: v{cur} → Latest: v{latest}",
+    ru: "Установлено: v{cur} → Последнее: v{latest}",
+    cn: "已安装: v{cur} → 最新: v{latest}",
+  },
+  update_now: { id: "UPDATE SEKARANG", en: "UPDATE NOW", ru: "ОБНОВИТЬ СЕЙЧАС", cn: "立即更新" },
   update_later: { id: "Nanti", en: "Later", ru: "Позже", cn: "稍后" },
 
   // v9.6.9 — Credential validation error codes (backend returns {code, message})

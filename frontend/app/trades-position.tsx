@@ -28,6 +28,7 @@ const GREEN = "#22C55E";
 const RED = "#EF4444";
 const BLUE = "#38BDF8";
 const PURPLE = "#A78BFA";
+const ORANGE = "#F97316"; // v10.1.5 — chip REAL
 
 type AnyTrade = AsiTradeResp & Record<string, any>;
 
@@ -41,6 +42,12 @@ export default function TradesPositionScreen() {
   const [prices, setPrices] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // v10.1.5 — Saldo DEMO/REAL untuk ringkasan dua kolom di atas list.
+  const [balance, setBalance] = useState<{
+    demo: { connected: boolean; available_usdt: number | null };
+    real: { connected: boolean; available_usdt: number | null };
+  }>({ demo: { connected: false, available_usdt: null },
+       real: { connected: false, available_usdt: null } });
   const pollRef = useRef<any>(null);
   const priceRef = useRef<any>(null);
 
@@ -53,6 +60,11 @@ export default function TradesPositionScreen() {
     try {
       const r = await api.asi.listTrades(deviceId, 50);
       setTrades(((r as any).items || r || []) as AnyTrade[]);
+      // v10.1.5 — Saldo kedua jaringan (opsional; jangan ganggu list).
+      try {
+        const b = await api.asi.balance(deviceId, "binance");
+        setBalance({ demo: b.demo, real: b.real });
+      } catch { /* no-op */ }
     } catch { /* keep previous */ }
     finally { setLoading(false); }
   }, [deviceId]);
@@ -175,6 +187,8 @@ export default function TradesPositionScreen() {
     if (x === "MANUAL") return "Closed manually";
     if (x === "TRAILING") return "Closed on Trailing Stop";
     if (x === "BREAK_EVEN") return "Closed on Break-Even";
+    // v10.1.5 — "position_closed_externally" tidak ditampilkan apa adanya;
+    // disajikan sebagai "Closed on exchange" tanpa kode internal.
     if (x === "position_closed_externally") return "Closed on exchange";
     return x ? `Closed: ${x}` : "Closed";
   };
@@ -274,7 +288,7 @@ export default function TradesPositionScreen() {
             <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: "700", color: colors.textMuted }}>
               ⚙️ {t("asi_formula_label")}: {String(tr.formula_tag
                 || ({ scalper: "7 Fast VWAP", day: "5 KISS VWAP", swing: "5 Multi-day Trend", longterm: "Confluence v9" } as Record<string, string>)[String(tr.profile || "")]
-                || "Confluence")}
+                || "Confluence v9")}
             </Text>
             <Text style={{ fontSize: 10.5, lineHeight: 15 }}>
               <Text style={{ color: RED, fontWeight: "800" }}>
@@ -329,7 +343,10 @@ export default function TradesPositionScreen() {
             ) : null}
           </View>
 
-          <View style={{ alignItems: "flex-end", gap: 6, minWidth: 92 }}>
+          <View style={{ alignItems: "flex-end", gap: 6, width: 110 }}>
+            {/* v10.1.5 — width TETAP (bukan minWidth) + tabular-nums supaya
+                kartu tidak berdenyut membesar/mengecil saat angka PnL
+                berubah jumlah digit. */}
             {isPending ? (
               <View style={{ paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6, backgroundColor: YELLOW }}>
                 <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 10 }}>LIMIT WAITING</Text>
@@ -437,41 +454,71 @@ export default function TradesPositionScreen() {
           </View>
         ) : (
           <>
-            {/* v10.1.3 — Statistik harian menggantikan baris "OPEN
-                POSITIONS · n" (sudah ter-cover total di header). Format:
-                W : L (jumlah) · P : L ($% kumulatif) reset tiap 00:00. */}
+            {/* v10.1.5 — Ringkasan harian 2 KOLOM (DEMO biru / REAL oranye)
+                sesuai mockup user. Setiap kolom: P:L count (W×/L×), P (hijau
+                nominal + %), L (merah nominal + %), Balance USDT available
+                di baris paling bawah. Reset tiap 00:00 jam DEVICE user. */}
             {(() => {
-              // v10.1.1 — Reset harian pukul 00:00 mengikuti JAM DEVICE
-              // user (bukan UTC): kunci tanggal dihitung dari Date lokal
-              // perangkat, begitu pula saat mengelompokkan trade closed.
               const pad2 = (n: number) => String(n).padStart(2, "0");
               const dayKey = (d: Date) =>
                 `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
               const today = dayKey(new Date());
-              let wins = 0, losses = 0, pUsd = 0, lUsd = 0, pPct = 0, lPct = 0;
-              histList.forEach((t2: any) => {
-                const iso = t2.closed_at || t2.updated_at;
-                if (!iso) return;
-                const d = new Date(iso);
-                if (isNaN(d.getTime()) || dayKey(d) !== today) return;
-                const pnl2 = Number(t2.pnl_usdt || 0);
-                const marg = Math.max(1, Number(t2.margin_usdt || 1));
-                if (pnl2 > 0) { wins++; pUsd += pnl2; pPct += (pnl2 / marg) * 100; }
-                else if (pnl2 < 0) { losses++; lUsd += pnl2; lPct += (pnl2 / marg) * 100; }
-              });
+              const agg = (isDemo: boolean) => {
+                let w = 0, l = 0, pU = 0, lU = 0, pP = 0, lP = 0;
+                histList.forEach((t2: any) => {
+                  if (Boolean(t2.testnet) !== isDemo) return;
+                  const iso = t2.closed_at || t2.updated_at;
+                  if (!iso) return;
+                  const d = new Date(iso);
+                  if (isNaN(d.getTime()) || dayKey(d) !== today) return;
+                  const pnl2 = Number(t2.pnl_usdt || 0);
+                  const marg = Math.max(1, Number(t2.margin_usdt || 1));
+                  if (pnl2 > 0) { w++; pU += pnl2; pP += (pnl2 / marg) * 100; }
+                  else if (pnl2 < 0) { l++; lU += pnl2; lP += (pnl2 / marg) * 100; }
+                });
+                return { w, l, pU, lU, pP, lP };
+              };
+              const demo = agg(true);
+              const real = agg(false);
+              const demoBal = balance.demo?.available_usdt;
+              const realBal = balance.real?.available_usdt;
+              const col = (
+                title: string, titleColor: string, data: ReturnType<typeof agg>,
+                bal: number | null | undefined,
+              ) => (
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={{ color: titleColor, fontWeight: "900", fontSize: 13, letterSpacing: 0.6 }}>
+                    {title}
+                  </Text>
+                  <Text style={{ fontSize: 11.5, fontWeight: "800" }}>
+                    <Text style={{ color: GREEN }}>P :</Text>
+                    <Text style={{ color: colors.textPrimary }}>{` ${data.w}`}</Text>
+                    <Text style={{ color: colors.textMuted }}>x </Text>
+                    <Text style={{ color: RED }}>L :</Text>
+                    <Text style={{ color: colors.textPrimary }}>{` ${data.l}`}</Text>
+                    <Text style={{ color: colors.textMuted }}>x</Text>
+                  </Text>
+                  <Text style={{ color: GREEN, fontSize: 11.5, fontWeight: "800", fontVariant: ["tabular-nums"] }}>
+                    P: +${data.pU.toFixed(2)} (+{data.pP.toFixed(1)}%)
+                  </Text>
+                  <Text style={{ color: RED, fontSize: 11.5, fontWeight: "800", fontVariant: ["tabular-nums"] }}>
+                    L: -${Math.abs(data.lU).toFixed(2)} ({data.lP.toFixed(1)}%)
+                  </Text>
+                  <Text style={{ fontSize: 11.5, fontWeight: "800" }}>
+                    <Text style={{ color: titleColor }}>Balance:</Text>
+                    <Text style={{ color: colors.textPrimary, fontVariant: ["tabular-nums"] }}>
+                      {" "}${bal != null ? Number(bal).toFixed(2) : "—"}
+                    </Text>
+                  </Text>
+                </View>
+              );
               return (
-                <View style={{ paddingHorizontal: 2, paddingVertical: 4, gap: 2 }}>
-                  <Text style={{ color: colors.textMuted, fontSize: 11, fontWeight: "800" }}>
-                    W : L <Text style={{ color: GREEN }}>{wins}</Text>
-                    <Text style={{ color: colors.textMuted }}> : </Text>
-                    <Text style={{ color: RED }}>{losses}</Text>
-                  </Text>
-                  <Text style={{ fontSize: 11, fontWeight: "800" }}>
-                    <Text style={{ color: colors.textMuted }}>P : L </Text>
-                    <Text style={{ color: GREEN }}>+${pUsd.toFixed(2)} (+{pPct.toFixed(1)}%)</Text>
-                    <Text style={{ color: colors.textMuted }}> : </Text>
-                    <Text style={{ color: RED }}>-${Math.abs(lUsd).toFixed(2)} ({lPct.toFixed(1)}%)</Text>
-                  </Text>
+                <View style={{
+                  flexDirection: "row", gap: 14,
+                  paddingHorizontal: 4, paddingVertical: 6,
+                }}>
+                  {col("DEMO", BLUE, demo, demoBal)}
+                  {col("REAL", ORANGE, real, realBal)}
                 </View>
               );
             })()}

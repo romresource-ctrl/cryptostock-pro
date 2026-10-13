@@ -3320,3 +3320,14 @@ metadata_v1012:
   version: "10.1.2"
   test_sequence: 40
   run_ui: false
+
+# ======================================================
+# v10.1.5 — UI polish batch
+# ======================================================
+metadata_v1015:
+  version: "10.1.5"
+  test_sequence: 41
+  run_ui: false
+  notes: |
+    Changes verified via Playwright screenshot. All 7 UI points PASS.
+    Soft-watcher proteksi backend TETAP aktif; hanya UI dihilangkan.

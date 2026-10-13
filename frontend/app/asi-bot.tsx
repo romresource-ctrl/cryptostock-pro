@@ -180,7 +180,7 @@ export default function ASIBotScreen() {
       const b = await api.asi.getBot(id);
       if (b.exists) setBot({ ...bot, ...b });
       const p = await api.asi.pnl(id); setPnl(p);
-      const t2 = await api.asi.listTrades(id, 20); setTrades(t2.items.slice(0, 20));
+      const t2 = await api.asi.listTrades(id, 50); setTrades(t2.items.slice(0, 50));
       // v9.9.9 — saldo available kedua jaringan, di-refresh bersama PnL.
       try {
         const b = await api.asi.balance(id, bot.exchange);
@@ -803,13 +803,11 @@ export default function ASIBotScreen() {
             </TouchableOpacity>
           ) : null}
         </View>
-        {/* v9.9.2 — Banner REPAIR hanya untuk trade LAMA (pre-v9.9.2) yang
-            masih berstatus soft, ATAU trade baru di mana bracket_live=false
-            (user mungkin cancel manual algo order di Binance app). Trade
-            baru v9.9.2 selalu hard-verified atau tidak tersimpan. */}
-        {trades.some((tr) => String(tr.status).toLowerCase() === "open"
-          && ((tr.bracket_live === false)
-              || (tr.bracket_type === "soft" && tr.bracket_live !== true))) ? (
+        {/* v10.1.5 — Banner global "Open positions WITHOUT native SL/TP"
+            dihilangkan sesuai permintaan user: peringatan ini membingungkan
+            terutama saat posisi profit. Soft watcher di backend tetap aktif
+            melindungi; proteksi tidak berubah, hanya UI yang disembunyikan. */}
+        {false ? (
           <TouchableOpacity
             onPress={async () => {
               try {
@@ -989,12 +987,10 @@ export default function ASIBotScreen() {
                         bukan BUY/SELL (permintaan user). */}
                     {tr.side === "BUY" ? "LONG" : "SHORT"}
                   </Text>
-                  {/* v9.9.10 — Peringatan hanya bila bracket BENAR-BENAR
-                      tidak terverifikasi di exchange (algo & legacy).
-                      Proteksi legacy/manual (sl_order_id null tapi order
-                      ada di Binance) tidak lagi ditandai ⚠️. */}
-                  {isOpen && ((tr.bracket_live === false)
-                      || (tr.bracket_type === "soft" && tr.bracket_live !== true)) ? (
+                  {/* v10.1.5 — Ikon ⚠️ per-kartu juga disembunyikan
+                      sesuai permintaan user. Backend tetap melakukan
+                      reconcile/soft watcher di belakang layar. */}
+                  {false ? (
                     <CardTouchable
                       onPress={async () => {
                         // v10.1.1 — Menekan ⚠️ kini MEMICU verifikasi/
@@ -1028,7 +1024,12 @@ export default function ASIBotScreen() {
                   <Text numberOfLines={1} style={{ color: colors.textPrimary, fontWeight: "700", flexShrink: 1 }}>{tr.symbol}</Text>
                   {/* v10.0.13 — Mark price PERP realtime (poll 2s), BESAR,
                       putih terang, dengan efek flash hijau/merah seperti
-                      candlestick saat tick naik/turun. */}
+                      candlestick saat tick naik/turun.
+                      v10.1.5 — minWidth TETAP agar lebar box mark price
+                      tidak berdenyut saat jumlah digit berubah; posisi
+                      ikut didorong ke kanan oleh spacer flex:1 sehingga
+                      selalu sejajar (fix "1INCH mark price kadang kanan
+                      kadang kiri"). */}
                   {isOpen ? (() => {
                     const lp = livePx[symBase] ?? (tr as any).mark_price ?? null;
                     if (!lp || !tr.entry_price) return null;
@@ -1037,9 +1038,9 @@ export default function ASIBotScreen() {
                     return (
                       <View style={{
                         paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4,
-                        backgroundColor: bg,
+                        backgroundColor: bg, minWidth: 92, alignItems: "center",
                       }}>
-                        <Text style={{
+                        <Text numberOfLines={1} style={{
                           color: "#FFFFFF", fontWeight: "900", fontSize: 14,
                           fontVariant: ["tabular-nums"], letterSpacing: 0.3,
                         }}>
@@ -1049,7 +1050,9 @@ export default function ASIBotScreen() {
                     );
                   })() : null}
                   <View style={{ flex: 1 }} />
-                  <View style={{ alignItems: "flex-end", flexShrink: 0 }}>
+                  <View style={{ alignItems: "flex-end", flexShrink: 0, width: 88 }}>
+                    {/* v10.1.5 — width TETAP (bukan auto) supaya panel PnL
+                        tidak membesar/mengecil mengikuti jumlah digit. */}
                     {/* v10.0.13 — PnL juga flash background sesuai arah tick */}
                     <View style={{
                       paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4,
@@ -1135,15 +1138,21 @@ export default function ASIBotScreen() {
                         (kiri) + formula singkat (kanan, tidak keluar
                         bingkai kartu). */}
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      {/* v10.1.5 — Label status proteksi "⚠ SL/TP on soft
+                          watcher — tap REPAIR banner" disembunyikan
+                          sesuai permintaan user. Hanya tampilkan baris
+                          hijau "✓ SL/TP on {Exchange}" saat bracket
+                          benar-benar hard-verified; selain itu kosongkan
+                          agar kartu tidak membingungkan. */}
                       <Text numberOfLines={1} style={{
                         fontSize: 10, fontWeight: "800", flexShrink: 0,
-                        color: isPending ? GOLD : (tr.bracket_type === "hard" && tr.bracket_live !== false) ? GREEN : ORANGE,
+                        color: isPending ? GOLD : GREEN,
                       }}>
                         {isPending
                           ? t("asi_pending_line")
                           : (tr.bracket_type === "hard" && tr.bracket_live !== false)
                             ? `✓ SL/TP on ${{ binance: "Binance", bybit: "Bybit", okx: "OKX", bitget: "Bitget" }[String(tr.exchange || "").toLowerCase()] || "Exchange"}`
-                            : t("asi_bracket_soft_short")}
+                            : ""}
                       </Text>
                       <View style={{ flex: 1 }} />
                       {/* v10.1.2 — Formula SELALU tampil (keputusan user):
@@ -1221,7 +1230,14 @@ export default function ASIBotScreen() {
                           {t("asi_closed_on")} {({ binance: "Binance", bybit: "Bybit", okx: "OKX", bitget: "Bitget" } as Record<string, string>)[tr.exchange || "binance"] || tr.exchange}
                         </Text>
                         <Text style={{ color: colors.textMuted }}>
-                          {tr.close_reason ? `  ·  ${String(tr.close_reason).toUpperCase()}` : ""}
+                          {/* v10.1.5 — Jangan tampilkan kode internal
+                              seperti "POSITION_CLOSED_EXTERNALLY" di sini;
+                              hanya tampilkan sumber penutupan ("Binance").
+                              Reason detail sudah dikonversi di tempat lain
+                              (BREAK_EVEN, Closed on exchange, dll). */}
+                          {tr.close_reason && String(tr.close_reason).toLowerCase() !== "position_closed_externally"
+                            ? `  ·  ${String(tr.close_reason).toUpperCase()}`
+                            : ""}
                         </Text>
                       </Text>
                       <View style={{ flex: 1 }} />
