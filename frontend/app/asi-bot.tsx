@@ -107,7 +107,11 @@ export default function ASIBotScreen() {
   useEffect(() => {
     const anyRunning = !!(bot.semi_enabled || bot.full_enabled || bot.enabled);
     if (!anyRunning || !deviceId) return;
-    const id = setInterval(() => refresh(), 20_000);
+    // v10.1.8 — Interval disamakan dengan Running Positions (5 detik)
+    // supaya status trade (LIMIT WAITING → OPEN) tidak desync antar
+    // layar. Backend punya cache balance 4 detik untuk melindungi
+    // rate-limit API key user.
+    const id = setInterval(() => refresh(), 5_000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bot.semi_enabled, bot.full_enabled, bot.enabled, deviceId]);

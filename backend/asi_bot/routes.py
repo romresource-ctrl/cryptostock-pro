@@ -428,6 +428,15 @@ async def get_price(symbol: str = Query(..., min_length=2, max_length=20)):
 
 
 
+# v10.1.8 — Cache saldo per device+exchange (TTL 4 detik). Kedua layar
+# (Recent Trades & Running Positions) kini polling tiap 5 detik; tanpa
+# cache, tiap poll memanggil API exchange langsung → ratusan subscriber
+# bisa melampaui rate-limit API key user. TTL 4s menjaga data tetap
+# "hampir live" sementara request exchange turun drastis.
+_BALANCE_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_BALANCE_TTL = 4.0
+
+
 @router.get("/balance")
 async def get_balance(device_id: str = Query(..., min_length=4),
                       exchange: ExchangeId = Query("binance")):
@@ -436,6 +445,12 @@ async def get_balance(device_id: str = Query(..., min_length=4),
     di atas Recent Trades; di-refresh frontend bersama siklus PnL."""
     from .engine import _get_client, _fetch_usdt_balance
     from . import binance_rest as br
+    import time as _time
+
+    _ck = f"{device_id}|{exchange}"
+    _hit = _BALANCE_CACHE.get(_ck)
+    if _hit and (_time.time() - _hit[0]) < _BALANCE_TTL:
+        return _hit[1]
 
     async def _one(testnet: bool) -> dict[str, Any]:
         cred = await resolve_credential(_DB, device_id, exchange, testnet)
@@ -461,7 +476,9 @@ async def get_balance(device_id: str = Query(..., min_length=4),
             return {"connected": True, "available_usdt": None}
 
     demo, real = await asyncio.gather(_one(True), _one(False))
-    return {"ok": True, "demo": demo, "real": real}
+    payload = {"ok": True, "demo": demo, "real": real}
+    _BALANCE_CACHE[_ck] = (_time.time(), payload)
+    return payload
 
 @router.get("/egress-ip")
 async def _get_egress_ip() -> dict[str, Any]:

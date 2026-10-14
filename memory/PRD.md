@@ -23,6 +23,8 @@ AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs
 
 **Mark price 100ms (useBinanceRealtime.ts)**: stream `@ticker` (1 detik) → `@aggTrade` (per-trade) + throttle 100ms.
 
+**Sync Interval 5 detik**: Recent Trades & Running Positions kini refresh tiap 5 detik (dari 20s/10s) agar status LIMIT WAITING→OPEN sinkron. Backend `/api/asi/balance` punya cache 4 detik per device+exchange untuk melindungi rate-limit API key user.
+
 **PERINGATAN TESTING**: Jangan storm-test `/api/dashboard?full=true` berulang — Binance `data-api.binance.vision` IP-ban pod (HTTP 418) setelah ratusan fetch. Ban ~7 menit. Dashboard recover otomatis via cache + fallback Bitget/CoinGecko.
 
 ---

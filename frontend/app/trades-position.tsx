@@ -84,7 +84,9 @@ export default function TradesPositionScreen() {
   useEffect(() => {
     if (!deviceId) return;
     load();
-    pollRef.current = setInterval(load, 10_000);
+    // v10.1.8 — Interval 5 detik (disamakan dengan Recent Trades) supaya
+    // status LIMIT WAITING → OPEN sinkron antar layar tanpa jeda 10-20s.
+    pollRef.current = setInterval(load, 5_000);
     return () => clearInterval(pollRef.current);
   }, [deviceId, load]);
 
