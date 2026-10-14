@@ -803,9 +803,11 @@ def _attach_trade_routes(db: Any) -> None:
                 "total": len(results), "results": results}
 
     @router.get("/trades")
-    async def list_trades(device_id: str = Query(..., min_length=4), limit: int = 50):
+    async def list_trades(device_id: str = Query(..., min_length=4), limit: int = 100):
         # v10.1.2 — Kecualikan slot "placing" (klaim anti-duplikat scanner)
         # supaya tidak tampil sebagai kartu berkedip di Positions.
+        # v10.2.2 — Default limit 50 → 100 (permintaan user: history
+        # menampung 100 posisi di Recent Trades & Running Positions).
         rows: list[dict[str, Any]] = []
         async for d in db.asi_trades.find(
             {"device_id": device_id, "status": {"$ne": "placing"}}

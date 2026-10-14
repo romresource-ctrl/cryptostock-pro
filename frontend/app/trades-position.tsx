@@ -58,7 +58,8 @@ export default function TradesPositionScreen() {
   const load = useCallback(async () => {
     if (!deviceId) return;
     try {
-      const r = await api.asi.listTrades(deviceId, 50);
+      // v10.2.2 — History diperluas 50 → 100 posisi (permintaan user).
+      const r = await api.asi.listTrades(deviceId, 100);
       setTrades(((r as any).items || r || []) as AnyTrade[]);
       // v10.1.5 — Saldo kedua jaringan (opsional; jangan ganggu list).
       // v10.1.7 — Hanya update balance bila fetch sukses & nilainya valid

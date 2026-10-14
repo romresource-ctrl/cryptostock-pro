@@ -202,8 +202,9 @@ export default function ASIBotScreen() {
       const p = await api.asi.pnl(id); setPnl(p);
     } catch { /* keep PnL */ }
     try {
-      const t2 = await api.asi.listTrades(id, 50);
-      setTrades(t2.items.slice(0, 50));
+      const t2 = await api.asi.listTrades(id, 100);
+      // v10.2.2 — History diperluas 50 → 100 posisi (permintaan user).
+      setTrades(t2.items.slice(0, 100));
     } catch { /* keep trades (jangan kosongkan!) */ }
     // v9.9.9 — saldo available kedua jaringan, di-refresh bersama PnL.
     // v10.1.7 — Hanya patch nilai bila non-null supaya kolom DEMO/REAL
