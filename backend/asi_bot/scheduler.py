@@ -49,7 +49,7 @@ WATCHER_INTERVAL = 20
 SCANNER_INTERVAL = 90
 TITAN_RELAY_INTERVAL = 25  # v10.0.15 — polling posisi master Titan-Bot
 # Minimum confidence required for full-auto execution.
-MIN_FULL_AUTO_CONFIDENCE = 70
+MIN_FULL_AUTO_CONFIDENCE = 90
 
 
 async def _public_mark_price(exchange: str, ccxt_symbol: str, testnet: bool) -> float | None:
@@ -594,7 +594,7 @@ async def _run_full_auto_scanner(
             if (cfg.get("signal_source") or "asi_bot") == "cloud_pro":
                 continue
             scanned += 1
-            max_tr = int(cfg.get("max_trades_per_day") or 5)
+            max_tr = int(cfg.get("max_trades_per_day") or 3)
             # v9.9.5 — network aktif ditentukan lebih awal supaya kuota
             # harian juga dihitung per jaringan.
             net = bool(cfg["active_testnet"]) if "active_testnet" in cfg else None
@@ -636,7 +636,14 @@ async def _run_full_auto_scanner(
             # tanpa filter tambahan. Keempat engine dievaluasi PARALEL
             # per koin; sinyal dengan confidence tertinggi yang lolos
             # threshold user yang dipakai.
-            _ENGINES = ["scalper", "day", "swing", "longterm"]
+            # v10.1.7 — KEPUTUSAN STRATEGIS (user complaint: subscriber
+            # mengalami loss beruntun karena 4 engine paralel saling
+            # konflik dan sinyal SHORT muncul di tengah uptrend).
+            # Full-Auto SEKARANG dikunci ke engine `longterm` (Confluence
+            # v9 full EMA200 gate) yang paling KONSERVATIF dan tidak
+            # pernah counter-trend. User tetap bisa Semi-Auto pakai
+            # scalper/day/swing manual via AI Suggestions.
+            _ENGINES = ["longterm"]
             async def _fetch_signal(s: str, p: str) -> dict[str, Any] | None:
                 try:
                     return await signal_fetcher("crypto", s, p)
@@ -690,6 +697,52 @@ async def _run_full_auto_scanner(
                 )
                 if dup:
                     continue
+                # v10.1.7 — COOLDOWN 15 MENIT per-symbol (anti-flood):
+                # Setelah close/cancel, symbol yang sama TIDAK boleh
+                # re-execute dalam 15 menit. Mencegah pola yang user
+                # keluhkan: AVAX SHORT dijalankan berulang di harga sama,
+                # kena SL berulang → loss beruntun. Beri waktu market
+                # settle sebelum coba lagi dengan sinyal fresh.
+                cutoff_cooldown = (datetime.now(timezone.utc)
+                                   - timedelta(minutes=15)).isoformat()
+                recent = await db.asi_trades.find_one({
+                    "device_id": device_id, "symbol": sym,
+                    "status": {"$in": ["closed", "cancelled", "expired",
+                                       "orphaned"]},
+                    "updated_at": {"$gt": cutoff_cooldown},
+                })
+                if recent:
+                    logger.info("full-auto cooldown skip %s/%s: ditutup "
+                                "dalam 15 menit terakhir", device_id, sym)
+                    continue
+                # v10.1.7 — TREND FILTER (anti counter-trend): sinyal
+                # SHORT di uptrend atau LONG di downtrend seringkali
+                # ketemu SL cepat karena market masih kuat satu arah.
+                # Confluence v9 sudah pakai EMA200, tapi tambahkan guard
+                # eksternal: tolak jika arah sinyal berlawanan dengan
+                # EMA50 pada candle 4H.
+                try:
+                    from indicators import _ema  # noqa
+                    from market_data import get_crypto_snapshot
+                    snap4h = await get_crypto_snapshot(sym, "4h")
+                    cands = (snap4h or {}).get("candles") or []
+                    closes_4h = [float(c["close"]) for c in cands
+                                 if c.get("close")]
+                    if len(closes_4h) >= 50:
+                        ema_series = _ema(closes_4h, 50)
+                        ema50_4h = ema_series[-1] if ema_series else 0.0
+                        last_price = closes_4h[-1]
+                        bias_up = last_price > ema50_4h
+                        want_long = sig["side"] == "BUY"
+                        if bias_up != want_long:
+                            logger.info("full-auto trend-filter skip %s/%s: "
+                                        "sinyal %s lawan bias 4H EMA50 "
+                                        "(price=%.4f ema50=%.4f)",
+                                        device_id, sym, sig["side"],
+                                        last_price, ema50_4h)
+                            continue
+                except Exception as _tf_err:
+                    logger.debug("trend-filter error %s: %s", sym, _tf_err)
                 # v10.1.2 — ANTI-DUPLIKAT ATOMIK (root cause "2 trade TRX
                 # identik"): dua proses scanner (multi-replica / restart)
                 # bisa sama-sama lolos dup-check lalu sama-sama eksekusi.
