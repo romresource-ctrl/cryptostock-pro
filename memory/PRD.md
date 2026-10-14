@@ -5,6 +5,18 @@ AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs
 
 ---
 
+---
+
+## v10.2.0 — Model B: Aturan Bias Makro Terpadu (Oktober 2026)
+
+- **Tiered TP/SL per profile**: scalper SL 1.0×ATR + TP (0.8/1.2/1.6R); day SL 1.2×ATR + TP (1.2/2.0/2.5R); swing SL 1.5×ATR + TP (1.5/3.0/4.0R); longterm/Confluence tetap SL 2.0×ATR + TP (1.5/3.0/4.5R) floating.
+- **Counter-trend scalp hit-and-run**: SCALPER boleh counter-trend tapi ladder DIPAKSA (0.6/0.8/1.0R) + SL 1.0×ATR, apapun pilihan TP1/2/3 user → quick exit 15m-1 jam, label "SCALP COUNTER-TREND ⚡".
+- **Intraday/Swing wajib searah bias makro** (3R Rule, tidak berubah).
+- **Fail-closed**: data harian gagal dimuat → sinyal VWAP jadi HOLD "data makro tidak tersedia" (kasus ETH LONG tanpa filter tidak akan terulang).
+- Rollback point: git tag `rollback-point-10.1.9`.
+
+---
+
 ## v10.1.9 — Bump Versi & Fix UI Akhir (Oktober 2026)
 
 - **Bump ke 10.1.9**: Memastikan APK/AAB baru memiliki nomor versi lebih tinggi agar popup update di HP user otomatis muncul (karena build 10.1.8 sebelumnya dibuat sebelum fix tombol kanan & ticking).
