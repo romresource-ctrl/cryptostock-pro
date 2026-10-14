@@ -1525,6 +1525,29 @@ async def search_assets(
     if not query:
         return {"hits": [], "disambiguation": []}
 
+    # v10.1.7 — Query normalizer untuk kasus umum yang user complain hilang:
+    #   • "EURUSD" / "USDJPY" / "XAUUSD" → otomatis dicocokkan ke format
+    #     slash "EUR/USD", "USD/JPY", "XAU/USD" tanpa harus user mengetik slash.
+    #   • Alias nama populer: GOLD → XAU/USD, SILVER → XAG/USD,
+    #     OIL/CRUDE → WTI, BRENT → BRENT, GAS → NATGAS, COPPER → COPPER.
+    #   • "ALIBABA" (tanpa suffix) → akan tetap mencocokkan ALIBABA_HK via
+    #     "contains" rank 2 di bawah; alias tidak diperlukan.
+    _ALIAS = {
+        "GOLD": "XAU/USD", "SILVER": "XAG/USD",
+        "OIL": "WTI", "CRUDE": "WTI", "CRUDEOIL": "WTI",
+        "BRENT": "BRENT", "NATGAS": "NATGAS", "GAS": "NATGAS",
+        "COPPER": "COPPER", "WHEAT": "WHEAT", "CORN": "CORN", "SUGAR": "SUGAR",
+    }
+    extra_queries: list[str] = []
+    if query in _ALIAS:
+        extra_queries.append(_ALIAS[query])
+    # 6-char forex pair tanpa slash → sisipkan slash di tengah (EURUSD → EUR/USD).
+    # Juga 7-char metal (XAUUSD, XAGUSD).
+    if "/" not in query and query.isalpha() and len(query) in (6, 7):
+        mid = 3
+        slashed = f"{query[:mid]}/{query[mid:]}"
+        extra_queries.append(slashed)
+
     # Static curated maps (already have priority — dashboard/premium data).
     # v9.1.6 — stock_us pool digabung dengan search-only universe
     # (NASDAQ Trader resmi + S&P 500/400/600 superset): BNY, GEV, HONA,
@@ -1541,15 +1564,21 @@ async def search_assets(
 
     # (market, symbol, rank) — lower rank = better match.
     matches: list[tuple[str, str, int]] = []
+    # v10.1.7 — Scan untuk query utama + semua alias (slash form & nama populer)
+    queries_to_scan = [query] + extra_queries
     for market, syms in market_pools:
         for sym in syms:
             s = sym.upper()
-            if s == query:
-                matches.append((market, sym, 0))
-            elif s.startswith(query):
-                matches.append((market, sym, 1))
-            elif query in s:
-                matches.append((market, sym, 2))
+            for qv in queries_to_scan:
+                if s == qv:
+                    matches.append((market, sym, 0))
+                    break
+                elif s.startswith(qv):
+                    matches.append((market, sym, 1))
+                    break
+                elif qv in s:
+                    matches.append((market, sym, 2))
+                    break
 
     # Track already-added crypto symbols to avoid duplicates from universe scan.
     seen_crypto = {m[1].upper() for m in matches if m[0] == "crypto"}
