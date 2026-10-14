@@ -7,6 +7,11 @@ AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs
 
 ---
 
+## v10.2.2 — History 100 Posisi
+- Backend `/api/asi/trades` default limit 50→100; kedua layar (Recent Trades & Running Positions) fetch 100.
+
+---
+
 ## v10.2.0 — Model B: Aturan Bias Makro Terpadu (Oktober 2026)
 
 - **Tiered TP/SL per profile**: scalper SL 1.0×ATR + TP (0.8/1.2/1.6R); day SL 1.2×ATR + TP (1.2/2.0/2.5R); swing SL 1.5×ATR + TP (1.5/3.0/4.0R); longterm/Confluence tetap SL 2.0×ATR + TP (1.5/3.0/4.5R) floating.
