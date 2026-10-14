@@ -1122,9 +1122,14 @@ export default function ASIBotScreen() {
                       ⚙️ {formulaLines(t, (tr as any).profile, (tr as any).formula_tag)[0]}
                     </Text>
                   </View>
-                  {/* Spacer + action button */}
-                  <View style={{ flex: 1 }} />
-                  {(isOpen || isPending) ? (
+                </View>
+
+                {/* v10.1.8 — Tombol aksi di BARIS SENDIRI, SELALU rata
+                    kanan. Sebelumnya tombol digabung di baris badge
+                    (flexWrap) → kalau badge penuh, spacer ter-wrap dan
+                    tombol jatuh ke kiri. */}
+                {(isOpen || isPending) ? (
+                  <View style={{ marginTop: 6, flexDirection: "row", justifyContent: "flex-end" }}>
                     <CardTouchable
                       onPress={() => closeOneTrade(tr)}
                       disabled={isClosing}
@@ -1141,8 +1146,8 @@ export default function ASIBotScreen() {
                           : (isPending ? t("asi_btn_cancel") : t("asi_recent_close"))}
                       </Text>
                     </CardTouchable>
-                  ) : null}
-                </View>
+                  </View>
+                ) : null}
 
                 {/* Detail numerik (Entry / SL / TP / Margin) — baris pelengkap kecil */}
                 <View style={{ marginTop: 4, gap: 1 }}>

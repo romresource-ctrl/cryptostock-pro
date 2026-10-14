@@ -397,9 +397,13 @@ export default function TradesPositionScreen() {
               {isOpen ? "OPEN" : isPending ? "LIMIT" : "CLOSED"}
             </Text>
           </View>
-          {/* Spacer kemudian action */}
-          <View style={{ flex: 1 }} />
-          {(isOpen || isPending) ? (
+        </View>
+
+        {/* v10.1.8 — Tombol aksi di BARIS SENDIRI, SELALU rata kanan.
+            Sebelumnya digabung di baris badge (flexWrap) → spacer
+            ter-wrap dan tombol jatuh ke kiri saat badge penuh. */}
+        {(isOpen || isPending) ? (
+          <View style={{ marginTop: 6, flexDirection: "row", justifyContent: "flex-end" }}>
             <CardTouchable
               style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6,
                        backgroundColor: isPending ? YELLOW : RED }}
@@ -412,8 +416,8 @@ export default function TradesPositionScreen() {
                     {isPending ? "CANCEL" : "CLOSE"}
                   </Text>}
             </CardTouchable>
-          ) : null}
-        </View>
+          </View>
+        ) : null}
 
         {/* Detail terkecil (SL/TP/Margin/Entry) — baris pelengkap */}
         <View style={{ marginTop: 4, gap: 1 }}>

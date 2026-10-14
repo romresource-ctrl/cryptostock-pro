@@ -27,6 +27,8 @@ AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs
 
 **Fix kartu pending Recent Trades**: trade LIMIT/pending kini tampil badge kuning "LIMIT WAITING" (bukan PnL +$0.00/+0.00%) — identik dengan Running Positions, menghilangkan kesan "sudah masuk posisi".
 
+**Fix posisi tombol CANCEL/CLOSE**: tombol aksi dipindah ke baris sendiri yang SELALU rata kanan (`justifyContent: flex-end`) di kedua layar — sebelumnya tergabung di baris badge dengan flexWrap sehingga kadang jatuh ke kiri saat badge penuh.
+
 **PERINGATAN TESTING**: Jangan storm-test `/api/dashboard?full=true` berulang — Binance `data-api.binance.vision` IP-ban pod (HTTP 418) setelah ratusan fetch. Ban ~7 menit. Dashboard recover otomatis via cache + fallback Bitget/CoinGecko.
 
 ---
