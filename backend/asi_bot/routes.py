@@ -73,10 +73,13 @@ _PX_TTL = 0.25
 
 
 @router.get("/prices")
-async def get_prices(symbols: str = Query(..., min_length=2, max_length=200)):
+async def get_prices(symbols: str = Query(..., min_length=2, max_length=2000)):
     """v9.9.13 — Batch harga live Binance Futures (public, via proxy SG).
     Dipakai Recent Trades untuk mark price realtime posisi open.
-    Maks 10 simbol per call; cache 1 detik per simbol."""
+    v10.2.5 — Batas dinaikkan 10 → 50 simbol per call: user dengan 17+
+    pending limit kehilangan tick untuk simbol ke-11 dst (kasus
+    COMP/USDT diam). Batch futures mengembalikan semua simbol sekaligus
+    sehingga 50 simbol tetap 1 request upstream."""
     import time as _time
 
     import httpx as _hx
@@ -85,7 +88,7 @@ async def get_prices(symbols: str = Query(..., min_length=2, max_length=200)):
         s = s.strip().upper().replace("/", "").replace("USDT", "")
         if s:
             syms.append(s + "USDT")
-    syms = syms[:10]
+    syms = syms[:50]
     now = _time.time()
     out: dict[str, float] = {}
     missing: list[str] = []
