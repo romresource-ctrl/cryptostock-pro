@@ -7,6 +7,11 @@ AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs
 
 ---
 
+## TP Ladder Dirapatkan (backend-only)
+- Scalper tetap 0.8/1.2/1.6R; **Intraday 1.2/1.5/1.8R** (dari 1.2/2.0/2.5R); **Swing 1.2/1.6/2.0R** (dari 1.5/3.0/4.0R); **Confluence 1.2/1.6/2.2R** (dari 1.5/3.0/4.5R). Alasan user: TP lama terlalu jauh tidak pernah tercapai. SL tidak berubah (1.0/1.2/1.5/2.0×ATR). Counter-trend scalp override (0.6/0.8/1.0R) tidak berubah. Versi resmi tetap 10.2.1 — cukup Publish, tidak perlu build.
+
+---
+
 ## v10.2.2 — History 100 Posisi
 - Backend `/api/asi/trades` default limit 50→100; kedua layar (Recent Trades & Running Positions) fetch 100.
 
