@@ -125,8 +125,11 @@ export default function ASIBotScreen() {
   const prevPxRef = useRef<Record<string, number>>({});
   const flashTimerRef = useRef<any>(null);
   const [flashDir, setFlashDir] = useState<Record<string, "up" | "down">>({});
+  // v10.1.8 — Sertakan pending_entry: kartu LIMIT juga harus ticking
+  // (keluhan user "kartu diam") agar harga live terlihat bergerak
+  // terhadap harga limit yang dipasang.
   const openSymsKey = trades
-    .filter((t2) => String(t2.status || "").toLowerCase() === "open")
+    .filter((t2) => ["open", "pending_entry"].includes(String(t2.status || "").toLowerCase()))
     .map((t2) => t2.symbol)
     .filter((v, i, a) => a.indexOf(v) === i)
     .join(",");
@@ -969,10 +972,14 @@ export default function ASIBotScreen() {
                   </View>
                   {/* Tengah: Mark price (lebar tetap 110, tabular-nums → anti-jiggle) */}
                   <View style={{ width: 110, alignItems: "center" }}>
-                    {isOpen ? (() => {
-                      const lp = livePx[symBase] ?? (tr as any).mark_price ?? null;
+                    {/* v10.1.8 — Harga live ticking untuk OPEN *dan*
+                        PENDING (limit): user ingin melihat mark price
+                        bergerak terhadap harga limit-nya. Fallback ke
+                        Entry bila harga live belum masuk. */}
+                    {(() => {
+                      const lp = livePx[symBase] ?? (isOpen ? (tr as any).mark_price : null) ?? null;
                       if (!lp) return (
-                        <Text style={{ color: colors.textMuted, fontSize: 11 }}>
+                        <Text style={{ color: colors.textMuted, fontSize: 11, fontVariant: ["tabular-nums"] }}>
                           Entry {formatPrice(tr.entry_price, "crypto")}
                         </Text>
                       );
@@ -997,11 +1004,7 @@ export default function ASIBotScreen() {
                           </Text>
                         </View>
                       );
-                    })() : (
-                      <Text style={{ color: colors.textMuted, fontSize: 11, fontVariant: ["tabular-nums"] }}>
-                        Entry {formatPrice(tr.entry_price, "crypto")}
-                      </Text>
-                    )}
+                    })()}
                   </View>
                   {/* Kanan: PnL $ + % (lebar tetap 100 → anti-jiggle).
                       v10.1.8 — PENDING (LIMIT) harus tampil "LIMIT WAITING"

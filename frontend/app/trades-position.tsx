@@ -90,10 +90,12 @@ export default function TradesPositionScreen() {
     return () => clearInterval(pollRef.current);
   }, [deviceId, load]);
 
-  // Mark price polling for OPEN positions.
+  // Mark price polling untuk posisi OPEN *dan* LIMIT pending — kartu
+  // pending juga harus ticking supaya user bisa memantau harga live
+  // terhadap harga limit-nya (v10.1.8, keluhan "kartu diam").
   const openSyms = useMemo(() =>
     Array.from(new Set(
-      trades.filter((t2) => t2.status === "open" && t2.symbol).map((t2) => t2.symbol as string)
+      trades.filter((t2) => (t2.status === "open" || t2.status === "pending_entry") && t2.symbol).map((t2) => t2.symbol as string)
     )), [trades]);
 
   const openSymsKey = openSyms.join(",");

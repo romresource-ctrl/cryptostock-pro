@@ -29,6 +29,8 @@ AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs
 
 **Fix posisi tombol CANCEL/CLOSE**: tombol aksi dipindah ke baris sendiri yang SELALU rata kanan (`justifyContent: flex-end`) di kedua layar — sebelumnya tergabung di baris badge dengan flexWrap sehingga kadang jatuh ke kiri saat badge penuh.
 
+**Fix kartu tidak ticking**: (1) TTL cache `/api/asi/prices` diturunkan 1.0s → 0.25s (cache global per-simbol, beban upstream tetap maks 4 fetch/s/simbol berapapun subscriber); (2) polling harga kini mencakup status `pending_entry` — kartu LIMIT juga ticking terhadap harga limit-nya. Terukur: 7/10 poll @300ms harga berubah.
+
 **PERINGATAN TESTING**: Jangan storm-test `/api/dashboard?full=true` berulang — Binance `data-api.binance.vision` IP-ban pod (HTTP 418) setelah ratusan fetch. Ban ~7 menit. Dashboard recover otomatis via cache + fallback Bitget/CoinGecko.
 
 ---

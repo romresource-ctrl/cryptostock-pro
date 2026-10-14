@@ -63,9 +63,13 @@ router = APIRouter(prefix="/asi", tags=["asi-bot"])
 # (price, balance, egress-ip) bisa mengakses Mongo.
 _DB: Any = None
 
-# v9.9.13 — Cache harga 1 detik per simbol untuk endpoint batch /prices
-# (dipoll tiap 2 detik oleh UI Recent Trades untuk mark price realtime).
+# v9.9.13 — Cache harga per simbol untuk endpoint batch /prices.
+# v10.1.8 — TTL diturunkan 1.0s → 0.25s: frontend kini polling 300ms
+# dan user menuntut tick yang benar-benar hidup. Cache bersifat GLOBAL
+# per simbol (dibagi semua user), jadi beban upstream tetap terkontrol:
+# maksimal 4 fetch/detik/simbol berapapun jumlah subscriber.
 _PX_CACHE: dict[str, tuple[float, float]] = {}
+_PX_TTL = 0.25
 
 
 @router.get("/prices")
@@ -87,7 +91,7 @@ async def get_prices(symbols: str = Query(..., min_length=2, max_length=200)):
     missing: list[str] = []
     for s in syms:
         hit = _PX_CACHE.get(s)
-        if hit and now - hit[0] < 1.0:
+        if hit and now - hit[0] < _PX_TTL:
             out[s] = hit[1]
         else:
             missing.append(s)
