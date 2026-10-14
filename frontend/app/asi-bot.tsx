@@ -154,7 +154,9 @@ export default function ASIBotScreen() {
       } catch { /* pertahankan harga terakhir */ }
     };
     tick();
-    const id = setInterval(tick, 2000);
+    // v10.1.7 — Polling kembali ke 300ms seperti sebelumnya agar harga
+    // mark price "berkedip hidup" dan match dengan candlestick realtime.
+    const id = setInterval(tick, 300);
     return () => { alive = false; clearInterval(id); };
   }, [openSymsKey]);
 
@@ -182,9 +184,20 @@ export default function ASIBotScreen() {
       const p = await api.asi.pnl(id); setPnl(p);
       const t2 = await api.asi.listTrades(id, 50); setTrades(t2.items.slice(0, 50));
       // v9.9.9 — saldo available kedua jaringan, di-refresh bersama PnL.
+      // v10.1.7 — Hanya patch nilai bila non-null supaya kolom DEMO/REAL
+      // tidak hilang-timbul saat API balance sesaat gagal.
       try {
         const b = await api.asi.balance(id, bot.exchange);
-        setBalance({ demo: b.demo, real: b.real });
+        setBalance((prev) => ({
+          demo: {
+            connected: b.demo?.connected ?? prev.demo.connected,
+            available_usdt: b.demo?.available_usdt != null ? b.demo.available_usdt : prev.demo.available_usdt,
+          },
+          real: {
+            connected: b.real?.connected ?? prev.real.connected,
+            available_usdt: b.real?.available_usdt != null ? b.real.available_usdt : prev.real.available_usdt,
+          },
+        }));
       } catch { /* saldo opsional — jangan ganggu refresh utama */ }
     } catch {}
     finally { setCredsLoaded(true); }
@@ -894,10 +907,126 @@ export default function ASIBotScreen() {
               const rowBody = (
                 <CardTouchable activeOpacity={0.8} onPress={openDetail}
                   style={[s.leaderRow, { backgroundColor: colors.surface, borderColor }]}>
-                {/* v10.0.1 — Baris paling atas: badge DEMO/REAL (REAL
-                    kuning) + tanggal/jam eksekusi — dipindah dari baris
-                    badge agar baris utama tidak sempit. */}
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                {/* v10.1.7 — Layout 3-BARIS (anti-jiggle):
+                    Baris 1 : Tanggal/Jam · (closed reason jika sudah closed)
+                    Baris 2 : Symbol/USDT (kiri) | Mark Price (tengah) | PnL $ + % (kanan)
+                    Baris 3 : SEMUA badge (D/R, SEMI/FULL, L/M, LONG/SHORT,
+                              leverage, margin mode, layer, status, formula). */}
+
+                {/* ───── BARIS 1 : Tanggal & Jam ───── */}
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Text style={{ fontSize: 9.5, fontWeight: "700", color: colors.textMuted }}>
+                    {(() => {
+                      const iso = String((tr as any).filled_at || (tr as any).created_at || (tr as any).updated_at || "");
+                      if (!iso) return "";
+                      const d = new Date(iso);
+                      if (isNaN(d.getTime())) return "";
+                      const pad = (n: number) => String(n).padStart(2, "0");
+                      return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} · ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                    })()}
+                  </Text>
+                  {!isOpen && !isPending ? (() => {
+                    const rc = String((tr as any).close_reason || "");
+                    let txt: string;
+                    if (/^TP\d?$/.test(rc)) txt = `Closed on ${rc}`;
+                    else if (rc === "SL") txt = "Closed on SL";
+                    else if (rc === "cancelled_pending") txt = "Canceled by user";
+                    else if (rc === "entry_expired") txt = "Canceled: expired";
+                    else if (rc === "manual_cleanup") txt = "Closed on cleanup";
+                    else if (rc === "merged_into_layer") txt = "Merged into layer";
+                    else if (rc === "bracket_failed_after_fill") txt = "Closed: bracket fail";
+                    else if (rc === "MANUAL") txt = "Closed Manually";
+                    else if (rc === "TRAILING") txt = "Closed on Trailing Stop";
+                    else if (rc === "BREAK_EVEN") txt = "Closed on Break-Even";
+                    else if (rc === "position_closed_externally") txt = "Closed on exchange";
+                    else txt = rc ? `Closed on ${rc}` : "Closed";
+                    return (
+                      <>
+                        <Text style={{ color: colors.textMuted, fontSize: 9.5 }}>·</Text>
+                        <Text numberOfLines={1} style={{ fontSize: 9.5, fontWeight: "800", color: colors.textPrimary, flexShrink: 1 }}>
+                          {txt}
+                        </Text>
+                      </>
+                    );
+                  })() : null}
+                </View>
+
+                {/* ───── BARIS 2 : Symbol | Mark Price | PnL ───── */}
+                <View style={{
+                  marginTop: 4, flexDirection: "row", alignItems: "center",
+                  justifyContent: "space-between", gap: 8,
+                }}>
+                  {/* Kiri: Symbol/USDT */}
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text numberOfLines={1}
+                      style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 15 }}>
+                      {tr.symbol}/USDT
+                    </Text>
+                  </View>
+                  {/* Tengah: Mark price (lebar tetap 110, tabular-nums → anti-jiggle) */}
+                  <View style={{ width: 110, alignItems: "center" }}>
+                    {isOpen ? (() => {
+                      const lp = livePx[symBase] ?? (tr as any).mark_price ?? null;
+                      if (!lp) return (
+                        <Text style={{ color: colors.textMuted, fontSize: 11 }}>
+                          Entry {formatPrice(tr.entry_price, "crypto")}
+                        </Text>
+                      );
+                      const fd = flashDir[symBase];
+                      const bg = fd === "up" ? GREEN + "33" : fd === "down" ? RED + "33" : "transparent";
+                      return (
+                        <View style={{
+                          paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5,
+                          backgroundColor: bg, flexDirection: "row", alignItems: "center",
+                        }}>
+                          <Text style={{
+                            color: "#FFFFFF", fontWeight: "900", fontSize: 14,
+                            fontVariant: ["tabular-nums"], letterSpacing: 0.3,
+                          }}>
+                            ${formatPrice(lp, "crypto")}
+                          </Text>
+                          <Text style={{
+                            width: 13, textAlign: "center", fontSize: 11, fontWeight: "900",
+                            color: fd === "up" ? GREEN : RED,
+                          }}>
+                            {fd ? (fd === "up" ? "▲" : "▼") : ""}
+                          </Text>
+                        </View>
+                      );
+                    })() : (
+                      <Text style={{ color: colors.textMuted, fontSize: 11, fontVariant: ["tabular-nums"] }}>
+                        Entry {formatPrice(tr.entry_price, "crypto")}
+                      </Text>
+                    )}
+                  </View>
+                  {/* Kanan: PnL $ + % (lebar tetap 100 → anti-jiggle) */}
+                  <View style={{ width: 100, alignItems: "flex-end" }}>
+                    <View style={{
+                      paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4,
+                      backgroundColor: isOpen && flashDir[symBase] === "up" ? GREEN + "33"
+                        : isOpen && flashDir[symBase] === "down" ? RED + "33" : "transparent",
+                    }}>
+                      <Text style={{
+                        color: pos ? GREEN : RED, fontWeight: "900", fontSize: 16,
+                        fontVariant: ["tabular-nums"],
+                      }}>
+                        {pos ? "+" : ""}${dispPnl.toFixed(2)}
+                      </Text>
+                    </View>
+                    {/* v10.1.7 — % PnL SELALU ditampilkan baik OPEN maupun CLOSED */}
+                    <Text style={{
+                      color: pos ? GREEN : RED, fontSize: 10, fontWeight: "700",
+                      fontVariant: ["tabular-nums"],
+                    }}>
+                      {pos ? "+" : ""}{pct.toFixed(2)}%
+                      {isOpen && flashDir[symBase] ? (flashDir[symBase] === "up" ? " ▲" : " ▼") : ""}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* ───── BARIS 3 : SEMUA BADGE ───── */}
+                <View style={{ marginTop: 6, flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  {/* D/R Demo/Real — oranye utk REAL */}
                   <View style={{
                     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
                     backgroundColor: tr.testnet ? "#60A5FA" : "#F97316",
@@ -906,43 +1035,7 @@ export default function ASIBotScreen() {
                       {tr.testnet ? "D" : "R"}
                     </Text>
                   </View>
-                  <Text style={{ fontSize: 9, fontWeight: "700", color: colors.textMuted }}>
-                    {(() => {
-                      const iso = String((tr as any).created_at || (tr as any).updated_at || "");
-                      if (!iso) return "";
-                      const d = new Date(iso);
-                      if (isNaN(d.getTime())) return "";
-                      const pad = (n: number) => String(n).padStart(2, "0");
-                      return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} · ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-                    })()}
-                  </Text>
-                  {/* v10.0.3 — Penyebab closed/cancel (PUTIH) di sebelah
-                      kanan tanggal-jam: "Closed on SL/TP1/TP2/TP3",
-                      "Canceled upon ...", dst. */}
-                  {!isOpen && !isPending ? (() => {
-                    const rc = String((tr as any).close_reason || "");
-                    let txt: string;
-                    if (/^TP\d?$/.test(rc)) txt = `Closed on ${rc}`;
-                    else if (rc === "SL") txt = "Closed on SL";
-                    else if (rc === "cancelled_pending") txt = "Canceled upon user cancel";
-                    else if (rc === "entry_expired") txt = "Canceled upon expiry (2 candles)";
-                    else if (rc === "manual_cleanup") txt = "Closed on cleanup";
-                    else if (rc === "merged_into_layer") txt = "Merged into layer";
-                    else if (rc === "bracket_failed_after_fill") txt = "Closed upon bracket failure";
-                    else if (rc === "MANUAL") txt = "Closed Manually";
-                    else if (rc === "TRAILING") txt = "Closed on Trailing Stop";
-                    else if (rc === "BREAK_EVEN") txt = "Closed on Break-Even";
-                    else if (rc === "position_closed_externally") txt = "Closed on exchange";
-                    else txt = rc ? `Closed on ${rc}` : "Closed";
-                    return (
-                      <Text numberOfLines={1} style={{ fontSize: 9, fontWeight: "800", color: colors.textPrimary, flexShrink: 1 }}>
-                        {txt}
-                      </Text>
-                    );
-                  })() : null}
-                </View>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                  {/* v10.0.1 — MODE badge: Semi=🦾 (hijau), Full=🤖 (biru muda) */}
+                  {/* Mode SEMI/FULL (emoji) */}
                   <View style={{
                     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
                     backgroundColor: modeBadge === "full" ? LIGHT_BLUE : GOLD,
@@ -951,10 +1044,7 @@ export default function ASIBotScreen() {
                       {modeBadge === "full" ? "🤖" : "🦾"}
                     </Text>
                   </View>
-                  {/* v10.0.1 — Chip cara masuk: L (kuning) / M (ungu),
-                      disingkat agar tidak bentrok dengan badge LIMIT
-                      status. Tetap disembunyikan saat pending (status
-                      sudah menyampaikan LIMIT). */}
+                  {/* L / M entry */}
                   {(tr as any).entry_mode && !isPending ? (
                     <View style={{
                       paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
@@ -965,18 +1055,38 @@ export default function ASIBotScreen() {
                       </Text>
                     </View>
                   ) : null}
-                  {/* v9.9.4 — Badge layering (berapa kali averaging). */}
+                  {/* LONG / SHORT */}
+                  <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
+                                 backgroundColor: tr.side === "BUY" ? GREEN : RED }}>
+                    <Text style={{ color: "#fff", fontWeight: "900", fontSize: 10 }}>
+                      {tr.side === "BUY" ? "LONG" : "SHORT"}
+                    </Text>
+                  </View>
+                  {/* Leverage */}
+                  {tr.leverage ? (
+                    <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
+                                   backgroundColor: "#1F2937" }}>
+                      <Text style={{ color: GREEN, fontWeight: "900", fontSize: 10 }}>
+                        {`${(tr as any).actual_leverage ?? tr.leverage}x`}
+                      </Text>
+                    </View>
+                  ) : null}
+                  {/* Margin mode */}
+                  <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
+                                 backgroundColor: ((tr.actual_margin_mode || tr.margin_mode) === "cross") ? PURPLE : TEAL }}>
+                    <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 9 }}>
+                      {String(tr.actual_margin_mode || tr.margin_mode || "ISOLATED").toUpperCase()}
+                    </Text>
+                  </View>
+                  {/* Layer */}
                   {(tr as any).layer_count && (tr as any).layer_count > 1 ? (
-                    <View style={{
-                      paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4,
-                      backgroundColor: GOLD,
-                    }}>
+                    <View style={{ paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4, backgroundColor: GOLD }}>
                       <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 8.5 }}>
                         {t("ats_layer_badge").replace("{n}", String((tr as any).layer_count))}
                       </Text>
                     </View>
                   ) : null}
-                  {/* OPEN / CLOSED / LIMIT badge */}
+                  {/* Status chip */}
                   <View style={{
                     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
                     backgroundColor: isOpen ? GREEN : isPending ? YELLOW : colors.border,
@@ -985,275 +1095,72 @@ export default function ASIBotScreen() {
                       {isOpen ? t("asi_status_active") : isPending ? t("asi_status_pending") : "CLOSED"}
                     </Text>
                   </View>
-                  <Text style={{ color: tr.side === "BUY" ? GREEN : RED, fontWeight: "900", width: 44, fontSize: 12 }}>
-                    {/* v9.8.6 — Futures convention: tampilkan LONG/SHORT,
-                        bukan BUY/SELL (permintaan user). */}
-                    {tr.side === "BUY" ? "LONG" : "SHORT"}
-                  </Text>
-                  {/* v10.1.5 — Ikon ⚠️ per-kartu juga disembunyikan
-                      sesuai permintaan user. Backend tetap melakukan
-                      reconcile/soft watcher di belakang layar. */}
-                  {false ? (
-                    <CardTouchable
-                      onPress={async () => {
-                        // v10.1.1 — Menekan ⚠️ kini MEMICU verifikasi/
-                        // repair bracket (bukan hanya menampilkan info).
-                        // Bila exchange mengonfirmasi SL/TP ada, banner
-                        // hilang otomatis setelah refresh; bila gagal
-                        // nyata, tampilkan alasannya.
-                        try {
-                          const res = await api.asi.repairBrackets(
-                            deviceId, tr.exchange || bot.exchange);
-                          const failed = (res.results || []).filter((r) => !r.ok);
-                          await refresh();
-                          if (failed.length > 0) {
-                            Alert.alert(
-                              t("asi_repair_title"),
-                              failed.map((f) => `${f.symbol}: ${(f.errors || []).join(" | ")}`).join("\n"),
-                            );
-                          }
-                        } catch (e: any) {
-                          Alert.alert(
-                            t("asi_soft_warn_title"),
-                            String(e?.message || tr.soft_bracket_reason || t("asi_soft_warn_body")),
-                          );
-                        }
-                      }}
-                      testID={`asi-soft-${tr.symbol}`}
-                    >
-                      <Text style={{ fontSize: 13 }}>⚠️</Text>
-                    </CardTouchable>
-                  ) : null}
-                  <Text numberOfLines={1} style={{ color: colors.textPrimary, fontWeight: "700", flexShrink: 1 }}>{tr.symbol}</Text>
-                  {/* v10.0.13 — Mark price PERP realtime (poll 2s), BESAR,
-                      putih terang, dengan efek flash hijau/merah seperti
-                      candlestick saat tick naik/turun.
-                      v10.1.5 — minWidth TETAP agar lebar box mark price
-                      tidak berdenyut saat jumlah digit berubah; posisi
-                      ikut didorong ke kanan oleh spacer flex:1 sehingga
-                      selalu sejajar (fix "1INCH mark price kadang kanan
-                      kadang kiri"). */}
-                  {isOpen ? (() => {
-                    const lp = livePx[symBase] ?? (tr as any).mark_price ?? null;
-                    if (!lp || !tr.entry_price) return null;
-                    const fd = flashDir[symBase];
-                    const bg = fd === "up" ? GREEN + "33" : fd === "down" ? RED + "33" : "transparent";
-                    return (
-                      <View style={{
-                        paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4,
-                        backgroundColor: bg, minWidth: 92, alignItems: "center",
-                      }}>
-                        <Text numberOfLines={1} style={{
-                          color: "#FFFFFF", fontWeight: "900", fontSize: 14,
-                          fontVariant: ["tabular-nums"], letterSpacing: 0.3,
-                        }}>
-                          {formatPrice(lp, "crypto")}{fd ? (fd === "up" ? " ▲" : " ▼") : ""}
-                        </Text>
-                      </View>
-                    );
-                  })() : null}
-                  <View style={{ flex: 1 }} />
-                  <View style={{ alignItems: "flex-end", flexShrink: 0, width: 88 }}>
-                    {/* v10.1.5 — width TETAP (bukan auto) supaya panel PnL
-                        tidak membesar/mengecil mengikuti jumlah digit. */}
-                    {/* v10.0.13 — PnL juga flash background sesuai arah tick */}
-                    <View style={{
-                      paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4,
-                      backgroundColor: isOpen && flashDir[symBase] === "up" ? GREEN + "33"
-                        : isOpen && flashDir[symBase] === "down" ? RED + "33" : "transparent",
-                    }}>
-                      <Text style={{ color: pos ? GREEN : RED, fontWeight: "900", fontSize: 15, fontVariant: ["tabular-nums"] }}>
-                        {pos ? "+" : ""}${dispPnl.toFixed(2)}
-                      </Text>
-                    </View>
-                    <Text style={{ color: pos ? GREEN : RED, fontSize: 10, fontWeight: "700" }}>
-                      {pos ? "+" : ""}{pct.toFixed(1)}%
+                  {/* Formula tag */}
+                  <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, backgroundColor: "#1F2937" }}>
+                    <Text numberOfLines={1} style={{ color: colors.textMuted, fontSize: 9, fontWeight: "800" }}>
+                      ⚙️ {formulaLines(t, (tr as any).profile, (tr as any).formula_tag)[0]}
                     </Text>
                   </View>
+                  {/* Spacer + action button */}
+                  <View style={{ flex: 1 }} />
+                  {(isOpen || isPending) ? (
+                    <CardTouchable
+                      onPress={() => closeOneTrade(tr)}
+                      disabled={isClosing}
+                      style={{
+                        paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6,
+                        backgroundColor: isClosing ? colors.border : isPending ? GOLD : RED,
+                        minWidth: 60, alignItems: "center",
+                      }}
+                      testID={`asi-close-${tr.symbol}`}
+                    >
+                      <Text style={{ color: isPending ? "#0B0E11" : "#fff", fontWeight: "900", fontSize: 10, letterSpacing: 0.4 }}>
+                        {isClosing
+                          ? (isPending ? t("asi_cancelling") : t("asi_recent_closing"))
+                          : (isPending ? t("asi_btn_cancel") : t("asi_recent_close"))}
+                      </Text>
+                    </CardTouchable>
+                  ) : null}
                 </View>
-                {/* v9.9.2 — Baris verifikasi proteksi untuk posisi OPEN.
-                    Tampilkan SL, TP, margin mode AKTUAL + status native.
-                    "Native OK" hanya hijau bila bracket_type=hard DAN
-                    (bracket_live tidak false). */}
-                {/* v9.9.7 — Row 2: [DEMO/REAL chip] SL · TP · MARGIN · LEVx.
-                    Susunan IDENTIK untuk demo & real: slot chip selalu ada
-                    (DEMO biru utk testnet, REAL hijau utk mainnet) sehingga
-                    semua baris sejajar rapi ke bawah. Leverage diperjelas
-                    hijau tebal (permintaan user). */}
-                {/* v9.9.13 — Baris detail + tombol CLOSE juga tampil untuk
-                    LIMIT PENDING (CLOSE = batalkan order limit). */}
-                {isOpen || isPending ? (
-                  <View style={{ marginTop: 6, gap: 2 }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                      <Text style={{ color: colors.textMuted, fontSize: 10, lineHeight: 15, flex: 1 }} numberOfLines={2}>
-                        {/* v9.9.9 — Margin USDT wajib tampil di tiap posisi */}
-                        <Text style={{ color: YELLOW, fontWeight: "900" }}>
-                          {`Margin $${(tr.margin_usdt ?? ((tr.entry_price && tr.qty && tr.leverage) ? tr.entry_price * tr.qty / tr.leverage : 0)).toFixed(2)}`}
+
+                {/* Detail numerik (Entry / SL / TP / Margin) — baris pelengkap kecil */}
+                <View style={{ marginTop: 4, gap: 1 }}>
+                  <Text style={{ fontSize: 10, lineHeight: 15 }}>
+                    <Text style={{ color: colors.textMuted, fontWeight: "700" }}>
+                      Entry {formatPrice(tr.entry_price, "crypto")}
+                    </Text>
+                    {"  ·  "}
+                    <Text style={{ color: RED, fontWeight: "800" }}>SL {formatPrice(tr.stop_loss, "crypto")}</Text>
+                    {"  ·  "}
+                    <Text style={{ color: GREEN, fontWeight: "800" }}>
+                      TP {(tr.take_profits || []).map((x) => formatPrice(x, "crypto")).join(" / ") || "—"}
+                    </Text>
+                    {"  ·  "}
+                    <Text style={{ color: YELLOW, fontWeight: "800" }}>
+                      Margin ${(tr.margin_usdt ?? ((tr.entry_price && tr.qty && tr.leverage) ? tr.entry_price * tr.qty / tr.leverage : 0)).toFixed(2)}
+                    </Text>
+                  </Text>
+                  {/* TP fills history */}
+                  {(() => {
+                    const tpOnly = (Array.isArray((tr as any).tp_fills) ? (tr as any).tp_fills : [])
+                      .filter((f: any) => String(f?.level || "").startsWith("TP"));
+                    if (!tpOnly.length) return null;
+                    return (
+                    <View style={{ gap: 1 }}>
+                      {tpOnly.map((f: any, i: number) => (
+                        <Text key={i} style={{ fontSize: 10.5, fontWeight: "800", color: "#FFFFFF" }}>
+                          ✓ {String(f.level)} HIT · ${f.price != null ? formatPrice(Number(f.price), "crypto") : "—"}
+                          {f.pnl != null ? (
+                            <Text style={{ color: Number(f.pnl) >= 0 ? GREEN : RED, fontWeight: "900" }}>
+                              {"  "}{Number(f.pnl) >= 0 ? "+" : "-"}${Math.abs(Number(f.pnl)).toFixed(2)}
+                            </Text>
+                          ) : null}
                         </Text>
-                        {"  ·  "}
-                        {/* v9.9.13 — Entry Price di antara Margin dan SL
-                            (permintaan user, menyusul baris closed). */}
-                        <Text style={{ color: colors.textPrimary, fontWeight: "800" }}>
-                          Entry {formatPrice(tr.entry_price, "crypto")}
-                        </Text>
-                        {"  ·  "}
-                        <Text style={{ color: RED, fontWeight: "800" }}>SL {formatPrice(tr.stop_loss, "crypto")}</Text>
-                        {"  ·  "}
-                        <Text style={{ color: GREEN, fontWeight: "800" }}>
-                          TP {(tr.take_profits || []).map((x) => formatPrice(x, "crypto")).join(" / ") || "—"}
-                        </Text>
-                        {"  ·  "}
-                        <Text style={{
-                          color: ((tr.actual_margin_mode || tr.margin_mode) === "cross") ? PURPLE : TEAL,
-                          fontWeight: "800",
-                        }}>
-                          {String(tr.actual_margin_mode || tr.margin_mode || "isolated").toUpperCase()}
-                        </Text>
-                        {"  ·  "}
-                        <Text style={{ color: GREEN, fontWeight: "900", fontSize: 11 }}>
-                          {`${(tr as any).actual_leverage ?? tr.leverage ?? "?"}x`}
-                        </Text>
-                      </Text>
-                      {/* v9.9.8 — CLOSE dipindah ke baris 2, persis di bawah
-                          angka PnL (kanan), dijamin di dalam frame. */}
-                      {/* v9.9.13 — LIMIT pending: tombol = CANCEL (emas)
-                          membatalkan order antri; setelah posisi OPEN
-                          berubah menjadi CLOSE (merah) menutup posisi. */}
-                      <CardTouchable
-                        onPress={() => closeOneTrade(tr)}
-                        disabled={isClosing}
-                        style={{
-                          paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8,
-                          backgroundColor: isClosing ? colors.border : isPending ? GOLD : RED,
-                          minWidth: 60, alignItems: "center", flexShrink: 0,
-                          alignSelf: "center",
-                        }}
-                        testID={`asi-close-${tr.symbol}`}
-                      >
-                        <Text style={{ color: isPending ? "#0B0E11" : "#fff", fontWeight: "900", fontSize: 10, letterSpacing: 0.4 }}>
-                          {isClosing
-                            ? (isPending ? t("asi_cancelling") : t("asi_recent_closing"))
-                            : (isPending ? t("asi_btn_cancel") : t("asi_recent_close"))}
-                        </Text>
-                      </CardTouchable>
+                      ))}
                     </View>
-                    {/* v9.9.13 — Baris ketiga SATU BARIS: status proteksi
-                        (kiri) + formula singkat (kanan, tidak keluar
-                        bingkai kartu). */}
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                      {/* v10.1.5 — Label status proteksi "⚠ SL/TP on soft
-                          watcher — tap REPAIR banner" disembunyikan
-                          sesuai permintaan user. Hanya tampilkan baris
-                          hijau "✓ SL/TP on {Exchange}" saat bracket
-                          benar-benar hard-verified; selain itu kosongkan
-                          agar kartu tidak membingungkan. */}
-                      <Text numberOfLines={1} style={{
-                        fontSize: 10, fontWeight: "800", flexShrink: 0,
-                        color: isPending ? GOLD : GREEN,
-                      }}>
-                        {isPending
-                          ? t("asi_pending_line")
-                          : (tr.bracket_type === "hard" && tr.bracket_live !== false)
-                            ? `✓ SL/TP on ${{ binance: "Binance", bybit: "Bybit", okx: "OKX", bitget: "Bitget" }[String(tr.exchange || "").toLowerCase()] || "Exchange"}`
-                            : ""}
-                      </Text>
-                      <View style={{ flex: 1 }} />
-                      {/* v10.1.2 — Formula SELALU tampil (keputusan user):
-                          formulaLines sudah fallback tag→profil→Confluence,
-                          sehingga kartu lama tanpa tag (mis. BNB) tidak
-                          lagi tampil tanpa formula. */}
-                      <Text numberOfLines={1} style={{ fontSize: 9, fontWeight: "700", color: colors.textMuted, flexShrink: 1, textAlign: "right" }}>
-                        {`⚙️ ${t("asi_formula_label")}: ${formulaLines(t, (tr as any).profile, (tr as any).formula_tag)[0]}`}
-                      </Text>
-                    </View>
-                    {/* v10.0.13 — TP partial hits: tiap level yang sudah
-                        terisi (TP1/TP2) tampil putih dengan harga + PnL
-                        leg-nya. TP3 akan memfinalkan trade dan masuk
-                        ke total PnL atas kartu.
-                        v10.1.1 — HANYA level TP yang ditampilkan (keputusan
-                        user): catatan parsial berlabel SL disembunyikan
-                        supaya posisi OPEN yang profit tidak tampak kena SL. */}
-                    {(() => {
-                      const tpOnly = (Array.isArray((tr as any).tp_fills) ? (tr as any).tp_fills : [])
-                        .filter((f: any) => String(f?.level || "").startsWith("TP"));
-                      if (!tpOnly.length) return null;
-                      return (
-                      <View style={{ gap: 1 }}>
-                        {tpOnly.map((f: any, i: number) => (
-                          <Text key={i} style={{ fontSize: 10.5, fontWeight: "800", color: "#FFFFFF" }}>
-                            ✓ {String(f.level)} HIT · ${f.price != null ? formatPrice(Number(f.price), "crypto") : "—"}
-                            {f.pnl != null ? (
-                              <Text style={{ color: Number(f.pnl) >= 0 ? GREEN : RED, fontWeight: "900" }}>
-                                {"  "}{Number(f.pnl) >= 0 ? "+" : "-"}${Math.abs(Number(f.pnl)).toFixed(2)}
-                              </Text>
-                            ) : null}
-                          </Text>
-                        ))}
-                      </View>
-                      );
-                    })()}
-                  </View>
-                ) : (
-                  /* v10.0.1 — Trade CLOSED: badge DEMO/REAL sudah dipindah
-                     ke row atas; baris ini cukup detail numerik. */
-                  <View style={{ marginTop: 6, gap: 2 }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                      <Text style={{ color: colors.textMuted, fontSize: 10, lineHeight: 15, flex: 1 }} numberOfLines={2}>
-                        <Text style={{ color: YELLOW, fontWeight: "900" }}>
-                          {`Margin $${(tr.margin_usdt ?? ((tr.entry_price && tr.qty && tr.leverage) ? tr.entry_price * tr.qty / tr.leverage : 0)).toFixed(2)}`}
-                        </Text>
-                        {"  ·  "}
-                        <Text style={{ color: colors.textPrimary, fontWeight: "800" }}>
-                          Entry {formatPrice(tr.entry_price, "crypto")}
-                        </Text>
-                        {"  ·  "}
-                        <Text style={{ color: RED, fontWeight: "800" }}>SL {formatPrice(tr.stop_loss, "crypto")}</Text>
-                        {"  ·  "}
-                        <Text style={{ color: GREEN, fontWeight: "800" }}>
-                          TP {(tr.take_profits || []).map((x) => formatPrice(x, "crypto")).join(" / ") || "—"}
-                        </Text>
-                        {"  ·  "}
-                        <Text style={{
-                          color: ((tr.actual_margin_mode || tr.margin_mode) === "cross") ? PURPLE : TEAL,
-                          fontWeight: "800",
-                        }}>
-                          {String(tr.actual_margin_mode || tr.margin_mode || "isolated").toUpperCase()}
-                        </Text>
-                        {"  ·  "}
-                        <Text style={{ color: GREEN, fontWeight: "900", fontSize: 11 }}>
-                          {`${(tr as any).actual_leverage ?? tr.leverage ?? "?"}x`}
-                        </Text>
-                      </Text>
-                    </View>
-                    {/* v10.0.1 — "Closed on {Exchange}" + Formula sejajar
-                        satu baris di bawah detail (bukan dua baris lagi). */}
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                      <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: "800", flexShrink: 0 }}>
-                        <Text style={{ color: pos ? GREEN : RED }}>
-                          {t("asi_closed_on")} {({ binance: "Binance", bybit: "Bybit", okx: "OKX", bitget: "Bitget" } as Record<string, string>)[tr.exchange || "binance"] || tr.exchange}
-                        </Text>
-                        <Text style={{ color: colors.textMuted }}>
-                          {/* v10.1.5 — Jangan tampilkan kode internal
-                              seperti "POSITION_CLOSED_EXTERNALLY" di sini;
-                              hanya tampilkan sumber penutupan ("Binance").
-                              Reason detail sudah dikonversi di tempat lain
-                              (BREAK_EVEN, Closed on exchange, dll). */}
-                          {tr.close_reason && String(tr.close_reason).toLowerCase() !== "position_closed_externally"
-                            ? `  ·  ${String(tr.close_reason).toUpperCase()}`
-                            : ""}
-                        </Text>
-                      </Text>
-                      <View style={{ flex: 1 }} />
-                      {/* v10.1.2 — Formula SELALU tampil (keputusan user):
-                          formulaLines sudah fallback tag→profil→Confluence,
-                          sehingga kartu lama tanpa tag (mis. BNB) tidak
-                          lagi tampil tanpa formula. */}
-                      <Text numberOfLines={1} style={{ fontSize: 9, fontWeight: "700", color: colors.textMuted, flexShrink: 1, textAlign: "right" }}>
-                        {`⚙️ ${t("asi_formula_label")}: ${formulaLines(t, (tr as any).profile, (tr as any).formula_tag)[0]}`}
-                      </Text>
-                    </View>
-                  </View>
-                )}
+                    );
+                  })()}
+                </View>
                 </CardTouchable>
               );
               if (isOpen || isPending || !tid) {

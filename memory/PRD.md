@@ -3,6 +3,26 @@
 ## Product Summary
 AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs, gold/silver, commodity, forex. Bilingual (ID/EN/RU/CN), premium unlock, chatroom, AI Market Brief, WR history.
 
+---
+
+## v10.1.7 — 7 Perbaikan Bug/Regresi (Oktober 2026)
+
+1. **Logo splash & app icon diganti** — logo baru (file_0000000050ac8211a2ed46dd69c1f1fe.png, 2.3MB, 1254x1254) di-copy ke icon.png, adaptive-icon.png, splash-icon.png, splash-image.png, app-image.png, favicon.png.
+2. **UI Kartu 3-Baris (anti-jiggle)** di `asi-bot.tsx` Recent Trades & `trades-position.tsx` Running Positions:
+   - Baris 1: Tanggal & Jam (+ closed reason bila CLOSED).
+   - Baris 2: Symbol/USDT (kiri) | Mark Price lebar tetap 110px tabular-nums (tengah) | PnL $ + % lebar tetap 100px tabular-nums (kanan) → tidak lagi bergeser saat harga berubah.
+   - Baris 3: Semua badge dalam satu baris (D/R, 🤖/🦾 mode, L/M entry, LONG/SHORT, leverage, margin mode, layer, status, formula) + tombol CLOSE/CANCEL di ujung kanan.
+3. **Closed position tetap tampil % PnL** di bawah nominal $ (sebelumnya hanya open yang menampilkan %).
+4. **Badge "R" oranye & "D" biru muda** sudah seragam di semua kartu (asi-bot & trades-position pakai warna identik `#F97316`/`#60A5FA`).
+5. **Mark price polling 300ms** (kembali seperti sebelumnya) di `asi-bot.tsx` dan `trades-position.tsx` — angka berkedip real-time persis seperti chart candlestick.
+6. **Demo balance race-condition** — `setBalance` kini pakai functional updater yang mempertahankan nilai sebelumnya bila API balance sesaat gagal, jadi angka DEMO/REAL tidak lagi hilang-timbul.
+7. **FX Rate strip USDT→lokal dikembalikan** — `<UsdtLocalRateStrip />` dipasang kembali di dashboard home antara tombol ASI-Bot/Copy Trade dan region chips (dulu dihapus v8.5.7, user minta aktif kembali).
+
+**Bonus**: Simbol di kartu asi-bot.tsx Recent Trades sekarang `{symbol}/USDT` lengkap (sebelumnya hanya `{symbol}` → sumber laporan "koin pair hilang").
+
+---
+
+
 ## v8.12.83 — Website Landing Page Baru (ASO/SEO)
 - Tombol "Visit Our Website" di paywall kini mengarah ke landing page baru **https://aicryptostockpro.my.canva.site** (menggantikan cryptostockpro.my.canva.site). URL terverifikasi aktif (HTTP 200).
 

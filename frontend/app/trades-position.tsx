@@ -61,9 +61,21 @@ export default function TradesPositionScreen() {
       const r = await api.asi.listTrades(deviceId, 50);
       setTrades(((r as any).items || r || []) as AnyTrade[]);
       // v10.1.5 — Saldo kedua jaringan (opsional; jangan ganggu list).
+      // v10.1.7 — Hanya update balance bila fetch sukses & nilainya valid
+      // (tidak null), supaya saldo DEMO/REAL tidak "hilang-timbul" saat
+      // request sesaat gagal.
       try {
         const b = await api.asi.balance(deviceId, "binance");
-        setBalance({ demo: b.demo, real: b.real });
+        setBalance((prev) => ({
+          demo: {
+            connected: b.demo?.connected ?? prev.demo.connected,
+            available_usdt: b.demo?.available_usdt != null ? b.demo.available_usdt : prev.demo.available_usdt,
+          },
+          real: {
+            connected: b.real?.connected ?? prev.real.connected,
+            available_usdt: b.real?.available_usdt != null ? b.real.available_usdt : prev.real.available_usdt,
+          },
+        }));
       } catch { /* no-op */ }
     } catch { /* keep previous */ }
     finally { setLoading(false); }
@@ -116,7 +128,9 @@ export default function TradesPositionScreen() {
       } catch { /* ignore */ }
     };
     tick();
-    priceRef.current = setInterval(tick, 2000);
+    // v10.1.7 — Polling 300ms (sebelumnya 2000ms) agar mark price
+    // real-time dan berkedip persis seperti chart candlestick.
+    priceRef.current = setInterval(tick, 300);
     return () => clearInterval(priceRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openSymsKey]);
@@ -220,8 +234,111 @@ export default function TradesPositionScreen() {
           if (base) router.push(`/asset/crypto/${encodeURIComponent(base)}` as any);
         }}
         style={[s.card, { backgroundColor: colors.surface, borderColor }]}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          {/* Mode & entry badges, same vocab as Recent Trades */}
+        {/* v10.1.7 — Layout 3-BARIS (anti-jiggle):
+            Baris 1 : Tanggal & Jam · (closed reason bila CLOSED)
+            Baris 2 : Symbol (kiri) | Mark Price (tengah) | PnL $ + % (kanan)
+            Baris 3 : Semua badge (D/R, LONG/SHORT, mode, entry mode,
+                      layer, status, margin mode, leverage, formula). */}
+
+        {/* ───────────── BARIS 1 : Tanggal & Jam ───────────── */}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <Text style={{ fontSize: 10, fontWeight: "700", color: colors.textMuted }}>
+            {tr.filled_at
+              ? `filled ${fmtDateTime(tr.filled_at)}`
+              : (tr.created_at ? fmtDateTime(tr.created_at) : "")}
+          </Text>
+          {!isOpen && !isPending ? (
+            <>
+              <Text style={{ color: colors.textMuted, fontSize: 10 }}>·</Text>
+              <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: "800", color: colors.textPrimary, flexShrink: 1 }}>
+                {closedReason(tr.close_reason)}
+                {tr.closed_at ? ` · ${fmtDateTime(tr.closed_at)}` : ""}
+              </Text>
+            </>
+          ) : null}
+        </View>
+
+        {/* ───────────── BARIS 2 : Symbol | Mark | PnL ───────────── */}
+        <View style={{
+          marginTop: 4, flexDirection: "row", alignItems: "center",
+          justifyContent: "space-between", gap: 8,
+        }}>
+          {/* Kiri: Symbol/USDT (slot flex=1) */}
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text numberOfLines={1}
+              style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 15 }}>
+              {tr.symbol}/USDT
+            </Text>
+          </View>
+          {/* Tengah: Mark Price (lebar tetap, tabular-nums → anti-jiggle) */}
+          <View style={{ width: 110, alignItems: "center" }}>
+            {live != null ? (
+              <View style={{
+                paddingHorizontal: 7, paddingVertical: 2, borderRadius: 5,
+                backgroundColor: flashDir === "up" ? GREEN + "33"
+                  : flashDir === "down" ? RED + "33" : "transparent",
+              }}>
+                <Text style={{
+                  color: "#FFFFFF", fontSize: 14, fontWeight: "900",
+                  fontVariant: ["tabular-nums"], letterSpacing: 0.3,
+                }}>
+                  ${fp(live)}{flashDir ? (flashDir === "up" ? " ▲" : " ▼") : ""}
+                </Text>
+              </View>
+            ) : (
+              <Text style={{ color: colors.textMuted, fontSize: 11 }}>
+                Entry ${fp(tr.entry_price)}
+              </Text>
+            )}
+          </View>
+          {/* Kanan: PnL $ + % (lebar tetap 100px → anti-jiggle) */}
+          <View style={{ width: 100, alignItems: "flex-end" }}>
+            {isPending ? (
+              <View style={{ paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6, backgroundColor: YELLOW }}>
+                <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 10 }}>LIMIT WAITING</Text>
+              </View>
+            ) : (
+              <View style={{ alignItems: "flex-end" }}>
+                <View style={{
+                  paddingHorizontal: 7, paddingVertical: 2, borderRadius: 5,
+                  backgroundColor: isOpen && flashDir === "up" ? GREEN + "33"
+                    : isOpen && flashDir === "down" ? RED + "33" : "transparent",
+                }}>
+                  <Text style={{
+                    color: pnl >= 0 ? GREEN : RED, fontWeight: "900",
+                    fontSize: 17, fontVariant: ["tabular-nums"],
+                  }}>
+                    {pnl >= 0 ? "+" : "-"}${Math.abs(pnl).toFixed(2)}
+                  </Text>
+                </View>
+                {/* v10.1.7 — % PnL SELALU tampil, baik OPEN maupun CLOSED
+                    (sesuai permintaan user untuk kartu closed position). */}
+                {tr.margin_usdt ? (
+                  <Text style={{
+                    color: pnl >= 0 ? GREEN : RED, fontWeight: "700", fontSize: 10,
+                    fontVariant: ["tabular-nums"],
+                  }}>
+                    {pnl >= 0 ? "+" : ""}{(pnl / Number(tr.margin_usdt) * 100).toFixed(2)}%
+                    {isOpen && flashDir ? (flashDir === "up" ? " ▲" : " ▼") : ""}
+                  </Text>
+                ) : null}
+              </View>
+            )}
+          </View>
+        </View>
+
+        {/* ───────────── BARIS 3 : SEMUA BADGE (bungkus bila banyak) ───────────── */}
+        <View style={{ marginTop: 6, flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          {/* D/R Demo/Real */}
+          <View style={{
+            paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
+            backgroundColor: tr.testnet ? "#60A5FA" : "#F97316",
+          }}>
+            <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 9, letterSpacing: 0.4 }}>
+              {tr.testnet ? "D" : "R"}
+            </Text>
+          </View>
+          {/* Mode SEMI/FULL */}
           {tr.mode ? (
             <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
                            backgroundColor: tr.mode === "full" ? BLUE : GOLD }}>
@@ -230,6 +347,7 @@ export default function TradesPositionScreen() {
               </Text>
             </View>
           ) : null}
+          {/* Entry Mode L/M */}
           {tr.entry_mode ? (
             <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
                            backgroundColor: tr.entry_mode === "market" ? PURPLE : YELLOW }}>
@@ -238,166 +356,111 @@ export default function TradesPositionScreen() {
               </Text>
             </View>
           ) : null}
-          <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
-                         backgroundColor: tr.testnet ? "#60A5FA" : "#F97316" }}>
-            <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 9 }}>
-              {tr.testnet ? "D" : "R"}
-            </Text>
-          </View>
-          <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 15 }}>
-            {tr.symbol}/USDT
-          </Text>
+          {/* LONG / SHORT */}
           <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
                          backgroundColor: isLong ? GREEN : RED }}>
             <Text style={{ color: "#fff", fontWeight: "900", fontSize: 10 }}>
-              {isLong ? "LONG" : "SHORT"} {tr.leverage ? `${tr.leverage}x` : ""}
+              {isLong ? "LONG" : "SHORT"}
             </Text>
           </View>
-          {live != null ? (
-            // v10.0.13 — Mark price PERP: besar, putih terang, berkedip
-            // (background flash hijau/merah 700ms) saat tick berubah. Angka
-            // menonjol seperti harga di detail aset.
-            <View style={{
-              paddingHorizontal: 7, paddingVertical: 2, borderRadius: 5,
-              backgroundColor: flashDir === "up" ? GREEN + "33"
-                : flashDir === "down" ? RED + "33" : "transparent",
-            }}>
-              <Text style={{
-                color: "#FFFFFF", fontSize: 15, fontWeight: "900",
-                fontVariant: ["tabular-nums"], letterSpacing: 0.3,
-              }}>
-                ${fp(live)}{flashDir ? (flashDir === "up" ? " ▲" : " ▼") : ""}
+          {/* Leverage */}
+          {tr.leverage ? (
+            <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
+                           backgroundColor: colors.surfaceAlt || "#1F2937" }}>
+              <Text style={{ color: GREEN, fontWeight: "900", fontSize: 10 }}>
+                {tr.leverage}x
               </Text>
             </View>
           ) : null}
-        </View>
-
-        <View style={{ marginTop: 6, flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
-          <View style={{ flex: 1, gap: 2 }}>
-            {/* v10.0.16 — Entry price PUTIH TERANG (bukan abu) mengikuti
-                gaya kartu Recent Trades. */}
-            <Text style={{ color: colors.textMuted, fontSize: 11 }}>
-              <Text style={{ color: "#FFFFFF", fontWeight: "900" }}>
-                Entry {tr.entry_price ? fp(tr.entry_price) : "—"}
-              </Text>
-              {tr.filled_at ? ` · filled ${fmtDateTime(tr.filled_at)}` : (tr.created_at ? ` · ${fmtDateTime(tr.created_at)}` : "")}
+          {/* Margin mode */}
+          <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
+                         backgroundColor: ((tr.actual_margin_mode || tr.margin_mode) === "cross") ? PURPLE : "#14B8A6" }}>
+            <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 9 }}>
+              {String(tr.actual_margin_mode || tr.margin_mode || "ISOLATED").toUpperCase()}
             </Text>
-            {/* v10.0.16 — Formula yang dipakai (persis kartu Recent Trades).
-                v10.1.2 — SELALU tampil dgn fallback tag→profil→"Confluence"
-                agar kartu lama tanpa tag (mis. BNB) tetap berlabel. */}
-            <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: "700", color: colors.textMuted }}>
-              ⚙️ {t("asi_formula_label")}: {String(tr.formula_tag
+          </View>
+          {/* Formula tag */}
+          <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
+                         backgroundColor: colors.surfaceAlt || "#1F2937" }}>
+            <Text numberOfLines={1} style={{ color: colors.textMuted, fontSize: 9, fontWeight: "800" }}>
+              ⚙️ {String(tr.formula_tag
                 || ({ scalper: "7 Fast VWAP", day: "5 KISS VWAP", swing: "5 Multi-day Trend", longterm: "Confluence v9" } as Record<string, string>)[String(tr.profile || "")]
                 || "Confluence v9")}
             </Text>
-            <Text style={{ fontSize: 10.5, lineHeight: 15 }}>
-              <Text style={{ color: RED, fontWeight: "800" }}>
-                SL {tr.stop_loss ? fp(tr.stop_loss) : "—"}
-              </Text>
-              {"  ·  "}
-              <Text style={{ color: GREEN, fontWeight: "800" }}>
-                TP {(tr.take_profits || []).map((x: number) => fp(x)).join(" / ") || "—"}
-              </Text>
+          </View>
+          {/* Status badge */}
+          <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
+                         backgroundColor: isOpen ? GREEN : isPending ? YELLOW : colors.border }}>
+            <Text style={{ color: isOpen ? "#0B0E11" : isPending ? "#0B0E11" : colors.textMuted, fontWeight: "900", fontSize: 9 }}>
+              {isOpen ? "OPEN" : isPending ? "LIMIT" : "CLOSED"}
+            </Text>
+          </View>
+          {/* Spacer kemudian action */}
+          <View style={{ flex: 1 }} />
+          {(isOpen || isPending) ? (
+            <CardTouchable
+              style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6,
+                       backgroundColor: isPending ? YELLOW : RED }}
+              onPress={() => onClose(tr)}
+              disabled={busyId === (tr.id || tr._id)}
+            >
+              {busyId === (tr.id || tr._id)
+                ? <ActivityIndicator size="small" color="#0B0E11" />
+                : <Text style={{ color: isPending ? "#0B0E11" : "#fff", fontWeight: "900", fontSize: 11 }}>
+                    {isPending ? "CANCEL" : "CLOSE"}
+                  </Text>}
+            </CardTouchable>
+          ) : null}
+        </View>
+
+        {/* Detail terkecil (SL/TP/Margin/Entry) — baris pelengkap */}
+        <View style={{ marginTop: 4, gap: 1 }}>
+          <Text style={{ fontSize: 10.5, lineHeight: 15 }}>
+            <Text style={{ color: colors.textMuted, fontWeight: "700" }}>
+              Entry {tr.entry_price ? fp(tr.entry_price) : "—"}
+            </Text>
+            {"  ·  "}
+            <Text style={{ color: RED, fontWeight: "800" }}>
+              SL {tr.stop_loss ? fp(tr.stop_loss) : "—"}
+            </Text>
+            {"  ·  "}
+            <Text style={{ color: GREEN, fontWeight: "800" }}>
+              TP {(tr.take_profits || []).map((x: number) => fp(x)).join(" / ") || "—"}
             </Text>
             {tr.margin_usdt != null ? (
-              <Text style={{ color: YELLOW, fontSize: 10.5, fontWeight: "700" }}>
-                Margin ${Number(tr.margin_usdt).toFixed(2)}
-              </Text>
+              <>
+                {"  ·  "}
+                <Text style={{ color: YELLOW, fontWeight: "700" }}>
+                  Margin ${Number(tr.margin_usdt).toFixed(2)}
+                </Text>
+              </>
             ) : null}
-            {/* v10.0.13 — Riwayat TP hit: tampilkan tiap level yang sudah
-                terisi dengan harga closed-nya (putih terang). TP3 selalu
-                menutup posisi penuh dan sudah masuk PnL total di atas.
-                v10.1.1 — HANYA baris TP yang ditampilkan; catatan parsial
-                berlabel SL (fill adverse/slippage) disembunyikan agar
-                posisi OPEN tidak tampak seolah kena SL. */}
-            {(() => {
-              const tpOnly = (Array.isArray(tr.tp_fills) ? tr.tp_fills : [])
-                .filter((f: any) => String(f?.level || "").startsWith("TP"));
-              if (!tpOnly.length && !tr.be_moved) return null;
-              return (
-              <View style={{ marginTop: 2 }}>
-                {tpOnly.map((f: any, i: number) => (
-                  <Text key={i} style={{ fontSize: 10.5, fontWeight: "800", color: "#FFFFFF" }}>
-                    ✓ {String(f.level)} hit · ${fp(Number(f.price))}
-                    {f.pnl != null ? (
-                      <Text style={{ color: Number(f.pnl) >= 0 ? GREEN : RED, fontWeight: "900" }}>
-                        {"  "}{Number(f.pnl) >= 0 ? "+" : "-"}${Math.abs(Number(f.pnl)).toFixed(2)}
-                      </Text>
-                    ) : null}
-                  </Text>
-                ))}
-                {tr.be_moved ? (
-                  <Text style={{ fontSize: 10, fontWeight: "800", color: BLUE, marginTop: 1 }}>
-                    🛡️ SL moved to break-even (entry)
-                  </Text>
-                ) : null}
-              </View>
-              );
-            })()}
-            {!isOpen && !isPending ? (
-              <Text style={{ color: colors.textMuted, fontSize: 10.5 }}>
-                {closedReason(tr.close_reason)}
-                {tr.closed_price ? ` @ ${fp(tr.closed_price)}` : ""}
-                {tr.closed_at ? ` · ${fmtDateTime(tr.closed_at)}` : ""}
-              </Text>
-            ) : null}
-          </View>
-
-          <View style={{ alignItems: "flex-end", gap: 6, width: 110 }}>
-            {/* v10.1.5 — width TETAP (bukan minWidth) + tabular-nums supaya
-                kartu tidak berdenyut membesar/mengecil saat angka PnL
-                berubah jumlah digit. */}
-            {isPending ? (
-              <View style={{ paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6, backgroundColor: YELLOW }}>
-                <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 10 }}>LIMIT WAITING</Text>
-              </View>
-            ) : (
-              <View style={{ alignItems: "flex-end" }}>
-                {/* v10.0.13 — PnL juga mendapat background flash saat tick
-                    berubah supaya 'hidup' seperti chart. */}
-                <View style={{
-                  paddingHorizontal: 7, paddingVertical: 2, borderRadius: 5,
-                  backgroundColor: flashDir === "up" ? GREEN + "33"
-                    : flashDir === "down" ? RED + "33" : "transparent",
-                }}>
-                  <Text style={{ color: pnl >= 0 ? GREEN : RED, fontWeight: "900", fontSize: 19, fontVariant: ["tabular-nums"] }}>
-                    {pnl >= 0 ? "+" : "-"}${Math.abs(pnl).toFixed(2)}
-                  </Text>
-                </View>
-                {/* v10.0.10 — % PnL realtime terhadap margin + indikator LIVE
-                    yang berkedip mengikuti arah tick harga. */}
-                {isOpen && tr.margin_usdt ? (
-                  <Text style={{ color: pnl >= 0 ? GREEN : RED, fontWeight: "700", fontSize: 10 }}>
-                    {pnl >= 0 ? "+" : ""}{(pnl / Number(tr.margin_usdt) * 100).toFixed(2)}%
-                    {flashDir ? (flashDir === "up" ? " ▲" : " ▼") : ""}
-                  </Text>
-                ) : null}
-                {isOpen ? (
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 3, marginTop: 1 }}>
-                    <View style={{
-                      width: 6, height: 6, borderRadius: 3,
-                      backgroundColor: flashDir ? (flashDir === "up" ? GREEN : RED) : colors.textMuted,
-                    }} />
-                    <Text style={{ color: colors.textMuted, fontSize: 8.5, fontWeight: "800", letterSpacing: 0.5 }}>LIVE</Text>
-                  </View>
-                ) : null}
-              </View>
-            )}
-            {(isOpen || isPending) ? (
-              <CardTouchable
-                style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6,
-                         backgroundColor: isPending ? YELLOW : RED }}
-                onPress={() => onClose(tr)}
-                disabled={busyId === (tr.id || tr._id)}
-              >
-                {busyId === (tr.id || tr._id)
-                  ? <ActivityIndicator size="small" color="#0B0E11" />
-                  : <Text style={{ color: isPending ? "#0B0E11" : "#fff", fontWeight: "900", fontSize: 11 }}>
-                      {isPending ? "CANCEL" : "CLOSE"}
-                    </Text>}
-              </CardTouchable>
-            ) : null}
-          </View>
+          </Text>
+          {/* Riwayat TP hit */}
+          {(() => {
+            const tpOnly = (Array.isArray(tr.tp_fills) ? tr.tp_fills : [])
+              .filter((f: any) => String(f?.level || "").startsWith("TP"));
+            if (!tpOnly.length && !tr.be_moved) return null;
+            return (
+            <View style={{ marginTop: 2 }}>
+              {tpOnly.map((f: any, i: number) => (
+                <Text key={i} style={{ fontSize: 10.5, fontWeight: "800", color: "#FFFFFF" }}>
+                  ✓ {String(f.level)} hit · ${fp(Number(f.price))}
+                  {f.pnl != null ? (
+                    <Text style={{ color: Number(f.pnl) >= 0 ? GREEN : RED, fontWeight: "900" }}>
+                      {"  "}{Number(f.pnl) >= 0 ? "+" : "-"}${Math.abs(Number(f.pnl)).toFixed(2)}
+                    </Text>
+                  ) : null}
+                </Text>
+              ))}
+              {tr.be_moved ? (
+                <Text style={{ fontSize: 10, fontWeight: "800", color: BLUE, marginTop: 1 }}>
+                  🛡️ SL moved to break-even (entry)
+                </Text>
+              ) : null}
+            </View>
+            );
+          })()}
         </View>
       </CardTouchable>
     );
