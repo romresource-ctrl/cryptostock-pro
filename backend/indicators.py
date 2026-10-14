@@ -53,34 +53,33 @@ TRADER_PROFILES: dict[str, dict[str, Any]] = {
         "ema_fast": 20,
         "ema_slow": 50,
         "require_ema200": False,
-        # v10.2.0 — MODEL B: intraday mengejar momentum 1-4 jam.
-        # TP1 1.2R (kunci profit cepat), TP2 2.0R, TP3 2.5R.
+        # v10.2.3 — TP dirapatkan (1.2/1.5/1.8R) sesuai permintaan user:
+        # ladder sebelumnya (1.2/2.0/2.5R) terlalu jauh, TP3 jarang kena.
         "sl_atr_mult": 1.2,
-        "tp_ladder": (1.2, 2.0, 2.5),
-        "vwap_tp_ladder": (1.2, 2.0, 2.5),
+        "tp_ladder": (1.2, 1.5, 1.8),
+        "vwap_tp_ladder": (1.2, 1.5, 1.8),
         "description": "1h–4h day trading",
     },
     "swing": {
         "ema_fast": 20,
         "ema_slow": 50,
         "require_ema200": True,
-        # v10.2.0 — MODEL B: swing multi-hari butuh SL lebih lebar
-        # (1.5×ATR) dan target lebih jauh (1.5R/3R/4R).
+        # v10.2.3 — TP dirapatkan (1.2/1.6/2.0R): ladder lama
+        # (1.5/3.0/4.0R) terlalu jauh dan tidak pernah tercapai.
         "sl_atr_mult": 1.5,
-        "tp_ladder": (1.5, 3.0, 4.0),
-        "vwap_tp_ladder": (1.5, 3.0, 4.0),
+        "tp_ladder": (1.2, 1.6, 2.0),
+        "vwap_tp_ladder": (1.2, 1.6, 2.0),
         "description": "4h–24h multi-day",
     },
     "longterm": {  # Confluence v9
         "ema_fast": 50,
         "ema_slow": 100,
         "require_ema200": True,
-        # v10.1.6 — Keputusan user (Q1): engine long-term butuh SL lebih
-        # lebar agar tahan noise multi-hari → 2.0×ATR (profil lain tetap
-        # 1.2×ATR). TP ladder dinaikkan ke 1.5R/3R/4.5R karena tren kuat
-        # bisa berjalan jauh → R:R & ekspektasi long-term lebih baik.
+        # v10.2.3 — Permintaan user: TP ladder Confluence dirapatkan dari
+        # 1.5R/3R/4.5R → 1.2R/1.6R/2.2R karena target jauh jarang
+        # tercapai. SL tetap lebar 2.0×ATR (tahan noise multi-hari).
         "sl_atr_mult": 2.0,
-        "tp_ladder": (1.5, 3.0, 4.5),
+        "tp_ladder": (1.2, 1.6, 2.2),
         "vwap_tp_ladder": (1.0, 1.5, 2.0),  # tidak dipakai (bukan mesin VWAP)
         "description": "1D+ position hold",
     },
