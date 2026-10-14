@@ -5,6 +5,21 @@ AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs
 
 ---
 
+## v10.1.9 — Bump Versi & Fix UI Akhir (Oktober 2026)
+
+- **Bump ke 10.1.9**: Memastikan APK/AAB baru memiliki nomor versi lebih tinggi agar popup update di HP user otomatis muncul (karena build 10.1.8 sebelumnya dibuat sebelum fix tombol kanan & ticking).
+- **Semua perubahan frontend termuat di build baru**:
+  1. Tombol CANCEL/CLOSE di baris khusus rata kanan (tidak lompat ke kiri).
+  2. Label LIMIT WAITING konsisten di Recent Trades & Running Positions (tidak lagi salah tampil PnL $0.00).
+  3. Polling harga mencakup kartu `pending_entry` (mark price ticking live terhadap harga limit).
+  4. TTL cache `/api/asi/prices` 0.25s (harga berkedip 300ms).
+  5. Sync refresh kedua layar 5 detik.
+
+---
+
+
+---
+
 ## v10.1.8 — Split Gate Tampilan vs Eksekusi + Full-Auto Overhaul (Oktober 2026)
 
 **Full-Auto Anti-Loss (scheduler.py)**:
