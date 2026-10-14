@@ -246,15 +246,15 @@ export default function TradesPositionScreen() {
 
         {/* ───────────── BARIS 1 : Tanggal & Jam ───────────── */}
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-          <Text style={{ fontSize: 10, fontWeight: "700", color: colors.textMuted }}>
+          <Text style={{ fontSize: 11, fontWeight: "800", color: "#FFFFFF" }}>
             {tr.filled_at
               ? `filled ${fmtDateTime(tr.filled_at)}`
               : (tr.created_at ? fmtDateTime(tr.created_at) : "")}
           </Text>
           {!isOpen && !isPending ? (
             <>
-              <Text style={{ color: colors.textMuted, fontSize: 10 }}>·</Text>
-              <Text numberOfLines={1} style={{ fontSize: 10, fontWeight: "800", color: colors.textPrimary, flexShrink: 1 }}>
+              <Text style={{ color: "#FFFFFF", fontSize: 11 }}>·</Text>
+              <Text numberOfLines={1} style={{ fontSize: 11, fontWeight: "800", color: "#FFFFFF", flexShrink: 1 }}>
                 {closedReason(tr.close_reason)}
                 {tr.closed_at ? ` · ${fmtDateTime(tr.closed_at)}` : ""}
               </Text>
@@ -274,26 +274,26 @@ export default function TradesPositionScreen() {
               {tr.symbol}/USDT
             </Text>
           </View>
-          {/* Tengah: Mark Price (lebar tetap, tabular-nums → anti-jiggle) */}
+          {/* Tengah: Mark Price (lebar tetap, tabular-nums → anti-jiggle).
+              v10.2.1 — SELALU putih terang (sesuai permintaan user) baik
+              posisi OPEN maupun PENDING LIMIT. Entry price pindah ke
+              baris detail di bawah; kolom ini DEDICATED untuk mark price
+              live. Fallback "—" bila API price belum masuk (sangat jarang). */}
           <View style={{ width: 110, alignItems: "center" }}>
-            {live != null ? (
-              <View style={{
-                paddingHorizontal: 7, paddingVertical: 2, borderRadius: 5,
-                backgroundColor: flashDir === "up" ? GREEN + "33"
-                  : flashDir === "down" ? RED + "33" : "transparent",
+            <View style={{
+              paddingHorizontal: 7, paddingVertical: 2, borderRadius: 5,
+              backgroundColor: live != null && flashDir === "up" ? GREEN + "33"
+                : live != null && flashDir === "down" ? RED + "33" : "transparent",
+            }}>
+              <Text style={{
+                color: "#FFFFFF", fontSize: 14, fontWeight: "900",
+                fontVariant: ["tabular-nums"], letterSpacing: 0.3,
               }}>
-                <Text style={{
-                  color: "#FFFFFF", fontSize: 14, fontWeight: "900",
-                  fontVariant: ["tabular-nums"], letterSpacing: 0.3,
-                }}>
-                  ${fp(live)}{flashDir ? (flashDir === "up" ? " ▲" : " ▼") : ""}
-                </Text>
-              </View>
-            ) : (
-              <Text style={{ color: colors.textMuted, fontSize: 11 }}>
-                Entry ${fp(tr.entry_price)}
+                {live != null
+                  ? `$${fp(live)}${flashDir ? (flashDir === "up" ? " ▲" : " ▼") : ""}`
+                  : "—"}
               </Text>
-            )}
+            </View>
           </View>
           {/* Kanan: PnL $ + % (lebar tetap 100px → anti-jiggle) */}
           <View style={{ width: 100, alignItems: "flex-end" }}>
@@ -421,10 +421,11 @@ export default function TradesPositionScreen() {
           </View>
         ) : null}
 
-        {/* Detail terkecil (SL/TP/Margin/Entry) — baris pelengkap */}
+        {/* Detail terkecil (SL/TP/Margin/Entry) — baris pelengkap.
+            v10.2.1 — Entry price PUTIH TERANG agar jelas terbaca. */}
         <View style={{ marginTop: 4, gap: 1 }}>
-          <Text style={{ fontSize: 10.5, lineHeight: 15 }}>
-            <Text style={{ color: colors.textMuted, fontWeight: "700" }}>
+          <Text style={{ fontSize: 11, lineHeight: 15 }}>
+            <Text style={{ color: "#FFFFFF", fontWeight: "800" }}>
               Entry {tr.entry_price ? fp(tr.entry_price) : "—"}
             </Text>
             {"  ·  "}
@@ -438,7 +439,7 @@ export default function TradesPositionScreen() {
             {tr.margin_usdt != null ? (
               <>
                 {"  ·  "}
-                <Text style={{ color: YELLOW, fontWeight: "700" }}>
+                <Text style={{ color: YELLOW, fontWeight: "800" }}>
                   Margin ${Number(tr.margin_usdt).toFixed(2)}
                 </Text>
               </>

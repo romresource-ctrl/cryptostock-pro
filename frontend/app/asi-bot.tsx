@@ -183,31 +183,48 @@ export default function ASIBotScreen() {
 
   const refresh = async (did?: string) => {
     const id = did || deviceId; if (!id) return;
+    // v10.2.1 — Fix "Recent Trades kosong" + "not connected": sebelumnya
+    // seluruh refresh di-wrap satu try/catch — jika listCredentials atau
+    // getBot gagal duluan (mis. backend restart sesaat), setTrades tidak
+    // pernah terpanggil → kartu Recent Trades mendadak kosong meski
+    // Running Positions (polling independen) tetap jalan. Sekarang tiap
+    // call punya try/catch sendiri sehingga satu kegagalan tidak
+    // meng-reset bagian lain.
     try {
       const c = await api.asi.listCredentials(id);
       setCreds(c.items);
+    } catch { /* keep existing creds */ }
+    try {
       const b = await api.asi.getBot(id);
       if (b.exists) setBot({ ...bot, ...b });
+    } catch { /* keep existing bot cfg */ }
+    try {
       const p = await api.asi.pnl(id); setPnl(p);
-      const t2 = await api.asi.listTrades(id, 50); setTrades(t2.items.slice(0, 50));
-      // v9.9.9 — saldo available kedua jaringan, di-refresh bersama PnL.
-      // v10.1.7 — Hanya patch nilai bila non-null supaya kolom DEMO/REAL
-      // tidak hilang-timbul saat API balance sesaat gagal.
-      try {
-        const b = await api.asi.balance(id, bot.exchange);
-        setBalance((prev) => ({
-          demo: {
-            connected: b.demo?.connected ?? prev.demo.connected,
-            available_usdt: b.demo?.available_usdt != null ? b.demo.available_usdt : prev.demo.available_usdt,
-          },
-          real: {
-            connected: b.real?.connected ?? prev.real.connected,
-            available_usdt: b.real?.available_usdt != null ? b.real.available_usdt : prev.real.available_usdt,
-          },
-        }));
-      } catch { /* saldo opsional — jangan ganggu refresh utama */ }
-    } catch {}
-    finally { setCredsLoaded(true); }
+    } catch { /* keep PnL */ }
+    try {
+      const t2 = await api.asi.listTrades(id, 50);
+      setTrades(t2.items.slice(0, 50));
+    } catch { /* keep trades (jangan kosongkan!) */ }
+    // v9.9.9 — saldo available kedua jaringan, di-refresh bersama PnL.
+    // v10.1.7 — Hanya patch nilai bila non-null supaya kolom DEMO/REAL
+    // tidak hilang-timbul saat API balance sesaat gagal.
+    try {
+      const b = await api.asi.balance(id, bot.exchange);
+      setBalance((prev) => ({
+        demo: {
+          // v10.2.1 — "connected" juga sticky: sekali connected=true, baru
+          // berubah ke false kalau API eksplisit bilang false, bukan karena
+          // network timeout sesaat.
+          connected: b.demo?.connected === false ? false : (b.demo?.connected ?? prev.demo.connected),
+          available_usdt: b.demo?.available_usdt != null ? b.demo.available_usdt : prev.demo.available_usdt,
+        },
+        real: {
+          connected: b.real?.connected === false ? false : (b.real?.connected ?? prev.real.connected),
+          available_usdt: b.real?.available_usdt != null ? b.real.available_usdt : prev.real.available_usdt,
+        },
+      }));
+    } catch { /* saldo opsional — jangan ganggu refresh utama */ }
+    setCredsLoaded(true);
   };
 
   const activeTestnet = bot.active_testnet ?? true;
@@ -769,7 +786,7 @@ export default function ASIBotScreen() {
         <View style={{ gap: 8, marginTop: 14 }}>
           {([
             { key: "demo", label: t("asi_demo_badge"), chipColor: LIGHT_BLUE, data: balance.demo },
-            { key: "real", label: "REAL", chipColor: GREEN, data: balance.real },
+            { key: "real", label: "REAL", chipColor: "#F97316", data: balance.real },
           ] as const).map((row) => (
             <View key={row.key} style={{
               flexDirection: "row", alignItems: "center", gap: 8,
@@ -875,7 +892,27 @@ export default function ASIBotScreen() {
             nestedScrollEnabled
             showsVerticalScrollIndicator={tradesExpanded}
           >
-            {(tradesExpanded ? trades : trades.slice(0, 10)).map((tr, i) => {
+            {(() => {
+              // v10.2.1 — URUTAN KARTU (user request): OPEN di paling
+              // atas, lalu PENDING LIMIT (menunggu fill), terakhir
+              // CLOSED/CANCELLED. Dalam tiap grup, urut DESC berdasarkan
+              // waktu (filled_at > created_at > updated_at).
+              const _rank = (t: any) => {
+                const s = String(t?.status || "").toLowerCase();
+                if (s === "open") return 0;
+                if (s === "pending_entry") return 1;
+                return 2;
+              };
+              const _ts = (t: any) => {
+                const iso = String(t?.filled_at || t?.created_at || t?.updated_at || "");
+                const d = iso ? new Date(iso).getTime() : NaN;
+                return isNaN(d) ? 0 : d;
+              };
+              const sorted = [...trades].sort((a, b) => {
+                const r = _rank(a) - _rank(b);
+                return r !== 0 ? r : _ts(b) - _ts(a);
+              });
+              return (tradesExpanded ? sorted : sorted.slice(0, 10)).map((tr, i) => {
               // v9.8.4 — Case-insensitive: beberapa row lama bisa menyimpan
               // status "OPEN"/"Closed". Tombol CLOSE HARUS selalu muncul
               // (dan aktif) untuk setiap posisi yang masih terbuka.
@@ -920,9 +957,11 @@ export default function ASIBotScreen() {
                     Baris 3 : SEMUA badge (D/R, SEMI/FULL, L/M, LONG/SHORT,
                               leverage, margin mode, layer, status, formula). */}
 
-                {/* ───── BARIS 1 : Tanggal & Jam ───── */}
+                {/* ───── BARIS 1 : Tanggal & Jam ─────
+                    v10.2.1 — Teks dinaikkan dari fontSize 9.5+textMuted
+                    menjadi 11+putih terang agar jelas terbaca. */}
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <Text style={{ fontSize: 9.5, fontWeight: "700", color: colors.textMuted }}>
+                  <Text style={{ fontSize: 11, fontWeight: "800", color: "#FFFFFF" }}>
                     {(() => {
                       const iso = String((tr as any).filled_at || (tr as any).created_at || (tr as any).updated_at || "");
                       if (!iso) return "";
@@ -950,7 +989,7 @@ export default function ASIBotScreen() {
                     return (
                       <>
                         <Text style={{ color: colors.textMuted, fontSize: 9.5 }}>·</Text>
-                        <Text numberOfLines={1} style={{ fontSize: 9.5, fontWeight: "800", color: colors.textPrimary, flexShrink: 1 }}>
+                        <Text numberOfLines={1} style={{ fontSize: 11, fontWeight: "800", color: "#FFFFFF", flexShrink: 1 }}>
                           {txt}
                         </Text>
                       </>
@@ -972,19 +1011,14 @@ export default function ASIBotScreen() {
                   </View>
                   {/* Tengah: Mark price (lebar tetap 110, tabular-nums → anti-jiggle) */}
                   <View style={{ width: 110, alignItems: "center" }}>
-                    {/* v10.1.8 — Harga live ticking untuk OPEN *dan*
-                        PENDING (limit): user ingin melihat mark price
-                        bergerak terhadap harga limit-nya. Fallback ke
-                        Entry bila harga live belum masuk. */}
+                    {/* v10.2.1 — Mark price SELALU putih terang (OPEN
+                        maupun PENDING LIMIT) seperti permintaan user.
+                        Fallback "—" jika price belum masuk. */}
                     {(() => {
                       const lp = livePx[symBase] ?? (isOpen ? (tr as any).mark_price : null) ?? null;
-                      if (!lp) return (
-                        <Text style={{ color: colors.textMuted, fontSize: 11, fontVariant: ["tabular-nums"] }}>
-                          Entry {formatPrice(tr.entry_price, "crypto")}
-                        </Text>
-                      );
                       const fd = flashDir[symBase];
-                      const bg = fd === "up" ? GREEN + "33" : fd === "down" ? RED + "33" : "transparent";
+                      const bg = lp != null && fd === "up" ? GREEN + "33"
+                        : lp != null && fd === "down" ? RED + "33" : "transparent";
                       return (
                         <View style={{
                           paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5,
@@ -994,13 +1028,13 @@ export default function ASIBotScreen() {
                             color: "#FFFFFF", fontWeight: "900", fontSize: 14,
                             fontVariant: ["tabular-nums"], letterSpacing: 0.3,
                           }}>
-                            ${formatPrice(lp, "crypto")}
+                            {lp != null ? `$${formatPrice(lp, "crypto")}` : "—"}
                           </Text>
                           <Text style={{
                             width: 13, textAlign: "center", fontSize: 11, fontWeight: "900",
                             color: fd === "up" ? GREEN : RED,
                           }}>
-                            {fd ? (fd === "up" ? "▲" : "▼") : ""}
+                            {lp != null && fd ? (fd === "up" ? "▲" : "▼") : ""}
                           </Text>
                         </View>
                       );
@@ -1152,10 +1186,11 @@ export default function ASIBotScreen() {
                   </View>
                 ) : null}
 
-                {/* Detail numerik (Entry / SL / TP / Margin) — baris pelengkap kecil */}
+                {/* Detail numerik (Entry / SL / TP / Margin) — baris pelengkap kecil.
+                    v10.2.1 — Entry PUTIH TERANG, text size naik 10→11. */}
                 <View style={{ marginTop: 4, gap: 1 }}>
-                  <Text style={{ fontSize: 10, lineHeight: 15 }}>
-                    <Text style={{ color: colors.textMuted, fontWeight: "700" }}>
+                  <Text style={{ fontSize: 11, lineHeight: 15 }}>
+                    <Text style={{ color: "#FFFFFF", fontWeight: "800" }}>
                       Entry {formatPrice(tr.entry_price, "crypto")}
                     </Text>
                     {"  ·  "}
@@ -1221,7 +1256,8 @@ export default function ASIBotScreen() {
                   {rowBody}
                 </ReanimatedSwipeable>
               );
-            })}
+            });
+            })()}
           </ScrollView>
         )}
       </ScrollView>
