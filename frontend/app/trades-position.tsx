@@ -123,8 +123,10 @@ export default function TradesPositionScreen() {
           const prev = prevPricesRef.current[k];
           if (prev != null && v !== prev) f[k] = v > prev ? "up" : "down";
         });
-        prevPricesRef.current = m;
-        setPrices(m);
+        prevPricesRef.current = { ...prevPricesRef.current, ...m };
+        // v10.2.4 — MERGE, jangan timpa: response kosong sesaat tidak
+        // boleh menghapus harga yang sudah tampil (anti dash serentak).
+        setPrices((cur) => ({ ...cur, ...m }));
         if (Object.keys(f).length > 0) {
           setFlash((cur) => ({ ...cur, ...f }));
           if (flashTimerRef.current) clearTimeout(flashTimerRef.current);

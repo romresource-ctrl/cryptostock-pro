@@ -151,8 +151,12 @@ export default function ASIBotScreen() {
           const prev = prevPxRef.current[k];
           if (prev != null && v !== prev) f[k] = v > prev ? "up" : "down";
         });
-        prevPxRef.current = m;
-        setLivePx(m);
+        prevPxRef.current = { ...prevPxRef.current, ...m };
+        // v10.2.4 — MERGE, jangan timpa: bila satu response sesaat kosong
+        // (upstream gagal), harga lama TETAP tampil — kartu tidak pernah
+        // kehilangan mark price serentak (akar keluhan "tidak berkedip /
+        // jadi dash berulang").
+        setLivePx((cur) => ({ ...cur, ...m }));
         if (Object.keys(f).length > 0) {
           setFlashDir((cur) => ({ ...cur, ...f }));
           if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
