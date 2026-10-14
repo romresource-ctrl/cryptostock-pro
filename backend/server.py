@@ -96,10 +96,20 @@ import asyncio  # noqa: E402
 # v8.0.5: raised to 300s (5 min) — users no longer wait on Yahoo, and
 #         stale entries are served instantly while a background task
 #         refreshes them (see `_get_snapshots_cached` below).
-DASHBOARD_CACHE_TTL = float(os.environ.get("DASHBOARD_CACHE_TTL_SEC", "300"))
+# v10.1.9 — Diturunkan 300s → 60s: sinyal VWAP (scalper/day/swing)
+#         berbasis trigger breakout yang MOMENTUM-nya hanya beberapa
+#         menit. Cache 300s membuat dashboard menampilkan HOLD padahal
+#         AI Suggestions (cache 60s) sudah menangkap sinyal → user
+#         bingung "kenapa tidak sinkron". Cache snapshot bersifat GLOBAL
+#         per (market, symbols, timeframe) sehingga TTL 60s = maksimal
+#         1 batch fetch per menit untuk SELURUH user base — aman untuk
+#         rate-limit upstream.
+DASHBOARD_CACHE_TTL = float(os.environ.get("DASHBOARD_CACHE_TTL_SEC", "60"))
 # Serve a stale cached response IMMEDIATELY if its age is below this
 # hard ceiling. Beyond this, we block on a fresh fetch.
-DASHBOARD_STALE_MAX = float(os.environ.get("DASHBOARD_STALE_MAX_SEC", "900"))
+# v10.1.9 — Stale-max disamakan 120s saja: menyajikan sinyal trigger
+# berumur 15 menit adalah akar desync dashboard-vs-suggestions.
+DASHBOARD_STALE_MAX = float(os.environ.get("DASHBOARD_STALE_MAX_SEC", "120"))
 
 # v9.2.4 — Candle-boundary aware cache invalidation.
 # BUG KONSISTENSI (laporan user): dashboard menyajikan sinyal dari snapshot

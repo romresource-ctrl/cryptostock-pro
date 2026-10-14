@@ -15,6 +15,8 @@ AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs
   4. TTL cache `/api/asi/prices` 0.25s (harga berkedip 300ms).
   5. Sync refresh kedua layar 5 detik.
 
+**Fix desync Dashboard vs AI Suggestions**: akar masalah = TTL cache berbeda (dashboard 300s/stale-900s vs suggestions 60s). Sinyal VWAP berbasis trigger breakout yang momentary — dashboard menyajikan 'no trigger' basi sampai 5-15 menit sementara suggestions sudah menangkap sinyal baru. Fix: DASHBOARD_CACHE_TTL 300s→60s, STALE_MAX 900s→120s. Cache global per (market,symbols,timeframe) → beban upstream maks 1 batch fetch/menit untuk seluruh user. BACKEND-ONLY: langsung aktif setelah Publish, tidak perlu build baru.
+
 ---
 
 
