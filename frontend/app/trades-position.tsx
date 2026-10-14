@@ -276,10 +276,11 @@ export default function TradesPositionScreen() {
             </Text>
           </View>
           {/* Tengah: Mark Price (lebar tetap, tabular-nums → anti-jiggle).
-              v10.2.1 — SELALU putih terang (sesuai permintaan user) baik
-              posisi OPEN maupun PENDING LIMIT. Entry price pindah ke
-              baris detail di bawah; kolom ini DEDICATED untuk mark price
-              live. Fallback "—" bila API price belum masuk (sangat jarang). */}
+              v10.2.4 — KOLOM INI TIDAK BOLEH PERNAH KOSONG ("—"):
+              • OPEN/LIMIT → mark price live ticking (putih terang + flash)
+              • CLOSED → harga exit (closed_price), fallback entry price
+              Sesuai permintaan user: mark price harus SELALU tampil baik
+              opened maupun closed. */}
           <View style={{ width: 110, alignItems: "center" }}>
             <View style={{
               paddingHorizontal: 7, paddingVertical: 2, borderRadius: 5,
@@ -292,7 +293,7 @@ export default function TradesPositionScreen() {
               }}>
                 {live != null
                   ? `$${fp(live)}${flashDir ? (flashDir === "up" ? " ▲" : " ▼") : ""}`
-                  : "—"}
+                  : `$${fp(tr.closed_price ?? tr.entry_price)}`}
               </Text>
             </View>
           </View>

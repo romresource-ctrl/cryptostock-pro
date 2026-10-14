@@ -1012,14 +1012,18 @@ export default function ASIBotScreen() {
                   </View>
                   {/* Tengah: Mark price (lebar tetap 110, tabular-nums → anti-jiggle) */}
                   <View style={{ width: 110, alignItems: "center" }}>
-                    {/* v10.2.1 — Mark price SELALU putih terang (OPEN
-                        maupun PENDING LIMIT) seperti permintaan user.
-                        Fallback "—" jika price belum masuk. */}
+                    {/* v10.2.4 — KOLOM INI TIDAK BOLEH PERNAH KOSONG:
+                        OPEN/LIMIT → mark price live ticking (putih terang
+                        + flash); CLOSED → harga exit (closed_price),
+                        fallback entry price. Permintaan user eksplisit:
+                        mark price harus SELALU tampil opened maupun
+                        closed. */}
                     {(() => {
                       const lp = livePx[symBase] ?? (isOpen ? (tr as any).mark_price : null) ?? null;
                       const fd = flashDir[symBase];
                       const bg = lp != null && fd === "up" ? GREEN + "33"
                         : lp != null && fd === "down" ? RED + "33" : "transparent";
+                      const fallbackPx = (tr as any).closed_price ?? tr.entry_price;
                       return (
                         <View style={{
                           paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5,
@@ -1029,7 +1033,9 @@ export default function ASIBotScreen() {
                             color: "#FFFFFF", fontWeight: "900", fontSize: 14,
                             fontVariant: ["tabular-nums"], letterSpacing: 0.3,
                           }}>
-                            {lp != null ? `$${formatPrice(lp, "crypto")}` : "—"}
+                            {lp != null
+                              ? `$${formatPrice(lp, "crypto")}`
+                              : `$${formatPrice(fallbackPx, "crypto")}`}
                           </Text>
                           <Text style={{
                             width: 13, textAlign: "center", fontSize: 11, fontWeight: "900",

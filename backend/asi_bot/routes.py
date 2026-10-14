@@ -96,24 +96,68 @@ async def get_prices(symbols: str = Query(..., min_length=2, max_length=200)):
         else:
             missing.append(s)
     if missing:
-        async with _hx.AsyncClient(proxy=os.environ.get("ASI_PROXY_URL"), timeout=8.0) as c:
-            if len(missing) == 1:
-                r = await c.get(
-                    f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={missing[0]}")
+        # v10.2.4 — Fallback berlapis + never-500. Sebelumnya: satu-satunya
+        # sumber adalah fapi.binance.com via proxy TANPA try/except — satu
+        # kegagalan sesaat (proxy timeout/geo-block) membuat endpoint 500
+        # atau mengembalikan {} → kartu menampilkan "—" (keluhan user).
+        # Sekarang: futures → spot vision → Bitget, semua dibungkus aman.
+        async def _try_futures() -> None:
+            async with _hx.AsyncClient(proxy=os.environ.get("ASI_PROXY_URL"), timeout=8.0) as c:
+                if len(missing) == 1:
+                    r = await c.get(
+                        f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={missing[0]}")
+                    if r.status_code == 200:
+                        p = float(r.json()["price"])
+                        _PX_CACHE[missing[0]] = (now, p)
+                        out[missing[0]] = p
+                else:
+                    r = await c.get("https://fapi.binance.com/fapi/v1/ticker/price")
+                    if r.status_code == 200:
+                        want = set(missing)
+                        for row in r.json():
+                            s = row.get("symbol")
+                            if s in want:
+                                p = float(row["price"])
+                                _PX_CACHE[s] = (now, p)
+                                out[s] = p
+
+        async def _try_spot() -> None:
+            # Harga spot ≈ futures (selisih bps) — cukup untuk tampilan
+            # mark price saat futures API sedang tidak bisa dijangkau.
+            async with _hx.AsyncClient(timeout=6.0) as c:
+                r = await c.get("https://data-api.binance.vision/api/v3/ticker/price")
                 if r.status_code == 200:
-                    p = float(r.json()["price"])
-                    _PX_CACHE[missing[0]] = (now, p)
-                    out[missing[0]] = p
-            else:
-                r = await c.get("https://fapi.binance.com/fapi/v1/ticker/price")
-                if r.status_code == 200:
-                    want = set(missing)
+                    want = {s for s in missing if s not in out}
                     for row in r.json():
                         s = row.get("symbol")
                         if s in want:
                             p = float(row["price"])
                             _PX_CACHE[s] = (now, p)
                             out[s] = p
+
+        async def _try_bitget() -> None:
+            async with _hx.AsyncClient(timeout=6.0) as c:
+                for s in [x for x in missing if x not in out]:
+                    try:
+                        r = await c.get(
+                            "https://api.bitget.com/api/v2/spot/market/tickers",
+                            params={"symbol": s})
+                        if r.status_code == 200:
+                            data = (r.json() or {}).get("data") or []
+                            if data:
+                                p = float(data[0]["lastPr"])
+                                _PX_CACHE[s] = (now, p)
+                                out[s] = p
+                    except Exception:
+                        continue
+
+        for fallback in (_try_futures, _try_spot, _try_bitget):
+            if all(s in out for s in missing):
+                break
+            try:
+                await fallback()
+            except Exception:
+                continue
     return {"prices": out}
 
 
