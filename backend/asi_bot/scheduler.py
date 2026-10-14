@@ -636,14 +636,20 @@ async def _run_full_auto_scanner(
             # tanpa filter tambahan. Keempat engine dievaluasi PARALEL
             # per koin; sinyal dengan confidence tertinggi yang lolos
             # threshold user yang dipakai.
-            # v10.1.7 — KEPUTUSAN STRATEGIS (user complaint: subscriber
-            # mengalami loss beruntun karena 4 engine paralel saling
-            # konflik dan sinyal SHORT muncul di tengah uptrend).
-            # Full-Auto SEKARANG dikunci ke engine `longterm` (Confluence
-            # v9 full EMA200 gate) yang paling KONSERVATIF dan tidak
-            # pernah counter-trend. User tetap bisa Semi-Auto pakai
-            # scalper/day/swing manual via AI Suggestions.
-            _ENGINES = ["longterm"]
+            # v10.1.7 — ENGINE SELECTION per Trader Profile (keputusan user):
+            #   • Profile = longterm (Confluence v9) → scan HANYA engine
+            #     `longterm`. Ini engine full-EMA200 gate, paling konservatif,
+            #     tidak pernah counter-trend. Cocok untuk Full-Auto harian.
+            #   • Profile = scalper / day / swing → scan KETIGA engine
+            #     {scalper, day, swing} sekaligus (ambil confidence
+            #     tertinggi). Engine `longterm` TIDAK ikut supaya tidak
+            #     konflik dengan pilihan user yang mau trading cepat.
+            #   • Default (belum pilih) → aman: hanya `longterm` (Confluence v9).
+            if bot_profile in ("scalper", "day", "swing"):
+                _ENGINES = ["scalper", "day", "swing"]
+            else:
+                # longterm / None / "confluence" → 1 engine saja.
+                _ENGINES = ["longterm"]
             async def _fetch_signal(s: str, p: str) -> dict[str, Any] | None:
                 try:
                     return await signal_fetcher("crypto", s, p)

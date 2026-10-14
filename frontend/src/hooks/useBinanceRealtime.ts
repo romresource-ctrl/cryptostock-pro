@@ -65,7 +65,13 @@ export function useBinanceRealtime(
       return;
     }
 
-    const streamPath = `${upper.toLowerCase()}${quote}@ticker`;
+    // v10.1.7 — Pakai stream `@aggTrade` (aggregate trade) BUKAN `@ticker`.
+    // Binance `@ticker` (24hrTicker) HANYA update setiap ~1 detik BY DESIGN
+    // sehingga harga terasa lambat. `@aggTrade` fired SETIAP trade agregat
+    // (bisa 5-50 update/detik untuk pair liquid) sehingga mark price
+    // benar-benar "berkedip" real-time. Field: p=price, q=qty.
+    // Kita throttle ke 100ms agar tidak re-render >10x/detik (hemat CPU).
+    const streamPath = `${upper.toLowerCase()}${quote}@aggTrade`;
     // v10.0.13 — Prioritaskan Binance FUTURES (fstream) sebagai sumber WS
     // utama supaya harga realtime = perp mark/last (bukan spot). Ini juga
     // yang membuat hook useDipTopAlert kembali terpicu — beberapa simbol
@@ -83,6 +89,7 @@ export function useBinanceRealtime(
     let ws: WebSocket | null = null;
     let attempt = 0;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let lastEmit = 0;
 
     const tryConnect = () => {
       if (cancelled) return;
@@ -111,14 +118,22 @@ export function useBinanceRealtime(
         if (cancelled) return;
         try {
           const data = JSON.parse(event.data as string);
-          const price = Number(data?.c);
+          // v10.1.7 — aggTrade payload: {e,s,p,q}. Dulu @ticker pakai
+          // {c, P}. Kita parse keduanya agar tetap kompatibel jika
+          // ada fallback stream.
+          const price = Number(data?.p ?? data?.c);
           const changePct = Number(data?.P);
           if (!Number.isFinite(price)) return;
+          // Throttle 100ms: drop tick yang datang lebih cepat dari
+          // interval — menghindari React re-render berlebihan.
+          const now = Date.now();
+          if (now - lastEmit < 100) return;
+          lastEmit = now;
           setTick({
             price,
             changePct: Number.isFinite(changePct) ? changePct : NaN,
             connected: true,
-            updatedAt: Date.now(),
+            updatedAt: now,
           });
         } catch {
           /* malformed frame — ignore */
