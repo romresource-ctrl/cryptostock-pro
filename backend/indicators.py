@@ -40,27 +40,35 @@ TRADER_PROFILES: dict[str, dict[str, Any]] = {
         "ema_fast": 9,
         "ema_slow": 21,
         "require_ema200": False,
-        "sl_atr_mult": 1.2,
-        "tp_ladder": (1.0, 1.5, 2.0),
-        "vwap_tp_ladder": (1.0, 1.5, 2.0),
+        # v10.2.0 — MODEL B (keputusan user): scalper = hit-and-run.
+        # SL dirapatkan ke 1.0×ATR, ladder TP pendek (TP1 0.8R quick
+        # exit). Counter-trend boleh tapi ladder dipaksa lebih rapat
+        # lagi (lihat override di bawah engine VWAP).
+        "sl_atr_mult": 1.0,
+        "tp_ladder": (0.8, 1.2, 1.6),
+        "vwap_tp_ladder": (0.8, 1.2, 1.6),
         "description": "5m–15m intraday moves",
     },
     "day": {  # default — balanced horizon
         "ema_fast": 20,
         "ema_slow": 50,
         "require_ema200": False,
+        # v10.2.0 — MODEL B: intraday mengejar momentum 1-4 jam.
+        # TP1 1.2R (kunci profit cepat), TP2 2.0R, TP3 2.5R.
         "sl_atr_mult": 1.2,
-        "tp_ladder": (1.0, 1.5, 2.0),
-        "vwap_tp_ladder": (1.0, 1.5, 2.0),
+        "tp_ladder": (1.2, 2.0, 2.5),
+        "vwap_tp_ladder": (1.2, 2.0, 2.5),
         "description": "1h–4h day trading",
     },
     "swing": {
         "ema_fast": 20,
         "ema_slow": 50,
         "require_ema200": True,
-        "sl_atr_mult": 1.2,
-        "tp_ladder": (1.0, 1.5, 2.0),
-        "vwap_tp_ladder": (1.0, 1.5, 2.0),
+        # v10.2.0 — MODEL B: swing multi-hari butuh SL lebih lebar
+        # (1.5×ATR) dan target lebih jauh (1.5R/3R/4R).
+        "sl_atr_mult": 1.5,
+        "tp_ladder": (1.5, 3.0, 4.0),
+        "vwap_tp_ladder": (1.5, 3.0, 4.0),
         "description": "4h–24h multi-day",
     },
     "longterm": {  # Confluence v9
@@ -885,7 +893,23 @@ def _compute_vwap_signal(
     #   SCALPER → boleh (scalp cepat) tapi half risk (confidence -12)
     #   INTRADAY/SWING → HOLD (formula: short saat bias bullish hanya
     #   untuk scalp; posisi intraday/swing wajib searah bias).
-    if daily_bias and action in ("BUY", "SELL"):
+    # v10.2.0 — MODEL B (keputusan user):
+    #   (1) FAIL-CLOSED: bila data harian tidak tersedia, sinyal VWAP
+    #       apapun diturunkan ke HOLD — tidak boleh ada sinyal yang lolos
+    #       tanpa filter makro (kasus ETH LONG counter-trend saat data
+    #       harian gagal dimuat).
+    #   (2) Counter-trend SCALP ditandai eksplisit agar TP/SL dipaksa
+    #       rapat (hit-and-run) di pemilihan ladder di bawah.
+    counter_trend_scalp = False
+    if action in ("BUY", "SELL") and engine in ("SCALPER", "INTRADAY", "SWING") and daily_bias is None:
+        action = "HOLD"
+        label = "HOLD"
+        confidence = 45
+        reasons = [
+            f"[{engine}] Data bias makro harian tidak tersedia — HOLD "
+            f"(fail-closed: sinyal tidak boleh lolos tanpa filter tren besar)."
+        ]
+    elif daily_bias and action in ("BUY", "SELL"):
         with_bias = (action == "BUY" and daily_bias == "BULLISH") or \
                     (action == "SELL" and daily_bias == "BEARISH")
         if with_bias:
@@ -893,7 +917,11 @@ def _compute_vwap_signal(
             reasons.append(f"Aligned with daily 50 SMA bias ({daily_bias}) — full risk.")
         elif engine == "SCALPER":
             confidence = max(50, confidence - 12)
-            reasons.append(f"Counter-trend scalp vs daily bias ({daily_bias}) — half risk, quick exit.")
+            counter_trend_scalp = True
+            reasons.append(
+                f"SCALP COUNTER-TREND ⚡ vs daily bias ({daily_bias}) — "
+                f"hit-and-run: TP/SL dipaksa rapat, quick exit 15m-1 jam."
+            )
         else:
             action = "HOLD"
             label = "HOLD"
@@ -925,6 +953,13 @@ def _compute_vwap_signal(
     # v9.2.4 — VWAP engine pakai vwap_tp_ladder (TP1 lebih rapat) agar WR
     # profile berbayar lebih tinggi dari Confluence.
     tp_ladder = tuple(prof.get("vwap_tp_ladder", prof.get("tp_ladder", (1.0, 1.5, 2.0))))
+    # v10.2.0 — MODEL B: scalp counter-trend = hit-and-run murni.
+    # Apapun pilihan TP user (TP1/2/3), ladder dipaksa sangat rapat
+    # (0.6R/0.8R/1.0R) dan SL 1.0×ATR supaya posisi cepat selesai dan
+    # tidak sempat ditelan tren besar yang berlawanan.
+    if counter_trend_scalp:
+        sl_mult = 1.0
+        tp_ladder = (0.6, 0.8, 1.0)
     peaks, valleys = _find_swings(highs, lows, window=10)
     # v9.2.4 — Anchor level = harga candle TUTUP (deterministik).
     # Live-anchor v9.1.4 dicabut: dashboard (batch fetch) dan detail
