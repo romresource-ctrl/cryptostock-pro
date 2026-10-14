@@ -461,6 +461,10 @@ class AssetSignal(BaseModel):
     risk_level: str | None = None
     reward_pct: float | None = None
     risk_pct: float | None = None
+    # v10.1.8 — True bila sinyal lolos gate TAMPILAN longgar tapi akan
+    # gagal gate EKSEKUSI ketat (freshness 3 candle / chase 1.5 ATR).
+    # Full-Auto wajib skip; dashboard tetap menampilkannya.
+    late_entry: bool = False
 
 
 class DashboardResponse(BaseModel):
@@ -632,16 +636,20 @@ async def _get_daily_candles(market: str, symbol: str) -> list[dict] | None:
         return None
 
 
-def _build_signal(snapshot: dict, tr: dict | None = None, *, min_conf: int = 85, min_wr: float = 70.0, profile: str | None = None, daily_candles: list | None = None, timeframe: str | None = None) -> AssetSignal:
+def _build_signal(snapshot: dict, tr: dict | None = None, *, min_conf: int = 85, min_wr: float = 70.0, profile: str | None = None, daily_candles: list | None = None, timeframe: str | None = None, freshness_max_candles: int = 8, chase_atr_mult: float = 2.5) -> AssetSignal:
     market = snapshot["market"]
     candles = snapshot.get("candles", [])
     ticker = snapshot.get("ticker", {}) or {}
     # v9.0.0 — Pass the caller's trader profile so the dashboard computes
     # the SAME signal the detail page shows (single source of truth).
     # v9.1.4 — Anchor level ke harga live ticker (arah tetap candle tutup).
+    # v10.1.8 — Default gate TAMPILAN longgar (freshness 8 / chase 2.5);
+    # Full-Auto memanggil jalur ini dengan nilai ketat (3 / 1.5).
     sig = compute_signal(
         candles, market, profile=profile, live_price=ticker.get("price"),
         daily_candles=daily_candles, timeframe=timeframe,
+        freshness_max_candles=freshness_max_candles,
+        chase_atr_mult=chase_atr_mult,
     )
     spark = [c["close"] for c in candles[-30:]] if candles else []
     tr_mini = TrackRecordMini(**(tr or {}))
@@ -731,6 +739,7 @@ def _build_signal(snapshot: dict, tr: dict | None = None, *, min_conf: int = 85,
         risk_level=risk_level,
         reward_pct=reward_pct,
         risk_pct=risk_pct,
+        late_entry=bool(sig.get("late_entry")),
     )
 
 
@@ -1035,6 +1044,10 @@ async def _build_dashboard_response(
     region: str | None = None,
     extras: list[str] | None = None,
     profile: str | None = None,
+    # v10.1.8 — strict_gates=True dipakai jalur Full-Auto (fetcher) agar
+    # eksekusi tetap pakai gate ketat v10.1.6 (freshness 3 / chase 1.5)
+    # walaupun dashboard tampil longgar (8 / 2.5).
+    strict_gates: bool = False,
 ) -> DashboardResponse:
     # Backward-compat: "stock" -> "stock_id", "world_stocks" -> "stock_us" internally
     eff_market = "stock_id" if market == "stock" else market
@@ -1123,11 +1136,16 @@ async def _build_dashboard_response(
             if isinstance(d, list) and d
         }
 
+    # v10.1.8 — Pilih gate: dashboard/display longgar (8/2.5), Full-Auto
+    # eksekusi ketat (3/1.5).
+    _fresh_n = 3 if strict_gates else 8
+    _chase_m = 1.5 if strict_gates else 2.5
     assets = [
         _build_signal(
             s, tr_summary.get(s["symbol"]),
             min_conf=min_confidence, min_wr=min_wr, profile=profile,
             daily_candles=daily_map.get(s["symbol"]), timeframe=timeframe,
+            freshness_max_candles=_fresh_n, chase_atr_mult=_chase_m,
         )
         for s in ordered
     ]
@@ -1271,6 +1289,9 @@ async def asset_chart(
         snap.get("candles", []), eff_market, profile=profile,
         live_price=(snap.get("ticker", {}) or {}).get("price"),
         daily_candles=_daily, timeframe=timeframe,
+        # v10.1.8 — Detail chart = jalur TAMPILAN → gate longgar sama
+        # seperti dashboard supaya badge konsisten antar layar.
+        freshness_max_candles=8, chase_atr_mult=2.5,
     )
     # v8.2.2 — Enrich raw signal with risk/reward metrics so the detail
     # page header renders the Risk badge. `compute_signal` returns a
@@ -1340,6 +1361,9 @@ async def asset_analyze(
     technical = compute_signal(
         candles, eff_market, profile=profile, live_price=price,
         daily_candles=_daily_a, timeframe=timeframe,
+        # v10.1.8 — AI analyze = jalur TAMPILAN → gate longgar (8/2.5)
+        # agar konsisten dengan badge dashboard.
+        freshness_max_candles=8, chase_atr_mult=2.5,
     )
     if price is None:
         raise HTTPException(503, "Price unavailable")
@@ -1710,7 +1734,7 @@ async def search_assets(
 # v8.12.69 — Latest published Android build. The /app-version endpoint
 # serves this so outdated installs get an update prompt. Bump together
 # with frontend APP_VERSION / app.json version on every release.
-APP_LATEST_VERSION = "10.1.7"
+APP_LATEST_VERSION = "10.1.8"
 
 # v10.1.1 — User minta popup update HANYA kotak kecil tanpa daftar
 # perubahan (list panjang bikin tombol OK tidak tersentuh di layar
@@ -3195,6 +3219,9 @@ async def _asi_signal_fetcher(market: str, symbol: str, profile: str | None = No
                 market=market, timeframe="1h", sort="confidence",
                 full=True, min_confidence=70, min_wr=70.0, region=None,
                 profile=profile,
+                # v10.1.8 — Full-Auto pakai gate EKSEKUSI ketat (3/1.5);
+                # dashboard user tetap tampil longgar (8/2.5).
+                strict_gates=True,
             )
             _asi_fetch_cache[key] = (time.time(), resp)
         for a in resp.assets:

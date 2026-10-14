@@ -674,6 +674,10 @@ async def _run_full_auto_scanner(
                 for sig in results:
                     if not isinstance(sig, dict) or not sig.get("side"):
                         continue
+                    # v10.1.8 — Skip sinyal late-entry (lolos gate tampilan
+                    # longgar tapi gagal gate eksekusi ketat 3-candle/1.5ATR).
+                    if sig.get("late_entry"):
+                        continue
                     if int(sig.get("confidence") or 0) < user_min_conf:
                         continue
                     sigs_found += 1

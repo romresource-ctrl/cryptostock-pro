@@ -5,6 +5,31 @@ AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs
 
 ---
 
+## v10.1.8 — Split Gate Tampilan vs Eksekusi + Full-Auto Overhaul (Oktober 2026)
+
+**Full-Auto Anti-Loss (scheduler.py)**:
+- Engine selection per Trader Profile: `longterm` (Confluence v9) → scan 1 engine saja; `scalper/day/swing` → scan 3 engine VWAP (tanpa longterm, anti-konflik).
+- `MIN_FULL_AUTO_CONFIDENCE = 90` (dari 70).
+- Cooldown 15 menit per-symbol (anti-flood, cegah kasus AVAX re-SHORT berulang).
+- Trend-filter eksternal 4H EMA50: SHORT ditolak di bias UP, LONG ditolak di bias DOWN.
+- Max trades/hari default 5 → 3.
+- Skip sinyal `late_entry=True` (pertahanan ganda).
+
+**Split Gate Dashboard vs Eksekusi (indicators.py + server.py)**:
+- `compute_signal()` punya param baru `freshness_max_candles` (default 3) & `chase_atr_mult` (default 1.5) = gate EKSEKUSI ketat.
+- Dashboard/chart/AI-analyze memakai gate LONGGAR (8 candle / 2.5 ATR) → sinyal LONG/SHORT kembali banyak untuk user non-premium.
+- Sinyal yang lolos hanya karena gate longgar ditandai `late_entry=True` + reason "Late-entry — Full-Auto skip".
+- `_asi_signal_fetcher` memanggil `_build_dashboard_response(strict_gates=True)` → eksekusi tetap ketat.
+
+**Mark price 100ms (useBinanceRealtime.ts)**: stream `@ticker` (1 detik) → `@aggTrade` (per-trade) + throttle 100ms.
+
+**PERINGATAN TESTING**: Jangan storm-test `/api/dashboard?full=true` berulang — Binance `data-api.binance.vision` IP-ban pod (HTTP 418) setelah ratusan fetch. Ban ~7 menit. Dashboard recover otomatis via cache + fallback Bitget/CoinGecko.
+
+---
+
+
+---
+
 ## v10.1.7 — 7 Perbaikan Bug/Regresi (Oktober 2026)
 
 1. **Logo splash & app icon diganti** — logo baru (file_0000000050ac8211a2ed46dd69c1f1fe.png, 2.3MB, 1254x1254) di-copy ke icon.png, adaptive-icon.png, splash-icon.png, splash-image.png, app-image.png, favicon.png.

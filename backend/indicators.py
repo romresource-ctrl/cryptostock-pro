@@ -1196,6 +1196,15 @@ def compute_signal(
     rsi_momentum: bool = False,
     vol_required: bool = False,
     hlhh_required: bool = False,
+    # v10.1.8 — SPLIT GATE TAMPILAN vs EKSEKUSI (keputusan user):
+    # Dashboard/chart memakai nilai LONGGAR (8 candle / 2.5 ATR) supaya
+    # LONG/SHORT tetap banyak tampil (user non-premium melihat sinyal
+    # aktif → mau subscribe). Full-Auto memakai default KETAT (3 candle /
+    # 1.5 ATR) untuk kualitas eksekusi. Saat sinyal lolos hanya karena
+    # gate longgar, flag `late_entry=True` ikut keluar agar Full-Auto
+    # bisa skip walaupun sinyal tampil di dashboard.
+    freshness_max_candles: int = 3,
+    chase_atr_mult: float = 1.5,
 ) -> dict[str, Any]:
     """v9.0.0 "Confluence" — total formula overhaul.
 
@@ -1380,7 +1389,9 @@ def compute_signal(
         f, s, c = _ema_fast_series[i], _ema_slow_series[i], closes[i]
         return (f > s and c > s) if want_bull else (f < s and c < s)
 
-    def _fresh(want_bull: bool, max_age: int = 3) -> bool:
+    def _fresh(want_bull: bool, max_age: int | None = None) -> bool:
+        if max_age is None:
+            max_age = freshness_max_candles
         cnt = 0
         for i in range(len(closes) - 1, -1, -1):
             if _struct_at(i, want_bull):
@@ -1391,8 +1402,17 @@ def compute_signal(
 
     bull_fresh = _fresh(True)
     bear_fresh = _fresh(False)
-    buy_not_late = price <= (ema21 + 1.5 * atr)
-    sell_not_late = price >= (ema21 - 1.5 * atr)
+    buy_not_late = price <= (ema21 + chase_atr_mult * atr)
+    sell_not_late = price >= (ema21 - chase_atr_mult * atr)
+    # v10.1.8 — Strict flags (gate EKSEKUSI asli v10.1.6: 3 candle / 1.5
+    # ATR). Dipakai untuk menandai sinyal yang lolos HANYA karena gate
+    # tampilan longgar → `late_entry=True` di payload, dan Full-Auto
+    # akan melewatkannya walau badge LONG/SHORT tampil di dashboard.
+    _strict_needed = (freshness_max_candles != 3) or (chase_atr_mult != 1.5)
+    bull_fresh_strict = _fresh(True, 3) if _strict_needed else bull_fresh
+    bear_fresh_strict = _fresh(False, 3) if _strict_needed else bear_fresh
+    buy_not_late_strict = (price <= (ema21 + 1.5 * atr)) if _strict_needed else buy_not_late
+    sell_not_late_strict = (price >= (ema21 - 1.5 * atr)) if _strict_needed else sell_not_late
 
     # ---- Confluence scoring ----
     # Every component votes WITH the dominant structure only. There is no
@@ -1444,7 +1464,7 @@ def compute_signal(
             confidence = 55
         elif not bull_fresh:
             reasons.append(
-                "Tren BULL sudah berjalan > 3 candle (sinyal terlambat — tren tua rawan reversal) — skip, tunggu setup segar."
+                f"Tren BULL sudah berjalan > {freshness_max_candles} candle (sinyal terlambat — tren tua rawan reversal) — skip, tunggu setup segar."
             )
             confidence = 52
         elif not buy_not_late:
@@ -1510,7 +1530,7 @@ def compute_signal(
             confidence = 55
         elif not bear_fresh:
             reasons.append(
-                "Tren BEAR sudah berjalan > 3 candle (sinyal terlambat — tren tua rawan pantulan) — skip, tunggu setup segar."
+                f"Tren BEAR sudah berjalan > {freshness_max_candles} candle (sinyal terlambat — tren tua rawan pantulan) — skip, tunggu setup segar."
             )
             confidence = 52
         elif not sell_not_late:
@@ -1608,10 +1628,24 @@ def compute_signal(
         sl_mult=_sl_atr_mult, tp_ladder=_tp_ladder,
     )
 
+    # v10.1.8 — Tandai sinyal yang lolos HANYA karena gate tampilan
+    # longgar (freshness ≤8 / chase 2.5 ATR) tapi akan gagal gate
+    # eksekusi ketat (3 / 1.5). Full-Auto wajib skip sinyal ini.
+    late_entry = False
+    if action == "BUY":
+        late_entry = not (bull_fresh_strict and buy_not_late_strict)
+    elif action == "SELL":
+        late_entry = not (bear_fresh_strict and sell_not_late_strict)
+    if late_entry:
+        reasons.append(
+            "Late-entry (gate eksekusi ketat) — tampil untuk analisis manual; Full-Auto skip."
+        )
+
     return {
         "action": action,
         "label": label,
         "confidence": int(confidence),
+        "late_entry": late_entry,
         "indicators": {
             "rsi": round(rsi, 2) if rsi is not None else None,
             # Legacy key names kept for frontend compatibility; values
