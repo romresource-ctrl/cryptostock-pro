@@ -446,6 +446,16 @@ export default function TradesPositionScreen() {
                 </Text>
               </>
             ) : null}
+            {/* v10.2.4 — Close price eksplisit di kartu closed
+                (permintaan user). */}
+            {!isOpen && !isPending && tr.closed_price ? (
+              <>
+                {"  ·  "}
+                <Text style={{ color: "#FFFFFF", fontWeight: "800" }}>
+                  Close {fp(tr.closed_price)}
+                </Text>
+              </>
+            ) : null}
           </Text>
           {/* Riwayat TP hit */}
           {(() => {

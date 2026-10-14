@@ -1210,6 +1210,16 @@ export default function ASIBotScreen() {
                     <Text style={{ color: YELLOW, fontWeight: "800" }}>
                       Margin ${(tr.margin_usdt ?? ((tr.entry_price && tr.qty && tr.leverage) ? tr.entry_price * tr.qty / tr.leverage : 0)).toFixed(2)}
                     </Text>
+                    {/* v10.2.4 — Close price eksplisit di kartu closed
+                        (permintaan user). */}
+                    {!isOpen && !isPending && (tr as any).closed_price ? (
+                      <>
+                        {"  ·  "}
+                        <Text style={{ color: "#FFFFFF", fontWeight: "800" }}>
+                          Close {formatPrice((tr as any).closed_price, "crypto")}
+                        </Text>
+                      </>
+                    ) : null}
                   </Text>
                   {/* TP fills history */}
                   {(() => {
