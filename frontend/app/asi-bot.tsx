@@ -1003,28 +1003,45 @@ export default function ASIBotScreen() {
                       </Text>
                     )}
                   </View>
-                  {/* Kanan: PnL $ + % (lebar tetap 100 → anti-jiggle) */}
+                  {/* Kanan: PnL $ + % (lebar tetap 100 → anti-jiggle).
+                      v10.1.8 — PENDING (LIMIT) harus tampil "LIMIT WAITING"
+                      persis seperti Running Positions — JANGAN tampilkan
+                      PnL $0.00/0.00% yang bikin user mengira posisi sudah
+                      masuk. */}
                   <View style={{ width: 100, alignItems: "flex-end" }}>
-                    <View style={{
-                      paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4,
-                      backgroundColor: isOpen && flashDir[symBase] === "up" ? GREEN + "33"
-                        : isOpen && flashDir[symBase] === "down" ? RED + "33" : "transparent",
-                    }}>
-                      <Text style={{
-                        color: pos ? GREEN : RED, fontWeight: "900", fontSize: 16,
-                        fontVariant: ["tabular-nums"],
+                    {isPending ? (
+                      <View style={{
+                        paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6,
+                        backgroundColor: YELLOW,
                       }}>
-                        {pos ? "+" : ""}${dispPnl.toFixed(2)}
-                      </Text>
-                    </View>
-                    {/* v10.1.7 — % PnL SELALU ditampilkan baik OPEN maupun CLOSED */}
-                    <Text style={{
-                      color: pos ? GREEN : RED, fontSize: 10, fontWeight: "700",
-                      fontVariant: ["tabular-nums"],
-                    }}>
-                      {pos ? "+" : ""}{pct.toFixed(2)}%
-                      {isOpen && flashDir[symBase] ? (flashDir[symBase] === "up" ? " ▲" : " ▼") : ""}
-                    </Text>
+                        <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 10 }}>
+                          LIMIT WAITING
+                        </Text>
+                      </View>
+                    ) : (
+                      <>
+                        <View style={{
+                          paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4,
+                          backgroundColor: isOpen && flashDir[symBase] === "up" ? GREEN + "33"
+                            : isOpen && flashDir[symBase] === "down" ? RED + "33" : "transparent",
+                        }}>
+                          <Text style={{
+                            color: pos ? GREEN : RED, fontWeight: "900", fontSize: 16,
+                            fontVariant: ["tabular-nums"],
+                          }}>
+                            {pos ? "+" : ""}${dispPnl.toFixed(2)}
+                          </Text>
+                        </View>
+                        {/* v10.1.7 — % PnL SELALU ditampilkan baik OPEN maupun CLOSED */}
+                        <Text style={{
+                          color: pos ? GREEN : RED, fontSize: 10, fontWeight: "700",
+                          fontVariant: ["tabular-nums"],
+                        }}>
+                          {pos ? "+" : ""}{pct.toFixed(2)}%
+                          {isOpen && flashDir[symBase] ? (flashDir[symBase] === "up" ? " ▲" : " ▼") : ""}
+                        </Text>
+                      </>
+                    )}
                   </View>
                 </View>
 

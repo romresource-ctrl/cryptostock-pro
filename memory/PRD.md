@@ -25,6 +25,8 @@ AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs
 
 **Sync Interval 5 detik**: Recent Trades & Running Positions kini refresh tiap 5 detik (dari 20s/10s) agar status LIMIT WAITING→OPEN sinkron. Backend `/api/asi/balance` punya cache 4 detik per device+exchange untuk melindungi rate-limit API key user.
 
+**Fix kartu pending Recent Trades**: trade LIMIT/pending kini tampil badge kuning "LIMIT WAITING" (bukan PnL +$0.00/+0.00%) — identik dengan Running Positions, menghilangkan kesan "sudah masuk posisi".
+
 **PERINGATAN TESTING**: Jangan storm-test `/api/dashboard?full=true` berulang — Binance `data-api.binance.vision` IP-ban pod (HTTP 418) setelah ratusan fetch. Ban ~7 menit. Dashboard recover otomatis via cache + fallback Bitget/CoinGecko.
 
 ---
