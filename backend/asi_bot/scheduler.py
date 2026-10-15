@@ -1448,11 +1448,43 @@ async def _run_panic_guard(db: Any) -> None:
 
             equity_pct, total_pnl, total_margin = await _user_equity_pnl_pct(
                 db, device_id, net)
-            # Equity trigger juga punya floor absolute: butuh total_margin
-            # minimal $5 agar akun demo kecil tidak kena false trigger.
-            trigger_loss_wrong = loss_wrong_count >= 2
-            trigger_equity = (equity_pct <= -3.0 and total_margin >= 5.0
+            # Equity trigger: floor absolute (margin ≥$5, PnL ≤ -$1) agar
+            # akun demo kecil tidak kena false trigger.
+            #
+            # v10.2.6b — ANTI-OSCILLATION (bug ditemukan live: 9 posisi SELL
+            # baru @10x swing -3% dalam hitungan menit saat BTC +0.5%, panic
+            # trigger→release→trigger tiap 2 menit tanpa efek = noise):
+            #   1. PERSISTENCE: equity harus ≤ -3% selama 2 siklus berturut
+            #      (±4 menit) sebelum trigger — dip sesaat posisi baru
+            #      tidak langsung memicu.
+            #   2. EPISODE LOCK: setelah jalur equity pernah trigger, jalur
+            #      ini DIKUNCI sampai equity pulih di atas -1%. Tanpa ini,
+            #      release-on-neutral membuat trigger berulang selama equity
+            #      masih di bawah -3%.
+            equity_low_now = (equity_pct <= -3.0 and total_margin >= 5.0
                               and total_pnl <= -1.0)
+            low_cycles = int(cfg.get("equity_low_cycles") or 0)
+            low_cycles = low_cycles + 1 if equity_low_now else 0
+            if low_cycles != int(cfg.get("equity_low_cycles") or 0):
+                try:
+                    await db.asi_bot_config.update_one(
+                        {"_id": cfg["_id"]},
+                        {"$set": {"equity_low_cycles": low_cycles,
+                                  "updated_at": now_iso}})
+                except Exception:
+                    pass
+            episode = bool(cfg.get("equity_episode"))
+            if episode and equity_pct > -1.0:
+                episode = False
+                try:
+                    await db.asi_bot_config.update_one(
+                        {"_id": cfg["_id"]},
+                        {"$set": {"equity_episode": False,
+                                  "updated_at": now_iso}})
+                except Exception:
+                    pass
+            trigger_loss_wrong = loss_wrong_count >= 2
+            trigger_equity = low_cycles >= 2 and not episode
             if not (trigger_loss_wrong or trigger_equity):
                 continue
 
@@ -1521,6 +1553,8 @@ async def _run_panic_guard(db: Any) -> None:
                     "panic_closed_pnl": round(closed_pnl, 2),
                     "panic_cancelled_count": cancelled_count,
                     "panic_bias": bias["combined_bias"],
+                    "equity_episode": bool(trigger_equity) or episode,
+                    "equity_low_cycles": 0,
                     "updated_at": now_iso,
                 }},
             )

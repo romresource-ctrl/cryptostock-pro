@@ -36,6 +36,12 @@ Jalur B — Equity drawdown:
 - Loss signifikan: ≥1% margin DAN ≥$0.5 (fluktuasi dust tidak dihitung)
 - Hysteresis 3 menit setelah release: tidak boleh trigger ulang (hindari oscillation)
 - Equity trigger butuh margin ≥$5 (akun kecil tidak kena false positive)
+- **v10.2.6b (fix bug live)**: oscillation trigger→release→trigger tiap 2 menit
+  terdeteksi saat 9 posisi SELL baru @10x swing -3% pada BTC +0.5%.
+  Fix: (1) equity harus ≤ -3% selama 2 siklus berturut (persistence ±4 menit)
+  sebelum trigger; (2) episode lock — jalur equity dikunci setelah trigger
+  sampai equity pulih > -1%, mencegah retrigger berulang.
+  Diverifikasi 6 skenario test sintetis — semua PASS.
 
 ### Semi-Auto
 - TIDAK menutup posisi manual user
