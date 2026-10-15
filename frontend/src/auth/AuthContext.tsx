@@ -64,6 +64,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else {
           // Re-verify with backend to catch: revoke, device change, secret rotation
           try {
+            // v10.2.16 — Timeout 8s: fetch verify yang menggantung di
+            // jaringan lambat membuat `loaded` tak pernah true → halaman
+            // premium (detail aset/grafik) menunggu accessLoaded dan
+            // spinner berputar tanpa selesai.
+            const verifyCtrl = new AbortController();
+            const verifyTimer = setTimeout(() => verifyCtrl.abort(), 8000);
             let res = await fetch(`${backendBase()}/auth/verify`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -73,8 +79,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 device_id: saved.deviceId,
                 device_name: getDeviceName(),
               }),
+              signal: verifyCtrl.signal,
             });
             let data = await res.json();
+            clearTimeout(verifyTimer);
             // v10.1.6 — Hardcoded production-host fallback DIHAPUS sesuai
             // deployment policy (semua request harus lewat
             // EXPO_PUBLIC_BACKEND_URL, tidak boleh bypass ke host tetap).

@@ -230,6 +230,27 @@ export default function AISuggestionsSheet({ visible, onClose, onRequestSubscrib
           renderLocked()
         ) : loading ? (
           renderSkeleton()
+        ) : error === "load_failed" ? (
+          // v10.2.16 — State gagal muat + tombol Coba Lagi. Sebelumnya
+          // error jatuh ke tampilan "kosong" dan fetch tanpa timeout
+          // membuat skeleton tampak "stuck" selamanya.
+          <View style={styles.centerBox}>
+            <Text style={styles.lockEmoji}>⚠️</Text>
+            <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>{t("ai_load_failed_title")}</Text>
+            <Text style={[styles.muted, { color: colors.textSecondary }]}>
+              {t("ai_load_failed_sub")}
+            </Text>
+            <TouchableOpacity
+              onPress={() => { haptic("light"); void load(market); }}
+              style={{
+                marginTop: 14, paddingHorizontal: 24, paddingVertical: 10,
+                borderRadius: 10, backgroundColor: GOLD,
+              }}
+              testID="ai-retry"
+            >
+              <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 13 }}>{t("retry")}</Text>
+            </TouchableOpacity>
+          </View>
         ) : picks.length === 0 ? (
           <View style={styles.centerBox}>
             <Text style={styles.lockEmoji}>⏳</Text>

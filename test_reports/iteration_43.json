@@ -1,0 +1,42 @@
+{
+  "summary": "Frontend-only verification of chart-page no-timeout-hang fixes (fix #4). ALL 5 requested flows PASS: (1) NORMAL FLOW /asset/crypto/BTC direct: candlestick chart SVG rendered in ~3s, BTC header price 82,250.10 with LIVE indicator, HIGH/LOW/VOLUME stats, no error banner, no console errors. (2) HANG SIM (chart API 500 after 5s delay): red error banner testID 'chart-retry' appeared at 8.4s with text 'Error: HTTP 500 ...' + 'Retry →' — NOT an infinite spinner. (3) RETRY: removed interception, tapped chart-retry → chart rendered, banner cleared. (4) TIMEFRAME SWITCH 5m: chart reloaded cleanly, no stuck state (note: '4h' does not exist in TIMEFRAMES list — initial test selector error, not an app bug). (5) REGRESSION: dashboard / loads with asset cards, premium counts, no panic text. BONUS real-hang run: intercepted chart requests left truly hanging — exactly 3 requests fired (30s AbortController abort + 150/300ms backoff retries as designed), banner with 'Error: Timeout 30000ms on /asset/crypto/BTC/chart?timeframe=1h' + Retry appeared at ~90s. The 30s AbortController path is fully validated end-to-end.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "console warnings (web preview)", "issue": "Deprecated RN style props in console: 'shadow* style props are deprecated. Use boxShadow' and 'props.pointerEvents is deprecated. Use style.pointerEvents' — warnings only, no functional impact. Reference: multiple components app-wide."},
+      {"component": "dashboard media element", "issue": "2 pageerrors on dashboard: 'The element has no supported sources.' — an audio/video element (likely alert sound asset) with no valid source on web preview. Pre-existing, unrelated to this fix."}
+    ]
+  },
+  "test_report_links": [
+    "/app/test_reports/screenshots/iter43_normal_chart.png",
+    "/app/test_reports/screenshots/iter43_tf_5m.png",
+    "/app/test_reports/screenshots/iter43_error_banner.png",
+    "/app/test_reports/screenshots/iter43_after_retry.png",
+    "/app/test_reports/screenshots/iter43_realhang_banner.png",
+    "/app/test_reports/screenshots/iter43_dashboard.png"
+  ],
+  "action_items": [
+    "OPTIONAL (UX): worst-case full-hang now takes ~90s (3 attempts x 30s) before the error banner shows. Consider skipping the 3-attempt backoff for AbortController timeouts (a hung upstream won't recover in 450ms) to surface the retry banner after ~30s.",
+    "OPTIONAL (hygiene): migrate deprecated shadow*/pointerEvents props; fix dashboard media element with no supported sources.",
+    "CODE QUALITY: /app/frontend/app/asset/[market]/[symbol].tsx is 1854 lines (>700 guideline) — consider splitting AI Consensus / prediction card into separate components."
+  ],
+  "critical_code_review_comments": [
+    "api.ts get() timeout impl is correct: AbortController only when timeoutMs provided, timer cleared in finally, abort mapped to 'Timeout {ms}ms on {path}' which matches the asset page's /timeout/i retryable regex — intended interaction verified live (3 requests observed during real hang).",
+    "chart-retry TouchableOpacity correctly re-invokes loadChart(timeframe); banner gating 'error && !loadingChart' prevents flicker during reload — verified: banner cleared and chart rendered after tap.",
+    "AuthContext 8s verify abort and subscriptionContext 6s Promise.race on initIap present at expected lines; cold-start gate (profileLoaded && accessLoaded) can no longer hang indefinitely.",
+    "No mocked APIs involved; chart data served by real preview backend in ~1-3s."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only)", "frontend": "100% (5/5 requested flows + real-hang bonus)"},
+  "seed_data_creation": "None (dev bypass deep-link, no credentials needed)",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Disclaimer modal appears on every fresh browser context (delayed ~2-3s) — dismiss via [data-testid=disclaimer-checkbox] then [data-testid=disclaimer-agree]. TIMEFRAMES has NO '4h' pill (valid: 1m 3m 5m 15m 30m 1h 3h 6h 12h 18h 24h 7d 14d 30d). Real full-hang worst case to error banner is ~90s (3x30s aborts + backoff) — budget playwright waits accordingly.",
+  "rca_of_issue": "Original bug: three no-timeout hangs could gate the chart forever — (1) api.chart() fetch with no timeout → infinite skeleton; (2) AuthContext /auth/verify cold-start fetch hang kept authLoaded=false → accessLoaded gate blocked loadChart; (3) subscriptionContext initIap() (Play Billing initConnection) hang kept subLoaded=false → same gate. Fixes verified working: 30s AbortController on chart fetch (Timeout error surfaces via banner), 8s verify abort, 6s initIap race, and tappable chart-retry banner. Validated with real never-responding request: 3 aborted attempts then banner at ~90s, retry recovers."
+}

@@ -229,8 +229,25 @@ const COMMON_HEADERS: Record<string, string> = {
   "X-App-Version": APP_VERSION,
 };
 
-async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, { headers: COMMON_HEADERS });
+async function get<T>(path: string, timeoutMs?: number): Promise<T> {
+  // v10.2.16 — Timeout opsional: tanpa ini fetch yang menggantung
+  // (jaringan lambat / backend sibuk memindai universe penuh) membuat
+  // UI skeleton selamanya — kasus user: AI Suggestions "stuck" saat
+  // menampilkan aset hasil filter formula.
+  const ctrl = timeoutMs ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      headers: COMMON_HEADERS,
+      signal: ctrl?.signal,
+    });
+  } catch (e) {
+    if (ctrl?.signal.aborted) throw new Error(`Timeout ${timeoutMs}ms on ${path}`);
+    throw e;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
   if (res.status === 426) {
     const err: Error & { code?: string } = new Error("Aplikasi Anda sudah kadaluarsa. Silakan install APK versi terbaru dari admin.");
     err.code = "upgrade_required";
@@ -325,6 +342,10 @@ export const api = {
   chart: (market: Market, symbol: string, timeframe: Timeframe, profile?: string) =>
     get<ChartResponse>(
       `/asset/${market}/${symbol}/chart?timeframe=${timeframe}${profile ? `&profile=${encodeURIComponent(profile)}` : ""}`,
+      // v10.2.16 — Timeout 30s: tanpa ini fetch grafik yang menggantung
+      // (jaringan lambat / upstream sibuk) membuat halaman detail aset
+      // spinner berputar tanpa selesai.
+      30_000,
     ),
   analyze: (market: Market, symbol: string, timeframe: Timeframe, lang: "id" | "en" | "ru" | "cn" = "en", profile?: string) =>
     send<AnalyzeResponse>(
@@ -365,7 +386,7 @@ export const api = {
       count: number;
       suggestions: AssetSignal[];
       server_time: string;
-    }>(`/ai-suggestions?${params.toString()}`);
+    }>(`/ai-suggestions?${params.toString()}`, 45_000);
   },
   search: (q: string, timeframe: string = "1h", profile?: string) =>
     get<{

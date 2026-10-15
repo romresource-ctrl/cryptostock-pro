@@ -101,7 +101,14 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       }
 
       if (Platform.OS === "android") {
-        const iap = await initIap();
+        // v10.2.16 — initConnection Play Billing bisa menggantung di
+        // sebagian perangkat (Play Services lambat/absen) → subLoaded
+        // tak pernah true → accessLoaded false selamanya → halaman
+        // grafik aset spinner tanpa selesai. Batasi 6 detik.
+        const iap = await Promise.race([
+          initIap(),
+          new Promise<null>((r) => setTimeout(() => r(null), 6000)),
+        ]);
         setConnected(!!iap);
         if (iap) {
           // Fetch product metadata in background

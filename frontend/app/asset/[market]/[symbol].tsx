@@ -256,7 +256,12 @@ export default function AssetDetail() {
           lastErr = e;
           if (attempt < 2) {
             const msg = String((e as Error)?.message || "");
-            const retryable = /\b502\b|network|fetch|timeout|failed to fetch/i.test(msg);
+            // v10.2.16 — Timeout AbortController (30s) TIDAK di-retry:
+            // 3×30 detik membuat banner retry baru muncul ~90 detik.
+            // Timeout 30s sudah cukup toleran → langsung tampilkan
+            // banner agar user bisa menekan Coba Lagi.
+            const retryable = /\b502\b|network|fetch|failed to fetch/i.test(msg)
+              && !/^Timeout \d+ms/.test(msg);
             if (retryable) {
               await new Promise((r) => setTimeout(r, backoffs[attempt]));
               continue;
@@ -1594,9 +1599,19 @@ export default function AssetDetail() {
             flicker when the detail page first opens and the chart REST
             call races the cold-start latency. */}
         {error && !loadingChart ? (
-          <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.accentDown }]}>
+          // v10.2.16 — Banner error bisa DITEKAN untuk memuat ulang
+          // grafik (sebelumnya user mentok di spinner/teks error tanpa
+          // jalan keluar selain keluar halaman).
+          <TouchableOpacity
+            onPress={() => void loadChart(timeframe)}
+            style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.accentDown }]}
+            testID="chart-retry"
+          >
             <Text style={{ color: colors.accentDown }}>Error: {error}</Text>
-          </View>
+            <Text style={{ color: colors.accentDown, fontWeight: "800", marginTop: 6 }}>
+              {t("retry")} →
+            </Text>
+          </TouchableOpacity>
         ) : null}
       </ScrollView>
 

@@ -1820,3 +1820,13 @@ Keputusan user atas 5 pertanyaan:
 ## v10.2.16 — Verifikasi cache TESTNET/MAINNET (iteration_41 PASS)
 - Status TESTNET/MAINNET per exchange digerakkan oleh `creds` yang sama → fix cache sebelumnya sudah mencakupnya.
 - Testing agent membuktikan dengan network delay 4s: first paint langsung menampilkan "TESTNET ✓ · ****AB12" + saldo cache sebelum refresh tiba (SWR bekerja). Refresh kemudian menimpa dengan data backend — perilaku benar.
+
+## v10.2.16 — Fix anti-hang grafik detail aset + AI Suggestions (iteration_42/43 PASS)
+- Root cause "stuck berputar tanpa selesai": fetch TANPA timeout di 4 titik:
+  1) api.chart (grafik) → kini 30s AbortController, masuk error state, bukan skeleton abadi.
+  2) AuthContext /auth/verify cold-start → 8s abort (loaded selalu settle → accessLoaded tak lagi blokir loadChart selamanya).
+  3) subscriptionContext initIap Android → Promise.race 6s (initConnection Play Billing bisa hang di device tertentu).
+  4) api.aiSuggestions → 45s timeout.
+- AISuggestionsSheet: state load_failed kini tampil ⚠️ + tombol Coba Lagi (testID ai-retry) — sebelumnya jatuh ke tampilan kosong yang misleading.
+- Halaman detail aset: banner error kini tappable retry (testID chart-retry); timeout tidak di-retry 3x (banner ~30s, bukan ~90s).
+- Testing agent PASS: normal flow ~3s chart tampil + harga LIVE; hang simulasi → banner + retry bekerja; timeframe switch bersih.
