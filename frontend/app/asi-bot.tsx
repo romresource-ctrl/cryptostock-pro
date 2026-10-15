@@ -13,6 +13,8 @@ import { useTheme } from "@/src/theme/ThemeContext";
 import { useI18n } from "@/src/i18n/I18nContext";
 import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
 import { useTraderProfile, PROFILE_META } from "@/src/lib/useTraderProfile";
+import { prefetchChart } from "@/src/lib/chartCache";
+import { readPageCache, writePageCache } from "@/src/lib/pageCache";
 import PremiumLocked from "@/src/components/PremiumLocked";
 import AISuggestionsSheet from "@/src/components/AISuggestionsSheet";
 import { getDeviceId } from "@/src/lib/deviceId";
@@ -52,7 +54,7 @@ export default function ASIBotScreen() {
   const { hasAccess, loaded: accessLoaded } = usePremiumAccess();
   // v9.8.0 — Baca Trader Profile aktif dari hook global (bukan dari
   // bot.profile backend). Sinkron dengan ikon header & modal picker.
-  const { profile: traderProfile, explicit: traderExplicit } = useTraderProfile();
+  const { profile: traderProfile, explicit: traderExplicit, apiProfile } = useTraderProfile();
   const [deviceId, setDeviceId] = useState<string>("");
   const [creds, setCreds] = useState<AsiCredential[]>([]);
   // v9.8.0 — flag yang menandakan refresh pertama selesai, agar PICK A
@@ -89,6 +91,8 @@ export default function ASIBotScreen() {
   const [closingIds, setClosingIds] = useState<Record<string, boolean>>({});
   // v9.9.13 — Hapus kartu history dari Recent Trades (per-row ✕).
   const [deletingIds, setDeletingIds] = useState<Record<string, boolean>>({});
+  // v10.2.9 — Anti-resurrect set untuk delete optimistic (dipakai refresh).
+  const deletedIdsRef = useRef<Set<string>>(new Set());
   // v9.8.1 — AISuggestionsSheet popup (daftar aset hasil scan, dibuka
   // dari tombol PICK A SIGNAL). Sheet ini punya AsiTradeSheet internal.
   const [suggestOpen, setSuggestOpen] = useState(false);
@@ -131,6 +135,12 @@ export default function ASIBotScreen() {
     (async () => {
       const did = await getDeviceId();
       setDeviceId(did);
+      // v10.2.9 — INSTANT OPEN: gambar daftar trade terakhir dari cache
+      // seketika; refresh() menyusul dengan data segar di background.
+      try {
+        const cached = await readPageCache<AsiTradeResp[]>(`asibot-trades:${did}`);
+        if (cached && cached.length > 0) setTrades(cached);
+      } catch { /* abaikan */ }
       refresh(did);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -264,7 +274,14 @@ export default function ASIBotScreen() {
     try {
       const t2 = await api.asi.listTrades(id, 100);
       // v10.2.2 — History diperluas 50 → 100 posisi (permintaan user).
-      setTrades(t2.items.slice(0, 100));
+      // v10.2.9 — Anti-resurrect: kartu yang baru dihapus optimistic tidak
+      // boleh muncul lagi akibat race dengan refresh yang in-flight.
+      const items = t2.items.slice(0, 100)
+        .filter((x) => !deletedIdsRef.current.has(String((x as any)._id || "")));
+      setTrades(items);
+      // v10.2.9 — Simpan ke page cache: kunjungan berikutnya daftar
+      // langsung tergambar instan sebelum refresh pertama selesai.
+      writePageCache(`asibot-trades:${id}`, items);
     } catch { /* keep trades (jangan kosongkan!) */ }
     // v9.9.9 — saldo available kedua jaringan, di-refresh bersama PnL.
     // v10.1.7 — Hanya patch nilai bila non-null supaya kolom DEMO/REAL
@@ -401,13 +418,19 @@ export default function ASIBotScreen() {
     if (!tid || !deviceId) return;
     const lockKey = tid;
     if (deletingIds[lockKey]) return;
+    // v10.2.9 — OPTIMISTIC DELETE: kartu langsung hilang (keluhan user:
+    // hapus lambat & kadang tidak terdelete). Request jalan di
+    // background; gagal → data dimuat ulang + alert.
+    deletedIdsRef.current.add(tid);
+    setTrades((list) => list.filter((x) => (x as any)._id !== tid));
+    setTimeout(() => deletedIdsRef.current.delete(tid), 15_000);
     setDeletingIds((prev) => ({ ...prev, [lockKey]: true }));
     try {
       await api.asi.deleteTrade(deviceId, tid);
-      // Hapus langsung dari state lokal agar kartu hilang instan.
-      setTrades((list) => list.filter((x) => (x as any)._id !== tid));
     } catch (e: any) {
+      deletedIdsRef.current.delete(tid);
       Alert.alert(t("asi_close_failed"), String(e?.message || e));
+      await refresh();
     } finally {
       setDeletingIds((prev) => {
         const next = { ...prev };
@@ -1110,7 +1133,11 @@ export default function ASIBotScreen() {
               // Tombol di dalam (CLOSE/CANCEL/⚠️) tetap menang karena
               // touchable terdalam yang menerima tap.
               const openDetail = () => {
-                if (symBase) router.push(`/asset/crypto/${encodeURIComponent(symBase)}` as any);
+                if (!symBase) return;
+                // v10.2.9 — PREFETCH chart sebelum navigasi supaya
+                // halaman grafik terbuka hampir instan.
+                prefetchChart("crypto", symBase, "1h", apiProfile ?? undefined);
+                router.push(`/asset/crypto/${encodeURIComponent(symBase)}` as any);
               };
               const rowBody = (
                 <CardTouchable activeOpacity={0.8} onPress={openDetail}

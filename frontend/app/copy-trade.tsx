@@ -9,6 +9,7 @@ import { useI18n } from "@/src/i18n/I18nContext";
 import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
 import PremiumLocked from "@/src/components/PremiumLocked";
 import { api, type AsiLiveRow } from "@/src/lib/api";
+import { readPageCache, writePageCache } from "@/src/lib/pageCache";
 import AsiTradeSheet, { type AsiTradeIntent } from "@/src/components/AsiTradeSheet";
 
 const GOLD = "#F0B90B";
@@ -66,12 +67,30 @@ export default function CopyTradeScreen() {
     try {
       const l = await api.asi.leaderboardLive();
       setLeader(l.items || []);
+      // v10.2.9 — Simpan ke page cache supaya kunjungan berikutnya
+      // leaderboard langsung tergambar TANPA spinner.
+      writePageCache("leaderboard:live", l.items || []);
     } catch {
       /* keep previous rows */
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
+  }, []);
+
+  // v10.2.9 — INSTANT OPEN: render baris leaderboard terakhir dari cache
+  // seketika saat halaman dibuka (keluhan user: "buka leaderboard sangat
+  // lama"), lalu fetch segar jalan di background.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const cached = await readPageCache<AsiLiveRow[]>("leaderboard:live");
+      if (alive && cached && cached.length > 0) {
+        setLeader(cached);
+        setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
   }, []);
 
   useEffect(() => {

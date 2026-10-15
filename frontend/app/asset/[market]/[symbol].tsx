@@ -27,6 +27,8 @@ import { usePriceZoneAlert } from "@/src/hooks/usePriceZoneAlert";
 import { useDipTopAlert } from "@/src/hooks/useDipTopAlert";
 import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
 import { useTraderProfile } from "@/src/lib/useTraderProfile";
+import { getPrefetchedChart } from "@/src/lib/chartCache";
+import { readPageCache, writePageCache } from "@/src/lib/pageCache";
 import {
   STABLECOIN_SYMBOLS,
   formatStablecoinLocal,
@@ -215,6 +217,29 @@ export default function AssetDetail() {
       // (see line ~1275) so once we're loading, no red box can appear.
       setError("");
       setLoadingChart(true);
+      // v10.2.9 — INSTANT RENDER: gambar chart TERAKHIR untuk kombinasi
+      // market|symbol|tf|profile ini dari page cache sambil fetch segar
+      // berjalan di background (keluhan user: grafik lambat dibuka).
+      // Cache per-key → tidak mungkin menampilkan candle aset lain
+      // (regresi v8.13.x tetap terjaga).
+      const pageKey = `chart:${market}|${symbol}|${tf}|${effectiveProfile || "none"}`;
+      try {
+        const cached = await readPageCache<ChartResponse>(pageKey);
+        if (cached) setChart(cached);
+      } catch { /* abaikan, lanjut fetch */ }
+      // v10.2.9 — PREFETCH: kartu Running Positions / Recent Trades sudah
+      // menembak fetch chart SEBELUM navigasi → ambil hasilnya di sini
+      // supaya grafik tampil hampir instan. Miss → fetch normal.
+      try {
+        const pre = await getPrefetchedChart(market, symbol, tf, effectiveProfile);
+        if (pre) {
+          setChart(pre);
+          writePageCache(pageKey, pre);
+          setError("");
+          setLoadingChart(false);
+          return;
+        }
+      } catch { /* lanjut fetch normal */ }
       // 3-attempt backoff (150ms → 300ms). Retries on transient failures
       // (502 / network / fetch / timeout); other failures surface fast.
       const backoffs = [150, 300];
@@ -223,6 +248,7 @@ export default function AssetDetail() {
         try {
           const c = await api.chart(market, symbol, tf, effectiveProfile);
           setChart(c);
+          writePageCache(pageKey, c);
           setError("");
           setLoadingChart(false);
           return;
@@ -282,10 +308,15 @@ export default function AssetDetail() {
   useEffect(() => {
     // v9.1.3 — Tunggu Trader Profile termuat dari storage agar fetch
     // pertama langsung memakai mesin yang benar (anti-kedip sinyal).
-    if (!profileLoaded) return;
+    // v10.2.9 — Tunggu JUGA accessLoaded: sebelumnya fetch pertama jalan
+    // dengan profile=undefined (hasAccess masih false saat loading), lalu
+    // effectiveProfile berubah setelah akses termuat → chart di-fetch
+    // DUA KALI berurutan (dan fetch pertama pakai engine yang salah).
+    // Inilah akar "grafik lambat" saat dibuka dari kartu trade.
+    if (!profileLoaded || !accessLoaded) return;
     void loadChart(timeframe);
     setAnalysis(null);
-  }, [timeframe, loadChart, profileLoaded]);
+  }, [timeframe, loadChart, profileLoaded, accessLoaded]);
 
   // Translate technical reasoning bullets when EN selected (cached server-side)
   useEffect(() => {

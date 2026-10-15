@@ -19,6 +19,9 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { useTheme } from "@/src/theme/ThemeContext";
 import { useI18n } from "@/src/i18n/I18nContext";
+import { useTraderProfile } from "@/src/lib/useTraderProfile";
+import { prefetchChart } from "@/src/lib/chartCache";
+import { readPageCache, writePageCache } from "@/src/lib/pageCache";
 import { getDeviceId } from "@/src/lib/deviceId";
 import { api, type AsiTradeResp } from "@/src/lib/api";
 
@@ -57,10 +60,12 @@ export default function TradesPositionScreen() {
 
   const load = useCallback(async () => {
     if (!deviceId) return;
-    try {
-      // v10.2.2 — History diperluas 50 → 100 posisi (permintaan user).
-      const r = await api.asi.listTrades(deviceId, 100);
-      setTrades(((r as any).items || r || []) as AnyTrade[]);
+    // v10.2.9 — PERCEPATAN LOAD: fetch balance DIPARARELKAN dan tidak
+    // lagi menahan spinner list. Sebelumnya `await balance` (memanggil
+    // API Binance, bisa 1-3 detik di produksi saat cache 4s miss)
+    // menghalangi finally → halaman Running Positions terasa sangat
+    // lambat padahal daftar posisi sudah siap.
+    const fetchBalance = async () => {
       // v10.1.5 — Saldo kedua jaringan (opsional; jangan ganggu list).
       // v10.1.7 — Hanya update balance bila fetch sukses & nilainya valid
       // (tidak null), supaya saldo DEMO/REAL tidak "hilang-timbul" saat
@@ -78,8 +83,39 @@ export default function TradesPositionScreen() {
           },
         }));
       } catch { /* no-op */ }
+    };
+    fetchBalance(); // fire-and-forget: TIDAK ditunggu, spinner hanya
+                    // menunggu daftar posisi.
+    try {
+      // v10.2.2 — History diperluas 50 → 100 posisi (permintaan user).
+      const r = await api.asi.listTrades(deviceId, 100);
+      const items = (((r as any).items || r || []) as AnyTrade[])
+        // v10.2.9 — Anti-resurrect: kartu yang baru saja dihapus user
+        // (optimistic) tidak boleh muncul lagi akibat race dengan poll
+        // 5 detik yang sedang in-flight.
+        .filter((x) => !deletedRef.current.has(String((x as any)._id || x.id || "")));
+      setTrades(items);
+      // v10.2.9 — Simpan ke page cache supaya kunjungan berikutnya
+      // halaman langsung menggambar daftar ini TANPA spinner.
+      writePageCache(`trades:${deviceId}`, items);
     } catch { /* keep previous */ }
     finally { setLoading(false); }
+  }, [deviceId]);
+
+  // v10.2.9 — INSTANT OPEN: render cache terakhir seketika saat halaman
+  // dibuka (keluhan user: "buka Running Positions sangat lambat"),
+  // lalu load() menyusul dengan data segar di background.
+  useEffect(() => {
+    if (!deviceId) return;
+    let alive = true;
+    (async () => {
+      const cached = await readPageCache<AnyTrade[]>(`trades:${deviceId}`);
+      if (alive && cached && cached.length > 0) {
+        setTrades(cached);
+        setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
   }, [deviceId]);
 
   useEffect(() => {
@@ -103,6 +139,11 @@ export default function TradesPositionScreen() {
   // v10.0.10 — Flash direction per simbol (naik=hijau, turun=merah) supaya
   // harga & PnL "berkedip hidup" tiap ada perubahan tick.
   const prevPricesRef = useRef<Record<string, number>>({});
+  // v10.2.9 — Set id kartu yang sedang/baru dihapus secara optimistic;
+  // dipakai load() untuk mencegat kartu "muncul lagi" akibat race poll.
+  const deletedRef = useRef<Set<string>>(new Set());
+  // v10.2.9 — Profile user untuk prefetch chart saat kartu ditekan.
+  const { apiProfile } = useTraderProfile();
   const flashTimerRef = useRef<any>(null);
   const [flash, setFlash] = useState<Record<string, "up" | "down">>({});
   useEffect(() => {
@@ -169,11 +210,24 @@ export default function TradesPositionScreen() {
   }, [deviceId, load, t]);
 
   const onDelete = useCallback(async (tr: AnyTrade) => {
+    const tid = String(tr.id || (tr as any)._id || "");
+    if (!tid || !deviceId) return;
+    // v10.2.9 — OPTIMISTIC DELETE (keluhan user: hapus kartu lambat &
+    // kadang tidak terdelete). Kartu langsung hilang dari layar;
+    // request jalan di background; gagal → kartu dikembalikan + alert.
+    deletedRef.current.add(tid);
+    setTrades((list) => list.filter((x) => String((x as any)._id || x.id || "") !== tid));
+    // Lepas flag anti-resurrect setelah 15 detik (server sudah pasti
+    // menghapus; poll berikutnya membawa data bersih).
+    setTimeout(() => deletedRef.current.delete(tid), 15_000);
     try {
-      await api.asi.deleteTrade(deviceId, tr.id || tr._id);
+      await api.asi.deleteTrade(deviceId, tid);
+    } catch (e: any) {
+      deletedRef.current.delete(tid);
+      Alert.alert(t("asi_close_failed") || "Action failed", String(e?.message || e));
       await load();
-    } catch { /* keep */ }
-  }, [deviceId, load]);
+    }
+  }, [deviceId, load, t]);
 
   // Local price formatter (adaptive precision, no `market` dependency).
   const fp = (v: number | null | undefined): string => {
@@ -238,7 +292,12 @@ export default function TradesPositionScreen() {
           // v10.1.1 — Normalisasi symbol ("XRPUSDT" → "XRP") sebelum
           // membuka detail aset/chart.
           const base = String(tr.symbol || "").replace(/USDT$/, "");
-          if (base) router.push(`/asset/crypto/${encodeURIComponent(base)}` as any);
+          if (!base) return;
+          // v10.2.9 — PREFETCH: fetch chart mulai SEKARANG (sebelum
+          // navigasi selesai) supaya halaman grafik terbuka hampir
+          // instan — keluhan user "grafik lambat saat tap kartu".
+          prefetchChart("crypto", base, "1h", apiProfile ?? undefined);
+          router.push(`/asset/crypto/${encodeURIComponent(base)}` as any);
         }}
         style={[s.card, { backgroundColor: colors.surface, borderColor }]}>
         {/* v10.1.7 — Layout 3-BARIS (anti-jiggle):

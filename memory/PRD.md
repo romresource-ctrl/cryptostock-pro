@@ -78,6 +78,38 @@ supaya sinyal arah berlawanan (searah reversal) tetap bisa dipilih:
   disimpan ke `close_reason_detail` pada record trade (sebelumnya hilang,
   hanya "bracket fail"). Dugaan utama: -2021 "Order would immediately
   trigger" pada TP low-cap volatile; penanganan khusus menunggu bukti
+
+## v10.2.9 — Performa Halaman & Delete Optimistic (Oktober 2026)
+Keluhan user: hapus kartu lambat & kadang tidak ter-delete; grafik dari
+kartu trade lambat; halaman Running Positions & Leaderboard lambat dibuka.
+Padahal endpoint backend cepat (leaderboard 8ms lokal, 0.1-0.3s eksternal;
+chart 0.2-0.35s) — akarnya pola frontend yang menunggu jaringan sebelum
+menggambar.
+- **Page cache (stale-while-revalidate)**: `src/lib/pageCache.ts` —
+  payload sukses terakhir disimpan ke AsyncStorage; halaman render cache
+  SEKETIKA saat dibuka lalu refresh background. Diterapkan ke:
+  Running Positions (trades), Leaderboard (rows), ASI-Bot (Recent Trades),
+  dan grafik aset (per key market|symbol|tf|profile — aman dari flash
+  candle aset lain, regresi v8.13.x terjaga).
+- **Chart prefetch**: `src/lib/chartCache.ts` — tap kartu di Running
+  Positions/Recent Trades menembak `api.chart` SEBELUM router.push;
+  halaman detail mengambil promise yang sudah berjalan (TTL 60s,
+  single-use, maks 12 entri).
+- **Fix double-fetch grafik**: effect loadChart kini menunggu
+  `accessLoaded` + `profileLoaded`; sebelumnya fetch pertama jalan dengan
+  profile=undefined lalu diulang dengan profile user → 2× round-trip dan
+  engine salah sesaat.
+- **Running Positions load**: fetch balance Binance dijadikan
+  fire-and-forget — sebelumnya spinner list menunggu balance (1-3s di
+  produksi saat cache 4s miss).
+- **Delete optimistic** (kedua layar): kartu hilang seketika, request di
+  background; gagal → kartu dikembalikan + alert. `deletedRef`/
+  `deletedIdsRef` mencegat kartu "muncul lagi" akibat race dengan poll
+  5 detik yang in-flight (akar "kadang tidak terdelete").
+- Bump 10.2.9 (3 lokasi). Lint 6 file bersih; smoke test screenshot
+  Running Positions + Leaderboard OK. Semua perubahan frontend → perlu
+  Publish + build APK baru agar terasa di HP.
+
   error aktual. 4 skenario test sintetis (exhaustion, cooling, normal
   tetap eksekusi, RSI oversold) — semua PASS.
 
