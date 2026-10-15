@@ -448,6 +448,31 @@ export const api = {
       get<{ prices: Record<string, number> }>(
         `/asi/prices?symbols=${encodeURIComponent(symbols.join(","))}`,
       ),
+    // v10.2.6 — Panic Market Guard status (bias BTC/ETH + panic cooldown).
+    marketRisk: (deviceId?: string) =>
+      get<{
+        ok: boolean;
+        bias: "bearish" | "bullish" | "neutral";
+        btc_change_1h: number;
+        eth_change_1h: number;
+        is_panic_dump: boolean;
+        is_panic_pump: boolean;
+        reversal_detected: boolean;
+        reason: string;
+        updated_at?: string | null;
+        panic_active: boolean;
+        panic_reason?: string | null;
+        panic_at?: string | null;
+        panic_closed_count?: number;
+        panic_cancelled_count?: number;
+        panic_released_at?: string | null;
+        panic_release_reason?: string | null;
+        full_enabled?: boolean;
+        semi_enabled?: boolean;
+        semi_warn: boolean;
+      }>(
+        `/asi/market-risk${deviceId ? `?device_id=${encodeURIComponent(deviceId)}` : ""}`,
+      ),
     // v9.9.9 — saldo USDT available untuk jaringan aktif (demo/real).
     balance: (deviceId: string, exchange: string = "binance") =>
       get<{ ok: boolean;

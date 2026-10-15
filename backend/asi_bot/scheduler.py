@@ -48,6 +48,8 @@ WATCHER_INTERVAL = 20
 # 5 menit terlalu lama). 90s cukup untuk tetap aman rate-limit API.
 SCANNER_INTERVAL = 90
 TITAN_RELAY_INTERVAL = 25  # v10.0.15 — polling posisi master Titan-Bot
+# v10.2.6 — Panic Market Guard interval (BTC+ETH monitor tiap 2 menit).
+PANIC_INTERVAL = 120
 # Minimum confidence required for full-auto execution.
 MIN_FULL_AUTO_CONFIDENCE = 90
 
@@ -617,6 +619,12 @@ async def _run_full_auto_scanner(
             # jalan). "asi_bot" (default) → scanner internal saja.
             if (cfg.get("signal_source") or "asi_bot") == "cloud_pro":
                 continue
+            # v10.2.6 — PANIC GUARD: skip user yang sedang panic_active
+            # (cooldown panic market). Scanner tidak membuka posisi baru
+            # sampai _run_panic_guard melepas cooldown (BTC/ETH neutral
+            # atau reversal pattern terdeteksi).
+            if cfg.get("panic_active"):
+                continue
             scanned += 1
             max_tr = int(cfg.get("max_trades_per_day") or 3)
             # v9.9.5 — network aktif ditentukan lebih awal supaya kuota
@@ -1131,6 +1139,417 @@ async def _run_titan_relay(db: Any) -> None:
             await db.asi_titan_state.update_one(
                 {"_id": st["_id"]}, {"$set": {"active": False}})
 
+# ─────────────────────────────────────────────────────────────────────────────
+# v10.2.6 — PANIC MARKET GUARD (Full-Auto) + market risk snapshot (Semi-Auto UI)
+#
+# Setiap 2 menit:
+#   1. Baca bias market dari BTC + ETH (1h change + 4H EMA50 slope).
+#   2. Simpan snapshot ke `asi_market_bias` → dibaca endpoint /asi/market-risk
+#      untuk banner peringatan di Semi-Auto UI.
+#   3. Untuk setiap user Full-Auto:
+#        a. Jika panic_active → cek normalisasi (bias neutral atau reversal
+#           pattern terdeteksi) → lepas cooldown; scanner langsung bisa
+#           open posisi baru searah pergerakan market.
+#        b. Jika belum panic & bias ekstrem (BTC+ETH searah dump/pump):
+#           hitung berapa posisi OPEN Full-Auto yang salah arah & loss;
+#           hitung total unrealized PnL% terhadap total margin terpakai.
+#           Trigger panic bila ≥2 posisi loss salah arah ATAU equity ≤ -3%.
+#           Aksi: close posisi loss salah arah (market) + cancel pending
+#           limit salah arah → set panic_active=True (cooldown).
+#
+# Definisi "salah arah" (keputusan user):
+#   • LONG salah arah bila BTC & ETH keduanya bearish/dump.
+#   • SHORT salah arah bila BTC & ETH keduanya bullish/pump.
+# ─────────────────────────────────────────────────────────────────────────────
+async def _market_bias_snapshot() -> dict[str, Any]:
+    """Hitung bias market terbaru dari BTC + ETH.
+
+    Kombinasi:
+      - 1h close-vs-prev → % perubahan jangka pendek
+      - 4h EMA50 slope → arah trend menengah
+    Bias "dump" (bearish ekstrem) bila BTC & ETH SAMA-SAMA punya
+    perubahan 1h ≤ -0.5% ATAU slope EMA50 4h menurun. "pump" simetris.
+    """
+    out: dict[str, Any] = {
+        "btc_change_1h": 0.0,
+        "eth_change_1h": 0.0,
+        "btc_slope_up": False,
+        "btc_slope_dn": False,
+        "eth_slope_up": False,
+        "eth_slope_dn": False,
+        "combined_bias": "neutral",
+        "is_panic_dump": False,
+        "is_panic_pump": False,
+        "reversal_detected": False,
+        "reason": "data_unavailable",
+        "ok": False,
+    }
+    try:
+        from market_data import get_crypto_snapshot
+    except Exception:
+        return out
+    try:
+        from indicators import _ema  # type: ignore
+    except Exception:
+        _ema = None  # type: ignore
+    try:
+        btc1h = await get_crypto_snapshot("BTC", "1h")
+        eth1h = await get_crypto_snapshot("ETH", "1h")
+        btc4h = await get_crypto_snapshot("BTC", "4h")
+        eth4h = await get_crypto_snapshot("ETH", "4h")
+    except Exception as e:
+        logger.debug("panic bias snapshot upstream fail: %s", e)
+        return out
+
+    def _closes(snap: Any) -> list[float]:
+        return [
+            float(c["close"]) for c in ((snap or {}).get("candles") or [])
+            if c.get("close")
+        ]
+
+    btc1h_c = _closes(btc1h)
+    eth1h_c = _closes(eth1h)
+    btc4h_c = _closes(btc4h)
+    eth4h_c = _closes(eth4h)
+    if len(btc1h_c) < 2 or len(eth1h_c) < 2:
+        return out
+
+    def _chg(cs: list[float]) -> float:
+        if len(cs) >= 2 and cs[-2] > 0:
+            return (cs[-1] - cs[-2]) / cs[-2] * 100.0
+        return 0.0
+
+    out["btc_change_1h"] = _chg(btc1h_c)
+    out["eth_change_1h"] = _chg(eth1h_c)
+
+    if _ema is not None and len(btc4h_c) >= 54:
+        try:
+            e_series = _ema(btc4h_c, 50)
+            prev = e_series[-4] if len(e_series) >= 4 else e_series[-1]
+            out["btc_slope_up"] = e_series[-1] > prev
+            out["btc_slope_dn"] = e_series[-1] < prev
+        except Exception:
+            pass
+    if _ema is not None and len(eth4h_c) >= 54:
+        try:
+            e_series = _ema(eth4h_c, 50)
+            prev = e_series[-4] if len(e_series) >= 4 else e_series[-1]
+            out["eth_slope_up"] = e_series[-1] > prev
+            out["eth_slope_dn"] = e_series[-1] < prev
+        except Exception:
+            pass
+
+    # v10.2.6 — Threshold KETAT (anti-noise, keputusan user):
+    #   • 1h change ≥ 1.0% (bukan 0.5% atau 0.7%) DAN slope EMA50 4h searah.
+    #   • Butuh KEDUA BTC dan ETH memenuhi — satu doang tidak cukup.
+    # Dengan ini, fluktuasi harian normal (±0.5%) tidak akan memicu panic
+    # dan bot tetap boleh entry seperti biasa.
+    btc_bear = (out["btc_change_1h"] <= -1.0) and out["btc_slope_dn"]
+    btc_bull = (out["btc_change_1h"] >= 1.0) and out["btc_slope_up"]
+    eth_bear = (out["eth_change_1h"] <= -1.0) and out["eth_slope_dn"]
+    eth_bull = (out["eth_change_1h"] >= 1.0) and out["eth_slope_up"]
+    out["is_panic_dump"] = bool(btc_bear and eth_bear)
+    out["is_panic_pump"] = bool(btc_bull and eth_bull)
+    if out["is_panic_dump"]:
+        out["combined_bias"] = "bearish"
+    elif out["is_panic_pump"]:
+        out["combined_bias"] = "bullish"
+    else:
+        out["combined_bias"] = "neutral"
+
+    def _reversal(cs: list[float]) -> bool:
+        """Candle terakhir 1h bergerak berlawanan dari candle sebelumnya
+        (shift momentum). Dipakai sebagai early-release panic cooldown."""
+        if len(cs) < 3:
+            return False
+        last_diff = cs[-1] - cs[-2]
+        prev_diff = cs[-2] - cs[-3]
+        return (last_diff > 0 and prev_diff < 0) or (last_diff < 0 and prev_diff > 0)
+
+    out["reversal_detected"] = _reversal(btc1h_c) and _reversal(eth1h_c)
+    out["reason"] = (
+        f"BTC {out['btc_change_1h']:+.2f}%/1h, "
+        f"ETH {out['eth_change_1h']:+.2f}%/1h"
+    )
+    out["ok"] = True
+    return out
+
+
+def _position_wrong_direction(trade_side: str, bias: dict[str, Any]) -> bool:
+    """LONG salah arah bila panic_dump; SHORT salah arah bila panic_pump."""
+    if trade_side == "BUY":
+        return bool(bias.get("is_panic_dump"))
+    return bool(bias.get("is_panic_pump"))
+
+
+async def _panic_cancel_pending_limit(db: Any, t: dict[str, Any]) -> None:
+    """Batalkan 1 order LIMIT entry pending (duplikat minimal dari
+    routes._cancel_pending_limit supaya scheduler tidak import routes)."""
+    cred = await resolve_credential(
+        db, t["device_id"], t["exchange"], bool(t.get("testnet", True)))
+    if cred and (t.get("exchange") or "").lower() == "binance":
+        try:
+            bin_sym = (
+                str(t.get("symbol") or "").upper()
+                .split("/")[0].split("USDT")[0].split("-")[0] + "USDT"
+            )
+            await br.cancel_order(
+                decrypt(cred["api_key_enc"]), decrypt(cred["api_secret_enc"]),
+                bool(cred.get("testnet", True)),
+                symbol=bin_sym, order_id=t.get("entry_order_id"))
+        except Exception:
+            pass
+    now = datetime.now(timezone.utc).isoformat()
+    await db.asi_trades.update_one(
+        {"_id": t["_id"]},
+        {"$set": {"status": "cancelled", "close_reason": "panic_guard",
+                  "closed_at": now, "updated_at": now}},
+    )
+
+
+async def _user_equity_pnl_pct(db: Any, device_id: str,
+                                testnet: bool | None) -> tuple[float, float, float]:
+    """Return (equity_pct, total_pnl, total_margin) untuk posisi Full-Auto
+    OPEN device. equity_pct = total_pnl / total_margin * 100."""
+    total_pnl = 0.0
+    total_margin = 0.0
+    q: dict[str, Any] = {"device_id": device_id, "status": "open",
+                          "mode": "full"}
+    if testnet is not None:
+        q["testnet"] = bool(testnet)
+    async for t in db.asi_trades.find(q):
+        total_pnl += float(t.get("pnl_usdt") or 0)
+        m = t.get("margin_usdt")
+        if m is None:
+            try:
+                m = (float(t.get("entry_price") or 0)
+                     * float(t.get("qty") or 0)
+                     / max(1, int(t.get("leverage") or 10)))
+            except Exception:
+                m = 0.0
+        total_margin += float(m or 0)
+    pct = (total_pnl / total_margin * 100.0) if total_margin > 0 else 0.0
+    return pct, total_pnl, total_margin
+
+
+async def _run_panic_guard(db: Any) -> None:
+    """Panic Market Guard — dieksekusi tiap PANIC_INTERVAL detik (120s)."""
+    bias = await _market_bias_snapshot()
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+    # Simpan snapshot bias (dipakai Semi-Auto UI + status endpoint).
+    try:
+        await db.asi_market_bias.replace_one(
+            {"_id": "market"},
+            {"_id": "market", "updated_at": now_iso, **bias},
+            upsert=True,
+        )
+    except Exception as e:
+        logger.debug("panic bias snapshot save fail: %s", e)
+    if not bias.get("ok"):
+        return  # fail-open: data tidak tersedia → tidak melakukan apa-apa
+
+    cursor = db.asi_bot_config.find({
+        "$or": [
+            {"full_enabled": True},
+            {"enabled": True, "mode": "full",
+             "full_enabled": {"$exists": False}},
+        ],
+    })
+    async for cfg in cursor:
+        try:
+            device_id = cfg.get("device_id") or cfg.get("_id")
+            if not device_id:
+                continue
+            net = bool(cfg["active_testnet"]) if "active_testnet" in cfg else None
+
+            panic_active = bool(cfg.get("panic_active"))
+            if panic_active:
+                # Cek normalisasi: bias neutral ATAU reversal_detected
+                # (keputusan user: condition-based tanpa minimal waktu).
+                release_now = (
+                    bias["combined_bias"] == "neutral"
+                    or bias.get("reversal_detected")
+                )
+                if release_now:
+                    rel_reason = "neutral" if bias["combined_bias"] == "neutral" else "reversal"
+                    await db.asi_bot_config.update_one(
+                        {"_id": cfg["_id"]},
+                        {"$set": {
+                            "panic_active": False,
+                            "panic_released_at": now_iso,
+                            "panic_release_reason": f"{rel_reason} | {bias['reason']}",
+                            "updated_at": now_iso,
+                        }},
+                    )
+                    try:
+                        await db.asi_panic_events.insert_one({
+                            "device_id": device_id,
+                            "event": "released",
+                            "at": now_iso,
+                            "release_reason": rel_reason,
+                            "bias": bias.get("reason"),
+                            "reversal_detected": bool(bias.get("reversal_detected")),
+                        })
+                    except Exception:
+                        pass
+                    logger.warning(
+                        "panic-guard RELEASED for %s: %s | %s",
+                        device_id, rel_reason, bias["reason"])
+                continue
+
+            # Belum panic → evaluasi trigger.
+            # 2 jalur trigger (keputusan user):
+            #   A. ≥2 posisi loss salah arah SIGNIFIKAN (pnl ≤ -1% margin)
+            #      butuh bias ekstrem untuk mendefinisikan "salah arah"
+            #   B. Total unrealized PnL/equity ≤ -3%
+            #
+            # ANTI-NOISE (keputusan user: panic guard JANGAN mengganggu
+            # bot normal atau jadi noise untuk entry baru):
+            #   • Hitung loss hanya kalau PnL ≤ -1% dari margin posisi
+            #     (fluktuasi kecil −$0.01 TIDAK boleh dihitung).
+            #   • Hysteresis 3 menit setelah panic release — hindari
+            #     toggle on/off beruntun saat bias dekat threshold.
+            released_at = cfg.get("panic_released_at")
+            if released_at:
+                try:
+                    rel_dt = datetime.fromisoformat(
+                        str(released_at).replace("Z", "+00:00"))
+                    if (now - rel_dt).total_seconds() < 180:
+                        continue  # masih dalam hysteresis window
+                except Exception:
+                    pass
+
+            loss_wrong_count = 0
+            open_trades: list[dict[str, Any]] = []
+            async for t in db.asi_trades.find({
+                "device_id": device_id, "status": "open", "mode": "full",
+            }):
+                open_trades.append(t)
+                if not _position_wrong_direction(t.get("side"), bias):
+                    continue
+                pnl_t = float(t.get("pnl_usdt") or 0)
+                if pnl_t >= 0:
+                    continue
+                margin_t = float(t.get("margin_usdt") or 0)
+                if margin_t <= 0:
+                    try:
+                        margin_t = (float(t.get("entry_price") or 0)
+                                    * float(t.get("qty") or 0)
+                                    / max(1, int(t.get("leverage") or 10)))
+                    except Exception:
+                        margin_t = 0.0
+                # Loss harus signifikan: ≥ 1% margin DAN absolute ≥ $0.5
+                # supaya posisi dust/baru open tidak dihitung.
+                sig_loss = (margin_t > 0 and (pnl_t / margin_t) <= -0.01
+                            and abs(pnl_t) >= 0.5)
+                if sig_loss:
+                    loss_wrong_count += 1
+
+            equity_pct, total_pnl, total_margin = await _user_equity_pnl_pct(
+                db, device_id, net)
+            # Equity trigger juga punya floor absolute: butuh total_margin
+            # minimal $5 agar akun demo kecil tidak kena false trigger.
+            trigger_loss_wrong = loss_wrong_count >= 2
+            trigger_equity = (equity_pct <= -3.0 and total_margin >= 5.0
+                              and total_pnl <= -1.0)
+            if not (trigger_loss_wrong or trigger_equity):
+                continue
+
+            # ─── TRIGGER PANIC ───
+            closed_count = 0
+            closed_pnl = 0.0
+            for t in open_trades:
+                if not _position_wrong_direction(t.get("side"), bias):
+                    continue
+                pnl_t = float(t.get("pnl_usdt") or 0)
+                if pnl_t >= 0:
+                    continue  # hanya tutup yang loss
+                cred = await resolve_credential(
+                    db, device_id, t["exchange"],
+                    bool(t.get("testnet", True)))
+                if not cred:
+                    continue
+                qty = float(t.get("qty_remaining") or t.get("qty") or 0)
+                if qty <= 0:
+                    continue
+                try:
+                    await close_position(cred, t["symbol"], t["side"], qty)
+                    await db.asi_trades.update_one(
+                        {"_id": t["_id"]},
+                        {"$set": {
+                            "status": "closed",
+                            "close_reason": "panic_guard",
+                            "closed_at": now_iso,
+                            "updated_at": now_iso,
+                            "pnl_usdt": round(pnl_t, 2),
+                        }},
+                    )
+                    closed_count += 1
+                    closed_pnl += pnl_t
+                except Exception as e:
+                    logger.warning("panic close %s: %s", t.get("_id"), e)
+
+            cancelled_count = 0
+            async for t in db.asi_trades.find({
+                "device_id": device_id, "status": "pending_entry",
+                "mode": "full",
+            }):
+                if not _position_wrong_direction(t.get("side"), bias):
+                    continue
+                try:
+                    await _panic_cancel_pending_limit(db, t)
+                    cancelled_count += 1
+                except Exception as e:
+                    logger.warning("panic cancel pending %s: %s",
+                                   t.get("_id"), e)
+
+            reasons: list[str] = []
+            if trigger_loss_wrong:
+                reasons.append(f"{loss_wrong_count} posisi loss salah arah")
+            if trigger_equity:
+                reasons.append(f"equity {equity_pct:+.2f}% ≤ -3%")
+            panic_reason = " + ".join(reasons) + f" | {bias['reason']}"
+
+            await db.asi_bot_config.update_one(
+                {"_id": cfg["_id"]},
+                {"$set": {
+                    "panic_active": True,
+                    "panic_at": now_iso,
+                    "panic_reason": panic_reason,
+                    "panic_closed_count": closed_count,
+                    "panic_closed_pnl": round(closed_pnl, 2),
+                    "panic_cancelled_count": cancelled_count,
+                    "panic_bias": bias["combined_bias"],
+                    "updated_at": now_iso,
+                }},
+            )
+            try:
+                await db.asi_panic_events.insert_one({
+                    "device_id": device_id,
+                    "event": "triggered",
+                    "at": now_iso,
+                    "reason": panic_reason,
+                    "closed_count": closed_count,
+                    "closed_pnl": round(closed_pnl, 2),
+                    "cancelled_count": cancelled_count,
+                    "bias_snapshot": {
+                        "combined_bias": bias["combined_bias"],
+                        "btc_change_1h": bias["btc_change_1h"],
+                        "eth_change_1h": bias["eth_change_1h"],
+                    },
+                })
+            except Exception:
+                pass
+            logger.warning(
+                "panic-guard TRIGGERED for %s: %s | closed=%d (pnl=%.2f) cancelled=%d",
+                device_id, panic_reason, closed_count, closed_pnl, cancelled_count)
+        except Exception as e:  # noqa: BLE001
+            logger.exception("panic guard device err %s: %s",
+                             cfg.get("_id"), e)
+
+
+
 
 class ASIScheduler:
     """Lightweight asyncio loop runner. Started on FastAPI startup."""
@@ -1154,8 +1573,9 @@ class ASIScheduler:
             asyncio.create_task(self._loop_pnl()),
             asyncio.create_task(self._loop_scanner()),
             asyncio.create_task(self._loop_titan_relay()),
+            asyncio.create_task(self._loop_panic_guard()),
         ]
-        logger.info("ASI-Bot scheduler started: watcher + pnl + scanner + titan_relay")
+        logger.info("ASI-Bot scheduler started: watcher + pnl + scanner + titan_relay + panic_guard")
 
     async def stop(self) -> None:
         self._running = False
@@ -1215,3 +1635,15 @@ class ASIScheduler:
             except Exception as e:  # noqa: BLE001
                 logger.exception("titan relay loop crash: %s", e)
             await asyncio.sleep(TITAN_RELAY_INTERVAL)
+
+    async def _loop_panic_guard(self) -> None:
+        """v10.2.6 — Panic Market Guard: tiap 2 menit baca BTC+ETH,
+        trigger panic cooldown Full-Auto bila ≥2 posisi loss salah arah
+        atau equity ≤ -3%; lepas cooldown saat bias neutral/reversal."""
+        await asyncio.sleep(15)  # startup delay — tunggu market_data warm
+        while self._running:
+            try:
+                await _run_panic_guard(self.db)
+            except Exception as e:  # noqa: BLE001
+                logger.exception("panic guard loop crash: %s", e)
+            await asyncio.sleep(PANIC_INTERVAL)

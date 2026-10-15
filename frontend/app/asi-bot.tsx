@@ -93,6 +93,27 @@ export default function ASIBotScreen() {
   // dari tombol PICK A SIGNAL). Sheet ini punya AsiTradeSheet internal.
   const [suggestOpen, setSuggestOpen] = useState(false);
 
+  // v10.2.6 — PANIC MARKET GUARD: snapshot bias BTC/ETH + status panic
+  // per device. Dipakai banner info di Full-Auto (saat cooldown aktif)
+  // dan banner peringatan di Semi-Auto (saat market dump/pump).
+  type MarketRisk = {
+    ok: boolean;
+    bias: "bearish" | "bullish" | "neutral";
+    btc_change_1h: number;
+    eth_change_1h: number;
+    is_panic_dump: boolean;
+    is_panic_pump: boolean;
+    reversal_detected: boolean;
+    reason: string;
+    panic_active: boolean;
+    panic_reason?: string | null;
+    panic_closed_count?: number;
+    panic_cancelled_count?: number;
+    panic_released_at?: string | null;
+    semi_warn: boolean;
+  };
+  const [marketRisk, setMarketRisk] = useState<MarketRisk | null>(null);
+
   useEffect(() => {
     (async () => {
       const did = await getDeviceId();
@@ -115,6 +136,23 @@ export default function ASIBotScreen() {
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bot.semi_enabled, bot.full_enabled, bot.enabled, deviceId]);
+
+  // v10.2.6 — Poll /asi/market-risk tiap 30 detik: snapshot bias BTC/ETH +
+  // status panic cooldown Full-Auto. Banner di render di dalam ScrollView.
+  useEffect(() => {
+    if (!deviceId) return;
+    let alive = true;
+    const tick = async () => {
+      try {
+        const r = await api.asi.marketRisk(deviceId);
+        if (!alive) return;
+        setMarketRisk(r as any);
+      } catch { /* keep previous snapshot */ }
+    };
+    tick();
+    const id = setInterval(tick, 30_000);
+    return () => { alive = false; clearInterval(id); };
+  }, [deviceId]);
 
   // v9.9.13 — Mark price REALTIME untuk posisi open: polling batch 2 detik
   // (backend cache 1 detik via proxy SG). Angka harga di samping symbol
@@ -393,6 +431,79 @@ export default function ASIBotScreen() {
             {t("asi_stop_hint")}
           </Text>
         ) : null}
+
+        {/* v10.2.6 — PANIC MARKET GUARD banner.
+            Full-Auto: tampil saat bot dalam panic cooldown (merah) ATAU
+                       saat market panic/pump jelas (oranye, info).
+            Semi-Auto: tampil saat market panic/pump — ajakan user mempertimbangkan
+                       menutup posisi berlawanan arah (TIDAK auto-close). */}
+        {(() => {
+          if (!marketRisk) return null;
+          const isFull = bot.mode === "full";
+          const panicActive = isFull && !!marketRisk.panic_active;
+          const marketPanic = !!marketRisk.is_panic_dump || !!marketRisk.is_panic_pump;
+          if (!panicActive && !marketPanic) return null;
+          const panicDir = marketRisk.is_panic_dump
+            ? { label: "DUMP", color: RED, longAt: "LONG", icon: "⚠️" }
+            : marketRisk.is_panic_pump
+            ? { label: "PUMP", color: GREEN, longAt: "SHORT", icon: "⚠️" }
+            : null;
+          const bgColor = panicActive ? "#7F1D1D" : "#78350F";
+          const borderColor = panicActive ? RED : ORANGE;
+          const title = panicActive
+            ? "🛡️ PANIC GUARD AKTIF — Bot Pause Sementara"
+            : isFull
+              ? `${panicDir?.icon || "⚠️"} Market ${panicDir?.label || "EKSTREM"} Terdeteksi`
+              : `${panicDir?.icon || "⚠️"} Peringatan Market: ${panicDir?.label || "EKSTREM"}`;
+          return (
+            <View style={{
+              marginTop: 10, backgroundColor: bgColor,
+              borderWidth: 1.5, borderColor,
+              borderRadius: 12, padding: 12,
+            }} testID="asi-panic-banner">
+              <Text style={{ color: "#FFF", fontWeight: "900",
+                             fontSize: 13.5, letterSpacing: 0.3 }}>
+                {title}
+              </Text>
+              <Text style={{ color: "#FDE68A", fontSize: 11.5,
+                             marginTop: 6, lineHeight: 17 }}>
+                BTC {marketRisk.btc_change_1h >= 0 ? "+" : ""}
+                {marketRisk.btc_change_1h.toFixed(2)}%/1h · ETH {marketRisk.eth_change_1h >= 0 ? "+" : ""}
+                {marketRisk.eth_change_1h.toFixed(2)}%/1h
+                {marketRisk.reversal_detected ? "  ·  🔄 reversal pattern" : ""}
+              </Text>
+              {panicActive ? (
+                <Text style={{ color: "#FECACA", fontSize: 11.5,
+                               marginTop: 8, lineHeight: 17 }}>
+                  Full-Auto berhenti open posisi baru hingga market stabil
+                  atau reversal. Posisi loss salah arah: ditutup
+                  ({marketRisk.panic_closed_count || 0}); order limit salah arah:
+                  dibatalkan ({marketRisk.panic_cancelled_count || 0}).
+                  Bot otomatis aktif lagi begitu kondisi normal.
+                </Text>
+              ) : isFull ? (
+                <Text style={{ color: "#FDE68A", fontSize: 11.5,
+                               marginTop: 8, lineHeight: 17 }}>
+                  Bot akan menghindari entry {panicDir?.longAt} melawan arah
+                  pasar. Panic Guard memantau tiap 2 menit.
+                </Text>
+              ) : (
+                <Text style={{ color: "#FDE68A", fontSize: 11.5,
+                               marginTop: 8, lineHeight: 17 }}>
+                  Pertimbangkan menutup posisi {panicDir?.longAt} Anda yang
+                  berlawanan arah pasar. Semi-Auto TIDAK menutup posisi
+                  manual Anda — keputusan tetap di tangan Anda.
+                </Text>
+              )}
+              {marketRisk.panic_reason && panicActive ? (
+                <Text style={{ color: "#FCA5A5", fontSize: 10.5,
+                               marginTop: 6, fontStyle: "italic" }}>
+                  Trigger: {marketRisk.panic_reason}
+                </Text>
+              ) : null}
+            </View>
+          );
+        })()}
 
         {/* Connect exchange */}
         <SectionHeader title={t("asi_sec_exchange")} />

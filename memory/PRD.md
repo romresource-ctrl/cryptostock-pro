@@ -9,6 +9,48 @@ AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs
 
 ---
 
+## v10.2.6 — Panic Market Guard (Oktober 2026)
+
+Guard portofolio berbasis BTC+ETH untuk Full-Auto + banner peringatan Semi-Auto. Didesain dengan anti-noise ketat agar TIDAK mengganggu bot operasi normal.
+
+### Trigger Full-Auto (butuh KEDUA kondisi guard terpenuhi untuk close posisi)
+Jalur A — Posisi loss salah arah:
+- Butuh bias market panic (BTC & ETH SAMA-SAMA ≥1.0%/1h DAN slope EMA50 4h searah)
+- ≥2 posisi OPEN Full-Auto side-nya salah arah (LONG saat dump, SHORT saat pump) DAN loss signifikan (≤ -1% margin DAN absolute ≥ $0.5)
+
+Jalur B — Equity drawdown:
+- Total unrealized PnL/equity Full-Auto ≤ -3% DAN total margin ≥ $5 DAN total PnL ≤ -$1
+
+### Aksi saat panic trigger
+- Tutup (MARKET close) semua posisi loss salah arah
+- Cancel semua pending limit entry salah arah
+- Set `panic_active=True` → scanner Full-Auto berhenti open posisi baru
+- Catat event di `asi_panic_events` + `panic_closed_count`/`panic_cancelled_count`
+
+### Release otomatis (condition-based, keputusan user)
+- Bias market kembali neutral ATAU reversal pattern terdeteksi di candle 1h BTC+ETH
+- `panic_active=False` → bot langsung bebas open posisi baru searah arah pasar baru
+
+### Anti-noise (keputusan user: panic guard JANGAN jadi noise)
+- Threshold 1h ketat: ≥1.0% + slope EMA50 4h searah (bukan 0.5% atau OR)
+- Loss signifikan: ≥1% margin DAN ≥$0.5 (fluktuasi dust tidak dihitung)
+- Hysteresis 3 menit setelah release: tidak boleh trigger ulang (hindari oscillation)
+- Equity trigger butuh margin ≥$5 (akun kecil tidak kena false positive)
+
+### Semi-Auto
+- TIDAK menutup posisi manual user
+- Banner peringatan tampil saat bias panic jelas (dump/pump): alasan teknikal (reversal BTC/ETH + persentase) dengan ajakan mempertimbangkan tutup posisi berlawanan arah
+- Tidak ada integrasi news (keputusan user: alasan teknikal saja)
+
+### Endpoint & interval
+- `GET /api/asi/market-risk?device_id=...` — snapshot bias BTC/ETH + status panic per device
+- Scheduler monitor BTC+ETH tiap 2 menit (`PANIC_INTERVAL = 120`)
+- Frontend polling `/market-risk` tiap 30 detik untuk banner
+
+Bump versi: 10.2.5 → **10.2.6** (frontend `version.ts` + `app.json` + backend `APP_LATEST_VERSION`).
+
+---
+
 ## v10.2.5 — Guard Anti-Loss-Beruntun (Oktober 2026)
 
 Berdasarkan analisis data aktual user: v10.1.7 WR 75% +$271 (market turun, bot SHORT searah) vs v10.2.4 WR ~20% -$150 (market dump, bot LONG bounce beruntun kena SL).

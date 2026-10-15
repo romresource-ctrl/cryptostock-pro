@@ -1071,3 +1071,44 @@ def _attach_trade_routes(db: Any) -> None:
             "master_open_positions": len(positions),
             "positions_relayed": relayed,
         }
+
+
+    # v10.2.6 — PANIC MARKET GUARD status
+    # Dipakai UI (banner Semi-Auto + indicator Full-Auto) untuk tahu
+    # kondisi market terkini (reversal/dump/pump) dan apakah bot
+    # Full-Auto user sedang dalam panic cooldown.
+    # - Tanpa device_id → hanya bias market global.
+    # - Dengan device_id → ikut panic_active per device.
+    @router.get("/market-risk")
+    async def market_risk(device_id: str | None = Query(default=None)):
+        bias_doc = await db.asi_market_bias.find_one({"_id": "market"})
+        out: dict[str, Any] = {
+            "ok": bool((bias_doc or {}).get("ok", False)),
+            "bias": (bias_doc or {}).get("combined_bias", "neutral"),
+            "btc_change_1h": float((bias_doc or {}).get("btc_change_1h") or 0.0),
+            "eth_change_1h": float((bias_doc or {}).get("eth_change_1h") or 0.0),
+            "is_panic_dump": bool((bias_doc or {}).get("is_panic_dump", False)),
+            "is_panic_pump": bool((bias_doc or {}).get("is_panic_pump", False)),
+            "reversal_detected": bool((bias_doc or {}).get("reversal_detected", False)),
+            "reason": (bias_doc or {}).get("reason", ""),
+            "updated_at": (bias_doc or {}).get("updated_at"),
+            "panic_active": False,
+            "semi_warn": False,
+        }
+        # Semi-Auto peringatan: user Semi-Auto diingatkan untuk
+        # mempertimbangkan menutup posisi berlawanan arah ketika market
+        # sedang panic dump/pump yang jelas.
+        out["semi_warn"] = bool(out["is_panic_dump"] or out["is_panic_pump"])
+        if device_id:
+            cfg = await db.asi_bot_config.find_one({"device_id": device_id})
+            if cfg:
+                out["panic_active"] = bool(cfg.get("panic_active", False))
+                out["panic_reason"] = cfg.get("panic_reason")
+                out["panic_at"] = cfg.get("panic_at")
+                out["panic_closed_count"] = int(cfg.get("panic_closed_count") or 0)
+                out["panic_cancelled_count"] = int(cfg.get("panic_cancelled_count") or 0)
+                out["panic_released_at"] = cfg.get("panic_released_at")
+                out["panic_release_reason"] = cfg.get("panic_release_reason")
+                out["full_enabled"] = bool(cfg.get("full_enabled", False))
+                out["semi_enabled"] = bool(cfg.get("semi_enabled", False))
+        return out
