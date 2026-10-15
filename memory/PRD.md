@@ -148,6 +148,19 @@ server.py) + retry/backoff untuk 418/429.
 - Tujuan: menghentikan kejadian IP server kena 418/451 Binance saat beban
   scanner+panic guard naik (akar dashboard/grafik kehilangan data di
   production).
+
+## v10.2.13b — Confluence v9 dilonggarkan 8→7 faktor (Oktober 2026)
+Keputusan user: gerbang Confluence v9 (profile=longterm) terlalu sering
+kosong total (0/113 aset) → dilonggarkan 8 → 7 faktor. Default dashboard
+(profile=None) tetap 5 faktor. Catatan investigasi: perbedaan badge
+premium HP vs preview bersifat struktural — premium butuh wr_30d dari DB
+track-record; DB production punya histori nyata (lebih akurat), DB preview
+minim histori sehingga fallback conf≥73 menandai semua premium. Perbedaan
+set sinyal HP vs preview = versi backend (Publish terakhir vs terbaru) +
+cache 60s. Diverifikasi live: market saat perubahan memang flat (hanya
+AGIX mencapai skor 4/7, sisanya tersaring sebelum tahap scoring) → 0
+sinyal bukan bug; pelonggaran akan terasa saat setup confluence terbentuk.
+
 - Test: mock transport (418→418→200 sukses; 429×3 raise ke fallback;
   200 tanpa retry) + live fetch BTC via proxy (250 candle OK, ~1.8s).
 

@@ -1218,6 +1218,8 @@ def compute_signal(
     daily_candles: list[dict[str, Any]] | None = None,
     timeframe: str | None = None,
     # v9.2.4 — Opsi C: Confluence butuh 8 faktor confluence (dari 5).
+    # v10.2.13 — Dilonggarkan ke 7 faktor (keputusan user): 8 terlalu
+    # sering kosong total sehingga profile Confluence v9 tidak berguna.
     # Sinyal jauh lebih jarang tapi WR target 70-75% (validasi backtest).
     # v10.0.12 — Default None = AUTO per profile (lihat resolusi di bawah):
     #   • profile=None (dashboard default)  → 5  (gaya v5.1.8, sinyal lebih banyak)
@@ -1304,7 +1306,11 @@ def compute_signal(
     #   • Profile scalper/day/swing memakai mesin VWAP (return lebih awal),
     #     jadi min_score tidak relevan di sana.
     if min_score is None:
-        min_score = 5 if profile is None else 8
+        # v10.2.13 — Confluence v9 dilonggarkan 8 → 7 faktor (keputusan
+        # user: gerbang 8 terlalu sering kosong total — 0 dari 113 aset —
+        # sehingga profile Confluence v9 tidak berguna). 7 tetap jauh
+        # lebih ketat dari default dashboard (5).
+        min_score = 5 if profile is None else 7
 
     closes = [c["close"] for c in candles]
     highs = [c["high"] for c in candles]
