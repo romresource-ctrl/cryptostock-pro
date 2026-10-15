@@ -22,6 +22,8 @@ import { useI18n } from "@/src/i18n/I18nContext";
 import { useTraderProfile } from "@/src/lib/useTraderProfile";
 import { prefetchChart } from "@/src/lib/chartCache";
 import { readPageCache, writePageCache } from "@/src/lib/pageCache";
+import { useBinanceMultiTicker } from "@/src/hooks/useBinanceMultiTicker";
+import { markTradeDeleted, filterDeletedTrades } from "@/src/lib/deletedTrades";
 import { getDeviceId } from "@/src/lib/deviceId";
 import { api, type AsiTradeResp } from "@/src/lib/api";
 
@@ -89,10 +91,12 @@ export default function TradesPositionScreen() {
     try {
       // v10.2.2 — History diperluas 50 → 100 posisi (permintaan user).
       const r = await api.asi.listTrades(deviceId, 100);
-      const items = (((r as any).items || r || []) as AnyTrade[])
+      const items = (await filterDeletedTrades(((r as any).items || r || []) as AnyTrade[]))
         // v10.2.9 — Anti-resurrect: kartu yang baru saja dihapus user
         // (optimistic) tidak boleh muncul lagi akibat race dengan poll
         // 5 detik yang sedang in-flight.
+        // v10.2.16 — filterDeletedTrades: tombstone BERSAMA lintas
+        // halaman (delete di Recent Trades juga berlaku di sini).
         .filter((x) => !deletedRef.current.has(String((x as any)._id || x.id || "")));
       setTrades(items);
       // v10.2.9 — Simpan ke page cache supaya kunjungan berikutnya
@@ -111,7 +115,9 @@ export default function TradesPositionScreen() {
     (async () => {
       const cached = await readPageCache<AnyTrade[]>(`trades:${deviceId}`);
       if (alive && cached && cached.length > 0) {
-        setTrades(cached);
+        // v10.2.16 — Saring tombstone bersama: kartu yang dihapus di
+        // Recent Trades tidak boleh bangkit dari cache halaman ini.
+        setTrades(await filterDeletedTrades(cached));
         setLoading(false);
       }
     })();
@@ -150,6 +156,29 @@ export default function TradesPositionScreen() {
   const { apiProfile } = useTraderProfile();
   const flashTimerRef = useRef<any>(null);
   const [flash, setFlash] = useState<Record<string, "up" | "down">>({});
+  // v10.2.16 — WS aggTrade langsung dari device (sumber yang sama dengan
+  // halaman grafik yang terbukti LIVE). Polling backend 300ms bisa
+  // membeku bila upstream production terblokir / request menggantung —
+  // stream ini membuat harga & PnL kartu kembali "berkedip" realtime.
+  // Keduanya di-MERGE: polling tetap melengkapi simbol non-Binance.
+  const wsPx = useBinanceMultiTicker(openSyms);
+  useEffect(() => {
+    const ks = Object.keys(wsPx);
+    if (ks.length === 0) return;
+    const f: Record<string, "up" | "down"> = {};
+    ks.forEach((k) => {
+      const prev = prevPricesRef.current[k];
+      const v = wsPx[k];
+      if (prev != null && v !== prev) f[k] = v > prev ? "up" : "down";
+    });
+    prevPricesRef.current = { ...prevPricesRef.current, ...wsPx };
+    setPrices((cur) => ({ ...cur, ...wsPx }));
+    if (Object.keys(f).length > 0) {
+      setFlash((cur) => ({ ...cur, ...f }));
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+      flashTimerRef.current = setTimeout(() => setFlash({}), 700);
+    }
+  }, [wsPx]);
   useFocusEffect(
     useCallback(() => {
       if (!openSyms.length) {
@@ -225,6 +254,10 @@ export default function TradesPositionScreen() {
     // kadang tidak terdelete). Kartu langsung hilang dari layar;
     // request jalan di background; gagal → kartu dikembalikan + alert.
     deletedRef.current.add(tid);
+    // v10.2.16 — Tombstone BERSAMA: Recent Trades juga memfilter id ini
+    // dari cache & poll-nya (fix: hapus di Running Positions tidak
+    // menghilangkan kartu di Recent Trades).
+    void markTradeDeleted(tid);
     setTrades((list) => list.filter((x) => String((x as any)._id || x.id || "") !== tid));
     // Lepas flag anti-resurrect setelah 15 detik (server sudah pasti
     // menghapus; poll berikutnya membawa data bersih).
@@ -562,6 +595,7 @@ export default function TradesPositionScreen() {
         key={tr.id || tr._id}
         renderRightActions={() => (
           <TouchableOpacity
+            testID={`tp-del-${tr.symbol || "trade"}`}
             style={{ backgroundColor: RED, justifyContent: "center", alignItems: "center",
                      width: 72, borderRadius: 10, marginVertical: 4 }}
             onPress={() => onDelete(tr)}
@@ -584,7 +618,7 @@ export default function TradesPositionScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
       <View style={[s.header, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-        <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
+        <TouchableOpacity onPress={() => router.back()} style={s.backBtn} testID="tp-back">
           <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 16 }}>

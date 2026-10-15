@@ -16,6 +16,8 @@ import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
 import { useTraderProfile, PROFILE_META } from "@/src/lib/useTraderProfile";
 import { prefetchChart } from "@/src/lib/chartCache";
 import { readPageCache, writePageCache } from "@/src/lib/pageCache";
+import { useBinanceMultiTicker } from "@/src/hooks/useBinanceMultiTicker";
+import { markTradeDeleted, filterDeletedTrades } from "@/src/lib/deletedTrades";
 import PremiumLocked from "@/src/components/PremiumLocked";
 import AISuggestionsSheet from "@/src/components/AISuggestionsSheet";
 import { getDeviceId } from "@/src/lib/deviceId";
@@ -131,7 +133,9 @@ export default function ASIBotScreen() {
       } catch { /* ignore */ }
       try {
         const cached = await readPageCache<AsiTradeResp[]>(`asibot-trades:${did}`);
-        if (cached && cached.length > 0) setTrades(cached);
+        // v10.2.16 — Saring tombstone bersama: kartu yang dihapus di
+        // Running Positions tidak boleh bangkit dari cache halaman ini.
+        if (cached && cached.length > 0) setTrades(await filterDeletedTrades(cached));
       } catch { /* abaikan */ }
       // v10.2.16 — Restore credentials & balance dari page cache: tanpa
       // ini, tiap keluar-masuk halaman kartu DEMO/REAL kembali tampil
@@ -205,6 +209,29 @@ export default function ASIBotScreen() {
     .map((t2) => t2.symbol)
     .filter((v, i, a) => a.indexOf(v) === i)
     .join(",");
+  // v10.2.16 — WS aggTrade langsung dari device (sumber yang sama dengan
+  // halaman grafik yang terbukti LIVE). Polling backend 300ms bisa
+  // membeku bila upstream production terblokir / request menggantung —
+  // stream ini membuat harga & PnL kartu kembali "berkedip" realtime.
+  // Keduanya di-MERGE: polling tetap melengkapi simbol non-Binance.
+  const wsPx = useBinanceMultiTicker(openSymsKey ? openSymsKey.split(",") : []);
+  useEffect(() => {
+    const ks = Object.keys(wsPx);
+    if (ks.length === 0) return;
+    const f: Record<string, "up" | "down"> = {};
+    ks.forEach((k) => {
+      const prev = prevPxRef.current[k];
+      const v = wsPx[k];
+      if (prev != null && v !== prev) f[k] = v > prev ? "up" : "down";
+    });
+    prevPxRef.current = { ...prevPxRef.current, ...wsPx };
+    setLivePx((cur) => ({ ...cur, ...wsPx }));
+    if (Object.keys(f).length > 0) {
+      setFlashDir((cur) => ({ ...cur, ...f }));
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+      flashTimerRef.current = setTimeout(() => setFlashDir({}), 700);
+    }
+  }, [wsPx]);
   useFocusEffect(
     useCallback(() => {
       if (!openSymsKey) { setLivePx({}); return; }
@@ -292,7 +319,7 @@ export default function ASIBotScreen() {
       // v10.2.2 — History diperluas 50 → 100 posisi (permintaan user).
       // v10.2.9 — Anti-resurrect: kartu yang baru dihapus optimistic tidak
       // boleh muncul lagi akibat race dengan refresh yang in-flight.
-      const items = t2.items.slice(0, 100)
+      const items = (await filterDeletedTrades(t2.items.slice(0, 100)))
         .filter((x) => !deletedIdsRef.current.has(String((x as any)._id || "")));
       setTrades(items);
       // v10.2.9 — Simpan ke page cache: kunjungan berikutnya daftar
@@ -448,6 +475,10 @@ export default function ASIBotScreen() {
     // hapus lambat & kadang tidak terdelete). Request jalan di
     // background; gagal → data dimuat ulang + alert.
     deletedIdsRef.current.add(tid);
+    // v10.2.16 — Tombstone BERSAMA: Running Positions juga memfilter id
+    // ini dari cache & poll-nya (fix: hapus di Recent Trades tidak
+    // menghilangkan kartu di Running Positions).
+    void markTradeDeleted(tid);
     setTrades((list) => list.filter((x) => (x as any)._id !== tid));
     setTimeout(() => deletedIdsRef.current.delete(tid), 15_000);
     setDeletingIds((prev) => ({ ...prev, [lockKey]: true }));

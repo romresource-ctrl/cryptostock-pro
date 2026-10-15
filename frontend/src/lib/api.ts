@@ -465,9 +465,12 @@ export const api = {
         `/asi/price?symbol=${encodeURIComponent(symbol)}`,
       ),
     // v9.9.13 — Batch harga live untuk mark price realtime Recent Trades.
+    // v10.2.16 — Timeout 5s: polling 300ms tidak menunggu, tapi request
+    // yang menggantung permanen tidak boleh menumpuk tak berujung.
     prices: (symbols: string[]) =>
       get<{ prices: Record<string, number> }>(
         `/asi/prices?symbols=${encodeURIComponent(symbols.join(","))}`,
+        5_000,
       ),
     // v10.2.7 — Scan debug: alasan scanner mengeksekusi / me-skip device ini.
     scanDebug: (deviceId: string) =>

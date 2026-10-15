@@ -1,0 +1,48 @@
+{
+  "summary": "Frontend-only verification of dashboard profile-switch cache UX (v10.2.15/16) + cross-page delete tombstones (v10.2.16). (1) PROFILE SWITCH SPEED: PASS in settled state — after prefetch warmed (~8s post-load), ALL switches rendered with NO skeleton: Scalper 417ms, Intraday 377ms, switch-BACK to Scalper 125ms (INSTANT, in-memory cache hit ✓), Intraday-back 454ms, Swing 554ms. Cold first-tap on Scalper (cache miss, tapped immediately at load): skeleton appeared at 296ms (instant ✓), cards at 2914ms (fetch land — slightly over the ~1-2s guide but preview-env acceptable). EDGE CASE (minor bug): rapid-switching profiles while a previous profile fetch is still in-flight caused a skeleton flash on switch-back (skeleton at 194ms, cards at 1008ms) — cache did NOT serve instantly in that race. (2) CONFLUENCE v9 ('longterm'): PASS — loads in 696ms via prefetch cache hit with no skeleton; the previously-missing prefetch entry now works. (3) DELETE SYNC CROSS-PAGE: PASS both directions — (A) seeded fake CLOSED ETHUSDT trade (test-del-sync-001), visited /trades-position first to poison its page cache, deleted via swipe→HAPUS on /asi-bot (card vanished immediately), returned to /trades-position: card NOT shown immediately, at 2s, or at 7s (tombstone filtered even the stale disk-cache paint); backend DELETE confirmed (Mongo doc gone). (B) reverse with SOLUSDT (test-del-sync-002): populated /asi-bot cache first, swipe-deleted on /trades-position via new testID tp-del-SOLUSDT, returned to /asi-bot: card absent immediately/2s/7s; Mongo doc gone. (4) NO REGRESSION: PASS — dashboard renders, no console errors, no red screen/panic (only known RN-web deprecation warnings). Both fake docs cleaned from Mongo (verified count=0).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Dashboard profile switch (index.tsx load/cache)", "issue": "RAPID-SWITCH RACE: switching to another profile while the previous profile's fetch is still in-flight makes switch-BACK miss the instant cache (skeleton flashed at 194ms, cards at ~1s) instead of the guaranteed instant cache hit. Likely cause: in load() (index.tsx ~607-645) `nextData` is assigned inside the setData updater but read synchronously by setDashboardCache — if React defers the updater, the cache stores stale/empty data (empty right after a cache-miss switch zeroes data[]); there is also no stale-response guard so an in-flight old-profile response can overwrite the new profile's state.", "testID": "trader-profile-scalper", "priority": "LOW"},
+      {"component": "Position/trade cards (both pages)", "issue": "Symbol text truncated at 375px ('ETHUSDT/U...', 'IT/U...' when swiped) — known cosmetic issue from iter44, still present.", "testID": "N/A", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "Console warnings (web preview)", "issue": "Recurring RN-web deprecation warnings on dashboard: 'shadow* style props are deprecated. Use boxShadow', 'props.pointerEvents is deprecated', 'Animated: useNativeDriver not supported on web', 'expo-notifications push-token listener unsupported on web'. Non-blocking. Reference: /app/frontend/app/index.tsx (styles), _layout.tsx (notifications)"}
+    ]
+  },
+  "test_report_links": [
+    "/app/test_reports/screenshots/iter45_profile_switch.png",
+    "/app/test_reports/screenshots/iter45_profile_settled.png",
+    "/app/test_reports/screenshots/iter45_asibot_before_delete.png",
+    "/app/test_reports/screenshots/iter45_swiped_ETHUSDT.png",
+    "/app/test_reports/screenshots/iter45_asibot_after_delete.png",
+    "/app/test_reports/screenshots/iter45_tp_after_delete.png",
+    "/app/test_reports/screenshots/iter45_swiped_SOLUSDT.png",
+    "/app/test_reports/screenshots/iter45_asibot_after_reverse.png"
+  ],
+  "action_items": [
+    "OPTIONAL (low): fix rapid profile-switch race in /app/frontend/app/index.tsx load() — compute the merged payload OUTSIDE the setData updater (e.g. mirror data in a ref, apply anti-flicker against ref, setData(plainObject), then setDashboardCache with the same object) and add a generation/profile guard so in-flight responses from a previous profile are discarded instead of overwriting current state.",
+    "NOTE: I added two testIDs to /app/frontend/app/trades-position.tsx to make it testable: 'tp-back' (header back button) and 'tp-del-{symbol}' (swipe DELETE action). Keep them.",
+    "No blocking action items — both headline fixes (profile-switch cache UX incl. Confluence v9 prefetch, cross-page delete tombstones) verified working."
+  ],
+  "critical_code_review_comments": [
+    "deletedTrades.ts tombstone module is sound: module-level Map + AsyncStorage persistence ('asibot-deleted-trades:v1', TTL 2min) covers BOTH same-runtime navigation and cold-mount stale disk-cache filtering — empirically proven: trades-position's poisoned disk cache (pagecache:v1:trades:... contained ETHUSDT) did NOT paint the deleted card even in the first frame after navigation. TTL expiry also verified implicitly: a stray partial-delete tombstone from a failed attempt correctly expired after 2min and the card re-appeared (good anti-lockout behaviour).",
+    "dashboardCache.ts prefetch now includes 'longterm' (Confluence v9) and prefetchAllProfiles staggers 5 profiles x 350ms after first load AND on modal open — verified: every profile switch was skeleton-free once prefetch had ~8s to warm.",
+    "Race condition residue in index.tsx load(): nextData captured via setData updater side-effect is read synchronously for setDashboardCache — works only because React currently evaluates the first queued updater eagerly; fragile and breaks under the rapid-switch path (observed skeleton on switch-back). Also missing stale-response guard for in-flight cross-profile fetches.",
+    "trades-position.tsx back button and swipe DELETE action previously had NO testID — added (tp-back, tp-del-{symbol})."
+  ],
+  "updated_files": [
+    "/app/frontend/app/trades-position.tsx (added testID tp-back and tp-del-{symbol} only — no logic changes)"
+  ],
+  "success_rate": {"backend": "N/A (frontend-only; backend DELETE + list endpoints exercised via UI and verified via Mongo — PASS)", "frontend": "95% (profile switch settled-state 6/6 instant, Confluence v9 PASS, delete-sync A+B PASS, no-regression PASS; 1 minor rapid-switch race)"},
+  "seed_data_creation": "Temporary: test-del-sync-001 (ETHUSDT closed) and test-del-sync-002 (SOLUSDT closed) inserted into aitrade_pro.asi_trades for device test-judge-device-001 — BOTH deleted via the UI under test (backend delete confirmed, Mongo count=0, cleanup double-checked).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Premium on web preview: seed localStorage BEFORE load via add_init_script — 'cryptostock.device_fingerprint'='test-judge-device-001' and 'kevinai.auth'=JSON.stringify({email:'test-demo@emergentcontest.demo',code:'C924-337C-D665',unlockedAt,duration:'lifetime',expiresAt:null,deviceId:'test-judge-device-001'}) (code is device-bound to that id). Use localStorage.clear() first: the browser context is SHARED across automation runs and stale pagecache/tombstone keys pollute results. Disclaimer modal: poll for [data-testid=disclaimer-checkbox] up to 20s then click [data-testid=disclaimer-agree] (dismiss can silently fail — re-check). Swipe-delete: do NOT force-click the hidden swipe action (click lands on the card and NAVIGATES to asset detail); do a real mouse drag (down at x=355 on the card row, 15 steps of -18px, up), then click [data-testid=asi-del-{symbol}] on asi-bot or [data-testid=tp-del-{symbol}] on trades-position (testIDs added this run). trades-position back button = [data-testid=tp-back]. Profile modal does NOT auto-close on pick; profiles: trader-profile-{scalper|day|swing|longterm} (day=Intraday, longterm=Confluence v9). Skeleton = [data-testid=market-skeleton]; cards = [data-testid^='asset-card-crypto-'].",
+  "rca_of_issue": "Delete-sync original bug: asi-bot and trades-position each kept their own anti-resurrect set + page cache (asibot-trades:{id} vs trades:{id}), so a delete on one page never propagated — the other page re-painted the card from its stale cache or next poll. Fix (v10.2.16, /app/frontend/src/lib/deletedTrades.ts): shared module-level tombstone Map + AsyncStorage persistence with 2min TTL; markTradeDeleted() called on optimistic delete in BOTH pages; filterDeletedTrades() applied to cache paints AND poll results in BOTH pages. Verified end-to-end in both directions including the stale-disk-cache first paint. Residual minor issue: rapid profile-switch race on dashboard (see ui_bugs) — root cause candidate documented for main agent."
+}

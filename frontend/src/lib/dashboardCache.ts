@@ -175,7 +175,10 @@ export function prefetchAllProfiles(
   extras: string[] = []
 ): void {
   if (!hasAccess) return;
-  const profilesToPrefetch = ["day", "scalper", "swing", null].filter(
+  // v10.2.16 — Sertakan "longterm" (Confluence v9): sebelumnya profil
+  // ini TIDAK pernah di-prefetch sehingga selalu cold-fetch saat dipilih
+  // (keluhan: ganti ke profil apa pun lambat).
+  const profilesToPrefetch = ["day", "scalper", "swing", "longterm", null].filter(
     (p) => (p ?? null) !== (currentProfile ?? null)
   );
 

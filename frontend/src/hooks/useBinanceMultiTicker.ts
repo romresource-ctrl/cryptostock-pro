@@ -1,0 +1,111 @@
+/**
+ * v10.2.16 — useBinanceMultiTicker: mark price realtime MULTI simbol
+ * lewat SATU koneksi WebSocket combined-stream Binance (`@aggTrade`).
+ *
+ * Latar: kartu Recent Trades / Running Positions mengandalkan polling
+ * backend `/api/asi/prices` tiap 300ms. Bila upstream production
+ * terblokir atau request menggantung, harga & PnL kartu membeku
+ * (keluhan berulang "kartu tidak berkedip"). Halaman grafik memakai WS
+ * langsung dari device dan terbukti LIVE — hook ini membawa sumber yang
+ * sama ke kartu posisi. Polling backend TETAP jalan sebagai pelengkap
+ * (merge), jadi simbol non-Binance tetap ter-update.
+ *
+ * Stream: wss://fstream.binance.com/stream?streams=btcusdt@aggTrade/...
+ * Fallback host sama seperti useBinanceRealtime, plus watchdog 8 detik
+ * untuk koneksi silent-dead, reconnect otomatis, dan throttle 150ms per
+ * simbol (hemat re-render).
+ */
+import { useEffect, useRef, useState } from "react";
+
+/** Normalisasi "BTC/USDT" / "BTCUSDT" / "btc" → "BTC" (kunci map harga). */
+function norm(sym: string): string {
+  return sym.toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/USDT$/, "");
+}
+
+export function useBinanceMultiTicker(symbols: string[]): Record<string, number> {
+  const [px, setPx] = useState<Record<string, number>>({});
+  const lastEmitRef = useRef<Record<string, number>>({});
+  const key = symbols.map(norm).filter(Boolean).sort().join(",");
+
+  useEffect(() => {
+    if (!key) {
+      setPx({});
+      return;
+    }
+    const streams = key
+      .split(",")
+      .map((b) => `${b.toLowerCase()}usdt@aggTrade`)
+      .join("/");
+    // Futures dulu (mark price perp = acuan kartu), lalu spot fallback.
+    const urls = [
+      `wss://fstream.binance.com/stream?streams=${streams}`,
+      `wss://data-stream.binance.vision/stream?streams=${streams}`,
+      `wss://stream.binance.com:9443/stream?streams=${streams}`,
+    ];
+
+    let cancelled = false;
+    let ws: WebSocket | null = null;
+    let attempt = 0;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let dataWatchdog: ReturnType<typeof setTimeout> | null = null;
+
+    const tryConnect = () => {
+      if (cancelled) return;
+      if (attempt >= urls.length) {
+        attempt = 0;
+        reconnectTimer = setTimeout(tryConnect, 1500);
+        return;
+      }
+      const url = urls[attempt++];
+      try {
+        ws = new WebSocket(url);
+      } catch {
+        tryConnect();
+        return;
+      }
+      ws.onopen = () => {
+        if (cancelled) return;
+        // 8 detik tanpa pesan pertama = koneksi silent-dead → tutup
+        // paksa supaya fallback host berikutnya dicoba.
+        if (dataWatchdog) clearTimeout(dataWatchdog);
+        dataWatchdog = setTimeout(() => {
+          try { ws?.close(); } catch { /* ignore */ }
+        }, 8000);
+      };
+      ws.onmessage = (event) => {
+        if (cancelled) return;
+        if (dataWatchdog) { clearTimeout(dataWatchdog); dataWatchdog = null; }
+        try {
+          const msg = JSON.parse(event.data as string);
+          // combined-stream membungkus payload: {stream, data}
+          const data = msg?.data ?? msg;
+          const sym = String(data?.s ?? "");
+          const price = Number(data?.p ?? data?.c);
+          if (!sym || !Number.isFinite(price)) return;
+          const base = norm(sym);
+          const now = Date.now();
+          if (now - (lastEmitRef.current[base] || 0) < 150) return;
+          lastEmitRef.current[base] = now;
+          setPx((cur) => (cur[base] === price ? cur : { ...cur, [base]: price }));
+        } catch {
+          /* frame rusak — abaikan */
+        }
+      };
+      ws.onerror = () => { /* onclose yang melanjutkan fallback */ };
+      ws.onclose = () => {
+        if (cancelled) return;
+        reconnectTimer = setTimeout(tryConnect, 250);
+      };
+    };
+    tryConnect();
+
+    return () => {
+      cancelled = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (dataWatchdog) clearTimeout(dataWatchdog);
+      try { ws?.close(); } catch { /* ignore */ }
+    };
+  }, [key]);
+
+  return px;
+}

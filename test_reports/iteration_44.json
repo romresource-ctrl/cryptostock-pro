@@ -1,0 +1,39 @@
+{
+  "summary": "Frontend-only verification of fix #5 (realtime mark price/PnL on position cards via device-side Binance WebSocket, useBinanceMultiTicker). ALL requested flows PASS. Seeded deterministic device fingerprint (web:test-ws-t1-001) via localStorage + inserted fake OPEN BTC trade (entry 70000, qty 0.01) into aitrade_pro.asi_trades; API confirmed it served for that device. (1) /trades-position REALTIME BLINK: PASS — 3 distinct mark values over 30s ($82,236.80 → $82,280.24/$82,280.25), PnL recomputed accordingly ($122.37 → $122.80), flash arrows ▲/▼ captured in 12/20 fast (250ms) samples. (2) FLASH: PASS — arrows + flash pill even visible in static screenshot. (3) /asi-bot Recent Trades: PASS — same fake card ticking (fallback $70,000.00 = entry price shown only briefly before first live tick, per design 'mark must never be empty', then $82,235.40 → $82,280.24, ▼ seen). (4) NO REGRESSION: both pages render, no red screen. (5) ATTRIBUTION: WebSocket drove the updates — primary host wss://fstream.binance.com connected but delivered 0 frames (silent-dead in this env, exactly the failure mode the fix targets); the 8s watchdog + fallback chain kicked in and wss://data-stream.binance.vision delivered 14 frames. Backend poll fallback also independently verified live (GET /api/asi/prices?symbols=BTCUSDT curl 3x: 82288.0 → 82288.1 → 82288.0). Fake doc deleted after tests.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Position cards (both pages)", "issue": "Console hydration errors on both /trades-position and /asi-bot: '<button> cannot be a descendant of <button>' — nested TouchableOpacity (CLOSE/inner buttons inside CardTouchable). Renders fine on web but is invalid HTML nesting and logs errors every render.", "testID": "N/A (cards have no testID)", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/asi-bot", "issues": ["Symbol truncated to 'BTCUSDT/U...' in Recent Trades card left slot at 375px width (flex:1 slot too narrow) — cosmetic only"]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/screenshots/iter44_trades_position.png",
+    "/app/test_reports/screenshots/iter44_asibot_recent.png"
+  ],
+  "action_items": [
+    "OPTIONAL: fix nested TouchableOpacity (button-in-button hydration error) on position cards — e.g. make CardTouchable a Pressable View or move CLOSE button outside the card onPress region.",
+    "OPTIONAL: add testID attributes to position cards and mark-price Text (e.g. testID='pos-card-{symbol}', 'mark-price-{symbol}') — current cards have zero testIDs, tests must scrape DOM text.",
+    "NOTE for production: in restricted networks fstream.binance.com accepts the WS handshake but stays silent — the watchdog/fallback to data-stream.binance.vision is what saves the cards there. Keep the fallback chain."
+  ],
+  "critical_code_review_comments": [
+    "useBinanceMultiTicker (112 lines) is well-built: norm() key normalization, combined-stream URL, 8s first-message watchdog correctly cleared on first frame, 150ms per-symbol throttle via lastEmitRef, setPx skips no-change re-renders, cleanup cancels timers + closes ws, fallback-attempt rotation resets to host 0 after exhausting all 3 hosts. Verified live: fstream silent-dead → vision host took over without any visible stall.",
+    "Merge logic on both pages is symmetric and correct: WS effect and 300ms poll both merge into the same prices/livePx state and compute flash direction via prevPricesRef/prevPxRef before overwriting — whichever source is fresher wins; flash auto-clears after 700ms. PnL on trades-position recomputed from live price each tick ((live-entry)*qty) — verified values matched ($122.37 at 82,236.80 → $122.80 at 82,280.24; (82236.8-70000)*0.01=122.368 ✓).",
+    "Open-price fallback chain (livePx ?? mark_price ?? closed_price ?? entry_price) ensures the mark column never shows '—' — observed: asi-bot briefly showed $70,000.00 (entry) for <3s before first WS tick arrived. Acceptable per design comment.",
+    "asi-bot.tsx is 1824 lines and trades-position.tsx 747 lines (>700 guideline) — split candidates, not blocking."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only; prices poll endpoint sanity-checked via curl — PASS)", "frontend": "100% (realtime blink, flash, Recent Trades, no-regression, fallback attribution — all PASS)"},
+  "seed_data_creation": "Temporary: fake OPEN trade {_id: 'test-ws-card-001', device_id: 'web:test-ws-t1-001', BTCUSDT, entry 70000} inserted into aitrade_pro.asi_trades for UI verification — DELETED after tests (verified count=0).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Disclaimer modal appears on every full page load (page.goto reloads the SPA) — dismiss via [data-testid=disclaimer-checkbox] then [data-testid=disclaimer-agree]; it detaches after agree. Device fingerprint is localStorage key 'cryptostock.device_fingerprint' (format 'web:xxx') — seed it + matching device_id in asi_trades docs to make fake trades visible. Position cards have NO testIDs: locate card via leaf text 'BTCUSDT/USDT', ascend ~6 parents, scrape innerText for $-values; mark price = the >$10k value, PnL = signed ~$100s value; flash arrows ▲/▼ visible ~700ms per tick (250ms sampling catches them). In this preview environment fstream.binance.com WS handshakes but sends 0 frames — data-stream.binance.vision fallback is the working host.",
+  "rca_of_issue": "Original recurring bug: position cards on /asi-bot and /trades-position froze because they relied solely on 300ms polling of GET /api/asi/prices — when the upstream was blocked/hung (no timeout), prices froze forever. Fix verified working: useBinanceMultiTicker opens one Binance combined-stream WS from the device with watchdog + host fallback + 150ms throttle, merged into the same price state as the (now 5s-timeout) backend poll. Live proof: with fstream.binance.com silent-dead in this environment, the fallback host still drove visible ticks + flash on both pages; backend poll independently confirmed live as a complement."
+}
