@@ -57,6 +57,30 @@ diagnosis selalu butuh gali DB/log manual.
   Full-Auto aktif: "✓ Scanner aktif · sinyal N · posisi baru M · reject
   terbanyak: X" atau "⏸ Scanner skip: <alasan>".
 - Catatan insiden: device web preview tersimpan full_enabled=False (START
+
+## v10.2.8 — Timing Filters Anti-Late-Entry (Oktober 2026)
+Menjawab insiden 15/10: 9 sinyal SHORT (7 engine day/KISS Pivot, 2 scalper/
+Box Theory) dieksekusi 06:29–06:32 UTC tepat di dasar bounce — candle 1h
+BTC -1.23% memicu sinyal trend-following yang telat, candle berikutnya
++0.37%/+0.80% membuat semua SHORT day floating loss (total ≈ -$111 demo;
+yang scalper justru profit). Keputusan user — tiga filter baru di jalur
+Full-Auto (dashboard/AI Suggestions tidak berubah), dievaluasi PER SINYAL
+supaya sinyal arah berlawanan (searah reversal) tetap bisa dipilih:
+- (a) Exhaustion: candle 1h closed terakhir ≤ -1% → tolak SELL baru;
+  ≥ +1% → tolak BUY baru (semua engine).
+- (b) Post-spike cooling (khusus engine day): candle sebelum terakhir juga
+  spike > 1% searah sinyal → tolak (tunggu pullback 2 candle).
+- (c) RSI14 1h: < 35 → tolak SELL (oversold); > 65 → tolak BUY
+  (overbought). Fail-open bila data 1h unavailable.
+- Snapshot 1h per simbol diambil sekali per siklus (hanya bila ada sinyal)
+  agar hemat rate limit; alasan reject masuk scan-debug rejects.
+- STRK bracket fail (production, 14:15 WIB): detail error asli Binance kini
+  disimpan ke `close_reason_detail` pada record trade (sebelumnya hilang,
+  hanya "bracket fail"). Dugaan utama: -2021 "Order would immediately
+  trigger" pada TP low-cap volatile; penanganan khusus menunggu bukti
+  error aktual. 4 skenario test sintetis (exhaustion, cooling, normal
+  tetap eksekusi, RSI oversold) — semua PASS.
+
   BOT belum aktif) → scanner skip; setelah user enable, 9 posisi SELL
   dieksekusi 06:29–06:32 UTC. HP = environment production terpisah
   (device_id & DB berbeda) → perlu Publish agar backend production

@@ -394,8 +394,14 @@ async def _process_pending_entries(db: Any) -> None:
             else:
                 # Bracket gagal terpasang/terverifikasi → tutup posisi
                 # demi keamanan (tidak boleh ada posisi tanpa proteksi).
+                # v10.2.8 — Simpan DETAIL error asli (mis. "-2021 Order
+                # would immediately trigger", tick size, min notional)
+                # ke record trade supaya bisa didiagnosis dari DB/UI
+                # tanpa menggali log backend (kasus STRK 15/10).
+                _errs = res.get("errors") or []
+                _detail = str(_errs[0])[:200] if _errs else "unknown"
                 logger.warning("attach failed after fill %s: %s",
-                               t.get("_id"), (res.get("errors") or [])[:2])
+                               t.get("_id"), _errs[:2])
                 try:
                     await close_position(cred, t["symbol"], t["side"],
                                          float(t.get("qty") or 0))
@@ -406,6 +412,7 @@ async def _process_pending_entries(db: Any) -> None:
                     {"$set": {
                         "status": "closed",
                         "close_reason": "bracket_failed_after_fill",
+                        "close_reason_detail": _detail,
                         "closed_at": now.isoformat(),
                         "updated_at": now.isoformat(),
                     }},
@@ -749,6 +756,39 @@ async def _run_full_auto_scanner(
                     )
                 except Exception:
                     continue
+                # v10.2.8 — TIMING FILTERS (keputusan user setelah insiden
+                # 9 SHORT tepat di dasar bounce 15/10). Snapshot 1h diambil
+                # SEKALI per simbol (hanya bila ada sinyal) dan dipakai
+                # untuk 3 filter per-sinyal di loop di bawah:
+                #   (a) Exhaustion: candle 1h TERAKHIR CLOSED ≤ -1% → tolak
+                #       SELL baru; ≥ +1% → tolak BUY baru (semua engine).
+                #   (b) Post-spike cooling (khusus engine day): bila candle
+                #       SEBELUM terakhir juga spike > 1% searah sinyal →
+                #       tolak (wajib tunggu pullback 2 candle).
+                #   (c) RSI14 1h: < 35 → tolak SELL (oversold); > 65 →
+                #       tolak BUY (overbought).
+                # Fail-open bila data 1h tidak tersedia.
+                _chg1h_last = 0.0
+                _chg1h_prev = 0.0
+                _rsi1h: float | None = None
+                _timing_ready = False
+                if any(isinstance(s, dict) and s.get("side") for s in results):
+                    try:
+                        from market_data import get_crypto_snapshot as _g1h
+                        from indicators import _rsi as _rsi_fn
+                        _snap = await _g1h(sym, "1h")
+                        _c1 = [float(c["close"]) for c in ((_snap or {}).get("candles") or [])
+                               if c.get("close")]
+                        if len(_c1) >= 17:
+                            # Index -1 = candle berjalan; yang closed = -2.
+                            if _c1[-3]:
+                                _chg1h_last = (_c1[-2] - _c1[-3]) / _c1[-3] * 100.0
+                            if _c1[-4]:
+                                _chg1h_prev = (_c1[-3] - _c1[-4]) / _c1[-4] * 100.0
+                            _rsi1h = _rsi_fn(_c1[:-1], 14)
+                            _timing_ready = True
+                    except Exception as _te:
+                        logger.debug("timing filter fetch %s gagal (fail-open): %s", sym, _te)
                 best = None
                 for sig in results:
                     if not isinstance(sig, dict) or not sig.get("side"):
@@ -770,6 +810,31 @@ async def _run_full_auto_scanner(
                     if int(sig.get("confidence") or 0) < user_min_conf:
                         _dev_reject(rep, f"conf<{user_min_conf}")
                         continue
+                    # v10.2.8 — Timing filters (dievaluasi PER SINYAL supaya
+                    # sinyal arah berlawanan yang searah reversal tetap
+                    # bisa lolos dan menjadi best).
+                    if _timing_ready:
+                        _wl = sig["side"] == "BUY"
+                        _is_day = (sig.get("profile") or "") == "day"
+                        if not _wl and _chg1h_last <= -1.0:
+                            _dev_reject(rep, "exhaustion: tolak SELL setelah candle dump >1%")
+                            continue
+                        if _wl and _chg1h_last >= 1.0:
+                            _dev_reject(rep, "exhaustion: tolak BUY setelah candle pump >1%")
+                            continue
+                        if _is_day and not _wl and _chg1h_prev <= -1.0:
+                            _dev_reject(rep, "cooling 2 candle: day SELL pasca-dump")
+                            continue
+                        if _is_day and _wl and _chg1h_prev >= 1.0:
+                            _dev_reject(rep, "cooling 2 candle: day BUY pasca-pump")
+                            continue
+                        if _rsi1h is not None:
+                            if not _wl and _rsi1h < 35:
+                                _dev_reject(rep, f"RSI1h {_rsi1h:.0f}<35 oversold: tolak SELL")
+                                continue
+                            if _wl and _rsi1h > 65:
+                                _dev_reject(rep, f"RSI1h {_rsi1h:.0f}>65 overbought: tolak BUY")
+                                continue
                     sigs_found += 1
                     rep["signals"] = int(rep.get("signals") or 0) + 1
                     if best is None or int(sig.get("confidence") or 0) > int(best.get("confidence") or 0):
