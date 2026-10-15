@@ -7,6 +7,21 @@ AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs
 
 ---
 
+---
+
+## v10.2.5 — Guard Anti-Loss-Beruntun (Oktober 2026)
+
+Berdasarkan analisis data aktual user: v10.1.7 WR 75% +$271 (market turun, bot SHORT searah) vs v10.2.4 WR ~20% -$150 (market dump, bot LONG bounce beruntun kena SL).
+
+1. **Circuit Breaker Market-Wide**: BTC bergerak > ±2% dalam 1 jam → semua entry ke arah berlawanan diblokir siklus itu (dump → LONG diblokir, pump → SHORT diblokir). Menutup celah cooldown per-simbol yang tidak menangani koreksi serentak.
+2. **Loss-Streak Breaker**: 3 trade terakhir semua SL dan SL terbaru < 2 jam → device istirahat siklus ini (auto-pause berlapis waktu).
+3. **Trend Filter 4H pakai SLOPE EMA50**: LONG wajib harga > EMA50 DAN EMA50 tidak menurun; SHORT wajib harga < EMA50 DAN EMA50 tidak menaik. Mencegah bounce-trap saat EMA50 menurun.
+4. **FX strip header dihapus** (redundan — kartu aset USDT sudah menampilkan konversi lokal per-perangkat).
+
+Rollback: git tag `rollback-point-10.2.4`.
+
+---
+
 ## v10.2.4 — Mark Price Tidak Boleh Kosong
 - Kolom tengah kartu TIDAK PERNAH tampil '—': OPEN/LIMIT → mark price live ticking; CLOSED → harga exit (closed_price, fallback entry). Berlaku di Recent Trades & Running Positions, termasuk LIMIT WAITING.
 - `/api/asi/prices` fallback berlapis (futures fapi → spot data-api.binance.vision → Bitget) + never-500 — sebelumnya satu kegagalan proxy membuat kolom kosong.
