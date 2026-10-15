@@ -1816,3 +1816,7 @@ Keputusan user atas 5 pertanyaan:
 - Root cause: state `creds` & `balance` selalu mulai kosong saat remount; UI tampil "Not connected" sampai fetch selesai.
 - Fix: page-cache (stale-while-revalidate) untuk credentials (`asibot-creds:{did}`) & balance (`asibot-balance:{did}`) — restore instan saat mount, refresh background menimpa dengan data segar. Logika sticky-connected v10.2.1 tetap dipertahankan.
 - Lint bersih, smoke render OK. Catatan: di preview tanpa credential memang wajar tampil "Not connected".
+
+## v10.2.16 — Verifikasi cache TESTNET/MAINNET (iteration_41 PASS)
+- Status TESTNET/MAINNET per exchange digerakkan oleh `creds` yang sama → fix cache sebelumnya sudah mencakupnya.
+- Testing agent membuktikan dengan network delay 4s: first paint langsung menampilkan "TESTNET ✓ · ****AB12" + saldo cache sebelum refresh tiba (SWR bekerja). Refresh kemudian menimpa dengan data backend — perilaku benar.

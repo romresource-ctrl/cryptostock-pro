@@ -1,0 +1,33 @@
+{
+  "summary": "Frontend-only SWR cache test for /asi-bot creds+balance page-cache fix. PASS: with network artificially delayed 4s (simulating the user's slow-fetch scenario), a hard reload rendered the cached connected state on FIRST PAINT (t=0.61s after reload): Binance Futures row showed 'TESTNET ✓ · ****AB12' and balance cards showed $123.45 (DEMO) / $678.90 (REAL) — not 'Not connected'. After the delayed refresh landed, state correctly flipped back to backend truth ('Not connected' for the synthetic deviceId) — expected SWR overwrite, not a bug. Regression PASS: zero console errors, no panic banner text, mode chips (Semi/Full-Auto) work and persist to @asi_bot_prefs.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/screenshots (automation .screenshots: iter41_swr_pass.png, swr_first_paint_delayed.png)",
+    "/app/test_reports/iteration_41.json"
+  ],
+  "action_items": [
+    "None blocking. Optional: consider adding a TTL/max-age to readPageCache entries (currently stale cache has no expiry bound, though refresh always overwrites on success)."
+  ],
+  "critical_code_review_comments": [
+    "asi-bot.tsx:140-145 — cache restore is awaited BEFORE refresh(did) in the mount effect, so first paint always reflects cache; correct SWR ordering.",
+    "pageCache.ts — readPageCache/writePageCache are fail-safe (never throw); key format 'pagecache:v1:{name}:{deviceId}' matches AsyncStorage-on-web localStorage 1:1.",
+    "Empty creds cache ([]) written by refresh is correctly ignored on restore via length>0 check — good.",
+    "Note for future testers: page.add_init_script localStorage seeding did NOT persist in this Playwright environment (test artifact). Working method: load page once, read 'cryptostock.device_fingerprint', seed pagecache keys via page.evaluate, then page.reload() and capture first paint."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A", "frontend": "100%"},
+  "seed_data_creation": "localStorage-only test data: pagecache:v1:asibot-creds:{deviceId} (Binance testnet cred, mask ****AB12) and pagecache:v1:asibot-balance:{deviceId} (demo $123.45, real $678.90) seeded in the preview browser context only; no backend/DB data created.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "To test SWR first-paint on /asi-bot: (1) goto page, read localStorage 'cryptostock.device_fingerprint'; (2) page.evaluate to seed 'pagecache:v1:asibot-creds:{did}' and 'pagecache:v1:asibot-balance:{did}' with {at, data} JSON; (3) page.route('**/api/asi/**') with a 3-4s delay to simulate slow network; (4) page.reload() and poll #root innerText from first text — cached mask/balances must appear before delayed refresh returns. Refresh afterwards legitimately overwrites with backend truth. Dev bypass: no login needed on preview.",
+  "rca_of_issue": "Original bug: balance DEMO/REAL cards and exchange connection status reset to 'Not connected' on every page re-entry because state initialized empty and only network refresh populated it. Fix verified: creds/balance now restored from AsyncStorage page cache (stale-while-revalidate) on mount before refresh() runs; confirmed via delayed-network test where cached state rendered at first paint (0.61s) vs refresh at ~4s."
+}
