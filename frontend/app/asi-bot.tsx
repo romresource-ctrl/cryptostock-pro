@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 // v10.1.1 — Touchable dari RNGH untuk KARTU trade: bernegosiasi dengan
@@ -148,39 +148,50 @@ export default function ASIBotScreen() {
 
   // v9.7.6 — Saat SALAH SATU bot RUNNING (semi atau full), refresh daftar
   // trade berkala agar PnL & status terbuka/tertutup tetap live.
-  useEffect(() => {
-    const anyRunning = !!(bot.semi_enabled || bot.full_enabled || bot.enabled);
-    if (!anyRunning || !deviceId) return;
-    // v10.1.8 — Interval disamakan dengan Running Positions (5 detik)
-    // supaya status trade (LIMIT WAITING → OPEN) tidak desync antar
-    // layar. Backend punya cache balance 4 detik untuk melindungi
-    // rate-limit API key user.
-    const id = setInterval(() => refresh(), 5_000);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bot.semi_enabled, bot.full_enabled, bot.enabled, deviceId]);
+  // v10.2.11 — FOCUS-GATED: interval dimatikan saat layar TIDAK terlihat
+  // (mis. user membuka grafik aset di atas layar ini). Sebelumnya polling
+  // 5 detik + harga 300ms terus berjalan di background, membebani CPU &
+  // network HP → halaman grafik yang baru dibuka jadi lambat (keluhan
+  // user: "grafik dari kartu Running Positions lambat, dari dashboard
+  // cepat").
+  useFocusEffect(
+    useCallback(() => {
+      const anyRunning = !!(bot.semi_enabled || bot.full_enabled || bot.enabled);
+      if (!anyRunning || !deviceId) return;
+      // v10.1.8 — Interval disamakan dengan Running Positions (5 detik)
+      // supaya status trade (LIMIT WAITING → OPEN) tidak desync antar
+      // layar. Backend punya cache balance 4 detik untuk melindungi
+      // rate-limit API key user.
+      const id = setInterval(() => refresh(), 5_000);
+      return () => clearInterval(id);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [bot.semi_enabled, bot.full_enabled, bot.enabled, deviceId])
+  );
 
   // v10.2.6 — Poll /asi/market-risk tiap 30 detik: snapshot bias BTC/ETH +
   // status panic cooldown Full-Auto. Banner di render di dalam ScrollView.
-  useEffect(() => {
-    if (!deviceId) return;
-    let alive = true;
-    const tick = async () => {
-      try {
-        const r = await api.asi.marketRisk(deviceId);
-        if (!alive) return;
-        setMarketRisk(r as any);
-      } catch { /* keep previous snapshot */ }
-      try {
-        const d = await api.asi.scanDebug(deviceId);
-        if (!alive) return;
-        setScanDebug(d as any);
-      } catch { /* keep previous */ }
-    };
-    tick();
-    const id = setInterval(tick, 30_000);
-    return () => { alive = false; clearInterval(id); };
-  }, [deviceId]);
+  useFocusEffect(
+    useCallback(() => {
+      if (!deviceId) return;
+      let alive = true;
+      const tick = async () => {
+        try {
+          const r = await api.asi.marketRisk(deviceId);
+          if (!alive) return;
+          setMarketRisk(r as any);
+        } catch { /* keep previous snapshot */ }
+        try {
+          const d = await api.asi.scanDebug(deviceId);
+          if (!alive) return;
+          setScanDebug(d as any);
+        } catch { /* keep previous */ }
+      };
+      tick();
+      const id = setInterval(tick, 30_000);
+      return () => { alive = false; clearInterval(id); };
+       
+    }, [deviceId])
+  );
 
   // v9.9.13 — Mark price REALTIME untuk posisi open: polling batch 2 detik
   // (backend cache 1 detik via proxy SG). Angka harga di samping symbol
@@ -199,43 +210,47 @@ export default function ASIBotScreen() {
     .map((t2) => t2.symbol)
     .filter((v, i, a) => a.indexOf(v) === i)
     .join(",");
-  useEffect(() => {
-    if (!openSymsKey) { setLivePx({}); return; }
-    const syms = openSymsKey.split(",");
-    let alive = true;
-    const tick = async () => {
-      try {
-        const r = await api.asi.prices(syms);
-        if (!alive) return;
-        const m: Record<string, number> = {};
-        Object.entries(r.prices || {}).forEach(([k, v]) => {
-          m[k.replace(/USDT$/, "")] = v;
-        });
-        // Arah flash per simbol untuk tick ini
-        const f: Record<string, "up" | "down"> = {};
-        Object.entries(m).forEach(([k, v]) => {
-          const prev = prevPxRef.current[k];
-          if (prev != null && v !== prev) f[k] = v > prev ? "up" : "down";
-        });
-        prevPxRef.current = { ...prevPxRef.current, ...m };
-        // v10.2.4 — MERGE, jangan timpa: bila satu response sesaat kosong
-        // (upstream gagal), harga lama TETAP tampil — kartu tidak pernah
-        // kehilangan mark price serentak (akar keluhan "tidak berkedip /
-        // jadi dash berulang").
-        setLivePx((cur) => ({ ...cur, ...m }));
-        if (Object.keys(f).length > 0) {
-          setFlashDir((cur) => ({ ...cur, ...f }));
-          if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
-          flashTimerRef.current = setTimeout(() => setFlashDir({}), 700);
-        }
-      } catch { /* pertahankan harga terakhir */ }
-    };
-    tick();
-    // v10.1.7 — Polling kembali ke 300ms seperti sebelumnya agar harga
-    // mark price "berkedip hidup" dan match dengan candlestick realtime.
-    const id = setInterval(tick, 300);
-    return () => { alive = false; clearInterval(id); };
-  }, [openSymsKey]);
+  useFocusEffect(
+    useCallback(() => {
+      if (!openSymsKey) { setLivePx({}); return; }
+      const syms = openSymsKey.split(",");
+      let alive = true;
+      const tick = async () => {
+        try {
+          const r = await api.asi.prices(syms);
+          if (!alive) return;
+          const m: Record<string, number> = {};
+          Object.entries(r.prices || {}).forEach(([k, v]) => {
+            m[k.replace(/USDT$/, "")] = v;
+          });
+          // Arah flash per simbol untuk tick ini
+          const f: Record<string, "up" | "down"> = {};
+          Object.entries(m).forEach(([k, v]) => {
+            const prev = prevPxRef.current[k];
+            if (prev != null && v !== prev) f[k] = v > prev ? "up" : "down";
+          });
+          prevPxRef.current = { ...prevPxRef.current, ...m };
+          // v10.2.4 — MERGE, jangan timpa: bila satu response sesaat kosong
+          // (upstream gagal), harga lama TETAP tampil — kartu tidak pernah
+          // kehilangan mark price serentak (akar keluhan "tidak berkedip /
+          // jadi dash berulang").
+          setLivePx((cur) => ({ ...cur, ...m }));
+          if (Object.keys(f).length > 0) {
+            setFlashDir((cur) => ({ ...cur, ...f }));
+            if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+            flashTimerRef.current = setTimeout(() => setFlashDir({}), 700);
+          }
+        } catch { /* pertahankan harga terakhir */ }
+      };
+      tick();
+      // v10.1.7 — Polling kembali ke 300ms seperti sebelumnya agar harga
+      // mark price "berkedip hidup" dan match dengan candlestick realtime.
+      // v10.2.11 — HANYA saat layar terlihat (useFocusEffect).
+      const id = setInterval(tick, 300);
+      return () => { alive = false; clearInterval(id); };
+       
+    }, [openSymsKey])
+  );
 
   // v10.0.16 — Sinkronkan Trader Profile global ke bot.profile PERSIS
   // apa adanya: scalper / day (Intraday) / swing / longterm (Confluence

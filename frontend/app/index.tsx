@@ -560,6 +560,15 @@ export default function Dashboard() {
         selected.forEach((k) => {
           const m = res.markets?.[k];
           if (m && Array.isArray(m.assets)) {
+            // v10.2.11 — ANTI-FLICKER (keluhan user: konten dashboard
+            // "bergantian tiap beberapa detik" di HP). Bila satu kategori
+            // tiba-tiba kembali KOSONG atau menyusut drastis (>40%)
+            // dibanding data yang sedang tampil — ciri response
+            // parsial/degraded (upstream throttle / instance cache
+            // belum hangat) — pertahankan data lama untuk kategori itu.
+            const prevLen = prev[k]?.length ?? 0;
+            if (m.assets.length === 0 && prevLen > 0) return;
+            if (prevLen > 10 && m.assets.length < prevLen * 0.6) return;
             next[k] = m.assets;
           }
         });

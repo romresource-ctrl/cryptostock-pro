@@ -9,7 +9,7 @@ import {
   ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text,
   TouchableOpacity, View,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 // v10.1.1 — Touchable dari RNGH untuk KARTU: bernegosiasi dengan gesture
@@ -118,14 +118,18 @@ export default function TradesPositionScreen() {
     return () => { alive = false; };
   }, [deviceId]);
 
-  useEffect(() => {
-    if (!deviceId) return;
-    load();
-    // v10.1.8 — Interval 5 detik (disamakan dengan Recent Trades) supaya
-    // status LIMIT WAITING → OPEN sinkron antar layar tanpa jeda 10-20s.
-    pollRef.current = setInterval(load, 5_000);
-    return () => clearInterval(pollRef.current);
-  }, [deviceId, load]);
+  useFocusEffect(
+    useCallback(() => {
+      if (!deviceId) return;
+      load();
+      // v10.1.8 — Interval 5 detik (disamakan dengan Recent Trades) supaya
+      // status LIMIT WAITING → OPEN sinkron antar layar tanpa jeda 10-20s.
+      // v10.2.11 — FOCUS-GATED: berhenti saat layar tidak terlihat supaya
+      // tidak membebani halaman grafik yang dibuka di atasnya.
+      pollRef.current = setInterval(load, 5_000);
+      return () => clearInterval(pollRef.current);
+    }, [deviceId, load])
+  );
 
   // Mark price polling untuk posisi OPEN *dan* LIMIT pending — kartu
   // pending juga harus ticking supaya user bisa memantau harga live
@@ -146,42 +150,47 @@ export default function TradesPositionScreen() {
   const { apiProfile } = useTraderProfile();
   const flashTimerRef = useRef<any>(null);
   const [flash, setFlash] = useState<Record<string, "up" | "down">>({});
-  useEffect(() => {
-    if (!openSyms.length) {
-      if (priceRef.current) { clearInterval(priceRef.current); priceRef.current = null; }
-      return;
-    }
-    const tick = async () => {
-      try {
-        const r = await api.asi.prices(openSyms);
-        const m: Record<string, number> = {};
-        Object.entries(r.prices || {}).forEach(([k, v]) => {
-          m[k.replace(/USDT$/, "")] = v as number;
-        });
-        // Bandingkan dengan tick sebelumnya → tentukan arah kedip.
-        const f: Record<string, "up" | "down"> = {};
-        Object.entries(m).forEach(([k, v]) => {
-          const prev = prevPricesRef.current[k];
-          if (prev != null && v !== prev) f[k] = v > prev ? "up" : "down";
-        });
-        prevPricesRef.current = { ...prevPricesRef.current, ...m };
-        // v10.2.4 — MERGE, jangan timpa: response kosong sesaat tidak
-        // boleh menghapus harga yang sudah tampil (anti dash serentak).
-        setPrices((cur) => ({ ...cur, ...m }));
-        if (Object.keys(f).length > 0) {
-          setFlash((cur) => ({ ...cur, ...f }));
-          if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
-          flashTimerRef.current = setTimeout(() => setFlash({}), 700);
-        }
-      } catch { /* ignore */ }
-    };
-    tick();
-    // v10.1.7 — Polling 300ms (sebelumnya 2000ms) agar mark price
-    // real-time dan berkedip persis seperti chart candlestick.
-    priceRef.current = setInterval(tick, 300);
-    return () => clearInterval(priceRef.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openSymsKey]);
+  useFocusEffect(
+    useCallback(() => {
+      if (!openSyms.length) {
+        if (priceRef.current) { clearInterval(priceRef.current); priceRef.current = null; }
+        return;
+      }
+      const tick = async () => {
+        try {
+          const r = await api.asi.prices(openSyms);
+          const m: Record<string, number> = {};
+          Object.entries(r.prices || {}).forEach(([k, v]) => {
+            m[k.replace(/USDT$/, "")] = v as number;
+          });
+          // Bandingkan dengan tick sebelumnya → tentukan arah kedip.
+          const f: Record<string, "up" | "down"> = {};
+          Object.entries(m).forEach(([k, v]) => {
+            const prev = prevPricesRef.current[k];
+            if (prev != null && v !== prev) f[k] = v > prev ? "up" : "down";
+          });
+          prevPricesRef.current = { ...prevPricesRef.current, ...m };
+          // v10.2.4 — MERGE, jangan timpa: response kosong sesaat tidak
+          // boleh menghapus harga yang sudah tampil (anti dash serentak).
+          setPrices((cur) => ({ ...cur, ...m }));
+          if (Object.keys(f).length > 0) {
+            setFlash((cur) => ({ ...cur, ...f }));
+            if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+            flashTimerRef.current = setTimeout(() => setFlash({}), 700);
+          }
+        } catch { /* ignore */ }
+      };
+      tick();
+      // v10.1.7 — Polling 300ms (sebelumnya 2000ms) agar mark price
+      // real-time dan berkedip persis seperti chart candlestick.
+      // v10.2.11 — HANYA saat layar terlihat (useFocusEffect): sebelumnya
+      // interval 300ms ini terus berjalan saat user membuka grafik aset
+      // di atas layar ini → membebani CPU/network HP → grafik lambat.
+      priceRef.current = setInterval(tick, 300);
+      return () => clearInterval(priceRef.current);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [openSymsKey])
+  );
 
   const onClose = useCallback(async (tr: AnyTrade) => {
     const isPending = tr.status === "pending_entry";

@@ -118,6 +118,29 @@ sebelumnya tidak pernah tuntas: kode salah mengira koneksi sehat.
 - Terverifikasi di web preview: sebelum = 6 sampel identik (statis),
   sesudah = 4 harga unik/6 sampel (ticking). Lint 3 file bersih.
 
+## v10.2.11 — Focus-Gated Polling + Anti-Flicker Dashboard (Oktober 2026)
+- **#3 Keluhan "grafik dari kartu Running Positions lambat, dari dashboard
+  cepat"**: root cause = interval polling layar trade (harga 300ms +
+  refresh 5s + market-risk 30s) TETAP BERJALAN saat layar tersembunyi di
+  bawah halaman grafik (React Navigation stack tidak unmount) → CPU &
+  network HP terus terbebani. Fix: semua interval di trades-position.tsx
+  & asi-bot.tsx dipindah ke `useFocusEffect` — polling hanya berjalan
+  saat layar terlihat, berhenti total saat user membuka grafik, hidup
+  lagi saat kembali.
+- **#2 Keluhan "dashboard bergantian tiap beberapa detik"**: repro di
+  web preview STABIL (0 flip/54s, profile day aktif) → spesifik
+  production. Mitigasi terpasang: response batch yang kategori-nya
+  tiba-tiba kosong/menyusut >40% (ciri degraded/parsial) tidak boleh
+  menimpa data yang sedang tampil. Root cause production (kemungkinan
+  multi-instance cache atau response parsial upstream) masih perlu
+  observasi user berikutnya.
+- **#1 Pertanyaan "kenapa ATOM & DASH tidak dieksekusi, hanya LTC &
+  LDO"**: perilaku BY-DESIGN filter timing v10.2.8 — ATOM -6.8% &
+  DASH -5.2% adalah kandidat "sell the bottom" (candle 1h dump >1% /
+  RSI oversold) sehingga SELL-nya ditolak; alasan reject persisnya bisa
+  dilihat user di baris diagnostik halaman ASI-Bot (v10.2.7+).
+
+
   engine salah sesaat.
 - **Running Positions load**: fetch balance Binance dijadikan
   fire-and-forget — sebelumnya spinner list menunggu balance (1-3s di
