@@ -133,6 +133,16 @@ export default function ASIBotScreen() {
         const cached = await readPageCache<AsiTradeResp[]>(`asibot-trades:${did}`);
         if (cached && cached.length > 0) setTrades(cached);
       } catch { /* abaikan */ }
+      // v10.2.16 — Restore credentials & balance dari page cache: tanpa
+      // ini, tiap keluar-masuk halaman kartu DEMO/REAL kembali tampil
+      // "Not connected" sampai fetch jaringan selesai. Cache hanya untuk
+      // tampilan awal — refresh di bawah tetap menimpa dengan data segar.
+      try {
+        const cachedCreds = await readPageCache<AsiCredential[]>(`asibot-creds:${did}`);
+        if (cachedCreds && cachedCreds.length > 0) setCreds(cachedCreds);
+        const cachedBal = await readPageCache<typeof balance>(`asibot-balance:${did}`);
+        if (cachedBal) setBalance(cachedBal);
+      } catch { /* abaikan */ }
       refresh(did);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -263,6 +273,7 @@ export default function ASIBotScreen() {
     try {
       const c = await api.asi.listCredentials(id);
       setCreds(c.items);
+      writePageCache(`asibot-creds:${id}`, c.items);
     } catch { /* keep existing creds */ }
     try {
       const b = await api.asi.getBot(id);
@@ -293,19 +304,25 @@ export default function ASIBotScreen() {
     // tidak hilang-timbul saat API balance sesaat gagal.
     try {
       const b = await api.asi.balance(id, bot.exchange);
-      setBalance((prev) => ({
-        demo: {
-          // v10.2.1 — "connected" juga sticky: sekali connected=true, baru
-          // berubah ke false kalau API eksplisit bilang false, bukan karena
-          // network timeout sesaat.
-          connected: b.demo?.connected === false ? false : (b.demo?.connected ?? prev.demo.connected),
-          available_usdt: b.demo?.available_usdt != null ? b.demo.available_usdt : prev.demo.available_usdt,
-        },
-        real: {
-          connected: b.real?.connected === false ? false : (b.real?.connected ?? prev.real.connected),
-          available_usdt: b.real?.available_usdt != null ? b.real.available_usdt : prev.real.available_usdt,
-        },
-      }));
+      setBalance((prev) => {
+        const next = {
+          demo: {
+            // v10.2.1 — "connected" juga sticky: sekali connected=true, baru
+            // berubah ke false kalau API eksplisit bilang false, bukan karena
+            // network timeout sesaat.
+            connected: b.demo?.connected === false ? false : (b.demo?.connected ?? prev.demo.connected),
+            available_usdt: b.demo?.available_usdt != null ? b.demo.available_usdt : prev.demo.available_usdt,
+          },
+          real: {
+            connected: b.real?.connected === false ? false : (b.real?.connected ?? prev.real.connected),
+            available_usdt: b.real?.available_usdt != null ? b.real.available_usdt : prev.real.available_usdt,
+          },
+        };
+        // v10.2.16 — Cache balance agar status connected & saldo tidak
+        // reset ke "Not connected" tiap keluar-masuk halaman.
+        writePageCache(`asibot-balance:${id}`, next);
+        return next;
+      });
     } catch { /* saldo opsional — jangan ganggu refresh utama */ }
     setCredsLoaded(true);
   };

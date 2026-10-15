@@ -1811,3 +1811,8 @@ Keputusan user atas 5 pertanyaan:
 - Bonus fix: useTraderProfile skip sync 422 untuk device tanpa bot config (exists:false).
 - Testing: backend curl roundtrip OK (no panic keys), testing_agent frontend PASS 4/4 mode persistence (nav + reload, full↔semi), no panic banner, dashboard smoke PASS, lint bersih, py_compile OK.
 - Versi konsisten 10.2.16 di version.ts / app.json / server.py. Publish-only, tanpa build APK.
+
+## v10.2.16 — Fix balance DEMO/REAL "Not connected" tiap keluar-masuk ASI-Bot (DONE)
+- Root cause: state `creds` & `balance` selalu mulai kosong saat remount; UI tampil "Not connected" sampai fetch selesai.
+- Fix: page-cache (stale-while-revalidate) untuk credentials (`asibot-creds:{did}`) & balance (`asibot-balance:{did}`) — restore instan saat mount, refresh background menimpa dengan data segar. Logika sticky-connected v10.2.1 tetap dipertahankan.
+- Lint bersih, smoke render OK. Catatan: di preview tanpa credential memang wajar tampil "Not connected".
