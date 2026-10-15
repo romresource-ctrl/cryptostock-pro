@@ -167,6 +167,16 @@ sebelumnya tidak pernah tuntas: kode salah mengira koneksi sehat.
 - Banner peringatan tampil saat bias panic jelas (dump/pump): alasan teknikal (reversal BTC/ETH + persentase) dengan ajakan mempertimbangkan tutup posisi berlawanan arah
 - Tidak ada integrasi news (keputusan user: alasan teknikal saja)
 
+- **v10.2.12b** — User mengingatkan formula rezim SUDAH ada sejak desain
+  sinyal awal: `_detect_regime` (port btc_trading_formula.py, v8.7.23)
+  yang selama ini hanya dipakai per-aset untuk risk sizing. Gate kini
+  DISELARASKAN: rezim trending memakai detektor orisinal user (price vs
+  EMA50 4H + ATR% → BULL/BEAR/BEAR_CAPITULATION); deteksi reversal RSI 1h
+  tetap sebagai lapisan dini. Rezim `bear_capitulation` (formula asli)
+  memblokir KEDUA arah (falling knife + late short). Test: reversal blokir
+  SELL, trending_down loloskan SELL+blokir BUY, kapitulasi blokir dua
+  arah — semua PASS.
+
 ### Endpoint & interval
 - `GET /api/asi/market-risk?device_id=...` — snapshot bias BTC/ETH + status panic per device
 - Scheduler monitor BTC+ETH tiap 2 menit (`PANIC_INTERVAL = 120`)

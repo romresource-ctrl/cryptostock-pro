@@ -1128,6 +1128,8 @@ def _attach_trade_routes(db: Any) -> None:
         return {
             "last_scan_at": (doc or {}).get("last_scan_at"),
             "devices_scanned": int((doc or {}).get("devices_scanned") or 0),
+            "btc_regime": (doc or {}).get("btc_regime"),
+            "btc_regime_detail": (doc or {}).get("btc_regime_detail"),
             "device_in_scanner": device_id in devices,
             "report": rep,
             "config": {

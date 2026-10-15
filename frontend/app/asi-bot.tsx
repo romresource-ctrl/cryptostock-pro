@@ -121,6 +121,7 @@ export default function ASIBotScreen() {
   // v10.2.7 — Scan debug: jawaban "kenapa bot tidak eksekusi" per device.
   type ScanDebug = {
     device_in_scanner: boolean;
+    btc_regime?: string | null;
     report: {
       scanned: boolean;
       skip_reason?: string | null;
@@ -502,7 +503,13 @@ export default function ASIBotScreen() {
           } else if (r) {
             const topReject = Object.entries(r.rejects || {})
               .sort((a, b) => b[1] - a[1])[0];
+            // v10.2.12 — Tampilkan rezim BTC gate bila bukan neutral
+            // supaya user paham kenapa satu arah sedang diblokir.
+            const regimeLabel = scanDebug.btc_regime && scanDebug.btc_regime !== "neutral"
+              ? ` · rezim BTC: ${scanDebug.btc_regime.replace(/_/g, " ")}`
+              : "";
             line = `✓ Scanner aktif · sinyal ${r.signals} · posisi baru ${r.placed}` +
+              regimeLabel +
               (topReject && r.placed === 0
                 ? ` · reject terbanyak: ${topReject[0]} (${topReject[1]}×)`
                 : "");

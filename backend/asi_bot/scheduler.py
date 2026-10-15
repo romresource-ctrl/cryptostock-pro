@@ -565,6 +565,159 @@ async def _enforce_daily_loss_limit(db: Any) -> None:
             logger.debug("daily loss check %s: %s", cfg.get("_id"), e)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# v10.2.12 — BTC REGIME GATE
+#
+# Keputusan user (15/10 malam): "semua koin sebagian besar dipengaruhi
+# pergerakan BTC — daripada bermacam-macam guard, buat SATU formula
+# deteksi overbought/oversold BTC yang menahan sinyal salah arah sampai
+# pembalikan BTC terkonfirmasi, lalu kirim sinyal searah."
+#
+# Rezim dihitung SEKALI per siklus scanner dari BTC saja:
+#   bullish_reversal : RSI14 1h ≤ 35 & candle terakhir ≥ +0.3%,
+#                      ATAU candle sebelumnya ≤ -0.5% diikuti bounce ≥ +0.3%
+#                      → blokir SEMUA SELL altcoin (tunggu reversal; LONG lolos)
+#   bearish_reversal : RSI14 1h ≥ 65 & candle terakhir ≤ -0.3%,
+#                      ATAU candle sebelumnya ≥ +0.5% diikuti drop ≤ -0.3%
+#                      → blokir SEMUA BUY altcoin (SHORT lolos)
+#   trending_up      : RSI14 55–75 & slope EMA50 4H naik  → hanya LONG
+#   trending_down    : RSI14 25–45 & slope EMA50 4H turun → hanya SHORT
+#   neutral          : lainnya → semua arah lolos
+#
+# Rezim reversal di-LATCH 2 candle 1h (120 menit, keputusan user) supaya
+# tidak flicker; rezim trending/neutral dievaluasi segar tiap siklus.
+# BTC sendiri dikecualikan dari gate (ia referensi, bukan ikutan).
+# Fail-open: data tidak tersedia → neutral (bot jalan normal).
+# ─────────────────────────────────────────────────────────────────────────────
+REGIME_LATCH_MINUTES = 120  # 2 candle 1h (keputusan user, opsi 3=a)
+
+
+async def _compute_btc_regime() -> dict[str, Any]:
+    out: dict[str, Any] = {"regime": "neutral", "rsi": None, "chg_last": 0.0,
+                           "chg_prev": 0.0, "slope_up": False, "slope_dn": False,
+                           "ok": False, "detail": "data_unavailable"}
+    try:
+        from market_data import get_crypto_snapshot
+        from indicators import _ema, _rsi, _detect_regime
+    except Exception:
+        return out
+    try:
+        btc1h = await get_crypto_snapshot("BTC", "1h")
+        btc4h = await get_crypto_snapshot("BTC", "4h")
+    except Exception as e:
+        logger.debug("btc regime fetch gagal: %s", e)
+        return out
+    closes1h = [float(c["close"]) for c in ((btc1h or {}).get("candles") or [])
+                if c.get("close")]
+    if len(closes1h) < 17:
+        return out
+    # Index -1 = candle berjalan; closed terakhir = -2, sebelumnya = -3.
+    chg_last = (closes1h[-2] - closes1h[-3]) / closes1h[-3] * 100.0 if closes1h[-3] else 0.0
+    chg_prev = (closes1h[-3] - closes1h[-4]) / closes1h[-4] * 100.0 if closes1h[-4] else 0.0
+    rsi = _rsi(closes1h[:-1], 14)
+    closes4h = [float(c["close"]) for c in ((btc4h or {}).get("candles") or [])
+                if c.get("close")]
+    highs4h = [float(c.get("high") or c["close"]) for c in ((btc4h or {}).get("candles") or [])
+               if c.get("close")]
+    lows4h = [float(c.get("low") or c["close"]) for c in ((btc4h or {}).get("candles") or [])
+              if c.get("close")]
+    slope_up = slope_dn = False
+    if len(closes4h) >= 54:
+        try:
+            e = _ema(closes4h, 50)
+            prev = e[-4] if len(e) >= 4 else e[-1]
+            slope_up = e[-1] > prev
+            slope_dn = e[-1] < prev
+        except Exception:
+            pass
+    # v10.2.12b — ALIGN dengan FORMULA REZIM ASLI USER
+    # (btc_trading_formula.py → _detect_regime, ada sejak v8.7.23 di
+    # desain sinyal awal, sebelum ASI-Bot). Rezim trending memakai
+    # detektor orisinal (price vs EMA50 4H + ATR% capitulation);
+    # deteksi reversal RSI 1h (lapisan baru) menangkap pembalikan
+    # lebih dini dan mendahului rezim trending.
+    base = _detect_regime(closes4h, highs4h, lows4h) if len(closes4h) >= 58 \
+        else {"regime": "UNKNOWN"}
+    base_regime = base.get("regime", "UNKNOWN")
+    out.update({"rsi": rsi, "chg_last": chg_last, "chg_prev": chg_prev,
+                "slope_up": slope_up, "slope_dn": slope_dn, "ok": True,
+                "base_regime": base_regime})
+    if rsi is not None and (
+        (rsi <= 35 and chg_last >= 0.3)
+        or (chg_prev <= -0.5 and chg_last >= 0.3)
+    ):
+        out["regime"] = "bullish_reversal"
+    elif rsi is not None and (
+        (rsi >= 65 and chg_last <= -0.3)
+        or (chg_prev >= 0.5 and chg_last <= -0.3)
+    ):
+        out["regime"] = "bearish_reversal"
+    elif base_regime == "BULL":
+        out["regime"] = "trending_up"
+    elif base_regime == "BEAR_CAPITULATION":
+        # Formula asli user: kapitulasi = dump bervolatilitas ekstrem.
+        # LONG berbahaya (falling knife), SHORT telat (risiko bounce
+        # keras) → blokir KEDUA arah sampai volatilitas mereda.
+        out["regime"] = "bear_capitulation"
+    elif base_regime == "BEAR":
+        out["regime"] = "trending_down"
+    else:
+        out["regime"] = "neutral"
+    out["detail"] = (
+        f"RSI1h {rsi:.0f}" if rsi is not None else "RSI n/a"
+    ) + f", 1h {chg_last:+.2f}%/{chg_prev:+.2f}%, base4H {base_regime}"
+    return out
+
+
+async def _get_btc_regime(db: Any) -> dict[str, Any]:
+    """Rezim BTC dengan latch 120 menit untuk reversal (anti-flicker).
+    Deteksi reversal segar selalu menimpa latch lama; trending/neutral
+    tidak di-latch."""
+    fresh = await _compute_btc_regime()
+    now = datetime.now(timezone.utc)
+    doc = None
+    try:
+        doc = await db.asi_scan_status.find_one({"_id": "btc_regime"})
+    except Exception:
+        pass
+    if fresh.get("ok") and fresh["regime"] in ("bullish_reversal", "bearish_reversal"):
+        # Reversal terdeteksi → (re)latch 120 menit.
+        try:
+            await db.asi_scan_status.update_one(
+                {"_id": "btc_regime"},
+                {"$set": {
+                    "regime": fresh["regime"],
+                    "detail": fresh["detail"],
+                    "latched_at": now.isoformat(),
+                    "latched_until": (
+                        now + timedelta(minutes=REGIME_LATCH_MINUTES)
+                    ).isoformat(),
+                }},
+                upsert=True,
+            )
+        except Exception:
+            pass
+        fresh["latched"] = True
+        return fresh
+    # Bukan reversal segar → pakai latch bila masih berlaku.
+    if doc and doc.get("latched_until"):
+        try:
+            until = datetime.fromisoformat(
+                str(doc["latched_until"]).replace("Z", "+00:00"))
+            if now < until and doc.get("regime") in (
+                    "bullish_reversal", "bearish_reversal"):
+                return {"regime": doc["regime"], "ok": True,
+                        "detail": f"latched: {doc.get('detail')}",
+                        "rsi": fresh.get("rsi"), "chg_last": fresh.get("chg_last", 0.0),
+                        "chg_prev": fresh.get("chg_prev", 0.0),
+                        "slope_up": fresh.get("slope_up", False),
+                        "slope_dn": fresh.get("slope_dn", False),
+                        "latched": True}
+        except Exception:
+            pass
+    return fresh
+
+
 async def _run_full_auto_scanner(
     db: Any,
     signal_fetcher: Callable[[str, str, str | None], Awaitable[dict[str, Any] | None]],
@@ -601,30 +754,24 @@ async def _run_full_auto_scanner(
             return
         r = rep.setdefault("rejects", {})
         r[reason] = int(r.get(reason) or 0) + 1
-    # v10.2.5 — CIRCUIT BREAKER MARKET-WIDE (permintaan user setelah
-    # analisis loss 15/10 pagi: 10 LONG SL beruntun saat market dump).
-    # Bila BTC bergerak ekstrem > 2% dalam 1 jam terakhir, Full-Auto
-    # berhenti membuka posisi ke arah yang MELAWAN gerakan itu:
-    #   dump tajam → semua entry LONG diblokir siklus ini
-    #   pump tajam → semua entry SHORT diblokir siklus ini
-    # Cooldown per-simbol tidak bisa menangani koreksi market serentak;
-    # guard ini bekerja di level portofolio.
-    cb_block_long = False
-    cb_block_short = False
-    try:
-        from market_data import get_crypto_snapshot as _gcs
-        _btc = await _gcs("BTC", "1h")
-        _bc = [float(c["close"]) for c in ((_btc or {}).get("candles") or []) if c.get("close")]
-        if len(_bc) >= 2 and _bc[-2] > 0:
-            _chg1h = (_bc[-1] - _bc[-2]) / _bc[-2] * 100.0
-            if _chg1h <= -2.0:
-                cb_block_long = True
-                logger.warning("circuit-breaker: BTC %.2f%%/1h → semua entry LONG diblokir siklus ini", _chg1h)
-            elif _chg1h >= 2.0:
-                cb_block_short = True
-                logger.warning("circuit-breaker: BTC +%.2f%%/1h → semua entry SHORT diblokir siklus ini", _chg1h)
-    except Exception as _cb_err:
-        logger.debug("circuit-breaker check gagal (skip, fail-open): %s", _cb_err)
+    # v10.2.12 — BTC REGIME GATE (keputusan user 15/10 malam, menggantikan
+    # circuit breaker v10.2.5 + filter exhaustion/cooling v10.2.8).
+    # Rasional user: "semua koin sebagian besar dipengaruhi pergerakan BTC"
+    # — maka SATU gate di hulu scanner menentukan arah yang boleh dieksekusi
+    # berdasarkan rezim BTC, menggantikan guard-guard per-aset yang
+    # tumpang tindih. Rezim dihitung SEKALI per siklus (RSI14 1h + 2 candle
+    # 1h terakhir + slope EMA50 4H) dan di-latch 2 candle (120 menit) untuk
+    # rezim reversal supaya tidak flicker.
+    btc_regime = await _get_btc_regime(db)
+    # Kapitulasi memblokir KEDUA arah (falling knife + late short).
+    gate_block_sell = btc_regime["regime"] in (
+        "bullish_reversal", "trending_up", "bear_capitulation")
+    gate_block_buy = btc_regime["regime"] in (
+        "bearish_reversal", "trending_down", "bear_capitulation")
+    if btc_regime["regime"] != "neutral":
+        logger.info("btc-regime gate: %s (%s) → blokir %s",
+                    btc_regime["regime"], btc_regime.get("detail"),
+                    "SELL" if gate_block_sell else "BUY" if gate_block_buy else "-")
     cursor = db.asi_bot_config.find({
         "$or": [
             {"full_enabled": True},
@@ -756,20 +903,10 @@ async def _run_full_auto_scanner(
                     )
                 except Exception:
                     continue
-                # v10.2.8 — TIMING FILTERS (keputusan user setelah insiden
-                # 9 SHORT tepat di dasar bounce 15/10). Snapshot 1h diambil
-                # SEKALI per simbol (hanya bila ada sinyal) dan dipakai
-                # untuk 3 filter per-sinyal di loop di bawah:
-                #   (a) Exhaustion: candle 1h TERAKHIR CLOSED ≤ -1% → tolak
-                #       SELL baru; ≥ +1% → tolak BUY baru (semua engine).
-                #   (b) Post-spike cooling (khusus engine day): bila candle
-                #       SEBELUM terakhir juga spike > 1% searah sinyal →
-                #       tolak (wajib tunggu pullback 2 candle).
-                #   (c) RSI14 1h: < 35 → tolak SELL (oversold); > 65 →
-                #       tolak BUY (overbought).
+                # v10.2.12 — Snapshot 1h per simbol kini HANYA untuk RSI14
+                # (lapis kedua anti sell-bottom/buy-top). Filter exhaustion
+                # & cooling v10.2.8 dicabut — digantikan BTC Regime Gate.
                 # Fail-open bila data 1h tidak tersedia.
-                _chg1h_last = 0.0
-                _chg1h_prev = 0.0
                 _rsi1h: float | None = None
                 _timing_ready = False
                 if any(isinstance(s, dict) and s.get("side") for s in results):
@@ -779,16 +916,11 @@ async def _run_full_auto_scanner(
                         _snap = await _g1h(sym, "1h")
                         _c1 = [float(c["close"]) for c in ((_snap or {}).get("candles") or [])
                                if c.get("close")]
-                        if len(_c1) >= 17:
-                            # Index -1 = candle berjalan; yang closed = -2.
-                            if _c1[-3]:
-                                _chg1h_last = (_c1[-2] - _c1[-3]) / _c1[-3] * 100.0
-                            if _c1[-4]:
-                                _chg1h_prev = (_c1[-3] - _c1[-4]) / _c1[-4] * 100.0
+                        if len(_c1) >= 16:
                             _rsi1h = _rsi_fn(_c1[:-1], 14)
                             _timing_ready = True
                     except Exception as _te:
-                        logger.debug("timing filter fetch %s gagal (fail-open): %s", sym, _te)
+                        logger.debug("rsi filter fetch %s gagal (fail-open): %s", sym, _te)
                 best = None
                 for sig in results:
                     if not isinstance(sig, dict) or not sig.get("side"):
@@ -798,36 +930,27 @@ async def _run_full_auto_scanner(
                     if sig.get("late_entry"):
                         _dev_reject(rep, "late_entry")
                         continue
-                    # v10.2.5 — CIRCUIT BREAKER: blokir arah yang melawan
-                    # gerakan ekstrem BTC (>2%/1h). Dihitung sekali per
-                    # siklus di atas.
-                    if sig["side"] == "BUY" and cb_block_long:
-                        _dev_reject(rep, "circuit_breaker_blokir_LONG")
-                        continue
-                    if sig["side"] == "SELL" and cb_block_short:
-                        _dev_reject(rep, "circuit_breaker_blokir_SHORT")
-                        continue
+                    # v10.2.12 — BTC REGIME GATE: rezim BTC menentukan arah
+                    # yang boleh dieksekusi untuk ALTCOIN (BTC sendiri
+                    # dikecualikan — ia referensi, bukan ikutan). Rezim
+                    # bullish_reversal/trending_up → blokir SELL;
+                    # bearish_reversal/trending_down → blokir BUY.
+                    if sym != "BTC":
+                        if sig["side"] == "SELL" and gate_block_sell:
+                            _dev_reject(rep, f"btc_regime {btc_regime['regime']}: tolak SELL")
+                            continue
+                        if sig["side"] == "BUY" and gate_block_buy:
+                            _dev_reject(rep, f"btc_regime {btc_regime['regime']}: tolak BUY")
+                            continue
                     if int(sig.get("confidence") or 0) < user_min_conf:
                         _dev_reject(rep, f"conf<{user_min_conf}")
                         continue
-                    # v10.2.8 — Timing filters (dievaluasi PER SINYAL supaya
-                    # sinyal arah berlawanan yang searah reversal tetap
-                    # bisa lolos dan menjadi best).
+                    # v10.2.12 — RSI per-aset DIPERTAHANKAN sebagai lapis
+                    # kedua (anti sell-bottom/buy-top aset volatile).
+                    # Filter exhaustion & cooling v10.2.8 DICABUT — sudah
+                    # digantikan BTC Regime Gate di hulu.
                     if _timing_ready:
                         _wl = sig["side"] == "BUY"
-                        _is_day = (sig.get("profile") or "") == "day"
-                        if not _wl and _chg1h_last <= -1.0:
-                            _dev_reject(rep, "exhaustion: tolak SELL setelah candle dump >1%")
-                            continue
-                        if _wl and _chg1h_last >= 1.0:
-                            _dev_reject(rep, "exhaustion: tolak BUY setelah candle pump >1%")
-                            continue
-                        if _is_day and not _wl and _chg1h_prev <= -1.0:
-                            _dev_reject(rep, "cooling 2 candle: day SELL pasca-dump")
-                            continue
-                        if _is_day and _wl and _chg1h_prev >= 1.0:
-                            _dev_reject(rep, "cooling 2 candle: day BUY pasca-pump")
-                            continue
                         if _rsi1h is not None:
                             if not _wl and _rsi1h < 35:
                                 _dev_reject(rep, f"RSI1h {_rsi1h:.0f}<35 oversold: tolak SELL")
@@ -1050,6 +1173,9 @@ async def _run_full_auto_scanner(
              "devices_scanned": scanned,
              "signals_found": sigs_found,
              "placed": total_placed,
+             # v10.2.12 — Rezim BTC gate siklus ini (untuk scan-debug UI).
+             "btc_regime": btc_regime.get("regime"),
+             "btc_regime_detail": btc_regime.get("detail"),
              # v10.2.7 — per-device diagnostics (maks 20 device agar doc
              # tetap kecil; cukup untuk menjawab "kenapa bot saya tidak
              # eksekusi").
