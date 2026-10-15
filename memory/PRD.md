@@ -133,6 +133,24 @@ sebelumnya tidak pernah tuntas: kode salah mengira koneksi sehat.
   tiba-tiba kosong/menyusut >40% (ciri degraded/parsial) tidak boleh
   menimpa data yang sedang tampil. Root cause production (kemungkinan
   multi-instance cache atau response parsial upstream) masih perlu
+
+## v10.2.13 — market_data via ASI_PROXY_URL + Retry 418/429 (Oktober 2026)
+Permintaan user: pooled httpx client di market_data.py dirutekan lewat
+relay ASI_PROXY_URL (pola yang sama seperti asi_bot/exchanges.py &
+server.py) + retry/backoff untuk 418/429.
+- `_http()`: `proxy=os.environ.get("ASI_PROXY_URL") or HTTPS_PROXY or None`
+  — tanpa env → koneksi langsung (perilaku lama).
+- `_get_with_retry()`: GET dengan backoff 0.5s→1.5s khusus status 418
+  (IP ban, honor header Retry-After maks 2s) & 429 (rate limit); 3
+  percobaan lalu raise → rantai fallback Bitget/OKX yang sudah ada tetap
+  mengambil alih seperti semula. Dipasang di `_fetch_binance_klines` &
+  `_fetch_binance_ticker`.
+- Tujuan: menghentikan kejadian IP server kena 418/451 Binance saat beban
+  scanner+panic guard naik (akar dashboard/grafik kehilangan data di
+  production).
+- Test: mock transport (418→418→200 sukses; 429×3 raise ke fallback;
+  200 tanpa retry) + live fetch BTC via proxy (250 candle OK, ~1.8s).
+
   observasi user berikutnya.
 - **#1 Pertanyaan "kenapa ATOM & DASH tidak dieksekusi, hanya LTC &
   LDO"**: perilaku BY-DESIGN filter timing v10.2.8 — ATOM -6.8% &

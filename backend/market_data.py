@@ -5,10 +5,14 @@ All functions return native Python types; no MongoDB.
 from __future__ import annotations
 
 import asyncio
+import logging
+import os
 import time
 from typing import Any
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 # Crypto symbol -> Binance trading pair (USDT-quoted spot)
 CRYPTO_BINANCE_MAP: dict[str, str] = {
@@ -1267,6 +1271,55 @@ async def _fetch_okx_ticker(client: httpx.AsyncClient, symbol: str) -> dict[str,
         return None
 
 
+async def _get_with_retry(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    params: dict[str, Any] | None = None,
+    timeout: float = 10.0,
+    attempts: int = 3,
+) -> httpx.Response:
+    """v10.2.13 — GET dengan retry/backoff khusus throttle Binance.
+
+    418 = IP ban sementara (response membawa header Retry-After);
+    429 = rate limit weight. Keduanya transient → coba ulang dengan
+    backoff 0.5s → 1.5s (atau Retry-After, maks 2s). Kegagalan akhir
+    tetap melempar HTTPStatusError sehingga pemanggil jatuh ke fallback
+    provider yang sudah ada (Bitget/OKX) — perilaku lama terjaga.
+    """
+    delay = 0.5
+    last_exc: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            r = await client.get(url, params=params, timeout=timeout)
+            if r.status_code in (418, 429):
+                if attempt < attempts - 1:
+                    wait = delay
+                    try:
+                        ra = r.headers.get("Retry-After")
+                        if ra:
+                            wait = min(float(ra), 2.0)
+                    except Exception:
+                        pass
+                    logger.warning("binance throttle %s (attempt %d/%d) — retry dalam %.1fs",
+                                   r.status_code, attempt + 1, attempts, wait)
+                    await asyncio.sleep(wait)
+                    delay *= 3
+                    continue
+                # Percobaan terakhir tetap throttle → lempar supaya
+                # fallback provider mengambil alih.
+                r.raise_for_status()
+            r.raise_for_status()
+            return r
+        except httpx.HTTPStatusError:
+            raise
+        except Exception as e:  # jaringan/DNS/dll — langsung ke fallback
+            last_exc = e
+            raise
+    assert last_exc is not None
+    raise last_exc
+
+
 async def _fetch_binance_klines(client: httpx.AsyncClient, symbol: str, interval: str, limit: int) -> list[dict[str, float]]:
     # v8.1.1 — On-demand lookup: if the symbol isn't in our curated map,
     # try the naive `${SYMBOL}USDT` pair name. Binance's public API is
@@ -1274,12 +1327,12 @@ async def _fetch_binance_klines(client: httpx.AsyncClient, symbol: str, interval
     # brand-new listings (MOODENG, POPCAT, etc.) without a code update.
     pair = CRYPTO_BINANCE_MAP.get(symbol) or f"{symbol.upper()}USDT"
     try:
-        r = await client.get(
+        r = await _get_with_retry(
+            client,
             f"{BINANCE_BASE}/api/v3/klines",
             params={"symbol": pair, "interval": interval, "limit": limit},
             timeout=10.0,
         )
-        r.raise_for_status()
         raw = r.json()
         return [
             {
@@ -1299,12 +1352,12 @@ async def _fetch_binance_klines(client: httpx.AsyncClient, symbol: str, interval
 async def _fetch_binance_ticker(client: httpx.AsyncClient, symbol: str) -> dict[str, float] | None:
     pair = CRYPTO_BINANCE_MAP.get(symbol) or f"{symbol.upper()}USDT"
     try:
-        r = await client.get(
+        r = await _get_with_retry(
+            client,
             f"{BINANCE_BASE}/api/v3/ticker/24hr",
             params={"symbol": pair},
             timeout=8.0,
         )
-        r.raise_for_status()
         d = r.json()
         return {
             "price": float(d["lastPrice"]),
@@ -1347,6 +1400,13 @@ async def _http() -> httpx.AsyncClient:
         return _HTTP_CLIENT
     async with _HTTP_CLIENT_LOCK:
         if _HTTP_CLIENT is None or _HTTP_CLIENT.is_closed:
+            # v10.2.13 — Route traffic upstream lewat ASI_PROXY_URL (relay
+            # IP keluar yang sama seperti asi_bot/exchanges.py & server.py).
+            # Tanpa ini, IP server langsung kena 418/451 Binance saat
+            # beban scanner+panic-guard naik → dashboard/grafik kehilangan
+            # data. Bila env tidak diset → None → koneksi langsung
+            # (perilaku lama, tidak berubah).
+            proxy = os.environ.get("ASI_PROXY_URL") or os.environ.get("HTTPS_PROXY") or None
             _HTTP_CLIENT = httpx.AsyncClient(
                 timeout=httpx.Timeout(10.0, connect=5.0),
                 limits=httpx.Limits(
@@ -1355,8 +1415,11 @@ async def _http() -> httpx.AsyncClient:
                     keepalive_expiry=30.0,
                 ),
                 http2=True,
+                proxy=proxy,
                 headers={"User-Agent": "Mozilla/5.0 AITradePro/8"},
             )
+            if proxy:
+                logger.info("market_data: pooled http client via ASI_PROXY_URL relay")
     return _HTTP_CLIENT
 
 
