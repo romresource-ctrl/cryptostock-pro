@@ -575,6 +575,30 @@ async def _run_full_auto_scanner(
     scanned = 0
     sigs_found = 0
     total_placed = 0
+    # v10.2.5 — CIRCUIT BREAKER MARKET-WIDE (permintaan user setelah
+    # analisis loss 15/10 pagi: 10 LONG SL beruntun saat market dump).
+    # Bila BTC bergerak ekstrem > 2% dalam 1 jam terakhir, Full-Auto
+    # berhenti membuka posisi ke arah yang MELAWAN gerakan itu:
+    #   dump tajam → semua entry LONG diblokir siklus ini
+    #   pump tajam → semua entry SHORT diblokir siklus ini
+    # Cooldown per-simbol tidak bisa menangani koreksi market serentak;
+    # guard ini bekerja di level portofolio.
+    cb_block_long = False
+    cb_block_short = False
+    try:
+        from market_data import get_crypto_snapshot as _gcs
+        _btc = await _gcs("BTC", "1h")
+        _bc = [float(c["close"]) for c in ((_btc or {}).get("candles") or []) if c.get("close")]
+        if len(_bc) >= 2 and _bc[-2] > 0:
+            _chg1h = (_bc[-1] - _bc[-2]) / _bc[-2] * 100.0
+            if _chg1h <= -2.0:
+                cb_block_long = True
+                logger.warning("circuit-breaker: BTC %.2f%%/1h → semua entry LONG diblokir siklus ini", _chg1h)
+            elif _chg1h >= 2.0:
+                cb_block_short = True
+                logger.warning("circuit-breaker: BTC +%.2f%%/1h → semua entry SHORT diblokir siklus ini", _chg1h)
+    except Exception as _cb_err:
+        logger.debug("circuit-breaker check gagal (skip, fail-open): %s", _cb_err)
     cursor = db.asi_bot_config.find({
         "$or": [
             {"full_enabled": True},
@@ -601,6 +625,27 @@ async def _run_full_auto_scanner(
             placed = await _trades_today_count(db, device_id, net)
             if placed >= max_tr:
                 continue
+            # v10.2.5 — LOSS-STREAK BREAKER: bila 3 trade terakhir yang
+            # closed SEMUANYA kena SL dan SL terbaru < 2 jam lalu, bot
+            # istirahat dulu (skip siklus ini). Mencegah loss beruntun
+            # membesar seperti pagi 15/10 (-$150 dalam satu sesi dump).
+            try:
+                _recent_closed = [
+                    t async for t in db.asi_trades.find(
+                        {"device_id": device_id, "status": "closed"}
+                    ).sort("closed_at", -1).limit(3)
+                ]
+                if len(_recent_closed) == 3 and all(
+                    t.get("close_reason") == "SL" for t in _recent_closed
+                ):
+                    _cutoff = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+                    if str(_recent_closed[0].get("closed_at") or "") > _cutoff:
+                        logger.warning(
+                            "loss-streak breaker: %s 3 SL beruntun <2 jam → istirahat siklus ini",
+                            device_id)
+                        continue
+            except Exception as _ls_err:
+                logger.debug("loss-streak check gagal (skip, fail-open): %s", _ls_err)
             # v9.7.3 — BUG FIX: empty whitelist silently disabled the bot
             # ("ACTIVE" tapi tidak pernah scan). Default ke Top-100 futures
             # agar Full-Auto langsung bekerja tanpa konfigurasi tambahan.
@@ -678,6 +723,13 @@ async def _run_full_auto_scanner(
                     # longgar tapi gagal gate eksekusi ketat 3-candle/1.5ATR).
                     if sig.get("late_entry"):
                         continue
+                    # v10.2.5 — CIRCUIT BREAKER: blokir arah yang melawan
+                    # gerakan ekstrem BTC (>2%/1h). Dihitung sekali per
+                    # siklus di atas.
+                    if sig["side"] == "BUY" and cb_block_long:
+                        continue
+                    if sig["side"] == "SELL" and cb_block_short:
+                        continue
                     if int(sig.get("confidence") or 0) < user_min_conf:
                         continue
                     sigs_found += 1
@@ -725,12 +777,13 @@ async def _run_full_auto_scanner(
                     logger.info("full-auto cooldown skip %s/%s: ditutup "
                                 "dalam 15 menit terakhir", device_id, sym)
                     continue
-                # v10.1.7 — TREND FILTER (anti counter-trend): sinyal
-                # SHORT di uptrend atau LONG di downtrend seringkali
-                # ketemu SL cepat karena market masih kuat satu arah.
-                # Confluence v9 sudah pakai EMA200, tapi tambahkan guard
-                # eksternal: tolak jika arah sinyal berlawanan dengan
-                # EMA50 pada candle 4H.
+                # v10.2.5 — TREND FILTER 4H DIPERTAJAM (permintaan user):
+                # bukan lagi sekadar posisi harga vs EMA50, tapi juga ARAH/
+                # SLOPE EMA50. "Saat EMA50 menurun, LONG dilarang walau
+                # harga sesaat di atasnya" — mencegah bounce-trap LONG di
+                # tengah dump seperti pagi 15/10.
+                #   LONG  wajib: harga > EMA50  DAN  EMA50 tidak menurun
+                #   SHORT wajib: harga < EMA50  DAN  EMA50 tidak menaik
                 try:
                     from indicators import _ema  # noqa
                     from market_data import get_crypto_snapshot
@@ -738,18 +791,28 @@ async def _run_full_auto_scanner(
                     cands = (snap4h or {}).get("candles") or []
                     closes_4h = [float(c["close"]) for c in cands
                                  if c.get("close")]
-                    if len(closes_4h) >= 50:
+                    if len(closes_4h) >= 54:
                         ema_series = _ema(closes_4h, 50)
                         ema50_4h = ema_series[-1] if ema_series else 0.0
+                        ema50_prev = ema_series[-4] if len(ema_series) >= 4 else ema50_4h
                         last_price = closes_4h[-1]
                         bias_up = last_price > ema50_4h
+                        slope_up = ema50_4h > ema50_prev
+                        slope_dn = ema50_4h < ema50_prev
                         want_long = sig["side"] == "BUY"
-                        if bias_up != want_long:
+                        if want_long and (not bias_up or slope_dn):
                             logger.info("full-auto trend-filter skip %s/%s: "
-                                        "sinyal %s lawan bias 4H EMA50 "
-                                        "(price=%.4f ema50=%.4f)",
-                                        device_id, sym, sig["side"],
-                                        last_price, ema50_4h)
+                                        "LONG ditolak (price%sEMA50 %.4f, slope %s)",
+                                        device_id, sym,
+                                        ">" if bias_up else "<", ema50_4h,
+                                        "turun" if slope_dn else "naik/datar")
+                            continue
+                        if not want_long and (bias_up or slope_up):
+                            logger.info("full-auto trend-filter skip %s/%s: "
+                                        "SHORT ditolak (price%sEMA50 %.4f, slope %s)",
+                                        device_id, sym,
+                                        ">" if bias_up else "<", ema50_4h,
+                                        "naik" if slope_up else "turun/datar")
                             continue
                 except Exception as _tf_err:
                     logger.debug("trend-filter error %s: %s", sym, _tf_err)

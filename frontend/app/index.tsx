@@ -34,7 +34,6 @@ import Sparkline from "@/src/components/Sparkline";
 import TrendingColumn from "@/src/components/TrendingColumn";
 import VoiceSearchButton from "@/src/components/VoiceSearchButton";
 import {
-  default as UsdtLocalRateStrip,
   STABLECOIN_SYMBOLS,
   formatStablecoinLocal,
   useUsdtLocalRate,
@@ -880,11 +879,10 @@ export default function Dashboard() {
         </TouchableOpacity>
       </View>
 
-      {/* v10.1.7 — USDT→local FX strip DIKEMBALIKAN sesuai permintaan user:
-          sebelumnya sempat dihapus (v8.5.7) karena dianggap "noise", tapi
-          user minta aktif kembali agar nilai USDT ke mata uang lokal
-          selalu kelihatan di atas dashboard. */}
-      <UsdtLocalRateStrip />
+      {/* v10.2.5 — USDT→local FX strip di header DIHILANGKAN (keputusan
+          user): kartu aset USDT sendiri sudah menampilkan nilai ke
+          mata uang lokal per-perangkat, jadi strip di header redundan.
+          Hook useUsdtLocalRate tetap dipakai kartu aset USDT. */}
       {/* v8.1.3 — Region filter chips (replaces old asset-category chips).
           Filter World Stocks column by country/region. "All" shows all
           columns as normal. Tap a region → World Stocks column shows
