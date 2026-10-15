@@ -151,6 +151,12 @@ server.py) + retry/backoff untuk 418/429.
 
 ## v10.2.13b — Confluence v9 dilonggarkan 8→7 faktor (Oktober 2026)
 Keputusan user: gerbang Confluence v9 (profile=longterm) terlalu sering
+
+## v10.2.14 — Emergency Fix Crash ASI-Bot & Deployment Sukses (Oktober 2026)
+- Fix crash di halaman ASI-Bot saat user tap tombol (ReferenceError: useCallback is not defined) akibat missing import di `app/asi-bot.tsx`.
+- Verifikasi build pipeline dan resolusi 502 bad gateway upstream yarn registry. Build Android .APK dan .AAB v10.2.14 selesai 100% dan ter-deploy.
+- Seluruh rangkaian fitur v10.2.6 - v10.2.14 aktif: Panic Market Guard, BTC Regime Gate (_detect_regime + RSI1h reversal latch), proxy anti-ban Binance + retry 418/429 di market_data, Confluence 7 faktor, fix harga live grafik & badge Dip/Top, page cache & optimistic delete.
+
 kosong total (0/113 aset) → dilonggarkan 8 → 7 faktor. Default dashboard
 (profile=None) tetap 5 faktor. Catatan investigasi: perbedaan badge
 premium HP vs preview bersifat struktural — premium butuh wr_30d dari DB
@@ -1798,3 +1804,10 @@ Keputusan user atas 5 pertanyaan:
   enabled vs full_enabled — scanner jalan bila full_enabled=true; bila ada
   device_id LAMA (HP sebelum reinstall) dengan full_enabled:true + API key
   valid, bot itu tetap jalan. User diminta verifikasi di produksi.
+
+## v10.2.16 — Panic Guard removal + ASI-Bot persistence (DONE, tested)
+- Panic Guard dihapus TOTAL: scheduler (PANIC_INTERVAL), routes (/market-risk endpoint 404, panic_active reset di POST /bot, panic field di scan-debug), frontend api.ts (marketRisk helper), asi-bot.tsx (banner crash latent karena marketRisk state sudah tidak ada), i18n (asi_panic_* + asi_reversal_pattern keys).
+- Persistence fix: root cause mode reset = key '@asi_preferred_mode' tidak pernah ditulis. Sekarang saveBot() menulis FULL merged config ke AsyncStorage '@asi_bot_prefs' (mode, parameter, disclaimer) dan restore saat mount sebelum refresh backend. Backend tetap source of truth.
+- Bonus fix: useTraderProfile skip sync 422 untuk device tanpa bot config (exists:false).
+- Testing: backend curl roundtrip OK (no panic keys), testing_agent frontend PASS 4/4 mode persistence (nav + reload, full↔semi), no panic banner, dashboard smoke PASS, lint bersih, py_compile OK.
+- Versi konsisten 10.2.16 di version.ts / app.json / server.py. Publish-only, tanpa build APK.

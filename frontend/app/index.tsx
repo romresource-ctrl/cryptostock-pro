@@ -2,7 +2,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Animated,
   FlatList,
@@ -29,7 +28,6 @@ import LoginModal from "@/src/components/LoginModal";
 import ChatSheet from "@/src/components/ChatSheet";
 import FlashPrice from "@/src/components/FlashPrice";
 import MarketSkeleton from "@/src/components/MarketSkeleton";
-import PrivacyNoticePopup from "@/src/components/PrivacyNoticePopup";
 import Sparkline from "@/src/components/Sparkline";
 import TrendingColumn from "@/src/components/TrendingColumn";
 import VoiceSearchButton from "@/src/components/VoiceSearchButton";
@@ -57,6 +55,12 @@ import TraderProfileModal from "@/src/components/TraderProfileModal";
 import AISuggestionsSheet from "@/src/components/AISuggestionsSheet";
 import UpdatePrompt from "@/src/components/UpdatePrompt";
 import { markAppReady } from "@/src/lib/appReady";
+import {
+  getSyncDashboardCache,
+  setDashboardCache,
+  loadPersistentDashboardCache,
+  prefetchAllProfiles,
+} from "@/src/lib/dashboardCache";
 import { APP_VERSION } from "@/src/lib/version";
 import { useWatchlist } from "@/src/lib/watchlist";
 import { useTheme } from "@/src/theme/ThemeContext";
@@ -345,27 +349,66 @@ export default function Dashboard() {
   const searchHistory = useSearchHistory();
   // v8.12.57 — Trader Profile state + modal open state.
   const { profile: traderProfile, apiProfile, loaded: profileLoaded } = useTraderProfile();
-  // v9.6.8 — When trader profile changes, immediately clear old data so the
-  // skeleton re-appears while the new fetch (triggered by the useEffect
-  // below via `apiProfile` dep) is in flight. Without this, users see the
-  // old data lingering and think the switch didn't take effect.
+  // v10.2.15 — INSTANT PROFILE SWITCH + SKELETON:
+  // Saat user switch trader profile di dashboard:
+  // 1. Cek in-memory profile cache: jika data profil tujuan sudah ada
+  //    (pernah dibuka atau sudah di-prefetch), LANGSUNG render seketika (0ms delay)!
+  // 2. Jika belum ada di cache: SEGERA pasang loadingMap=true & data=[]
+  //    sehingga MarketSkeleton muncul seketika secara responsif tanpa freeze/lag.
+  // 3. Request segar jalan di background dan otomatis menyimpan ke cache.
   const firstApiProfileRef = React.useRef<string | null | undefined>(undefined);
   useEffect(() => {
     if (!profileLoaded) return;
+    const effectiveProf = hasAccess ? (apiProfile ?? undefined) : undefined;
     if (firstApiProfileRef.current === undefined) {
       firstApiProfileRef.current = apiProfile;
+      // Cold start: baca cache memory atau persistent disk
+      const syncCached = getSyncDashboardCache(effectiveProf, timeframe, regionFilter);
+      if (syncCached && syncCached.data) {
+        setData(syncCached.data);
+        setPremiumCount(syncCached.premiumCount);
+        setLoadingMap({
+          crypto: false, etf: false, stock_id: false, stock_us: false,
+          world_stocks: false, gold_silver: false, commodity: false, forex: false,
+        });
+      } else {
+        loadPersistentDashboardCache(effectiveProf, timeframe, regionFilter).then((disk) => {
+          if (disk && disk.data) {
+            setData(disk.data);
+            setPremiumCount(disk.premiumCount);
+            setLoadingMap({
+              crypto: false, etf: false, stock_id: false, stock_us: false,
+              world_stocks: false, gold_silver: false, commodity: false, forex: false,
+            });
+          }
+        });
+      }
       return;
     }
     if (firstApiProfileRef.current !== apiProfile) {
       firstApiProfileRef.current = apiProfile;
-      // Clear per-market data → skeleton shows immediately.
-      setData((prev) => {
-        const next: typeof prev = {} as any;
-        (Object.keys(prev) as Category[]).forEach((k) => { next[k] = []; });
-        return next;
-      });
+      const cached = getSyncDashboardCache(effectiveProf, timeframe, regionFilter);
+      if (cached && cached.data) {
+        // Cache HIT -> Instant transition dalam 0ms!
+        setData(cached.data);
+        setPremiumCount(cached.premiumCount);
+        setLoadingMap({
+          crypto: false, etf: false, stock_id: false, stock_us: false,
+          world_stocks: false, gold_silver: false, commodity: false, forex: false,
+        });
+      } else {
+        // Cache MISS -> Tampilkan skeleton seketika (tanpa lag/delay)
+        setLoadingMap({
+          crypto: true, etf: true, stock_id: true, stock_us: true,
+          world_stocks: true, gold_silver: true, commodity: true, forex: true,
+        });
+        setData({
+          crypto: [], etf: [], stock_id: [], stock_us: [],
+          world_stocks: [], gold_silver: [], commodity: [], forex: [],
+        });
+      }
     }
-  }, [apiProfile, profileLoaded]);
+  }, [apiProfile, profileLoaded, hasAccess, timeframe, regionFilter]);
   const [traderProfileOpen, setTraderProfileOpen] = useState(false);
   const [aiSugOpen, setAiSugOpen] = useState(false);
   // v8.12.38.1 — When the search input is focused AND empty AND we have
@@ -537,10 +580,16 @@ export default function Dashboard() {
   const load = useCallback(async (tf: Timeframe, selected: Category[], regionArg: RegionKey = "all") => {
     setLoadingMap((prev) => {
       const next = { ...prev };
-      selected.forEach((k) => { next[k] = true; });
+      // Hanya tampilkan loading jika kolom tersebut masih kosong (cold-load)
+      selected.forEach((k) => {
+        if (!data[k] || data[k].length === 0) {
+          next[k] = true;
+        }
+      });
       return next;
     });
     try {
+      const effectiveProf = hasAccess ? (apiProfile ?? undefined) : undefined;
       const res = await api.dashboardBatch(selected as Market[], tf, {
         sort: "premium",
         full: false,
@@ -553,8 +602,9 @@ export default function Dashboard() {
         // (toggle). null → backend memakai mesin Confluence v9.0 default.
         // v9.2.0 — Member non-premium HANYA melihat mesin Confluence:
         // profile tidak pernah dikirim walau tersimpan di storage.
-        profile: hasAccess ? (apiProfile ?? undefined) : undefined,
+        profile: effectiveProf,
       });
+      let nextData: Record<Category, AssetSignal[]> = { ...data };
       setData((prev) => {
         const next = { ...prev };
         selected.forEach((k) => {
@@ -572,6 +622,7 @@ export default function Dashboard() {
             next[k] = m.assets;
           }
         });
+        nextData = next;
         return next;
       });
       let pCount = 0;
@@ -581,11 +632,28 @@ export default function Dashboard() {
       setPremiumCount(pCount);
       setLastUpdate(new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
       // v8.12.43 — Signal the global "app ready" flag once the first
-      // real data payload has landed. The blocking Disclaimer + Privacy
-      // popups wait for this event (plus an extra grace delay) so that
-      // snapshot / gallery capture services take a picture of the
-      // populated dashboard, not the loading skeleton or the modal.
+      // real data payload has landed.
       markAppReady();
+
+      // v10.2.15 — Simpan ke profile cache (in-memory + disk)
+      setDashboardCache(
+        effectiveProf,
+        tf,
+        regionArg,
+        nextData,
+        pCount
+      );
+
+      // v10.2.15 — Prefetch profil lain di background saat idle
+      if (hasAccess) {
+        prefetchAllProfiles(
+          apiProfile,
+          tf,
+          regionArg,
+          hasAccess,
+          watchlistExtrasRef.current
+        );
+      }
     } finally {
       setLoadingMap((prev) => {
         const next = { ...prev };
@@ -593,7 +661,7 @@ export default function Dashboard() {
         return next;
       });
     }
-  }, [apiProfile, hasAccess]);
+  }, [apiProfile, hasAccess, data]);
 
   useEffect(() => {
     // v9.1.3 — Tunggu pilihan Trader Profile termuat dari AsyncStorage
@@ -738,6 +806,8 @@ export default function Dashboard() {
           <TouchableOpacity
             onPress={() => {
               if (hasAccess) {
+                // v10.2.15 — Prefetch profil lain di background saat modal dibuka
+                prefetchAllProfiles(apiProfile, timeframe, regionFilter, hasAccess, watchlistExtrasRef.current);
                 setTraderProfileOpen(true);
               } else {
                 setVipOpen(true);

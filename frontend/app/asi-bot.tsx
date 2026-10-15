@@ -11,6 +11,7 @@ import * as Clipboard from "expo-clipboard";
 
 import { useTheme } from "@/src/theme/ThemeContext";
 import { useI18n } from "@/src/i18n/I18nContext";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
 import { useTraderProfile, PROFILE_META } from "@/src/lib/useTraderProfile";
 import { prefetchChart } from "@/src/lib/chartCache";
@@ -97,27 +98,6 @@ export default function ASIBotScreen() {
   // dari tombol PICK A SIGNAL). Sheet ini punya AsiTradeSheet internal.
   const [suggestOpen, setSuggestOpen] = useState(false);
 
-  // v10.2.6 — PANIC MARKET GUARD: snapshot bias BTC/ETH + status panic
-  // per device. Dipakai banner info di Full-Auto (saat cooldown aktif)
-  // dan banner peringatan di Semi-Auto (saat market dump/pump).
-  type MarketRisk = {
-    ok: boolean;
-    bias: "bearish" | "bullish" | "neutral";
-    btc_change_1h: number;
-    eth_change_1h: number;
-    is_panic_dump: boolean;
-    is_panic_pump: boolean;
-    reversal_detected: boolean;
-    reason: string;
-    panic_active: boolean;
-    panic_reason?: string | null;
-    panic_closed_count?: number;
-    panic_cancelled_count?: number;
-    panic_released_at?: string | null;
-    semi_warn: boolean;
-  };
-  const [marketRisk, setMarketRisk] = useState<MarketRisk | null>(null);
-
   // v10.2.7 — Scan debug: jawaban "kenapa bot tidak eksekusi" per device.
   type ScanDebug = {
     device_in_scanner: boolean;
@@ -136,8 +116,19 @@ export default function ASIBotScreen() {
     (async () => {
       const did = await getDeviceId();
       setDeviceId(did);
-      // v10.2.9 — INSTANT OPEN: gambar daftar trade terakhir dari cache
-      // seketika; refresh() menyusul dengan data segar di background.
+      // v10.2.16 — Restore SELURUH pengaturan bot (mode Full/Semi,
+      // parameter, disclaimer) dari local storage supaya tidak reset
+      // saat keluar-masuk halaman atau aplikasi ditutup. Refresh dari
+      // backend tetap berjalan setelah ini sebagai sumber kebenaran.
+      try {
+        const raw = await AsyncStorage.getItem("@asi_bot_prefs");
+        if (raw) {
+          const prefs = JSON.parse(raw);
+          if (prefs && typeof prefs === "object") {
+            setBot((prev) => ({ ...prev, ...prefs }));
+          }
+        }
+      } catch { /* ignore */ }
       try {
         const cached = await readPageCache<AsiTradeResp[]>(`asibot-trades:${did}`);
         if (cached && cached.length > 0) setTrades(cached);
@@ -169,18 +160,12 @@ export default function ASIBotScreen() {
     }, [bot.semi_enabled, bot.full_enabled, bot.enabled, deviceId])
   );
 
-  // v10.2.6 — Poll /asi/market-risk tiap 30 detik: snapshot bias BTC/ETH +
-  // status panic cooldown Full-Auto. Banner di render di dalam ScrollView.
+  // v10.2.7 — Poll /asi/scan-debug tiap 30 detik untuk info status scanner.
   useFocusEffect(
     useCallback(() => {
       if (!deviceId) return;
       let alive = true;
       const tick = async () => {
-        try {
-          const r = await api.asi.marketRisk(deviceId);
-          if (!alive) return;
-          setMarketRisk(r as any);
-        } catch { /* keep previous snapshot */ }
         try {
           const d = await api.asi.scanDebug(deviceId);
           if (!alive) return;
@@ -190,7 +175,6 @@ export default function ASIBotScreen() {
       tick();
       const id = setInterval(tick, 30_000);
       return () => { alive = false; clearInterval(id); };
-       
     }, [deviceId])
   );
 
@@ -282,7 +266,12 @@ export default function ASIBotScreen() {
     } catch { /* keep existing creds */ }
     try {
       const b = await api.asi.getBot(id);
-      if (b.exists) setBot({ ...bot, ...b });
+      if (b.exists) {
+        setBot((prev) => {
+          const resolvedMode = b.full_enabled ? "full" : (b.mode || prev.mode);
+          return { ...prev, ...b, mode: resolvedMode };
+        });
+      }
     } catch { /* keep existing bot cfg */ }
     try {
       const p = await api.asi.pnl(id); setPnl(p);
@@ -363,6 +352,10 @@ export default function ASIBotScreen() {
     setBot((prev) => { merged = { ...prev, ...next }; return merged; });
     try {
       await api.asi.saveBot(deviceId, merged);
+      // v10.2.16 — Persist SEMUA pengaturan (mode Full/Semi, parameter,
+      // disclaimer) ke local storage supaya tidak hilang saat user
+      // keluar-masuk halaman atau menutup aplikasi.
+      AsyncStorage.setItem("@asi_bot_prefs", JSON.stringify(merged)).catch(() => {});
     } catch (e: any) {
       Alert.alert(t("asi_save_failed_title"), t("asi_save_failed_body"));
       throw e;
@@ -397,7 +390,7 @@ export default function ASIBotScreen() {
     await saveBot(val
       ? { full_enabled: true, enabled: true, mode: "full",
           auto_disabled_reason: null, auto_disabled_at: null }
-      : { full_enabled: false, enabled: !!bot.semi_enabled });
+      : { full_enabled: false, enabled: !!bot.semi_enabled, mode: "full" });
   };
 
   const closeOneTrade = async (trade: AsiTradeResp) => {
@@ -524,79 +517,6 @@ export default function ASIBotScreen() {
             </Text>
           );
         })() : null}
-
-        {/* v10.2.6 — PANIC MARKET GUARD banner.
-            Full-Auto: tampil saat bot dalam panic cooldown (merah) ATAU
-                       saat market panic/pump jelas (oranye, info).
-            Semi-Auto: tampil saat market panic/pump — ajakan user mempertimbangkan
-                       menutup posisi berlawanan arah (TIDAK auto-close). */}
-        {(() => {
-          if (!marketRisk) return null;
-          const isFull = bot.mode === "full";
-          const panicActive = isFull && !!marketRisk.panic_active;
-          const marketPanic = !!marketRisk.is_panic_dump || !!marketRisk.is_panic_pump;
-          if (!panicActive && !marketPanic) return null;
-          const panicDir = marketRisk.is_panic_dump
-            ? { label: "DUMP", color: RED, longAt: "LONG", icon: "⚠️" }
-            : marketRisk.is_panic_pump
-            ? { label: "PUMP", color: GREEN, longAt: "SHORT", icon: "⚠️" }
-            : null;
-          const bgColor = panicActive ? "#7F1D1D" : "#78350F";
-          const borderColor = panicActive ? RED : ORANGE;
-          const title = panicActive
-            ? "🛡️ PANIC GUARD AKTIF — Bot Pause Sementara"
-            : isFull
-              ? `${panicDir?.icon || "⚠️"} Market ${panicDir?.label || "EKSTREM"} Terdeteksi`
-              : `${panicDir?.icon || "⚠️"} Peringatan Market: ${panicDir?.label || "EKSTREM"}`;
-          return (
-            <View style={{
-              marginTop: 10, backgroundColor: bgColor,
-              borderWidth: 1.5, borderColor,
-              borderRadius: 12, padding: 12,
-            }} testID="asi-panic-banner">
-              <Text style={{ color: "#FFF", fontWeight: "900",
-                             fontSize: 13.5, letterSpacing: 0.3 }}>
-                {title}
-              </Text>
-              <Text style={{ color: "#FDE68A", fontSize: 11.5,
-                             marginTop: 6, lineHeight: 17 }}>
-                BTC {marketRisk.btc_change_1h >= 0 ? "+" : ""}
-                {marketRisk.btc_change_1h.toFixed(2)}%/1h · ETH {marketRisk.eth_change_1h >= 0 ? "+" : ""}
-                {marketRisk.eth_change_1h.toFixed(2)}%/1h
-                {marketRisk.reversal_detected ? "  ·  🔄 reversal pattern" : ""}
-              </Text>
-              {panicActive ? (
-                <Text style={{ color: "#FECACA", fontSize: 11.5,
-                               marginTop: 8, lineHeight: 17 }}>
-                  Full-Auto berhenti open posisi baru hingga market stabil
-                  atau reversal. Posisi loss salah arah: ditutup
-                  ({marketRisk.panic_closed_count || 0}); order limit salah arah:
-                  dibatalkan ({marketRisk.panic_cancelled_count || 0}).
-                  Bot otomatis aktif lagi begitu kondisi normal.
-                </Text>
-              ) : isFull ? (
-                <Text style={{ color: "#FDE68A", fontSize: 11.5,
-                               marginTop: 8, lineHeight: 17 }}>
-                  Bot akan menghindari entry {panicDir?.longAt} melawan arah
-                  pasar. Panic Guard memantau tiap 2 menit.
-                </Text>
-              ) : (
-                <Text style={{ color: "#FDE68A", fontSize: 11.5,
-                               marginTop: 8, lineHeight: 17 }}>
-                  Pertimbangkan menutup posisi {panicDir?.longAt} Anda yang
-                  berlawanan arah pasar. Semi-Auto TIDAK menutup posisi
-                  manual Anda — keputusan tetap di tangan Anda.
-                </Text>
-              )}
-              {marketRisk.panic_reason && panicActive ? (
-                <Text style={{ color: "#FCA5A5", fontSize: 10.5,
-                               marginTop: 6, fontStyle: "italic" }}>
-                  Trigger: {marketRisk.panic_reason}
-                </Text>
-              ) : null}
-            </View>
-          );
-        })()}
 
         {/* Connect exchange */}
         <SectionHeader title={t("asi_sec_exchange")} />

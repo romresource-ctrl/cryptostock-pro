@@ -41,7 +41,11 @@ async function _syncProfileToBot(apiProfile: TraderProfile | null): Promise<void
     const deviceId = await getDeviceId();
     if (!deviceId) return;
     const current = await api.asi.getBot(deviceId).catch(() => null);
-    if (!current) return;
+    // v10.2.16 — Device baru belum punya bot config di backend
+    // (GET mengembalikan {exists:false} tanpa field wajib) → POST akan
+    // 422. Lewati sync; profile ikut tersimpan saat save pertama dari
+    // halaman ASI-Bot.
+    if (!current || !(current as any).exists) return;
     const targetBackend = apiProfile; // null → confluence default
     if ((current.profile ?? null) === targetBackend) return;
     await api.asi.saveBot(deviceId, { ...current, profile: targetBackend as any });

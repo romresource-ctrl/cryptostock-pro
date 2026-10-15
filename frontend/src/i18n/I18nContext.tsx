@@ -862,7 +862,6 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     ru: "Оба могут работать одновременно — статусы обновляются независимо.",
     cn: "两者可同时运行——各自状态独立更新。",
   },
-
   // v9.8.3 — AsiTradeSheet full localization (id/en/ru/cn)
   ats_subtitle: {
     id: "Trade dengan ASI-Bot (Semi-Auto)",

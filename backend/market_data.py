@@ -1403,7 +1403,7 @@ async def _http() -> httpx.AsyncClient:
             # v10.2.13 — Route traffic upstream lewat ASI_PROXY_URL (relay
             # IP keluar yang sama seperti asi_bot/exchanges.py & server.py).
             # Tanpa ini, IP server langsung kena 418/451 Binance saat
-            # beban scanner+panic-guard naik → dashboard/grafik kehilangan
+            # beban scanner naik → dashboard/grafik kehilangan
             # data. Bila env tidak diset → None → koneksi langsung
             # (perilaku lama, tidak berubah).
             proxy = os.environ.get("ASI_PROXY_URL") or os.environ.get("HTTPS_PROXY") or None

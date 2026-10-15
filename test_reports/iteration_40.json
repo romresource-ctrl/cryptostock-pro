@@ -1,0 +1,50 @@
+{
+  "summary": "FRONTEND-ONLY test of v10.2.16 (Panic Guard removal + ASI-Bot AsyncStorage persistence). ALL TARGET FLOWS PASS. (1) Panic Guard fully absent: /asi-bot renders with zero 'PANIC'/'Panic Guard'/'Market DUMP/PUMP Terdeteksi' keywords, no banner, no crash, no console errors; code grep confirms no panic refs in frontend or asi_bot backend (only unrelated 'CryptoPanic' news source string in news_feed.py). (2) Persistence PASS 4/4: tap Full-Auto chip -> status card switches to 'FULL-AUTO · STOPPED' (testID asi-card-full); in-app nav back to / and return to /asi-bot -> STILL Full-Auto; full page RELOAD of /asi-bot -> still Full-Auto (AsyncStorage '@asi_bot_prefs' restore + backend roundtrip); switched back to Semi-Auto -> reload -> Semi-Auto sticks. (3) Regression PASS: mode chips (asi-mode-semi/full), Bot Engine chips (asi-engine-asi_bot active, asi-engine-cloud_pro disabled 'COMING SOON'), disclaimer card + checkbox (asi-disc) all render and are interactive; zero JS console errors on /asi-bot. (4) Dashboard smoke PASS: loads clean, asset cards render (asset-card-crypto-BTC), region chips, trader-profile-button opens TraderProfileModal, scalper chip selectable (checkmark, modal stays open by design), backdrop closes modal. Backend NOT retested per instructions. ONE minor PRE-EXISTING issue found (not part of this changeset): profile sync 422 for fresh devices.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/asi/bot",
+        "issue": "422 for brand-new devices when called from useTraderProfile._syncProfileToBot: GET /api/asi/bot for a nonexistent device returns only {enabled:false, exists:false}, so the spread {...current, profile} POSTs a body missing required fields (exchange, mode, risk_pct, leverage...) -> Pydantic 422. Reproduced via curl. Pre-existing (v10.1.1 feature), fire-and-forget catch hides it from UI; user profile choice still persists locally. Verified: GET web:TEST-iter40-freshnodevice -> {enabled:false,exists:false}; POST {exists:false,profile:'scalper'} -> 422 missing 'exchange'.",
+        "priority": "LOW"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Dashboard Trader Profile select -> global bot.profile sync",
+        "issue": "For devices that have NEVER saved a bot config, tapping a profile in TraderProfileModal triggers POST /api/asi/bot with an incomplete body (only {enabled, exists, profile}) -> HTTP 422 visible in console. Silent failure (catch in _syncProfileToBot), so UI works and profile persists in AsyncStorage, but backend bot.profile never syncs until the user first saves anything on /asi-bot. Fix: in useTraderProfile.ts:47, skip sync when current.exists===false, or merge with the same default config asi-bot.tsx uses. Reference: /app/frontend/src/lib/useTraderProfile.ts:39-51",
+        "affected_testIDs": ["trader-profile-scalper", "trader-profile-button"]
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/tmp/iter40_dash.jpeg",
+    "/tmp/iter40_asibot_top.jpeg",
+    "/tmp/iter40_reload_full.jpeg",
+    "/tmp/iter40_dash_final.jpeg",
+    "/tmp/iter40_profile_modal.jpeg",
+    "/root/.emergent/automation_output/20261015_205207/console_20261015_205207.log"
+  ],
+  "action_items": [
+    "(LOW, pre-existing) useTraderProfile.ts: guard _syncProfileToBot when bot config does not exist yet (current.exists===false) — either skip or POST the full default bot config; currently always 422s for fresh devices (console noise, sync silently skipped).",
+    "No action needed for Panic Guard removal or mode persistence — both fully working."
+  ],
+  "critical_code_review_comments": [
+    "Panic Guard removal verified complete: grep -ri panic across frontend/{app,src} and backend = only 'CryptoPanic' (news source name, news_feed.py:29); no market-risk/marketRisk/asi_panic/PANIC_INTERVAL refs anywhere; api.ts has no marketRisk helper; asi-bot.tsx has no banner block (the previously latent marketRisk-state crash is gone).",
+    "Persistence implementation correct: saveBot() writes '@asi_bot_prefs' AFTER successful backend POST (asi-bot.tsx:358); mount restores prefs before refresh() (asi-bot.tsx:123-131); backend GET remains source of truth on refresh — matches intended design. Mode chip onPress={saveBot({mode})} requires no credential, as specified.",
+    "asi-bot.tsx uses useSafeAreaInsets (no SafeAreaView); no deprecated packages (expo-av, expo-barcode-scanner, expo-background-fetch absent from package.json and imports).",
+    "Version consistency NOT flagged per instructions (10.2.16)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested (per instructions)", "frontend": "100% (13/13 target checks passed; 1 pre-existing minor console 422 on profile sync for fresh devices)"},
+  "seed_data_creation": "Ephemeral browser contexts only. Accepted first-run disclaimer via UI (disclaimer-checkbox -> disclaimer-agree). Tapped mode chips on a fresh auto-generated web device -> backend bot config doc created for one test device (mode left back at 'semi', full_enabled=false, no credentials, no trades). No real-user/mainnet data touched. No cleanup required (harmless config doc).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Web preview first-run gate: DisclaimerModal appears even with add_init_script localStorage seeding (init script timing unreliable in the automation harness) — instead click [data-testid=disclaimer-checkbox] then [data-testid=disclaimer-agree] after ~8s load; acceptance persists in-context for reloads. Dashboard navigates to /asi-bot via [data-testid=asi-bot-button]; back via [data-testid=asi-back] (router.back works when navigated in-app). Mode status card testIDs: asi-card-semi / asi-card-full; mode chips asi-mode-semi/full; engine chips asi-engine-asi_bot/cloud_pro; disclaimer checkbox asi-disc. Known pre-existing (iter37, NOT retested this run): CLOSE/CANCEL nested-touchable double-fire on web (asi-bot.tsx/trades-position.tsx). Fresh-device profile tap logs a harmless 422 (useTraderProfile.ts:47).",
+  "rca_of_issue": "MINOR (pre-existing, not this changeset): Dashboard TraderProfileModal tap -> _syncProfileToBot (useTraderProfile.ts:39-51) GETs /api/asi/bot which for a never-saved device returns only {enabled:false, exists:false}; it then POSTs {...current, profile} missing required AsiBotConfig fields -> backend Pydantic 422. Swallowed by try/catch so user-facing flow is unaffected (profile saved to AsyncStorage '@ai-crypto-stock-pro:trader-profile:v1'); backend bot.profile just never syncs until first /asi-bot save. Repro: fresh context -> dashboard -> trader-profile-button -> trader-profile-scalper -> console shows 'Failed to load resource: 422'; confirmed via curl POST {exists:false,profile:'scalper'} -> 422 missing exchange. Mitigation: skip sync when !current.exists or merge default config before POST."
+}
