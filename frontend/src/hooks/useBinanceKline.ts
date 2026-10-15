@@ -85,6 +85,10 @@ export function useBinanceKline(
     let ws: WebSocket | null = null;
     let attempt = 0;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    // v10.2.10 — Watchdog pesan pertama (sama seperti useBinanceRealtime):
+    // fstream bisa open-tapi-diam; tutup paksa setelah 8 detik tanpa
+    // pesan supaya jatuh ke URL cadangan.
+    let dataWatchdog: ReturnType<typeof setTimeout> | null = null;
 
     const tryConnect = () => {
       if (cancelled) return;
@@ -105,8 +109,17 @@ export function useBinanceKline(
         tryConnect();
         return;
       }
+      // Watchdog dimulai segera setelah socket dibuat: kline hook tidak
+      // punya onopen state, jadi hitung dari connect. 8 detik tanpa
+      // pesan pertama → tutup paksa → onclose → URL cadangan.
+      if (dataWatchdog) clearTimeout(dataWatchdog);
+      dataWatchdog = setTimeout(() => {
+        try { ws?.close(); } catch { /* ignore */ }
+      }, 8000);
       ws.onmessage = (event) => {
         if (cancelled) return;
+        // Pesan pertama tiba → koneksi sehat, matikan watchdog.
+        if (dataWatchdog) { clearTimeout(dataWatchdog); dataWatchdog = null; }
         try {
           const data = JSON.parse(event.data as string);
           const k = data?.k;
@@ -148,6 +161,7 @@ export function useBinanceKline(
     return () => {
       cancelled = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (dataWatchdog) clearTimeout(dataWatchdog);
       try {
         ws?.close();
       } catch {

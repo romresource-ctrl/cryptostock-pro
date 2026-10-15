@@ -427,8 +427,7 @@ export default function AssetDetail() {
     const s = chart?.signal;
     const isBuy = action === "BUY";
     const price = Number(
-      (rt.connected && Number.isFinite(rt.price) ? rt.price : 0)
-      || s?.entry || ticker.price || 0
+      (livePx ?? 0) || s?.entry || 0
     );
     if (!price || price <= 0) return;
     const sl = Number(s?.stop_loss) || (isBuy ? price * 0.99 : price * 1.01);
@@ -453,12 +452,53 @@ export default function AssetDetail() {
   // v8.5.3 — Kline WS: patches the last candle so the chart updates live.
   const liveKline = useBinanceKline(String(symbol), market, timeframe);
 
+  // v10.2.10 — FALLBACK HARGA VIA BACKEND (keluhan lama sejak v10.0.0:
+  // "mark price grafik statis di HP"). Penyebab: harga live grafik
+  // bergantung WebSocket LANGSUNG ke domain Binance yang diblokir banyak
+  // ISP Indonesia. Kartu trade tidak mengalaminya karena memakai polling
+  // /api/asi/prices (server kami yang fetch ke Binance + fallback Bitget).
+  // Sekarang grafik memakai jalur yang sama: poll 500ms, HANYA aktif bila
+  // WS mati atau tidak ada tick baru > 2.5 detik — nol beban tambahan
+  // saat WS sehat.
+  const rtRef = React.useRef(rt);
+  rtRef.current = rt;
+  const [backendPx, setBackendPx] = useState<number | null>(null);
+  useEffect(() => {
+    if (market !== "crypto" || !symbol) { setBackendPx(null); return; }
+    const base = String(symbol).replace(/USDT$/i, "");
+    let alive = true;
+    const poll = async () => {
+      const cur = rtRef.current;
+      if (cur.connected && cur.updatedAt && Date.now() - cur.updatedAt < 2500) return;
+      try {
+        const r = await api.asi.prices([base]);
+        const m = (r as any).prices || {};
+        const p = m[`${base}USDT`] ?? m[base];
+        if (alive && typeof p === "number" && p > 0) setBackendPx(p);
+      } catch { /* coba lagi tick berikutnya */ }
+    };
+    void poll();
+    const id = setInterval(poll, 500);
+    return () => { alive = false; clearInterval(id); };
+  }, [symbol, market]);
+
+  // Satu sumber kebenaran harga live untuk SELURUH halaman (header,
+  // label ujung grafik, alert zone, eksekusi): WS bila segar → backend
+  // poll → snapshot REST. Sebelum v10.2.10 tiap titik punya fallback
+  // sendiri yang berujung ke nilai statis saat WS diblokir.
+  const livePx: number | null =
+    (rt.connected && Number.isFinite(rt.price) ? rt.price : null)
+    ?? backendPx
+    ?? (ticker.price ?? null);
+  const liveActive = livePx != null
+    && (rt.connected || backendPx != null);
+
   // v8.8.0 — Zone alert now uses regime-aware ladder TP-1/2/3 from
   // backend (see backend/indicators.py REGIME_PRESETS). Frontend hook
   // falls back to entry_high-derived ladder if backend fields are null
   // (HOLD, non-crypto).
   const zoneAlert = usePriceZoneAlert({
-    livePrice: rt.connected && Number.isFinite(rt.price) ? rt.price : ticker.price,
+    livePrice: livePx,
     entryLow: sig?.entry_low ?? sig?.entry ?? null,
     entryHigh: sig?.entry_high ?? sig?.entry ?? null,
     // v8.12.1 — 3-tier entry zone ranges from backend indicators.py so
@@ -482,9 +522,7 @@ export default function AssetDetail() {
   // crosses 0.5% / 1.2% / 2.5% thresholds. Only active for crypto
   // (WS ticker required). Non-crypto → null → hook stays idle.
   const dipTopZone = useDipTopAlert({
-    livePrice: market === "crypto" && rt.connected && Number.isFinite(rt.price)
-      ? rt.price
-      : null,
+    livePrice: market === "crypto" ? livePx : null,
   });
 
   // v8.6.18 — Growing-candles history. Instead of feeding
@@ -555,9 +593,7 @@ export default function AssetDetail() {
     () => patchCandlesWithLive(effectiveGrowingCandles ?? [], liveKline),
     [effectiveGrowingCandles, liveKline],
   );
-  const displayPrice = rt.connected && Number.isFinite(rt.price)
-    ? rt.price
-    : (ticker.price ?? null);
+  const displayPrice = livePx;
   const displayChangePct = rt.connected && Number.isFinite(rt.changePct)
     ? rt.changePct
     : (ticker.change_pct_24h ?? null);
@@ -639,7 +675,7 @@ export default function AssetDetail() {
                 <Text style={{ color: changeColor, fontSize: 13, fontWeight: "700" }}>
                   {formatPct(displayChangePct)}
                 </Text>
-                {rt.connected ? (
+                {liveActive ? (
                   <Text style={{ fontSize: 10, fontWeight: "800", color: colors.accentUp }}>
                     ● LIVE
                   </Text>
@@ -767,7 +803,7 @@ export default function AssetDetail() {
               (pointerEvents="none"). */}
           <DipTopPopup
             zone={dipTopZone}
-            livePrice={rt.connected && Number.isFinite(rt.price) ? rt.price : ticker.price}
+            livePrice={livePx}
             symbol={String(symbol || "")}
           />
           {/* Chart type toggle */}
@@ -862,17 +898,17 @@ export default function AssetDetail() {
               height={220}
               /* v8.6.5 — Only crypto markets subscribe to Binance
                  kline WS, so isLive should mirror that condition. */
-              isLive={market === "crypto" && rt.connected}
+              isLive={market === "crypto" && liveActive}
               /* v8.12.5 — Prefer live ticker; else fall back to the last
                  candle's close once chart is loaded (guarantees a finite
                  livePrice so the CandlestickChart live-overlays can mount
-                 immediately without waiting for the WS to connect). */
+                 immediately without waiting for the WS to connect).
+                 v10.2.10 — livePx sudah mencakup fallback backend poll
+                 (anti region-block) sebelum turun ke candle terakhir. */
               livePrice={
-                rt.connected && Number.isFinite(rt.price)
-                  ? rt.price
-                  : (!loadingChart && liveCandles.length > 0
-                      ? liveCandles[liveCandles.length - 1].close
-                      : null)
+                livePx ?? (!loadingChart && liveCandles.length > 0
+                  ? liveCandles[liveCandles.length - 1].close
+                  : null)
               }
               /* v8.12.1 — Left-edge pill inside chart shows
                  TP1-Hit! / TP2-Hit! / TP3-Hit! / SL-Hit! / HOLD /

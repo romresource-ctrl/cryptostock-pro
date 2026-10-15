@@ -90,6 +90,16 @@ export function useBinanceRealtime(
     let attempt = 0;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let lastEmit = 0;
+    // v10.2.10 — WATCHDOG PESAN PERTAMA (root cause "grafik LIVE tapi
+    // harga statis" sejak v10.0.x): fstream.binance.com kadang MEMBUKA
+    // koneksi WS tapi TIDAK PERNAH mengirim data (silent-dead saat IP
+    // kena throttle / region block — terbukti di pod maupun ISP
+    // Indonesia). Fallback ke URL cadangan sebelumnya HANYA terjadi di
+    // onclose → koneksi diam ini tidak pernah diganti selamanya. Bila
+    // 8 detik setelah open belum ada pesan pertama → tutup paksa supaya
+    // onclose melanjutkan ke URL berikutnya (data-stream.binance.vision
+    // terbukti mengirim data).
+    let dataWatchdog: ReturnType<typeof setTimeout> | null = null;
 
     const tryConnect = () => {
       if (cancelled) return;
@@ -113,9 +123,17 @@ export function useBinanceRealtime(
       ws.onopen = () => {
         if (cancelled) return;
         setTick((prev) => ({ ...prev, connected: true }));
+        // Mulai watchdog: 8 detik tanpa pesan pertama = koneksi
+        // silent-dead → tutup paksa agar fallback URL jalan.
+        if (dataWatchdog) clearTimeout(dataWatchdog);
+        dataWatchdog = setTimeout(() => {
+          try { ws?.close(); } catch { /* ignore */ }
+        }, 8000);
       };
       ws.onmessage = (event) => {
         if (cancelled) return;
+        // Pesan pertama tiba → koneksi sehat, matikan watchdog.
+        if (dataWatchdog) { clearTimeout(dataWatchdog); dataWatchdog = null; }
         try {
           const data = JSON.parse(event.data as string);
           // v10.1.7 — aggTrade payload: {e,s,p,q}. Dulu @ticker pakai
@@ -156,6 +174,7 @@ export function useBinanceRealtime(
     return () => {
       cancelled = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (dataWatchdog) clearTimeout(dataWatchdog);
       try {
         ws?.close();
       } catch {

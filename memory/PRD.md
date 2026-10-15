@@ -98,6 +98,26 @@ menggambar.
 - **Fix double-fetch grafik**: effect loadChart kini menunggu
   `accessLoaded` + `profileLoaded`; sebelumnya fetch pertama jalan dengan
   profile=undefined lalu diulang dengan profile user → 2× round-trip dan
+
+## v10.2.10 — Fix Definitif Grafik Statis (Oktober 2026)
+Keluhan lama sejak v10.0.0: mark price di ujung grafik berkedip tapi
+angka statis; makin parah di HP. Diagnosa langsung terhadap Binance WS
+dari pod membuktikan: `fstream.binance.com` (URL utama sejak v10.0.13)
+MEMBUKA koneksi tapi mengirim 0 pesan (silent-dead saat throttle/region
+block), sementara `data-stream.binance.vision` ticking normal. Hook
+menandai `connected=true` (badge LIVE tampil) dan fallback ke URL
+cadangan hanya terjadi onclose — koneksi silent-dead tidak pernah close
+→ harga statis selamanya. Ini menjelaskan kenapa perbaikan-perbaikan
+sebelumnya tidak pernah tuntas: kode salah mengira koneksi sehat.
+- Watchdog pesan pertama (8 detik) di useBinanceRealtime & useBinanceKline:
+  koneksi tanpa data ditutup paksa → jatuh ke URL cadangan.
+- Fallback backend /api/asi/prices (poll 500ms, hanya saat WS mati/stale
+  >2.5 detik) sebagai jalur terakhir untuk HP yang ISP-nya memblokir
+  semua domain Binance; `livePx` menjadi single source untuk header,
+  label ujung grafik, zone/dip-top alert, dan harga eksekusi.
+- Terverifikasi di web preview: sebelum = 6 sampel identik (statis),
+  sesudah = 4 harga unik/6 sampel (ticking). Lint 3 file bersih.
+
   engine salah sesaat.
 - **Running Positions load**: fetch balance Binance dijadikan
   fire-and-forget — sebelumnya spinner list menunggu balance (1-3s di
