@@ -114,6 +114,19 @@ export default function ASIBotScreen() {
   };
   const [marketRisk, setMarketRisk] = useState<MarketRisk | null>(null);
 
+  // v10.2.7 — Scan debug: jawaban "kenapa bot tidak eksekusi" per device.
+  type ScanDebug = {
+    device_in_scanner: boolean;
+    report: {
+      scanned: boolean;
+      skip_reason?: string | null;
+      signals: number;
+      placed: number;
+      rejects: Record<string, number>;
+    } | null;
+  };
+  const [scanDebug, setScanDebug] = useState<ScanDebug | null>(null);
+
   useEffect(() => {
     (async () => {
       const did = await getDeviceId();
@@ -148,6 +161,11 @@ export default function ASIBotScreen() {
         if (!alive) return;
         setMarketRisk(r as any);
       } catch { /* keep previous snapshot */ }
+      try {
+        const d = await api.asi.scanDebug(deviceId);
+        if (!alive) return;
+        setScanDebug(d as any);
+      } catch { /* keep previous */ }
     };
     tick();
     const id = setInterval(tick, 30_000);
@@ -431,6 +449,36 @@ export default function ASIBotScreen() {
             {t("asi_stop_hint")}
           </Text>
         ) : null}
+
+        {/* v10.2.7 — SCAN DIAGNOSTICS line: terlihat hanya saat Full-Auto
+            aktif. Menjawab "kenapa bot tidak eksekusi" tanpa perlu buka
+            log: discan/skip + alasan, sinyal lolos, posisi terpasang,
+            dan alasan reject terbanyak. */}
+        {bot.full_enabled && scanDebug ? (() => {
+          const r = scanDebug.report;
+          let line: string;
+          if (!scanDebug.device_in_scanner) {
+            line = "⏸ Scanner: device belum terdaftar — pastikan START BOT aktif";
+          } else if (r && !r.scanned) {
+            line = `⏸ Scanner skip: ${r.skip_reason || "unknown"}`;
+          } else if (r) {
+            const topReject = Object.entries(r.rejects || {})
+              .sort((a, b) => b[1] - a[1])[0];
+            line = `✓ Scanner aktif · sinyal ${r.signals} · posisi baru ${r.placed}` +
+              (topReject && r.placed === 0
+                ? ` · reject terbanyak: ${topReject[0]} (${topReject[1]}×)`
+                : "");
+          } else {
+            line = "… menunggu siklus scan pertama";
+          }
+          return (
+            <Text testID="asi-scan-debug"
+                  style={{ color: colors.textMuted, fontSize: 10, marginTop: 4,
+                           lineHeight: 14, textAlign: "center" }}>
+              {line}
+            </Text>
+          );
+        })() : null}
 
         {/* v10.2.6 — PANIC MARKET GUARD banner.
             Full-Auto: tampil saat bot dalam panic cooldown (merah) ATAU

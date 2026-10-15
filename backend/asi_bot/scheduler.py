@@ -577,6 +577,23 @@ async def _run_full_auto_scanner(
     scanned = 0
     sigs_found = 0
     total_placed = 0
+    # v10.2.7 — SCAN DIAGNOSTICS (permintaan user: "kenapa bot tidak
+    # eksekusi di HP?"). Semua jalur skip scanner sebelumnya SILENT —
+    # tidak terlihat tanpa menggali DB/log. Sekarang setiap device
+    # dicatat: discan atau di-skip + alasannya, sinyal lolos, posisi
+    # terpasang, dan alasan reject per simbol. Disimpan di
+    # asi_scan_status.devices → endpoint GET /asi/scan-debug.
+    device_reports: dict[str, dict[str, Any]] = {}
+
+    def _dev_skip(did: str, reason: str) -> None:
+        device_reports[did] = {"scanned": False, "skip_reason": reason,
+                               "signals": 0, "placed": 0, "rejects": {}}
+
+    def _dev_reject(rep: dict[str, Any] | None, reason: str) -> None:
+        if rep is None:
+            return
+        r = rep.setdefault("rejects", {})
+        r[reason] = int(r.get(reason) or 0) + 1
     # v10.2.5 — CIRCUIT BREAKER MARKET-WIDE (permintaan user setelah
     # analisis loss 15/10 pagi: 10 LONG SL beruntun saat market dump).
     # Bila BTC bergerak ekstrem > 2% dalam 1 jam terakhir, Full-Auto
@@ -618,20 +635,26 @@ async def _run_full_auto_scanner(
             # di-skip. "hybrid" menerima dari KEDUA sumber (scanner tetap
             # jalan). "asi_bot" (default) → scanner internal saja.
             if (cfg.get("signal_source") or "asi_bot") == "cloud_pro":
+                _dev_skip(device_id, "signal_source=cloud_pro (menunggu Titan relay)")
                 continue
             # v10.2.6 — PANIC GUARD: skip user yang sedang panic_active
             # (cooldown panic market). Scanner tidak membuka posisi baru
             # sampai _run_panic_guard melepas cooldown (BTC/ETH neutral
             # atau reversal pattern terdeteksi).
             if cfg.get("panic_active"):
+                _dev_skip(device_id, "panic_guard aktif (cooldown market)")
                 continue
             scanned += 1
+            rep: dict[str, Any] = {"scanned": True, "skip_reason": None,
+                                   "signals": 0, "placed": 0, "rejects": {}}
+            device_reports[device_id] = rep
             max_tr = int(cfg.get("max_trades_per_day") or 3)
             # v9.9.5 — network aktif ditentukan lebih awal supaya kuota
             # harian juga dihitung per jaringan.
             net = bool(cfg["active_testnet"]) if "active_testnet" in cfg else None
             placed = await _trades_today_count(db, device_id, net)
             if placed >= max_tr:
+                _dev_skip(device_id, f"daily limit tercapai ({placed}/{max_tr} trades hari ini)")
                 continue
             # v10.2.5 — LOSS-STREAK BREAKER: bila 3 trade terakhir yang
             # closed SEMUANYA kena SL dan SL terbaru < 2 jam lalu, bot
@@ -651,6 +674,7 @@ async def _run_full_auto_scanner(
                         logger.warning(
                             "loss-streak breaker: %s 3 SL beruntun <2 jam → istirahat siklus ini",
                             device_id)
+                        _dev_skip(device_id, "loss-streak breaker (3 SL beruntun <2 jam)")
                         continue
             except Exception as _ls_err:
                 logger.debug("loss-streak check gagal (skip, fail-open): %s", _ls_err)
@@ -662,6 +686,7 @@ async def _run_full_auto_scanner(
             whitelist = cfg.get("whitelist") or list(TOP_100_FUTURES)
             whitelist = [s for s in whitelist if s in TOP_100_FUTURES]
             if not whitelist:
+                _dev_skip(device_id, "whitelist kosong (tidak ada simbol untuk discan)")
                 continue
             exchange = cfg.get("exchange") or "binance"
             # v9.9.5 — Full-Auto memakai credential sesuai switch jaringan
@@ -669,6 +694,7 @@ async def _run_full_auto_scanner(
             # perilaku lama (credential apa pun yang tersedia).
             cred = await resolve_credential(db, device_id, exchange, net)
             if not cred:
+                _dev_skip(device_id, f"credential {exchange} tidak terhubung — Connect exchange dulu di app")
                 continue
             risk = float(cfg.get("risk_pct") or 5.0)
             lev = int(cfg.get("leverage") or 10)
@@ -730,17 +756,22 @@ async def _run_full_auto_scanner(
                     # v10.1.8 — Skip sinyal late-entry (lolos gate tampilan
                     # longgar tapi gagal gate eksekusi ketat 3-candle/1.5ATR).
                     if sig.get("late_entry"):
+                        _dev_reject(rep, "late_entry")
                         continue
                     # v10.2.5 — CIRCUIT BREAKER: blokir arah yang melawan
                     # gerakan ekstrem BTC (>2%/1h). Dihitung sekali per
                     # siklus di atas.
                     if sig["side"] == "BUY" and cb_block_long:
+                        _dev_reject(rep, "circuit_breaker_blokir_LONG")
                         continue
                     if sig["side"] == "SELL" and cb_block_short:
+                        _dev_reject(rep, "circuit_breaker_blokir_SHORT")
                         continue
                     if int(sig.get("confidence") or 0) < user_min_conf:
+                        _dev_reject(rep, f"conf<{user_min_conf}")
                         continue
                     sigs_found += 1
+                    rep["signals"] = int(rep.get("signals") or 0) + 1
                     if best is None or int(sig.get("confidence") or 0) > int(best.get("confidence") or 0):
                         best = sig
                 if not best:
@@ -759,6 +790,7 @@ async def _run_full_auto_scanner(
                     logger.info("full-auto skip %s/%s: level tidak valid (entry=%s sl=%s tps=%s)",
                                 device_id, sym, sig.get("entry"), sig.get("stop_loss"),
                                 sig.get("take_profits"))
+                    _dev_reject(rep, "level_tidak_valid")
                     continue
                 # Guard: skip if an OPEN/pending trade on same symbol exists.
                 dup = await db.asi_trades.find_one(
@@ -766,6 +798,7 @@ async def _run_full_auto_scanner(
                      "status": {"$in": ["open", "pending_entry"]}}
                 )
                 if dup:
+                    _dev_reject(rep, "sudah_ada_posisi")
                     continue
                 # v10.1.7 — COOLDOWN 15 MENIT per-symbol (anti-flood):
                 # Setelah close/cancel, symbol yang sama TIDAK boleh
@@ -784,6 +817,7 @@ async def _run_full_auto_scanner(
                 if recent:
                     logger.info("full-auto cooldown skip %s/%s: ditutup "
                                 "dalam 15 menit terakhir", device_id, sym)
+                    _dev_reject(rep, "cooldown_15menit")
                     continue
                 # v10.2.5 — TREND FILTER 4H DIPERTAJAM (permintaan user):
                 # bukan lagi sekadar posisi harga vs EMA50, tapi juga ARAH/
@@ -814,6 +848,7 @@ async def _run_full_auto_scanner(
                                         device_id, sym,
                                         ">" if bias_up else "<", ema50_4h,
                                         "turun" if slope_dn else "naik/datar")
+                            _dev_reject(rep, "trend_filter_4h_blokir_LONG")
                             continue
                         if not want_long and (bias_up or slope_up):
                             logger.info("full-auto trend-filter skip %s/%s: "
@@ -821,6 +856,7 @@ async def _run_full_auto_scanner(
                                         device_id, sym,
                                         ">" if bias_up else "<", ema50_4h,
                                         "naik" if slope_up else "turun/datar")
+                            _dev_reject(rep, "trend_filter_4h_blokir_SHORT")
                             continue
                 except Exception as _tf_err:
                     logger.debug("trend-filter error %s: %s", sym, _tf_err)
@@ -897,12 +933,14 @@ async def _run_full_auto_scanner(
                     )
                 except Exception as e:
                     logger.warning("full-auto execute failed %s/%s: %s", device_id, sym, e)
+                    _dev_reject(rep, f"execute_error: {str(e)[:60]}")
                     await _release_claim()
                     continue
                 if not res.get("ok"):
                     # v10.1.2 — Log alasan skip supaya tidak jadi black box.
                     logger.info("full-auto skip %s/%s: %s | %s", device_id, sym,
                                 res.get("reason"), str(res.get("message") or "")[:120])
+                    _dev_reject(rep, f"execute_ditolak: {res.get('reason')}")
                     await _release_claim()
                     continue
                 # v10.1.2 — GUARD: jangan simpan record tanpa fill nyata
@@ -929,6 +967,7 @@ async def _run_full_auto_scanner(
                     {"_id": rec["_id"]}, rec, upsert=True)
                 await _release_claim()
                 placed += 1
+                rep["placed"] = int(rep.get("placed") or 0) + 1
                 total_placed += 1
                 logger.info("full-auto placed %s %s %s", device_id, sym, sig["side"])
                 if placed >= max_tr:
@@ -945,7 +984,11 @@ async def _run_full_auto_scanner(
              "last_scan_at": datetime.now(timezone.utc).isoformat(),
              "devices_scanned": scanned,
              "signals_found": sigs_found,
-             "placed": total_placed},
+             "placed": total_placed,
+             # v10.2.7 — per-device diagnostics (maks 20 device agar doc
+             # tetap kecil; cukup untuk menjawab "kenapa bot saya tidak
+             # eksekusi").
+             "devices": dict(list(device_reports.items())[:20])},
             upsert=True)
     except Exception:
         pass

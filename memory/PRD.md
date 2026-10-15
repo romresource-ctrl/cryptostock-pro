@@ -43,6 +43,26 @@ Jalur B — Equity drawdown:
   sampai equity pulih > -1%, mencegah retrigger berulang.
   Diverifikasi 6 skenario test sintetis — semua PASS.
 
+## v10.2.7 — Scan Diagnostics (Oktober 2026)
+Masalah: user HP v10.2.6 melaporkan bot tidak eksekusi; semua jalur skip
+scanner bersifat silent (credential hilang, daily limit, panic cooldown,
+loss-streak, trend filter, cooldown 15m, dup, conf, late-entry) sehingga
+diagnosis selalu butuh gali DB/log manual.
+- Scheduler kini mencatat laporan per-device tiap siklus ke
+  `asi_scan_status.devices` (maks 20): scanned/skip_reason/signals/placed/
+  rejects{alasan: jumlah}.
+- Endpoint baru `GET /api/asi/scan-debug?device_id=` mengembalikan laporan
+  + snapshot config (full_enabled, profile, min_confidence, dll).
+- UI ASI-Bot menampilkan 1 baris diagnostik kecil di bawah status saat
+  Full-Auto aktif: "✓ Scanner aktif · sinyal N · posisi baru M · reject
+  terbanyak: X" atau "⏸ Scanner skip: <alasan>".
+- Catatan insiden: device web preview tersimpan full_enabled=False (START
+  BOT belum aktif) → scanner skip; setelah user enable, 9 posisi SELL
+  dieksekusi 06:29–06:32 UTC. HP = environment production terpisah
+  (device_id & DB berbeda) → perlu Publish agar backend production
+  mendapat kode terbaru.
+
+
 ### Semi-Auto
 - TIDAK menutup posisi manual user
 - Banner peringatan tampil saat bias panic jelas (dump/pump): alasan teknikal (reversal BTC/ETH + persentase) dengan ajakan mempertimbangkan tutup posisi berlawanan arah

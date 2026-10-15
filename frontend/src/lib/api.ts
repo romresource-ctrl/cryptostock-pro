@@ -473,6 +473,21 @@ export const api = {
       }>(
         `/asi/market-risk${deviceId ? `?device_id=${encodeURIComponent(deviceId)}` : ""}`,
       ),
+    // v10.2.7 — Scan debug: alasan scanner mengeksekusi / me-skip device ini.
+    scanDebug: (deviceId: string) =>
+      get<{
+        last_scan_at?: string | null;
+        devices_scanned: number;
+        device_in_scanner: boolean;
+        report: {
+          scanned: boolean;
+          skip_reason?: string | null;
+          signals: number;
+          placed: number;
+          rejects: Record<string, number>;
+        } | null;
+        config: Record<string, any> | null;
+      }>(`/asi/scan-debug?device_id=${encodeURIComponent(deviceId)}`),
     // v9.9.9 — saldo USDT available untuk jaringan aktif (demo/real).
     balance: (deviceId: string, exchange: string = "binance") =>
       get<{ ok: boolean;

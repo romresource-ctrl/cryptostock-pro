@@ -1112,3 +1112,33 @@ def _attach_trade_routes(db: Any) -> None:
                 out["full_enabled"] = bool(cfg.get("full_enabled", False))
                 out["semi_enabled"] = bool(cfg.get("semi_enabled", False))
         return out
+
+    # v10.2.7 — SCAN DEBUG: jawab pertanyaan "kenapa bot saya tidak
+    # eksekusi?" tanpa perlu menggali log. Mengembalikan laporan scan
+    # terakhir untuk device_id tertentu: apakah device ikut discan,
+    # alasan skip (panic guard / daily limit / credential hilang /
+    # loss-streak / dll), jumlah sinyal lolos, posisi terpasang, dan
+    # hitungan alasan reject per simbol.
+    @router.get("/scan-debug")
+    async def scan_debug(device_id: str = Query(...)):
+        doc = await db.asi_scan_status.find_one({"_id": "scanner"})
+        devices = (doc or {}).get("devices") or {}
+        rep = devices.get(device_id)
+        cfg = await db.asi_bot_config.find_one({"device_id": device_id})
+        return {
+            "last_scan_at": (doc or {}).get("last_scan_at"),
+            "devices_scanned": int((doc or {}).get("devices_scanned") or 0),
+            "device_in_scanner": device_id in devices,
+            "report": rep,
+            "config": {
+                "full_enabled": bool((cfg or {}).get("full_enabled")),
+                "enabled": bool((cfg or {}).get("enabled")),
+                "mode": (cfg or {}).get("mode"),
+                "profile": (cfg or {}).get("profile"),
+                "min_confidence": (cfg or {}).get("min_confidence"),
+                "max_trades_per_day": (cfg or {}).get("max_trades_per_day"),
+                "active_testnet": (cfg or {}).get("active_testnet"),
+                "panic_active": bool((cfg or {}).get("panic_active")),
+                "signal_source": (cfg or {}).get("signal_source"),
+            } if cfg else None,
+        }
