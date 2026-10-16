@@ -14,7 +14,7 @@
  */
 import { api, type ChartResponse, type Market, type Timeframe } from "./api";
 
-type Entry = { at: number; promise: Promise<ChartResponse> };
+type Entry = { at: number; promise: Promise<ChartResponse | null> };
 const cache = new Map<string, Entry>();
 const TTL_MS = 90_000;
 const MAX_ENTRIES = 60;
@@ -41,7 +41,19 @@ export function prefetchChart(
       });
       if (oldestKey) cache.delete(oldestKey);
     }
-    cache.set(k, { at: Date.now(), promise: api.chart(market, symbol, tf, profile) });
+    // v10.2.16 — Promise prefetch TIDAK BOLEH reject tanpa handler:
+    // rejection yang belum di-await (network error / "Failed to fetch")
+    // memicu red-screen "Uncaught Error" (dev) / unhandled rejection di
+    // HP. Bungkus dengan catch → log + null, sehingga kegagalan jaringan
+    // diperlakukan sebagai cache-miss: halaman detail jatuh ke fetch
+    // normal yang punya skeleton + retry, tanpa crash.
+    cache.set(k, {
+      at: Date.now(),
+      promise: api.chart(market, symbol, tf, profile).catch((err) => {
+        console.warn(`[chartCache] prefetch ${symbol} gagal (diabaikan):`, err);
+        return null;
+      }),
+    });
   } catch {
     /* prefetch gagal → halaman fetch normal */
   }

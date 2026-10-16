@@ -1866,3 +1866,8 @@ Keputusan user atas 5 pertanyaan:
 - [symbol].tsx: logika retry timeout-exclusion dihapus (retry tetap untuk 502/network); spinner loading awal diganti SKELETON (kotak chart + 3 bar stat) agar tidak tampak "stuck berputar"; tombol chart-retry tetap ada untuk error nyata.
 - Prefetch saat list dimuat sudah aktif dari perbaikan sebelumnya (trades-position + asi-bot, max 30 simbol, stagger 120ms, TTL 90s, kapasitas 60).
 - Smoke test: /asset/crypto/BTC chart termuat + harga LIVE, tanpa error.
+
+## v10.2.16 — Fix red-screen "Failed to fetch" dari prefetch chart
+- Akar masalah: promise prefetch di chartCache.ts reject TANPA handler (floating promise) → unhandled rejection → red screen di dev/crash di HP. Bukan dari get() itu sendiri.
+- Fix: promise prefetch dibungkus .catch → console.warn + return null (cache-miss). Halaman detail jatuh ke fetch normal (skeleton + retry banner). get() TIDAK diubah karena puluhan caller men-destructure respons (c.items, res.markets) — mengembalikan null akan memunculkan crash baru di tempat lain.
+- Terverifikasi: intercept network-abort pada endpoint chart → halaman tetap render (harga LIVE via WS + skeleton chart + banner retry), tanpa red screen.
