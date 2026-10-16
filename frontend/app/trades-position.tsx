@@ -197,7 +197,14 @@ export default function TradesPositionScreen() {
         if (priceRef.current) { clearInterval(priceRef.current); priceRef.current = null; }
         return;
       }
+      // v10.2.16 — Anti penumpukan: interval 300ms tapi respons backend
+      // bisa 2-5 detik di jaringan HP → tanpa guard, request menumpuk
+      // dan harga justru tampak membeku. Lewati tick bila request
+      // sebelumnya belum selesai.
+      let inFlight = false;
       const tick = async () => {
+        if (inFlight) return;
+        inFlight = true;
         try {
           const r = await api.asi.prices(openSyms);
           const m: Record<string, number> = {};
@@ -220,6 +227,7 @@ export default function TradesPositionScreen() {
             flashTimerRef.current = setTimeout(() => setFlash({}), 700);
           }
         } catch { /* ignore */ }
+        finally { inFlight = false; }
       };
       tick();
       // v10.1.7 — Polling 300ms (sebelumnya 2000ms) agar mark price

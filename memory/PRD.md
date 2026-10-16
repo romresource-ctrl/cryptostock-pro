@@ -1905,3 +1905,8 @@ Keputusan user atas 5 pertanyaan:
 ### ATURAN KERAS (permintaan user):
 - Semua formula & perilaku di atas TIDAK BOLEH diubah oleh perubahan lain TANPA permintaan eksplisit user.
 - Jika ada masalah/regresi → `git checkout baseline-v10.2.16` (atau revert ke commit c73443f).
+
+## v10.2.16d — Fix mark price "berkedip 2x lalu statis" (iteration_46 PASS)
+- Akar 1: watchdog WS hanya menjaga pesan PERTAMA → koneksi silent-dead setelah beberapa tick tak pernah terdeteksi. Fix: rolling watchdog 30s di-arm ulang TIAP pesan; silence → socket ditutup → fallback host berikutnya (terbukti: fstream silent-dead → pindah ke data-stream.binance.vision di detik ~10, 693 frame tanpa jeda).
+- Akar 2: poll 300ms tanpa in-flight guard → request menumpuk di jaringan lambat → harga tampak beku. Fix: tick dilewati bila request sebelumnya belum selesai (kedua halaman).
+- Uji stamina 85 detik: 18 sampel, 16 nilai berbeda, PnL akurat, tanpa red screen.

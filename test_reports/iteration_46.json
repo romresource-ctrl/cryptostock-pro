@@ -1,0 +1,39 @@
+{
+  "summary": "Frontend-only regression test of the v10.2.16 mark-price stamina fix (rolling WS watchdog + in-flight guard on 300ms poll) on /trades-position. ALL PASS. Setup: read device fingerprint from localStorage (NOTE: each browser_automation run gets a FRESH context — fingerprint regenerated between runs, so I seeded localStorage with the fixed fingerprint 'web:9b7hsqplbaq-mvaol95c' matching the inserted Mongo doc). Inserted fake OPEN trade test-ws-stamina-001 (BTCUSDT, entry 70000, qty 0.01) into aitrade_pro.asi_trades; API confirmed serving it. (1) STAMINA (PRIMARY): PASS — 18 samples x ~5s over 85s: 18/18 marks present, 16 DISTINCT values (82221.0 -> 82286.01 -> 82290.01 -> 82250.6 -> 82276.01 -> ... -> 82256.3), longest static run = only 2 consecutive samples. NOT 'blinks twice then freezes'. (2) MID-SESSION RECOVERY / ATTRIBUTION: PASS — patched WebSocket shows wss://fstream.binance.com opened but delivered 0 frames (silent-dead in this env, exactly the failure mode); watchdog closed it at ~10.7s and fallback wss://data-stream.binance.vision delivered 693 frames over the whole 85s window and stayed open — updates never stalled. (3) NO RED SCREEN / NO UNCAUGHT ERRORS: PASS — 0 pageerrors; only the known LOW button-in-button hydration console error (carried from iter44). (4) PnL MOVES WITH MARK: PASS — dedicated precise card scrape, 6/6 samples: pnl == (mark-70000)*0.01 exact to the cent (e.g. mark 82,313.99 -> +$123.14); flash arrows visible. CLEANUP DONE: fake doc deleted from Mongo (verified count=0).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Position cards (trades-position)", "issue": "Known hydration console error persists: '<button> cannot be a descendant of <button>' (CLOSE button inside CardTouchable). Renders fine, invalid HTML nesting. Carried from iter44, still LOW.", "testID": "N/A (cards have no testID)", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/trades-position", "issues": ["Symbol truncated to 'BTCUSDT/U...' in card left slot at 375px width — cosmetic, known since iter44"]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/screenshots/iter46_card_loaded.png",
+    "/app/test_reports/screenshots/iter46_final.png",
+    "/app/test_reports/screenshots/iter46_pnl_check.png"
+  ],
+  "action_items": [
+    "No blocking action items — the rolling-watchdog + in-flight-guard fix is verified working end-to-end including silent-dead fstream recovery mid-session.",
+    "OPTIONAL (low, repeated from iter44/45): fix nested TouchableOpacity button-in-button hydration error on position cards; add testIDs to cards/mark-price Text to make future scraping robust."
+  ],
+  "critical_code_review_comments": [
+    "useBinanceMultiTicker.ts v10.2.16 verified correct under live conditions: rolling armWatchdog(30_000) re-armed on EVERY message (line 87), initial 8s first-message guard (line 78), close -> 250ms reconnect -> next fallback host, attempt counter wraps to host 0 after exhausting all 3, cleanup clears both timers + closes socket. Live proof: fstream opened, 0 msgs, closed at ~10.7s; vision host then delivered 693 msgs/85s with zero visible stall.",
+    "trades-position.tsx 300ms poll now has in-flight guard (lines 204-230): tick skipped while previous request in flight — prevents request stacking on slow mobile networks. Both WS and poll merge into the same prices state with flash direction computed via prevPricesRef before overwrite; flash auto-clears after 700ms.",
+    "Minor observation (not a bug): watchdog lifecycle is sound but if a host delivers messages then silently dies, detection takes up to 30s — during that window the 300ms backend poll (with 5s timeout + in-flight guard) keeps the card ticking, so no user-visible freeze. Layering is correct.",
+    "trades-position.tsx is 778 lines (>700 guideline) — split candidate, not blocking."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only; GET /api/asi/trades sanity-checked via curl — served the fake trade correctly)", "frontend": "100% (stamina 16 distinct marks/18 samples, mid-session WS fallback recovery, PnL correlation 6/6, no red screen, no uncaught errors — all PASS)"},
+  "seed_data_creation": "Temporary: fake OPEN trade {_id: 'test-ws-stamina-001', device_id: 'web:9b7hsqplbaq-mvaol95c', BTCUSDT, entry 70000, qty 0.01, leverage 10, status open} inserted into aitrade_pro.asi_trades — DELETED after tests (verified count=0).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "IMPORTANT: browser_automation runs now get a FRESH browser context each run (localStorage does NOT persist across runs — fingerprint regenerated each time, contradicting iter45 note). Workaround: within ONE run, seed localStorage 'cryptostock.device_fingerprint' to a fixed value matching your Mongo doc's device_id, then page.goto the target route. Disclaimer modal appears on every full load: [data-testid=disclaimer-checkbox] then [data-testid=disclaimer-agree]. Position cards still have NO testIDs: find leaf div containing 'BTCUSDT', ascend parents until innerText has 'CLOSE' and 'Entry' but NOT 'DEMO' (ascending too far includes the DEMO/REAL summary and breaks $-regex parsing). For WS attribution, patch window.WebSocket via page.evaluate IMMEDIATELY after page.goto(..., wait_until='domcontentloaded') — the hook opens its socket a few seconds later after trades load. In this env fstream.binance.com WS handshakes but sends 0 frames; data-stream.binance.vision is the live host (~8 msgs/sec for btcusdt@aggTrade).",
+  "rca_of_issue": "Recurring user complaint: mark price on position cards blinked ~2 times then went static. Two compounding root causes, both verified fixed: (1) useBinanceMultiTicker's data watchdog previously only guarded the FIRST message — a socket that stalled after a few ticks (common with fstream.binance.com in restricted networks: handshake succeeds, then silence) was never detected, so no fallback ever triggered mid-session. Fix: rolling watchdog re-arms a 30s inactivity timer on EVERY message; silence -> ws.close() -> reconnect rotation to next host (fstream -> data-stream.binance.vision -> stream.binance.com:9443). Verified live this run: fstream silent-dead -> closed at ~10.7s -> vision host drove 693 frames/85s, 16 distinct marks, longest static run 2 samples. (2) The 300ms backend prices poll had no in-flight guard — slow 2-5s responses on mobile stacked overlapping requests and froze updates. Fix: tick skipped while previous request in flight. PnL is recomputed from live mark each tick ((live-entry)*qty) — verified correlated to the cent on 6/6 precise samples."
+}

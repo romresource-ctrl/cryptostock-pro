@@ -237,7 +237,14 @@ export default function ASIBotScreen() {
       if (!openSymsKey) { setLivePx({}); return; }
       const syms = openSymsKey.split(",");
       let alive = true;
+      // v10.2.16 — Anti penumpukan: interval 300ms tapi respons backend
+      // bisa 2-5 detik di jaringan HP → tanpa guard, request menumpuk
+      // dan harga justru tampak membeku. Lewati tick bila request
+      // sebelumnya belum selesai.
+      let inFlight = false;
       const tick = async () => {
+        if (inFlight) return;
+        inFlight = true;
         try {
           const r = await api.asi.prices(syms);
           if (!alive) return;
@@ -263,6 +270,7 @@ export default function ASIBotScreen() {
             flashTimerRef.current = setTimeout(() => setFlashDir({}), 700);
           }
         } catch { /* pertahankan harga terakhir */ }
+        finally { inFlight = false; }
       };
       tick();
       // v10.1.7 — Polling kembali ke 300ms seperti sebelumnya agar harga

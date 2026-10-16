@@ -49,6 +49,14 @@ export function useBinanceMultiTicker(symbols: string[]): Record<string, number>
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let dataWatchdog: ReturnType<typeof setTimeout> | null = null;
 
+    // Rolling inactivity watchdog — dipanggil ulang tiap pesan masuk.
+    const armWatchdog = (ms: number) => {
+      if (dataWatchdog) clearTimeout(dataWatchdog);
+      dataWatchdog = setTimeout(() => {
+        try { ws?.close(); } catch { /* ignore */ }
+      }, ms);
+    };
+
     const tryConnect = () => {
       if (cancelled) return;
       if (attempt >= urls.length) {
@@ -67,14 +75,16 @@ export function useBinanceMultiTicker(symbols: string[]): Record<string, number>
         if (cancelled) return;
         // 8 detik tanpa pesan pertama = koneksi silent-dead → tutup
         // paksa supaya fallback host berikutnya dicoba.
-        if (dataWatchdog) clearTimeout(dataWatchdog);
-        dataWatchdog = setTimeout(() => {
-          try { ws?.close(); } catch { /* ignore */ }
-        }, 8000);
+        armWatchdog(8000);
       };
       ws.onmessage = (event) => {
         if (cancelled) return;
-        if (dataWatchdog) { clearTimeout(dataWatchdog); dataWatchdog = null; }
+        // v10.2.16 — ROLLING watchdog: sebelumnya timer hanya menjaga
+        // pesan PERTAMA, sehingga koneksi yang mati-menggantung SETELAH
+        // beberapa tick (keluhan user: "berkedip 2x lalu statis") tidak
+        // pernah terdeteksi. Kini tiap pesan memperbarui timer 30 detik;
+        // 30 detik tanpa pesan → socket ditutup → reconnect/host lain.
+        armWatchdog(30_000);
         try {
           const msg = JSON.parse(event.data as string);
           // combined-stream membungkus payload: {stream, data}
