@@ -1932,3 +1932,18 @@ Keputusan user atas 5 pertanyaan:
 - Uji nyata: 502 disimulasikan → tidak ada red screen, banner tampil, Retry memulihkan dashboard (36 kartu premium termuat).
 - KASUS KAS (jawaban user): SL Guard HANYA menggeser SL ke TP1 SETELAH TP1 benar-benar terisi di exchange (by design sesuai perintah user). Trade KAS tidak mencatat fill TP1 (0.03745) — harga berbalik sebelum TP1 — dan posisi tertutup di ≈entry (±0.2%) sehingga label jujur "BREAK_EVEN" ($0.00, tanpa loss). Tidak ada kode yang memindah SL ke entry — logika BE lama sudah digantikan SL→TP1 (scheduler.py v10.0.16).
 - KASUS GALA (jawaban user): trade itu dieksekusi dengan paket KISS Pivot LAMA (TP1 0.5% / TP2 0.8%) karena terjadi sebelum update 3-TP (0.9/1.2/1.5) di-publish. Trade KISS baru memakai paket 3-TP.
+
+## v10.2.17 — BIG-CAP level floors (keputusan user, koin > $100)
+- Masalah: BTC/ETH/BNB level ATR-based terlalu rapat (TP1 +0.30% pada BNB scalper) → profit $3-5 tidak menutup fee Binance (~$4 per $100).
+- Floor minimum per profil (diterapkan di execute_trade, berlaku semua jalur Semi+Full Auto, termasuk KISS Pivot; trade baru saja):
+  · Scalper: SL 1.0% · TP1 1.0% / TP2 1.5% / TP3 2.0%
+  · Intraday: SL 1.5% · TP1 1.5% / TP2 2.2% / TP3 3.0%
+  · Swing: SL 2.5% · TP1 2.5% / TP2 3.5% / TP3 5.0%
+- Floor bukan override: level formula yang lebih lebar tetap dipakai. Koin < $100 tidak terpengaruh. Confluence v9 (profile longterm) tidak kena floor (hold sesuai SL/TP formula).
+- Verifikasi: compile OK; simulasi trade BNB asli user (entry 735.69): SL 733.21→728.33, TP1 737.88→743.05, TP2→746.73, TP3→750.40. Backend sehat.
+- CATATAN: engine ini sizing margin-based (bukan SL-distance), jadi SL lebih lebar = risiko $ per trade lebih besar pada margin yang sama.
+
+## v10.2.17 — Simetri SL=TP1 (R=1:1) untuk aset < $100 (keputusan user)
+- Masalah: FET BUY TP1 0.869% < SL 0.917% (pembulatan tick exchange + formula asimetris) → trade basic tidak layak R:R.
+- Fix: SETELAH big-cap floor, engine memaksa jarak Entry→TP1 = jarak Entry→SL (R simetri). TP2 ikut geser ke min 1.5R, TP3 min 2R dari entry (atau tetap pakai jarak formula bila lebih lebar). Berlaku semua formula/profil kecuali KISS Pivot (yang sudah simetri paket sendiri). Trade lama tidak diubah.
+- Verifikasi: FET entry 0.2072 → SL 0.917% · TP1 0.917% (= SL) · TP2 1.375% · TP3 1.834%. Compile OK, backend sehat.

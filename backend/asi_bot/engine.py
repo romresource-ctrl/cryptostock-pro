@@ -79,6 +79,15 @@ HAR_MAX_HOLD_MIN = {"scalper": 15, "day": 240, "swing": 1440, "longterm": 1440}
 # diatas X% - close"). Confluence v9 / longterm TIDAK punya cap & tidak
 # ada batas waktu — holding mengikuti SL/TP1-3.
 PROFILE_PROFIT_CAP_ROE = {"scalper": 10.0, "day": 15.0, "swing": 25.0}
+# v10.2.17 — BIG-CAP level floors (keputusan user): koin harga > $100
+# (BTC/ETH/BNB dst) ATR-nya kecil → level formula terlalu rapat dan
+# profit tidak menutup fee exchange (~$4 per $100). Floor jarak MINIMUM
+# per profil; level formula yang lebih lebar tetap dipakai apa adanya.
+BIGCAP_LEVEL_FLOORS: dict[str, tuple[float, tuple[float, float, float]]] = {
+    "scalper": (0.010, (0.010, 0.015, 0.020)),  # SL 1.0% · TP 1.0/1.5/2.0%
+    "day":     (0.015, (0.015, 0.022, 0.030)),  # SL 1.5% · TP 1.5/2.2/3.0%
+    "swing":   (0.025, (0.025, 0.035, 0.050)),  # SL 2.5% · TP 2.5/3.5/5.0%
+}
 
 
 def _shift_tp_ladder(tps: list[float] | None, tp_count: int) -> list[float]:
@@ -390,6 +399,52 @@ async def execute_trade(
     # SEMUA formula: profit-cap ROE + batas waktu maksimum. Hanya trade
     # BARU yang membawa flag ini; posisi existing tetap aturan lama.
     horizon_exit = str(profile or "").lower() in PROFILE_PROFIT_CAP_ROE
+    # v10.2.17 — BIG-CAP floor (keputusan user): untuk koin harga > $100
+    # (BTC/ETH/BNB dst), level formula sering terlalu rapat sampai profit
+    # tidak menutup fee. Terapkan jarak MINIMUM SL/TP per profil (floor,
+    # bukan override — level formula yang lebih lebar tetap dipakai).
+    # Ditempatkan SEBELUM cabang fallback ccxt supaya berlaku di semua
+    # jalur eksekusi; trade lama tidak diubah.
+    if entry > 100:
+        _bc = BIGCAP_LEVEL_FLOORS.get(str(profile or "").lower())
+        if _bc:
+            _bc_sgn = 1.0 if side == "BUY" else -1.0
+            _bc_sl_min, _bc_tp_mins = _bc
+            if stop_loss:
+                _bc_sl_dist = abs(entry - float(stop_loss)) / entry
+                if _bc_sl_dist < _bc_sl_min:
+                    stop_loss = entry * (1 - _bc_sgn * _bc_sl_min)
+            _bc_tps = []
+            for _bc_i, _bc_tp in enumerate(tps):
+                _bc_tp = float(_bc_tp)
+                _bc_floor = _bc_tp_mins[min(_bc_i, len(_bc_tp_mins) - 1)]
+                if abs(_bc_tp - entry) / entry < _bc_floor:
+                    _bc_tp = entry * (1 + _bc_sgn * _bc_floor)
+                _bc_tps.append(_bc_tp)
+            tps = _bc_tps
+
+    # v10.2.17 — SIMETRI SL=TP1 (keputusan user): jarak Entry→SL harus
+    # SAMA DENGAN jarak Entry→TP1 (R = 1:1). TP2 & TP3 ikut digeser
+    # berdasarkan rasio ladder asli (menjaga progresi 1R/1.5R/2R). Jika
+    # jarak SL = 0 (sinyal cacat), lewati — bracket builder akan tolak.
+    # Berlaku SETELAH big-cap floor di atas sehingga simetri menang.
+    # Tidak diterapkan pada KISS Pivot karena paket itu SENGAJA simetri
+    # sendiri (SL 0.9% / TP1 0.9%) dan tidak perlu digeser.
+    if (not hit_and_run) and entry > 0 and stop_loss and tps:
+        _sym_sgn = 1.0 if side == "BUY" else -1.0
+        _sym_sl_dist = abs(entry - float(stop_loss))
+        if _sym_sl_dist > 0:
+            _sym_tp1_dist_old = abs(float(tps[0]) - entry)
+            _sym_tp1 = entry + _sym_sgn * _sym_sl_dist  # TP1 = 1R dari entry
+            _sym_tps = [_sym_tp1]
+            # TP2/TP3: geser proporsional terhadap perubahan TP1.
+            # Jika ladder asli lebih lebar dari TP1 baru, pakai ladder asli.
+            for _old in tps[1:]:
+                _old_dist = abs(float(_old) - entry)
+                _new_dist = max(_old_dist, _sym_sl_dist * 1.5) if len(_sym_tps) == 1 \
+                            else max(_old_dist, _sym_sl_dist * 2.0)
+                _sym_tps.append(entry + _sym_sgn * _new_dist)
+            tps = _sym_tps
     # v10.0.9 — Geser ladder: tp_count<3 memakai level TP yang lebih tinggi.
     tps = _shift_tp_ladder(tps, tp_count)
     margin_mode = "cross" if str(margin_mode).lower() == "cross" else "isolated"
