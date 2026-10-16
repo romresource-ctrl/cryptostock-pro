@@ -8,6 +8,35 @@ AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs
 ---
 
 ---
+## v10.2.20 — Engine Lossless Fill Attribution (Oktober 2026)
+Keputusan user: perbaiki LOGIKA ENGINE agar event TP1/TP2/TP3/SL hit
+terdeteksi & dicatat benar untuk SEMUA koin dan SEMUA profil ke depan,
+BUKAN patch per-kartu/per-koin. Kartu lama tidak disentuh.
+
+Perubahan di `_refresh_binance` (engine.py): mekanisme lama memakai
+`last_reduce_fill_price` tunggal (titik-tunggal gagal — satu kegagalan
+API bisa membuat event tertelan selamanya). Mekanisme baru: setiap
+tick menyusuri `/fapi/v1/userTrades` sejak `last_fill_check_ms` dan
+meng-atribusi SETIAP fill reduce-only ke level TP (toleransi 0.4%)
+atau SL (toleransi 1% karena slippage). Idempoten via `orderId`
+(fill tercatat tidak diduplikasi di tick berikut). Fetch gagal →
+`last_fill_check_ms` TIDAK dimajukan → tick berikut mengulang window
+yang sama. SL guard otomatis pindah ke TP tertinggi yang baru ter-isi.
+
+Jalur close full juga diperbaiki: close_reason=SL kini menulis
+`sl_fill` sehingga UI dapat menampilkan "✕ SL hit · $xxx · −$yyy";
+close_reason=TPx menulis entri `tp_fills` yang hilang bila belum ada.
+
+Rollback: 3 backfill retrospektif (LINK/ADA/SOL) dihapus dari DB atas
+instruksi user ("jangan sentuh kartu lama"). Endpoint `/trades/
+reconcile` yang sempat ditambahkan juga dihapus (tidak ada patch
+retroaktif). Fungsi helper `reconcile_trade_fills` di engine
+dipertahankan sebagai utilitas internal tapi tidak dipanggil otomatis.
+
+Teruji 7 skenario sintetis PASS: TP1, TP1+TP2 satu tick, idempoten
+re-fetch, SL slippage, fetch fail, manual partial, close full SL.
+
+
 ## v10.2.19 — Fix Bug "TP Tertelan" pada Bracket Native (Oktober 2026)
 Laporan user: "ZEC long turun ke 1,134, seharusnya TP 1,143 sudah hit tapi
 tidak hit sejak perubahan TP/SL terakhir."

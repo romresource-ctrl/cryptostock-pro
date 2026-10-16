@@ -3607,3 +3607,83 @@ backend_v10219:
           leg2 @1154.56 +$26.71 → total realized +$64.24, posisi live 0,
           0 order algo yatim. Diverifikasi langsung via userTrades &
           positionRisk.
+
+# ======================================================
+# v10.2.20 — ENGINE LOSSLESS FILL ATTRIBUTION
+# ======================================================
+backend_v10220:
+  - task: "Engine _refresh_binance: ganti last_reduce_fill_price (titik-tunggal gagal) dengan sweep windowed userTrades idempotent"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/engine.py (_refresh_binance blok partial-TP; close full menulis sl_fill/tp_fills)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Pendekatan baru lossless: setiap tick refresh menyusuri
+          /fapi/v1/userTrades sejak last_fill_check_ms, atribusi
+          setiap reduce fill ke TP (toleransi 0.4%) atau SL
+          (toleransi 1% utk slippage), idempoten via orderId.
+          Fetch gagal → last_fill_check_ms TIDAK dimajukan
+          (retry window sama di tick berikut). SL guard mengikuti
+          TP tertinggi yang baru ter-isi. Close full dgn
+          close_reason=SL juga menulis sl_fill agar UI tampil
+          "SL hit · $xxx · −$yyy"; close_reason=TPx juga menulis
+          tp_fills bila belum ada. Berlaku untuk SEMUA koin dan
+          SEMUA profil ke depan — bukan patch per-kartu.
+          Unit test 7 skenario PASS (TP1, TP1+TP2 satu tick,
+          idempoten re-fetch, SL slippage, fetch fail, manual
+          partial, close full SL).
+          UI trades-position.tsx: tambah baris "✕ SL hit · $xxx"
+          (kondisi guard ditambah sl_fill agar tampil utk history).
+          Tidak ada backfill retrospektif per kartu/koin (user
+          secara eksplisit menolak); kartu lama tidak disentuh.
+
+metadata_v10220:
+  created_by: "main_agent"
+  version: "10.2.20"
+  test_sequence: 48
+  run_ui: false
+
+test_plan_v10220:
+  current_focus:
+    - "Engine lossless fill attribution (TP1/TP2/TP3/SL semua terdeteksi untuk SEMUA koin & SEMUA profil)"
+    - "Idempoten: re-fetch window overlap tidak duplikasi tp_fills"
+    - "Fetch fail: check-point tidak maju (retry otomatis tick berikutnya)"
+    - "Close full dengan SL hit menulis sl_fill"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication_v10220:
+  - agent: "main"
+    message: |
+      v10.2.20 — PLEASE TEST BACKEND. Fokus logika engine
+      _refresh_binance (TIDAK melakukan trade live). Mock
+      br.position_risk + br._request (/fapi/v1/userTrades) +
+      br.realized_close_info + br.open_algo_orders +
+      br.open_orders_legacy + engine.move_sl_to_breakeven di
+      level modul agar deterministik. Skenario yang HARUS pass:
+      1. SELL dgn 3 TP, posisi mengecil → fill BUY @ TP1 ±0.4%:
+         tp_fills[0].level=TP1, tp_filled=[T,F,F], stop_loss
+         pindah ke TP1 lewat move_sl_to_breakeven.
+      2. Dua TP dalam satu window: TP1 lalu TP2 → tp_filled[:2]
+         =[T,T], stop_loss pindah ke TP2 (tertinggi), fills
+         diurutkan ascending.
+      3. Idempoten: trade sudah punya tp_fills[0] dgn orderId=111;
+         re-fetch mengembalikan fill orderId=111 → tp_fills TIDAK
+         bertambah/berubah, last_fill_check_ms maju 1 ms.
+      4. SL slippage: fill BUY @ 103.5 vs stop_loss 103.0 (0.49%,
+         <1%) → sl_fill terisi, close_reason tetap open (karena
+         positionAmt masih nonzero di skenario ini).
+      5. Fetch gagal (code 500): last_fill_check_ms TIDAK ada
+         di update → tick berikut retry window yang sama.
+      6. Manual partial (harga jauh dari TP/SL): tidak ada
+         tp_fills/sl_fill baru, qty_remaining tetap update.
+      7. Close full (positionAmt=0) dengan closed_price ≈ SL:
+         close_reason=SL, sl_fill terisi, status=closed.
+      Catatan: v10.2.17 gates & v10.2.18 cache tetap aktif
+      (jangan di-regress). JANGAN membuat order Binance nyata.

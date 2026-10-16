@@ -584,7 +584,7 @@ export default function TradesPositionScreen() {
           {(() => {
             const tpOnly = (Array.isArray(tr.tp_fills) ? tr.tp_fills : [])
               .filter((f: any) => String(f?.level || "").startsWith("TP"));
-            if (!tpOnly.length && !tr.be_moved) return null;
+            if (!tpOnly.length && !tr.be_moved && !tr.sl_fill) return null;
             return (
             <View style={{ marginTop: 2 }}>
               {tpOnly.map((f: any, i: number) => (
@@ -597,6 +597,17 @@ export default function TradesPositionScreen() {
                   ) : null}
                 </Text>
               ))}
+              {/* v10.2.20 — SL hit juga ditampilkan di semua kartu */}
+              {tr.sl_fill ? (
+                <Text style={{ fontSize: 10.5, fontWeight: "800", color: RED }}>
+                  ✕ SL hit · ${fp(Number(tr.sl_fill.price))}
+                  {tr.sl_fill.pnl != null ? (
+                    <Text style={{ color: Number(tr.sl_fill.pnl) >= 0 ? GREEN : RED, fontWeight: "900" }}>
+                      {"  "}{Number(tr.sl_fill.pnl) >= 0 ? "+" : "-"}${Math.abs(Number(tr.sl_fill.pnl)).toFixed(2)}
+                    </Text>
+                  ) : null}
+                </Text>
+              ) : null}
               {tr.be_moved ? (
                 <Text style={{ fontSize: 10, fontWeight: "800", color: BLUE, marginTop: 1 }}>
                   🛡️ SL moved to break-even (entry)

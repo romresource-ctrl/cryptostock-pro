@@ -1585,6 +1585,145 @@ async def move_sl_to_breakeven(
 
 
 
+async def reconcile_trade_fills(
+    doc: dict[str, Any],
+    trade: dict[str, Any],
+    *,
+    tolerance: float = 0.004,
+) -> dict[str, Any]:
+    """v10.2.20 — Rekonsiliasi tp_fills & sl_fill dari userTrades riil
+    (Binance). Dibuat setelah bug 'TP tertelan' agar baris 'TPx hit' /
+    'SL hit' selalu muncul di kartu — bahkan untuk trade yang partial-
+    reduce-nya dulu gagal ter-atribusi karena lookup harga sesaat
+    error (akar bug ZEC/LINK/SOL/ADA 2026-10-16).
+
+    Prinsip (general, bukan per-koin):
+    * Ambil semua fill reduce-only sejak created_at.
+    * Cocokkan tiap fill ke level TP (toleransi 0.4%) atau SL
+      (toleransi 0.4%, atau toleransi 1% bila terjadi gap/slippage).
+    * Isi/lengkapi tp_fills[] & sl_fill (idempoten: fill yg sudah
+      tercatat berdasarkan orderId tidak diduplikasi).
+    * Perbaiki close_reason bila doc menandai 'position_closed_
+      externally' padahal fill-nya di level TP/SL.
+    """
+    if (doc.get("exchange") or "").lower() != "binance":
+        return {}
+    try:
+        api_key = decrypt(doc["api_key_enc"])
+        api_secret = decrypt(doc["api_secret_enc"])
+        is_testnet = bool(doc.get("testnet", True))
+    except Exception:
+        return {}
+    base = str(trade.get("symbol") or "").replace("/USDT", "").replace("USDT", "")
+    if not base:
+        return {}
+    exch_sym = base + "USDT"
+    created_at = trade.get("created_at")
+    try:
+        from datetime import datetime as _dt, timezone as _tz
+        start_ms = int(_dt.fromisoformat(
+            str(created_at).replace("Z", "+00:00")).timestamp() * 1000) - 60_000
+    except Exception:
+        return {}
+    code, fills = await br._request(
+        "GET", "/fapi/v1/userTrades", api_key, api_secret, is_testnet,
+        {"symbol": exch_sym, "limit": "100", "startTime": str(start_ms)})
+    if code != 200 or not isinstance(fills, list):
+        return {}
+    side = str(trade.get("side") or "").upper()
+    reduce_side = "BUY" if side == "SELL" else "SELL"
+    closed_at = trade.get("closed_at")
+    end_ms: int | None = None
+    try:
+        if closed_at:
+            from datetime import datetime as _dt2
+            end_ms = int(_dt2.fromisoformat(
+                str(closed_at).replace("Z", "+00:00")).timestamp() * 1000) + 60_000
+    except Exception:
+        end_ms = None
+    rfills = [f for f in fills
+              if f.get("side") == reduce_side
+              and (end_ms is None or f.get("time", 0) <= end_ms)]
+    tps = [float(x) for x in (trade.get("take_profits") or [])][:3]
+    sl = float(trade.get("stop_loss") or 0) or None
+    tp_fills_in = list(trade.get("tp_fills") or [])
+    seen_order_ids = {str(x.get("orderId") or "")
+                      for x in tp_fills_in if x.get("orderId") is not None}
+    tp_fills_new = list(tp_fills_in)
+    sl_fill_new: dict[str, Any] | None = trade.get("sl_fill")
+    taken_tp_idx: set[int] = set()
+    for _x in tp_fills_in:
+        _lvl = str(_x.get("level") or "")
+        if _lvl.startswith("TP"):
+            try:
+                taken_tp_idx.add(int(_lvl.replace("TP", "")) - 1)
+            except Exception:
+                pass
+    from datetime import datetime as _dtf, timezone as _tzf
+    for f in rfills:
+        oid = str(f.get("orderId") or "")
+        if oid and oid in seen_order_ids:
+            continue
+        try:
+            fx = float(f["price"]); fq = float(f["qty"]); rp = float(f["realizedPnl"])
+        except Exception:
+            continue
+        when = _dtf.fromtimestamp(f["time"] / 1000, tz=_tzf).isoformat()
+        matched = False
+        for i, tp in enumerate(tps):
+            if i in taken_tp_idx or tp <= 0:
+                continue
+            if abs(fx - tp) / tp < tolerance:
+                tp_fills_new.append({
+                    "level": f"TP{i+1}", "price": fx, "qty": fq,
+                    "pnl": round(rp, 4), "at": when,
+                    "orderId": f.get("orderId"), "reconciled": True,
+                })
+                taken_tp_idx.add(i)
+                matched = True
+                break
+        if matched:
+            continue
+        if sl and abs(fx - sl) / sl < max(tolerance, 0.01):
+            # SL hit (toleransi lebih longgar — SL sering slippage).
+            sl_fill_new = {
+                "level": "SL", "price": fx, "qty": fq,
+                "pnl": round(rp, 4), "at": when,
+                "orderId": f.get("orderId"), "reconciled": True,
+            }
+    upd: dict[str, Any] = {}
+    if len(tp_fills_new) != len(tp_fills_in):
+        upd["tp_fills"] = tp_fills_new
+        n_tp = len(trade.get("take_profits") or []) or 3
+        tp_filled = [False] * n_tp
+        for x in tp_fills_new:
+            try:
+                idx = int(str(x.get("level")).replace("TP", "")) - 1
+                if 0 <= idx < n_tp:
+                    tp_filled[idx] = True
+            except Exception:
+                pass
+        upd["tp_filled"] = tp_filled
+    if sl_fill_new is not None and sl_fill_new is not trade.get("sl_fill"):
+        upd["sl_fill"] = sl_fill_new
+    # Perbaiki close_reason bila 'position_closed_externally' padahal
+    # sebenarnya hit TP/SL yang jelas.
+    status = str(trade.get("status") or "").lower()
+    reason = str(trade.get("close_reason") or "").lower()
+    if status == "closed" and reason == "position_closed_externally":
+        if upd.get("sl_fill") or sl_fill_new:
+            upd["close_reason"] = "SL"
+            upd["close_reason_detail"] = "reconciled from userTrades (v10.2.20)"
+        elif upd.get("tp_fills") or tp_fills_new:
+            # pakai TP paling terakhir yang hit
+            levels = [str(x.get("level")) for x in (upd.get("tp_fills") or tp_fills_new)
+                      if str(x.get("level") or "").startswith("TP")]
+            if levels:
+                upd["close_reason"] = levels[-1]
+                upd["close_reason_detail"] = "reconciled from userTrades (v10.2.20)"
+    return upd
+
+
 async def refresh_trade_pnl(doc: dict[str, Any], trade: dict[str, Any]) -> dict[str, Any]:
     """Query exchange untuk status order & hitung PnL realized/unrealized.
 
@@ -1667,124 +1806,162 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
         actual_mm = str(pos.get("marginType") or "").lower()
         mark = pos.get("markPrice")
         actual_lev = int(float(pos.get("leverage") or trade.get("leverage") or 0))
-        # v10.0.13 — Deteksi PARTIAL TP native (Binance bracket). Posisi
-        # masih terbuka tetapi positionAmt menurun dari tick sebelumnya
-        # (atau dari qty awal) → TP level berikutnya sudah ter-isi di
-        # exchange. Catat level + harga ke `tp_fills` supaya UI dapat
-        # menampilkan "TP1 HIT · $xxx" / "TP2 HIT · $xxx" sama seperti
-        # jalur soft watcher.
+        # v10.2.20 — ENGINE LOSSLESS FILL ATTRIBUTION (ganti total jalur
+        # last_reduce_fill_price yang bisa gagal titik-tunggal). Alih-
+        # alih menebak harga reduksi dari satu panggilan API, engine
+        # sekarang menyusuri /fapi/v1/userTrades sejak `last_fill_check_ms`
+        # dan meng-atribusi SETIAP fill reduce-only ke level TP (toleransi
+        # 0.4%) atau SL (toleransi 1% karena slippage). Idempoten via
+        # orderId; jika panggilan gagal, `last_fill_check_ms` TIDAK
+        # dimajukan sehingga tick berikutnya mengulang window yang sama
+        # — mustahil ada event TP/SL yang tertelan. SL guard mengikuti
+        # setiap TP yang baru ter-isi.
         _native_partial_upd: dict[str, Any] = {}
         try:
             new_qty = abs(amt)
             tps = [float(x) for x in (trade.get("take_profits") or []) if x]
-            prev_amt = float(trade.get("prev_position_amt") or trade.get("qty") or 0)
-            tp_filled_list = list(trade.get("tp_filled") or [])
-            while len(tp_filled_list) < len(tps):
-                tp_filled_list.append(False)
-            # Hanya proses bila (a) ada TP ladder dan (b) qty berkurang
-            # minimal 1% (hindari noise rounding).
-            # v10.2.19 — _reduce_pending: lookup harga fill gagal (API/
-            # proxy sesaat) TIDAK boleh menelan event selamanya. Akar bug
-            # ZEC 16/10: satu kegagalan last_reduce_fill_price membuat
-            # fill TP1 tidak pernah tercatat (tp_fills kosong) DAN
-            # SL-guard tidak pernah bergerak. Dengan flag ini, snapshot
-            # prev_position_amt tidak diperbarui → tick berikutnya
-            # MENCOBA LAGI atribusi sampai berhasil.
-            _reduce_pending = False
-            if (tps and prev_amt > 0 and new_qty > 0
-                    and new_qty < prev_amt * 0.99):
-                reduction = prev_amt - new_qty
-                # Cari TP level unfilled berikutnya.
-                next_idx = next((i for i, f in enumerate(tp_filled_list) if not f), None)
-                if next_idx is not None and next_idx < len(tps):
-                    # v10.1.6 — Harga fill dari fill yang MENGURANGI posisi
-                    # (realizedPnl != 0), BUKAN last_fill_price sembarang
-                    # (yang bisa milik trade lain → harga salah).
-                    fill_px = None
+            tp_fills_in = list(trade.get("tp_fills") or [])
+            seen_order_ids = {str(x.get("orderId") or "")
+                              for x in tp_fills_in if x.get("orderId") is not None}
+            taken_tp_idx: set[int] = set()
+            for x in tp_fills_in:
+                lvl = str(x.get("level") or "")
+                if lvl.startswith("TP"):
                     try:
-                        fill_px = await br.last_reduce_fill_price(
-                            api_key, api_secret, is_testnet, bin_sym)
+                        taken_tp_idx.add(int(lvl.replace("TP", "")) - 1)
                     except Exception:
-                        fill_px = None
-                    entry_px = float(trade.get("entry_price") or 0)
-                    sign = 1.0 if trade.get("side") == "BUY" else -1.0
-                    leg_pnl = ((fill_px - entry_px) * reduction * sign
-                               if fill_px else None)
-                    # v10.1.6 — VALIDASI HARGA: reduksi qty HANYA dicatat
-                    # sebagai "TPx hit" bila harga fill benar-benar MENCAPAI
-                    # level TP tsb (LONG fill>=TP·(1-tol); SHORT fill<=TP·(1+tol)).
-                    # Sebelumnya reduksi APAPUN dilabeli TP1/TP2 meski harga
-                    # jauh dari levelnya → baris membingungkan seperti
-                    # "TP1 hit 0.65450" & "TP2 hit 0.65450" (RUNE) padahal
-                    # TP1/TP2 sebenarnya 0.66410 / 0.66910.
-                    tp_level = float(tps[next_idx])
-                    _tol = 0.004
-                    reached = False
-                    if fill_px:
-                        if trade.get("side") == "BUY":
-                            reached = fill_px >= tp_level * (1 - _tol)
+                        pass
+            sl_level = float(trade.get("stop_loss") or 0) or None
+            sl_fill_existing = trade.get("sl_fill")
+            # Window check-point (ms). Default = created_at − 60s saat
+            # trade baru dibuat atau belum pernah dicek.
+            prev_check_ms = int(trade.get("last_fill_check_ms") or 0)
+            if prev_check_ms <= 0:
+                try:
+                    prev_check_ms = int(datetime.fromisoformat(
+                        str(trade.get("created_at")).replace("Z", "+00:00")
+                    ).timestamp() * 1000) - 60_000
+                except Exception:
+                    prev_check_ms = int(datetime.now(timezone.utc).timestamp() * 1000) - 86_400_000
+            fills: list[dict[str, Any]] = []
+            fetch_ok = False
+            try:
+                code, data = await br._request(
+                    "GET", "/fapi/v1/userTrades", api_key, api_secret, is_testnet,
+                    {"symbol": bin_sym, "limit": "100", "startTime": str(prev_check_ms)})
+                if code == 200 and isinstance(data, list):
+                    fills = data
+                    fetch_ok = True
+            except Exception:
+                fetch_ok = False
+            if fetch_ok and (tps or sl_level):
+                side_u = str(trade.get("side") or "").upper()
+                reduce_side = "BUY" if side_u == "SELL" else "SELL"
+                tp_fills_new = list(tp_fills_in)
+                sl_fill_new = sl_fill_existing
+                max_fill_time = prev_check_ms
+                # Urutkan ascending waktu agar atribusi mengikuti urutan
+                # eksekusi (penting bila 2 TP di tick sama).
+                for f in sorted(fills, key=lambda x: int(x.get("time") or 0)):
+                    try:
+                        if f.get("side") != reduce_side:
+                            continue
+                        oid = str(f.get("orderId") or "")
+                        if oid and oid in seen_order_ids:
+                            continue
+                        fx = float(f["price"]); fq = float(f["qty"])
+                        rp = float(f["realizedPnl"])
+                        when_ms = int(f.get("time") or 0)
+                    except Exception:
+                        continue
+                    if when_ms > max_fill_time:
+                        max_fill_time = when_ms
+                    when_iso = datetime.fromtimestamp(
+                        when_ms / 1000, tz=timezone.utc).isoformat()
+                    # 1) Cocokkan ke TP level unfilled (toleransi 0.4%).
+                    matched_tp = False
+                    for i, tp in enumerate(tps[:3]):
+                        if i in taken_tp_idx or tp <= 0:
+                            continue
+                        if abs(fx - tp) / tp < 0.004:
+                            tp_fills_new.append({
+                                "level": f"TP{i+1}", "price": round(fx, 10),
+                                "qty": round(fq, 10),
+                                "pnl": round(rp, 4), "at": when_iso,
+                                "orderId": f.get("orderId"),
+                            })
+                            taken_tp_idx.add(i)
+                            seen_order_ids.add(oid)
+                            matched_tp = True
+                            break
+                    if matched_tp:
+                        continue
+                    # 2) Cocokkan ke SL level (toleransi 1% untuk slippage).
+                    if (sl_level and sl_fill_new is None
+                            and abs(fx - sl_level) / sl_level < 0.01):
+                        sl_fill_new = {
+                            "level": "SL", "price": round(fx, 10),
+                            "qty": round(fq, 10),
+                            "pnl": round(rp, 4), "at": when_iso,
+                            "orderId": f.get("orderId"),
+                        }
+                        seen_order_ids.add(oid)
+                        continue
+                    # 3) Reduce di luar level TP/SL (manual close dsb) →
+                    #    tidak dilabeli; cukup catat di seen agar tidak
+                    #    diulang.
+                    seen_order_ids.add(oid)
+                # Terapkan hasil.
+                if len(tp_fills_new) != len(tp_fills_in):
+                    _native_partial_upd["tp_fills"] = tp_fills_new
+                    n_tp = len(tps) or 3
+                    tp_filled_arr = [False] * n_tp
+                    for x in tp_fills_new:
+                        try:
+                            idx = int(str(x.get("level")).replace("TP", "")) - 1
+                            if 0 <= idx < n_tp:
+                                tp_filled_arr[idx] = True
+                        except Exception:
+                            pass
+                    _native_partial_upd["tp_filled"] = tp_filled_arr
+                    # SL GUARD: ikuti TP tertinggi yang baru ter-isi.
+                    highest_new = -1
+                    for x in tp_fills_new[len(tp_fills_in):]:
+                        try:
+                            idx = int(str(x.get("level")).replace("TP", "")) - 1
+                            if idx > highest_new:
+                                highest_new = idx
+                        except Exception:
+                            pass
+                    if (highest_new >= 0
+                            and not trade.get("trailing_activated")
+                            and float(trade.get("trailing_callback_rate") or 0) <= 0
+                            and int(trade.get("sl_guard_idx") or 0) <= highest_new):
+                        try:
+                            sg_res = await move_sl_to_breakeven(
+                                doc, trade, target_price=tps[highest_new])
+                        except Exception as _e:  # noqa: BLE001
+                            sg_res = {"ok": False, "detail": str(_e)[:200]}
+                        _native_partial_upd["sl_guard_idx"] = highest_new + 1
+                        _native_partial_upd["sl_guard_detail"] = sg_res.get("detail")
+                        _native_partial_upd["be_moved"] = True
+                        if sg_res.get("ok") and sg_res.get("new_sl"):
+                            _native_partial_upd["stop_loss"] = float(sg_res["new_sl"])
                         else:
-                            reached = fill_px <= tp_level * (1 + _tol)
-                    if not reached:
-                        # Reduksi bukan dari level TP (manual partial close /
-                        # adjustment exchange / sumber lain). JANGAN tandai
-                        # tp_filled & jangan tampilkan baris TP menyesatkan;
-                        # cukup perbarui qty. SL-guard tidak digerakkan.
-                        _native_partial_upd["qty_remaining"] = round(new_qty, 10)
-                        # v10.2.19 — Harga fill TIDAK diketahui (lookup
-                        # gagal) ≠ bukti "bukan TP". Tandai pending supaya
-                        # snapshot prev_position_amt TIDAK maju dan tick
-                        # berikutnya mengulang atribusi. Konsumsi event
-                        # hanya bila fill_px ADA tapi memang tidak mencapai
-                        # level TP (manual partial close dsb).
-                        if fill_px is None:
-                            _reduce_pending = True
-                    else:
-                        tp_filled_list[next_idx] = True
-                        # v10.0.13 — Jika harga fill benar-benar di sisi loss
-                        # (slippage/wick), label TPx keliru → relabel "SL".
-                        level_label = f"TP{next_idx + 1}"
-                        if fill_px and leg_pnl is not None and leg_pnl < 0:
-                            level_label = "SL"
-                        tp_fills = list(trade.get("tp_fills") or [])
-                        tp_fills.append({
-                            "level": level_label,
-                            "price": round(fill_px, 8) if fill_px else None,
-                            "qty": round(reduction, 10),
-                            "pnl": round(leg_pnl, 4) if leg_pnl is not None else None,
-                            "at": datetime.now(timezone.utc).isoformat(),
-                        })
-                        _native_partial_upd["tp_fills"] = tp_fills
-                        _native_partial_upd["tp_filled"] = tp_filled_list
-                        _native_partial_upd["qty_remaining"] = round(new_qty, 10)
-                        # v10.0.16 — SL GUARD (native path): SL mengikuti TP
-                        # yang baru ter-isi (TP1→SL=TP1, TP2→SL=TP2). Skip bila
-                        # trailing aktif atau fill ternyata adverse (label SL).
-                        if (not trade.get("trailing_activated")
-                                and level_label != "SL"
-                                and float(trade.get("trailing_callback_rate") or 0) <= 0
-                                and int(trade.get("sl_guard_idx") or 0) <= next_idx):
-                            try:
-                                sg_res = await move_sl_to_breakeven(
-                                    doc, trade, target_price=tps[next_idx])
-                            except Exception as _e:  # noqa: BLE001
-                                sg_res = {"ok": False, "detail": str(_e)[:200]}
-                            _native_partial_upd["sl_guard_idx"] = next_idx + 1
-                            _native_partial_upd["sl_guard_detail"] = sg_res.get("detail")
-                            _native_partial_upd["be_moved"] = True  # kompat UI
-                            if sg_res.get("ok") and sg_res.get("new_sl"):
-                                _native_partial_upd["stop_loss"] = float(sg_res["new_sl"])
-                            else:
-                                _native_partial_upd["stop_loss"] = float(tps[next_idx])
-            # Selalu simpan snapshot positionAmt untuk perbandingan tick
-            # berikutnya (dipakai untuk deteksi partial di atas).
-            # v10.2.19 — KECUALI saat atribusi pending: snapshot sengaja
-            # dibiarkan lama agar fill TP tidak hilang tanpa tercatat.
-            if not _reduce_pending:
+                            _native_partial_upd["stop_loss"] = float(tps[highest_new])
+                if sl_fill_new is not None and sl_fill_new is not sl_fill_existing:
+                    _native_partial_upd["sl_fill"] = sl_fill_new
+                _native_partial_upd["qty_remaining"] = round(new_qty, 10)
                 _native_partial_upd["prev_position_amt"] = round(new_qty, 10)
+                # Majukan check-point HANYA bila fetch sukses.
+                _native_partial_upd["last_fill_check_ms"] = max_fill_time + 1
+            else:
+                # Fetch gagal → jangan majukan check-point apa pun.
+                # Posisi update qty tetap aman (dari positionRisk).
+                _native_partial_upd["qty_remaining"] = round(new_qty, 10)
         except Exception:
-            # v10.2.19 — Error di tengah deteksi juga tidak boleh maju-
-            # kan snapshot (retry di tick berikutnya).
+            # Error tak terduga: tidak boleh menelan event (biarkan tick
+            # berikutnya mengulang window yang sama).
             _native_partial_upd = {}
         # v10.2.16 — PROFILE HORIZON EXIT (keputusan user): "bot masuk
         # dan keluar sesuai waktu profil". Berlaku untuk SEMUA formula
@@ -1985,4 +2162,44 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
     }
     if closed_px:
         upd_closed["closed_price"] = closed_px
+    # v10.2.20 — Catat sl_fill saat close full = SL hit, agar UI dapat
+    # menampilkan baris "SL hit · $xxx · −$yyy" (konsisten dengan
+    # tp_fills). Hanya diisi bila belum ada dan reason terdeteksi SL.
+    if reason == "SL" and closed_px and not trade.get("sl_fill"):
+        upd_closed["sl_fill"] = {
+            "level": "SL", "price": float(closed_px),
+            # qty = sisa posisi sebelum close
+            "qty": float(trade.get("qty_remaining") or trade.get("qty") or 0),
+            "pnl": round(realized - sum(
+                float(x.get("pnl") or 0) for x in (trade.get("tp_fills") or [])
+            ), 4),
+            "at": now_c,
+        }
+    # v10.2.20 — Catat tp_fills saat close full = TP akhir hit, agar
+    # kartu history yang tutup langsung di level TP tetap tampil
+    # "TPx hit · $xxx · +$yyy" meski tidak melalui partial.
+    if (reason and reason.startswith("TP") and closed_px
+            and not any(str(x.get("level") or "") == reason
+                        for x in (trade.get("tp_fills") or []))):
+        tp_fills_closed = list(trade.get("tp_fills") or [])
+        tp_fills_closed.append({
+            "level": reason, "price": float(closed_px),
+            "qty": float(trade.get("qty_remaining") or trade.get("qty") or 0),
+            "pnl": round(realized - sum(
+                float(x.get("pnl") or 0) for x in (trade.get("tp_fills") or [])
+            ), 4),
+            "at": now_c,
+        })
+        upd_closed["tp_fills"] = tp_fills_closed
+        n_tp = len(trade.get("take_profits") or []) or 3
+        tp_filled_arr = list(trade.get("tp_filled") or [False] * n_tp)
+        while len(tp_filled_arr) < n_tp:
+            tp_filled_arr.append(False)
+        try:
+            idx_c = int(reason.replace("TP", "")) - 1
+            if 0 <= idx_c < n_tp:
+                tp_filled_arr[idx_c] = True
+        except Exception:
+            pass
+        upd_closed["tp_filled"] = tp_filled_arr
     return upd_closed

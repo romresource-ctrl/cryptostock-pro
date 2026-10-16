@@ -1,0 +1,30 @@
+{
+  "summary": "v10.2.20 TP tertelan fix validated. 12/12 engine scenarios pass (TP1 only, TP1+TP2 same window, idempotent orderId re-fetch, SL slippage within 1%, HTTP 500 fetch lossless, raised fetch lossless, manual partial no label, full-close SL via realized_close_info) plus 4 edge cases (wrong-side-of-TP BUY fill not labelled, 2-TP ladder, trailing_callback_rate>0 disables SL guard, SELL-side fill ignored on SELL trade). /trades/reconcile endpoint removed (POST returns 405 → captured by /trades/{id} DELETE route). Regression endpoints OK: /asi/whitelist 200, /dashboard/batch 200, /asi/leaderboard/live 200, /asi/trades 200. All br.* + engine.move_sl_to_breakeven mocked; no real Binance order placed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter49_v10220_lossless_fills.py",
+    "/app/test_reports/pytest/iter49.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "engine._refresh_binance now > 400 lines; worth extracting the fill-attribution block into a helper (_attribute_user_trades) to keep testability clean — currently tested only through refresh wrapper.",
+    "SL tolerance 1% vs TP 0.4% is asymmetric and documented, but there is a theoretical overlap when TP3 is extremely close to SL (not possible with current ladder, but a future ladder change could trigger ambiguous attribution). Consider early-out when the fill distance is smaller for the TP side than for SL.",
+    "sl_fill is only recorded when sl_level is non-None AND sl_fill_new is None — if a trade has stop_loss=0 (edge case for broken config), SL fills will silently fall through to 'seen' without being labelled. Not a regression for current paths."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "n/a (backend-only review)"},
+  "seed_data_creation": "None — all tests use in-memory synthetic trade dict and monkeypatched br.*/move_sl_to_breakeven.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Pytest file test_iter49_v10220_lossless_fills.py mocks engine.br.{position_risk,_request,realized_close_info,open_algo_orders,open_orders_legacy,last_fill_price} and engine.move_sl_to_breakeven to deterministically probe _refresh_binance. If engine signature changes, update DOC/_mk_trade helpers. Public /trades/reconcile is intentionally gone; the 405 assertion lives in the same file (skipped locally when EXPO_BACKEND_URL missing).",
+  "rca_of_issue": "Pre-v10.2.20 the engine attributed TP/SL via a single last_reduce_fill_price call; if that specific /fapi/v1 call failed (geo-block, 500, rate limit) the fill event was lost forever because the tick moved on without retry → UI card showed empty tp_fills even though the exchange filled TP1 (ZEC 16/10 reported case). FIX walks /fapi/v1/userTrades from last_fill_check_ms every tick with per-orderId idempotency; the checkpoint is advanced ONLY when the HTTP call succeeded (lossless retry on failure). Tolerances: ±0.4% for TP (trigger slippage), ±1% for SL (stop-market slippage). SL guard follows the highest newly-filled TP in the window; trailing_callback_rate>0 skips the guard."
+}
