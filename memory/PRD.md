@@ -2071,3 +2071,11 @@ Keputusan user atas 5 pertanyaan:
 ## v10.2.17c — Scalper floor jalan tengah (keputusan user): SL 1.2% · TP 1.2/1.8/2.5%
 - Dipilih user dari opsi jalan tengah (antara 1.0/1.5/2.0 dan samakan intraday 1.5/2.2/3.0).
 - Intraday & Swing tidak berubah. KISS Pivot scalper ikut floor ini.
+
+## Backend performance fix (Emergent Support, 16 Okt 2026) — JANGAN DIUBAH
+Production berjalan di batas CPU 0.25 core. Perubahan berikut WAJIB dipertahankan:
+- `server.py::_build_dashboard_response` membangun sinyal per simbol dengan `await asyncio.sleep(0)` (jangan kembali ke list-comprehension sinkron — itu membekukan seluruh backend 3–30 detik: grafik timeout, harga statis, 502, health check gagal).
+- `market_data.py::get_batch` crypto lewat `_CRYPTO_SEM` (12) dan Yahoo `_YAHOO_SEM` (12) — jangan dinaikkan/dihapus.
+- `dashboard_batch` memakai stale-while-revalidate (`_BATCH_STALE_MAX`).
+- `/health` harus `async def` dan ringan.
+Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
