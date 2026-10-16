@@ -1915,3 +1915,8 @@ Keputusan user atas 5 pertanyaan:
 - Server-side cache 60s untuk /asset/{market}/{symbol}/chart (key: market|symbol|tf|profile) + in-flight dedupe: N request bersamaan berbagi SATU fetch upstream. Akar kelambatan: prefetch banyak kartu memukul exchange berulang tanpa cache → throttle → >30s untuk koin tertentu (GALA).
 - Tampilan 1h di-trim ke 120 candle terakhir (dari 250) — sinyal TETAP dihitung dari set penuh (EMA200 utuh) → logika sinyal tidak berubah; hanya payload HP yang diperkecil.
 - Verifikasi: GALA miss 4.3s → hit 0.024s; 5 request konkuren selesai serempak (dedupe OK); frontend sudah tanpa timeout chart (v10.2.16 sebelumnya).
+
+## v10.2.16f — Pil mark price grafik mengikuti arah tick + kedip lebih responsif
+- Akar "selalu merah": warna pil/garis live mengikuti arah CANDLE 1H TERTUTUP terakhir (bisa merah berjam-jam walau harga naik). Fix: warna mengikuti arah tick terakhir (naik=hijau, turun=merah, sama=warna dipertahankan), reset saat ganti simbol/TF.
+- Akar "berkedip lambat": throttle redraw chart 1500ms → 400ms.
+- Verifikasi visual: FET (koin dari screenshot user) kini menampilkan pil HIJAU saat harga naik; chart termuat normal + LIVE.

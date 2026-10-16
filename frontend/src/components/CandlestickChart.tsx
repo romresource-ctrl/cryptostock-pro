@@ -346,21 +346,24 @@ function CandlestickChart({
   const upColor = colors.accentUp || "#10b981";
   const downColor = colors.accentDown || "#ef4444";
 
-  // v8.12.2 — Stable live-overlay color derived from the LAST CLOSED
-  // candle (the one BEFORE the currently-forming live bar). Prevents
-  // the dashed price line / right-edge tag / pulsing dot from flipping
-  // red↔green as the intraday ticker wiggles across the current bar's
-  // open. `rawDisplayed` (pre-live-mutation) is used so the reference
-  // bar is always a *closed* candle, never the one being patched by
-  // `livePrice` above. Falls back to the only candle if there is no
-  // prior bar (edge case — first data render).
-  const lastClosedCandle = rawDisplayed.length >= 2
-    ? rawDisplayed[rawDisplayed.length - 2]
-    : rawDisplayed[rawDisplayed.length - 1];
-  const liveIsUp = lastClosedCandle
-    ? lastClosedCandle.close >= lastClosedCandle.open
-    : true;
-  const liveColorStable = liveIsUp ? upColor : downColor;
+  // v10.2.16 — Warna overlay live (garis putus-putus, tag harga kanan,
+  // dot pulse) mengikuti ARAH TICK TERAKHIR: hijau saat harga naik,
+  // merah saat turun, warna dipertahankan saat harga sama. Sebelumnya
+  // warna mengikuti arah CANDLE 1H tertutup terakhir → bisa merah
+  // berjam-jam walau harga sedang naik (keluhan user: "pil selalu
+  // merah, tidak berubah hijau jika naik"). Modul-level mengikuti pola
+  // liveLineFlashBase (chart live selalu satu instance).
+  if (typeof livePrice === "number" && Number.isFinite(livePrice)) {
+    if (liveTickPrev == null) {
+      liveTickUp = true;
+    } else if (livePrice > liveTickPrev) {
+      liveTickUp = true;
+    } else if (livePrice < liveTickPrev) {
+      liveTickUp = false;
+    }
+    liveTickPrev = livePrice;
+  }
+  const liveColorStable = liveTickUp ? upColor : downColor;
 
   // Horizontal grid lines + price labels (4 rows)
   const rows = [0, 0.25, 0.5, 0.75, 1];
@@ -942,7 +945,16 @@ const AlertPill = React.memo(function AlertPill({
 // FlashPrice's flash gate (src/components/FlashPrice.tsx), applied
 // here to the live price-line's redraw/recolor instead of a flash.
 const LIVE_LINE_MIN_PCT_CHANGE = 0.0005; // ~0.05%
-const LIVE_LINE_THROTTLE_MS = 1500; // at most one recolor/redraw per 1.5s
+// v10.2.16 — 1500ms → 400ms: throttle lama membuat pil mark price
+// "berkedip lambat" (keluhan user). 400ms masih ramah render SVG namun
+// terasa hidup mengikuti ticker.
+const LIVE_LINE_THROTTLE_MS = 400; // at most one recolor/redraw per 0.4s
+
+// v10.2.16 — State arah tick untuk warna overlay live (lihat komentar
+// di dalam komponen). Direset bersama liveLineFlashBase saat ganti
+// simbol/timeframe.
+let liveTickPrev: number | null = null;
+let liveTickUp = true;
 
 // Baseline the next comparison is measured against, and the timestamp
 // of the last allowed redraw. Module-level (not per-instance) because
@@ -974,11 +986,13 @@ let liveLineLastUpdateAt = 0;
 function candlesEqual(prev: Props, next: Props): boolean {
   if (prev.candles !== next.candles) {
     liveLineFlashBase = null;
+    liveTickPrev = null;
     return false;
   }
   if (prev.width !== next.width || prev.height !== next.height) return false;
   if (prev.isLive !== next.isLive || prev.isReady !== next.isReady) {
     liveLineFlashBase = null;
+    liveTickPrev = null;
     return false;
   }
   if (prev.alertZone !== next.alertZone || prev.signalAction !== next.signalAction) return false;
