@@ -1683,6 +1683,14 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
                 tp_filled_list.append(False)
             # Hanya proses bila (a) ada TP ladder dan (b) qty berkurang
             # minimal 1% (hindari noise rounding).
+            # v10.2.19 — _reduce_pending: lookup harga fill gagal (API/
+            # proxy sesaat) TIDAK boleh menelan event selamanya. Akar bug
+            # ZEC 16/10: satu kegagalan last_reduce_fill_price membuat
+            # fill TP1 tidak pernah tercatat (tp_fills kosong) DAN
+            # SL-guard tidak pernah bergerak. Dengan flag ini, snapshot
+            # prev_position_amt tidak diperbarui → tick berikutnya
+            # MENCOBA LAGI atribusi sampai berhasil.
+            _reduce_pending = False
             if (tps and prev_amt > 0 and new_qty > 0
                     and new_qty < prev_amt * 0.99):
                 reduction = prev_amt - new_qty
@@ -1723,6 +1731,14 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
                         # tp_filled & jangan tampilkan baris TP menyesatkan;
                         # cukup perbarui qty. SL-guard tidak digerakkan.
                         _native_partial_upd["qty_remaining"] = round(new_qty, 10)
+                        # v10.2.19 — Harga fill TIDAK diketahui (lookup
+                        # gagal) ≠ bukti "bukan TP". Tandai pending supaya
+                        # snapshot prev_position_amt TIDAK maju dan tick
+                        # berikutnya mengulang atribusi. Konsumsi event
+                        # hanya bila fill_px ADA tapi memang tidak mencapai
+                        # level TP (manual partial close dsb).
+                        if fill_px is None:
+                            _reduce_pending = True
                     else:
                         tp_filled_list[next_idx] = True
                         # v10.0.13 — Jika harga fill benar-benar di sisi loss
@@ -1762,9 +1778,14 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
                                 _native_partial_upd["stop_loss"] = float(tps[next_idx])
             # Selalu simpan snapshot positionAmt untuk perbandingan tick
             # berikutnya (dipakai untuk deteksi partial di atas).
-            _native_partial_upd["prev_position_amt"] = round(new_qty, 10)
+            # v10.2.19 — KECUALI saat atribusi pending: snapshot sengaja
+            # dibiarkan lama agar fill TP tidak hilang tanpa tercatat.
+            if not _reduce_pending:
+                _native_partial_upd["prev_position_amt"] = round(new_qty, 10)
         except Exception:
-            _native_partial_upd = {"prev_position_amt": round(abs(amt), 10)}
+            # v10.2.19 — Error di tengah deteksi juga tidak boleh maju-
+            # kan snapshot (retry di tick berikutnya).
+            _native_partial_upd = {}
         # v10.2.16 — PROFILE HORIZON EXIT (keputusan user): "bot masuk
         # dan keluar sesuai waktu profil". Berlaku untuk SEMUA formula
         # pada trade BARU (flag horizon_exit) di profil Scalper/Intraday/

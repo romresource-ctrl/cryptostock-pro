@@ -8,6 +8,34 @@ AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs
 ---
 
 ---
+## v10.2.19 — Fix Bug "TP Tertelan" pada Bracket Native (Oktober 2026)
+Laporan user: "ZEC long turun ke 1,134, seharusnya TP 1,143 sudah hit tapi
+tidak hit sejak perubahan TP/SL terakhir."
+Investigasi langsung ke exchange (testnet): posisi ZEC SEBENARNYA SHORT,
+dan TP1 1143.41 SUDAH terisi — fill BUY 0.967 @ 1143.37 pukul 17:15:57
+UTC, realized +$37.53 (dibuktikan via /fapi/v1/userTrades).
+Root cause: di `_refresh_binance` (engine.py), saat positionAmt mengecil,
+satu kegagalan SESAAT `last_reduce_fill_price` (proxy/API) membuat event
+tertelan selamanya — snapshot `prev_position_amt` tetap maju, jadi tick
+berikutnya tidak pernah mendeteksi ulang. Akibat ganda: (1) `tp_fills`
+kosong → UI tidak pernah menampilkan "TP1 HIT"; (2) SL-guard TIDAK
+pernah bergerak ke TP1 (SL tertinggal di 1220.92). Ini juga kandidat kuat
+akar kasus KAS closed-BE.
+Fix: flag `_reduce_pending` — bila lookup harga fill gagal (None),
+snapshot prev_position_amt TIDAK dimajukan → atribusi dicoba ulang tiap
+tick sampai berhasil. Event hanya dikonsumsi bila harga fill ADA dan
+memang tidak mencapai level TP (manual partial close). Cabang exception
+juga tidak lagi memajukan snapshot. Teruji 3 skenario sintetis (lookup
+gagal → retry; lookup sukses → tercatat TP1 + SL pindah 1143.41; fill
+manual non-TP → dikonsumsi tanpa label TP) — PASS.
+Backfill record ZEC: tp_fills [TP1 · $1143.37 · +$37.53], tp_filled
+[True,False,False].
+Keputusan user untuk sisa 0.967 ZEC (floating +$23): kunci profit
+sekarang (opsi b). Dieksekusi via endpoint resmi POST /asi/trades/{id}/
+close → leg kedua BUY 0.967 @ 1154.56, realized +$26.71. TOTAL REALIZED
+**+$64.24 USDT**. Posisi live 0.000, tidak ada order algo yatim.
+
+
 ## v10.2.18 — Dashboard/Leaderboard Cache + Copy-Trade Direct Execute (Oktober 2026)
 Empat permintaan user untuk performa & UX:
 1. **Dashboard /dashboard/batch lambat + 502**: tambah response-level

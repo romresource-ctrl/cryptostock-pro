@@ -3580,3 +3580,30 @@ agent_communication_v10218:
       Catatan: user minta backend-only cache sudah mencegah 502
       beruntun; frontend 502 handling (banner Retry) sudah ada di
       v10.2.16 dan tidak diubah.
+
+# ======================================================
+# v10.2.19 — Fix bug TP "tertelan" di bracket native (kasus ZEC)
+# ======================================================
+backend_v10219:
+  - task: "Atribusi partial TP native retry saat lookup harga fill gagal"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/engine.py (_refresh_binance, flag _reduce_pending)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Root cause ZEC 16/10: TP1 fill @1143.37 (+$37.53) ada di exchange
+          tapi satu kegagalan sesaat last_reduce_fill_price menelan event
+          selamanya (tp_fills kosong + SL-guard tidak bergerak dari 1220.92).
+          Fix: _reduce_pending mencegah snapshot prev_position_amt maju saat
+          fill_px None → retry tiap tick. Exception branch juga tidak majukan
+          snapshot. 3 skenario sintetis PASS (retry-berhasil mencatat TP1 &
+          memindahkan SL ke 1143.41; fill manual non-TP dikonsumsi benar).
+          Backfill record ZEC + close sisa posisi atas permintaan user:
+          leg2 @1154.56 +$26.71 → total realized +$64.24, posisi live 0,
+          0 order algo yatim. Diverifikasi langsung via userTrades &
+          positionRisk.
