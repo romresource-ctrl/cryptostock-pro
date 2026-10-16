@@ -866,11 +866,16 @@ async def _run_full_auto_scanner(
             #     tidak pernah counter-trend. Cocok untuk Full-Auto harian.
             #   • Profile = scalper / day / swing → scan KETIGA engine
             #     {scalper, day, swing} sekaligus (ambil confidence
-            #     tertinggi). Engine `longterm` TIDAK ikut supaya tidak
-            #     konflik dengan pilihan user yang mau trading cepat.
+            #     tertinggi).
             #   • Default (belum pilih) → aman: hanya `longterm` (Confluence v9).
+            # v10.2.16 — Keputusan user: profile scalper/day/swing kini
+            # juga MENYERTAKAN engine `longterm` (Confluence v9) → keempat
+            # engine dievaluasi berbarengan; sinyal Confluence v9 ikut
+            # dieksekusi bila muncul. Trade hasil engine longterm membawa
+            # profile "longterm" → otomatis bebas aturan horizon/profit-cap
+            # (hold mengikuti SL/TP1-3 sesuai keputusan user sebelumnya).
             if bot_profile in ("scalper", "day", "swing"):
-                _ENGINES = ["scalper", "day", "swing"]
+                _ENGINES = ["scalper", "day", "swing", "longterm"]
             else:
                 # longterm / None / "confluence" → 1 engine saja.
                 _ENGINES = ["longterm"]

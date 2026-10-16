@@ -1877,3 +1877,9 @@ Keputusan user atas 5 pertanyaan:
 - Sebelumnya: SL 0.5% · TP1 0.5% · TP2 0.8% (2 TP, split 50/50).
 - Berlaku untuk trade KISS Pivot BARU saja; posisi existing tidak diubah. SL Guard (SL→TP1 setelah TP1) & horizon exit tetap berlaku.
 - Verifikasi: compile OK, math sanity BUY/SELL benar, backend sehat.
+
+## v10.2.16c — Full-Auto scan 4 engine sekaligus (keputusan user)
+- scheduler.py: profile scalper/day/swing kini scan {scalper, day, swing, longterm} — Confluence v9 ikut dieksekusi bila sinyalnya muncul (sebelumnya hanya 3 engine VWAP).
+- Trade hasil engine longterm membawa profile "longterm" → otomatis TIDAK kena horizon exit/profit-cap (hold sesuai SL/TP1-3), sesuai aturan profil yang sudah disepakati.
+- Semua gate eksekusi (BTC regime, trend filter 4H, late-entry, min confidence) tetap berlaku untuk keempat engine.
+- Verifikasi: compile OK, backend restart sehat, scanner berjalan.
