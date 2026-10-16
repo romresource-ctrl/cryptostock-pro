@@ -327,7 +327,7 @@ api = APIRouter(prefix="/api")
 # Without this, the ingress considers the pod unhealthy and returns
 # "Connection refused" upstream errors like the one seen in prod logs.
 @app.get("/health")
-def _root_health() -> dict[str, str]:
+async def _root_health() -> dict[str, str]:
     return {"status": "ok"}
 
 
@@ -3541,47 +3541,3 @@ def _start_market_brief_scheduler() -> None:
     except Exception as e:
         logger.exception("failed to start market brief scheduler: %s", e)
 
-
-# --- TEMP DIAG (support): event-loop stall watchdog. Remove after RCA. ---
-import collections as _diag_coll  # noqa: E402
-import sys as _diag_sys  # noqa: E402
-import threading as _diag_thr  # noqa: E402
-import traceback as _diag_tb  # noqa: E402
-
-_DIAG_STALLS: "_diag_coll.deque" = _diag_coll.deque(maxlen=40)
-_DIAG_STATE = {"t": time.monotonic(), "max_lag": 0.0, "samples": 0}
-
-
-@app.on_event("startup")
-async def _diag_start_watchdog() -> None:
-    main_tid = _diag_thr.get_ident()
-
-    async def _tick() -> None:
-        while True:
-            _DIAG_STATE["t"] = time.monotonic()
-            await asyncio.sleep(0.25)
-
-    asyncio.create_task(_tick())
-
-    def _watch() -> None:
-        last = 0.0
-        while True:
-            time.sleep(0.5)
-            _DIAG_STATE["samples"] += 1
-            lag = time.monotonic() - _DIAG_STATE["t"]
-            _DIAG_STATE["max_lag"] = max(_DIAG_STATE["max_lag"], lag)
-            if lag > 1.5 and time.monotonic() - last > 2.0:
-                fr = _diag_sys._current_frames().get(main_tid)
-                st = "".join(_diag_tb.format_stack(fr)[-14:]) if fr else ""
-                _DIAG_STALLS.append({"at": _now_iso(), "lag": round(lag, 2), "stack": st})
-                last = time.monotonic()
-
-    _diag_thr.Thread(target=_watch, daemon=True).start()
-
-
-@app.get("/api/_diag/stalls")
-def _diag_stalls(k: str = "") -> dict:
-    if k != "43b8f909349bd8b934e94450":
-        return {"ok": False}
-    return {"max_lag": round(_DIAG_STATE["max_lag"], 2), "samples": _DIAG_STATE["samples"],
-            "stalls": list(_DIAG_STALLS)}
