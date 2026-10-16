@@ -1150,15 +1150,20 @@ async def _build_dashboard_response(
     # eksekusi ketat (3/1.5).
     _fresh_n = 3 if strict_gates else 8
     _chase_m = 1.5 if strict_gates else 2.5
-    assets = [
-        _build_signal(
+    # v10.2.21 — Yield to the event loop between symbols. Building ~100+
+    # signals in one synchronous pass held the loop for several seconds on
+    # the production CPU limit (0.25 core), freezing every request incl.
+    # /health (503s, liveness restarts, chart timeouts, static prices).
+    # Signal logic is unchanged; only scheduling is.
+    assets = []
+    for s in ordered:
+        assets.append(_build_signal(
             s, tr_summary.get(s["symbol"]),
             min_conf=min_confidence, min_wr=min_wr, profile=profile,
             daily_candles=daily_map.get(s["symbol"]), timeframe=timeframe,
             freshness_max_candles=_fresh_n, chase_atr_mult=_chase_m,
-        )
-        for s in ordered
-    ]
+        ))
+        await asyncio.sleep(0)
 
     if premium_only:
         assets = [a for a in assets if a.is_premium]
