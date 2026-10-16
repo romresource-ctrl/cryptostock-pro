@@ -944,7 +944,10 @@ const AlertPill = React.memo(function AlertPill({
 // v8.6.9 — Same relative-move threshold + throttle window used by
 // FlashPrice's flash gate (src/components/FlashPrice.tsx), applied
 // here to the live price-line's redraw/recolor instead of a flash.
-const LIVE_LINE_MIN_PCT_CHANGE = 0.0005; // ~0.05%
+// v10.2.16 — Ambang 0.05% DIHAPUS (keluhan user: "angka pil statis,
+// tidak sinkron dengan mark price header"). Kini SETIAP perubahan harga
+// sekecil apa pun memicu redraw pil; hanya throttle 400ms yang membatasi
+// frekuensi render agar tetap ringan.
 // v10.2.16 — 1500ms → 400ms: throttle lama membuat pil mark price
 // "berkedip lambat" (keluhan user). 400ms masih ramah render SVG namun
 // terasa hidup mengikuti ticker.
@@ -1004,8 +1007,9 @@ function candlesEqual(prev: Props, next: Props): boolean {
   if (!Number.isFinite(a) || !Number.isFinite(b)) return a === b;
 
   if (liveLineFlashBase == null) liveLineFlashBase = a;
-  const rel = Math.abs(b - liveLineFlashBase) / (Math.abs(liveLineFlashBase) || 1);
-  if (rel < LIVE_LINE_MIN_PCT_CHANGE) return true; // sub-threshold — equal, skip redraw
+  // v10.2.16 — Sinkron dengan header: harga sama persis → skip render;
+  // berubah sedikit pun → redraw (dibatasi throttle 400ms).
+  if (b === liveLineFlashBase) return true; // tidak berubah — equal, skip redraw
 
   const now = Date.now();
   if (now - liveLineLastUpdateAt < LIVE_LINE_THROTTLE_MS) return true; // throttled — equal, skip redraw

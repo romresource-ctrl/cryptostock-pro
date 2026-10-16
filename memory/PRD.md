@@ -1920,3 +1920,8 @@ Keputusan user atas 5 pertanyaan:
 - Akar "selalu merah": warna pil/garis live mengikuti arah CANDLE 1H TERTUTUP terakhir (bisa merah berjam-jam walau harga naik). Fix: warna mengikuti arah tick terakhir (naik=hijau, turun=merah, sama=warna dipertahankan), reset saat ganti simbol/TF.
 - Akar "berkedip lambat": throttle redraw chart 1500ms → 400ms.
 - Verifikasi visual: FET (koin dari screenshot user) kini menampilkan pil HIJAU saat harga naik; chart termuat normal + LIVE.
+
+## v10.2.16g — Pil mark price sinkron dengan header
+- Akar desync: memo chart (candlesEqual) melewatkan redraw bila perubahan harga < 0.05% → pil menampilkan harga redraw terakhir sementara header mengikuti tiap tick.
+- Fix: ambang 0.05% dihapus; setiap perubahan harga memicu redraw pil, hanya dibatasi throttle 400ms. Konstan LIVE_LINE_MIN_PCT_CHANGE dihapus.
+- Verifikasi visual: header 82,260.60 = pil 82260.60 (hijau searah), chart normal + LIVE.
