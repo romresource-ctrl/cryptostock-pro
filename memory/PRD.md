@@ -1910,3 +1910,8 @@ Keputusan user atas 5 pertanyaan:
 - Akar 1: watchdog WS hanya menjaga pesan PERTAMA → koneksi silent-dead setelah beberapa tick tak pernah terdeteksi. Fix: rolling watchdog 30s di-arm ulang TIAP pesan; silence → socket ditutup → fallback host berikutnya (terbukti: fstream silent-dead → pindah ke data-stream.binance.vision di detik ~10, 693 frame tanpa jeda).
 - Akar 2: poll 300ms tanpa in-flight guard → request menumpuk di jaringan lambat → harga tampak beku. Fix: tick dilewati bila request sebelumnya belum selesai (kedua halaman).
 - Uji stamina 85 detik: 18 sampel, 16 nilai berbeda, PnL akurat, tanpa red screen.
+
+## v10.2.16e — Fix chart lambat/timeout di production (keputusan user, backend)
+- Server-side cache 60s untuk /asset/{market}/{symbol}/chart (key: market|symbol|tf|profile) + in-flight dedupe: N request bersamaan berbagi SATU fetch upstream. Akar kelambatan: prefetch banyak kartu memukul exchange berulang tanpa cache → throttle → >30s untuk koin tertentu (GALA).
+- Tampilan 1h di-trim ke 120 candle terakhir (dari 250) — sinyal TETAP dihitung dari set penuh (EMA200 utuh) → logika sinyal tidak berubah; hanya payload HP yang diperkecil.
+- Verifikasi: GALA miss 4.3s → hit 0.024s; 5 request konkuren selesai serempak (dedupe OK); frontend sudah tanpa timeout chart (v10.2.16 sebelumnya).

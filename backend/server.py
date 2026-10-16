@@ -1264,24 +1264,19 @@ async def dashboard_batch(
 
 # -------- Asset detail --------
 
-@api.get("/asset/{market}/{symbol}/chart", response_model=ChartResponse)
-async def asset_chart(
-    market: Literal["crypto", "stock", "etf", "stock_id", "stock_us", "world_stocks", "gold_silver", "commodity", "forex"],
-    symbol: str,
-    timeframe: str = "1h",
-    profile: str | None = None,
-) -> ChartResponse:
-    if timeframe not in TIMEFRAME_MAP:
-        raise HTTPException(400, "Invalid timeframe")
-    eff_market = "stock_id" if market == "stock" else market
-    if eff_market == "world_stocks":
-        eff_market = "stock_us"
-    # v7.0.5: URL-safe dash decoder — forex/gold-silver symbols contain
-    # "/" (EUR/USD, XAU/USD) which breaks path routing. Frontend pushes
-    # them as "EUR-USD"; convert back here before pool lookup.
-    if eff_market in ("forex", "gold_silver") and "-" in symbol:
-        symbol = symbol.replace("-", "/")
-    symbol = symbol.upper()
+# v10.2.16 — Server-side cache 60 detik untuk chart aset (keputusan
+# user): request identik TIDAK memukul exchange berulang. Ditambah
+# in-flight dedupe: N request bersamaan (mis. prefetch seluruh kartu
+# trade) berbagi SATU fetch upstream → throttle upstream hilang.
+_CHART_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_CHART_INFLIGHT: dict[str, "asyncio.Task[dict[str, Any]]"] = {}
+_CHART_CACHE_TTL = 60.0
+_CHART_CACHE_MAX = 300
+
+
+async def _build_chart_payload(eff_market: str, symbol: str, timeframe: str,
+                               profile: str | None) -> dict[str, Any]:
+    """Isi asli endpoint chart (fetch snapshot + compute signal)."""
     snap = await (
         get_crypto_snapshot(symbol, timeframe)
         if eff_market == "crypto"
@@ -1328,12 +1323,60 @@ async def asset_chart(
                 sig["risk_level"] = "Medium"
             else:
                 sig["risk_level"] = "High"
-    return ChartResponse(
-        symbol=symbol, market=eff_market, timeframe=timeframe,
-        ticker=snap.get("ticker", {}) or {},
-        candles=snap.get("candles", []),
-        signal=sig,
-    )
+    candles = snap.get("candles", [])
+    # v10.2.16 — Trim tampilan 1h ke 120 candle terakhir (keputusan user:
+    # default 100-150). Sinyal TETAP dihitung dari SET PENUH di atas
+    # (EMA200 dst.) — logika sinyal tidak berubah; yang dipangkas hanya
+    # payload yang dikirim ke HP (irit bandwidth jaringan lambat).
+    if timeframe == "1h" and len(candles) > 120:
+        candles = candles[-120:]
+    return {
+        "symbol": symbol, "market": eff_market, "timeframe": timeframe,
+        "ticker": snap.get("ticker", {}) or {},
+        "candles": candles,
+        "signal": sig,
+    }
+
+
+@api.get("/asset/{market}/{symbol}/chart", response_model=ChartResponse)
+async def asset_chart(
+    market: Literal["crypto", "stock", "etf", "stock_id", "stock_us", "world_stocks", "gold_silver", "commodity", "forex"],
+    symbol: str,
+    timeframe: str = "1h",
+    profile: str | None = None,
+) -> ChartResponse:
+    if timeframe not in TIMEFRAME_MAP:
+        raise HTTPException(400, "Invalid timeframe")
+    eff_market = "stock_id" if market == "stock" else market
+    if eff_market == "world_stocks":
+        eff_market = "stock_us"
+    # v7.0.5: URL-safe dash decoder — forex/gold-silver symbols contain
+    # "/" (EUR/USD, XAU/USD) which breaks path routing. Frontend pushes
+    # them as "EUR-USD"; convert back here before pool lookup.
+    if eff_market in ("forex", "gold_silver") and "-" in symbol:
+        symbol = symbol.replace("-", "/")
+    symbol = symbol.upper()
+    # v10.2.16 — Cache 60s + in-flight dedupe (lihat _CHART_CACHE).
+    cache_key = f"{eff_market}|{symbol}|{timeframe}|{profile or 'none'}"
+    now = time.time()
+    hit = _CHART_CACHE.get(cache_key)
+    if hit and (now - hit[0]) < _CHART_CACHE_TTL:
+        return ChartResponse(**hit[1])
+    task = _CHART_INFLIGHT.get(cache_key)
+    if task is None:
+        task = asyncio.create_task(
+            _build_chart_payload(eff_market, symbol, timeframe, profile))
+        _CHART_INFLIGHT[cache_key] = task
+    try:
+        payload = await task
+    finally:
+        if _CHART_INFLIGHT.get(cache_key) is task:
+            _CHART_INFLIGHT.pop(cache_key, None)
+    if len(_CHART_CACHE) >= _CHART_CACHE_MAX:
+        oldest = min(_CHART_CACHE, key=lambda k: _CHART_CACHE[k][0])
+        _CHART_CACHE.pop(oldest, None)
+    _CHART_CACHE[cache_key] = (time.time(), payload)
+    return ChartResponse(**payload)
 
 
 @api.post("/asset/{market}/{symbol}/analyze", response_model=AnalyzeResponse)
