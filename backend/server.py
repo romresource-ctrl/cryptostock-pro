@@ -1195,6 +1195,7 @@ async def _build_dashboard_response(
 _BATCH_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _BATCH_INFLIGHT: dict[str, "asyncio.Task[dict[str, Any]]"] = {}
 _BATCH_CACHE_TTL = 60.0
+_BATCH_STALE_MAX = 600.0
 _BATCH_CACHE_MAX = 64
 
 
@@ -1268,12 +1269,16 @@ async def dashboard_batch(
     boundary = _candle_boundary(timeframe)
     now = time.time()
     hit = _BATCH_CACHE.get(cache_key)
-    if hit and (now - hit[0]) < _BATCH_CACHE_TTL \
-            and int(hit[1].get("_boundary") or 0) == boundary:
+    same_bar = bool(hit) and int(hit[1].get("_boundary") or 0) == boundary
+
+    def _cached_resp() -> dict[str, Any]:
         resp = dict(hit[1])
         resp.pop("_boundary", None)
         resp["cached"] = True
         return resp
+
+    if same_bar and (now - hit[0]) < _BATCH_CACHE_TTL:
+        return _cached_resp()
 
     async def _compute() -> dict[str, Any]:
         tasks = []
@@ -1320,11 +1325,17 @@ async def dashboard_batch(
     if task is None or task.done():
         task = asyncio.create_task(_compute())
         _BATCH_INFLIGHT[cache_key] = task
-    try:
-        return await task
-    finally:
-        if _BATCH_INFLIGHT.get(cache_key) is task:
-            _BATCH_INFLIGHT.pop(cache_key, None)
+
+        def _clear_inflight(t: asyncio.Task, k: str = cache_key) -> None:
+            if _BATCH_INFLIGHT.get(k) is t:
+                _BATCH_INFLIGHT.pop(k, None)
+        task.add_done_callback(_clear_inflight)
+    # v10.2.21 — Stale-while-revalidate: same candle bar + younger than
+    # _BATCH_STALE_MAX → answer instantly with the last result while the
+    # refresh above runs in the background (users never wait ~10s).
+    if same_bar and (now - hit[0]) < _BATCH_STALE_MAX:
+        return _cached_resp()
+    return await task
 
 
 # -------- Asset detail --------

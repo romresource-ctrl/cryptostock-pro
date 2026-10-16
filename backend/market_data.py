@@ -1927,7 +1927,16 @@ def _yahoo_cache_evict(now: float) -> None:
 # egress IP. Capping to ~30 in-flight Yahoo calls keeps us well below their
 # soft-limit while still delivering a 100-150 asset column in ~4-6 seconds
 # on a warm Emergent production pod.
-_YAHOO_SEM = asyncio.Semaphore(30)
+_YAHOO_SEM = asyncio.Semaphore(12)
+# v10.2.21 — Cap concurrent crypto snapshot fetches. An unbounded gather of
+# 100+ symbols queued all parse/indicator work at once and starved /health
+# and user requests on the 0.25-core production limit.
+_CRYPTO_SEM = asyncio.Semaphore(12)
+
+
+async def _crypto_throttled(coro):
+    async with _CRYPTO_SEM:
+        return await coro
 
 
 async def _yahoo_throttled(coro):
@@ -2053,7 +2062,7 @@ async def get_batch(market: str, symbols: list[str], timeframe: str) -> list[dic
     if market == "crypto":
         # Binance's public API tolerates our load; no need to throttle.
         results = await asyncio.gather(
-            *[get_crypto_snapshot(s, timeframe) for s in symbols],
+            *[_crypto_throttled(get_crypto_snapshot(s, timeframe)) for s in symbols],
             return_exceptions=True,
         )
     else:
