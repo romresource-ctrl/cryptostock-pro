@@ -1947,3 +1947,8 @@ Keputusan user atas 5 pertanyaan:
 - Masalah: FET BUY TP1 0.869% < SL 0.917% (pembulatan tick exchange + formula asimetris) → trade basic tidak layak R:R.
 - Fix: SETELAH big-cap floor, engine memaksa jarak Entry→TP1 = jarak Entry→SL (R simetri). TP2 ikut geser ke min 1.5R, TP3 min 2R dari entry (atau tetap pakai jarak formula bila lebih lebar). Berlaku semua formula/profil kecuali KISS Pivot (yang sudah simetri paket sendiri). Trade lama tidak diubah.
 - Verifikasi: FET entry 0.2072 → SL 0.917% · TP1 0.917% (= SL) · TP2 1.375% · TP3 1.834%. Compile OK, backend sehat.
+
+## v10.2.17b — Level floor diperluas ke SEMUA koin (keputusan user: low-cap TP1/TP2 kekecilan)
+- Gate `entry > 100` dihapus → floor berlaku untuk semua koin. Konstanta di-rename BIGCAP_LEVEL_FLOORS → LEVEL_FLOORS_MIN.
+- Efek low-cap: FET scalper SL 0.92%→1.0%, TP 0.87/1.16/1.45% → 1.0/1.5/2.0%. KISS Pivot ikut kena floor (0.9/1.2/1.5 → 1.0/1.5/2.0 untuk scalper).
+- Urutan engine: KISS override → floor (semua koin) → simetri SL=TP1 (non-KISS). Compile OK, backend sehat.

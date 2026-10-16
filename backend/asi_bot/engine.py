@@ -79,11 +79,12 @@ HAR_MAX_HOLD_MIN = {"scalper": 15, "day": 240, "swing": 1440, "longterm": 1440}
 # diatas X% - close"). Confluence v9 / longterm TIDAK punya cap & tidak
 # ada batas waktu — holding mengikuti SL/TP1-3.
 PROFILE_PROFIT_CAP_ROE = {"scalper": 10.0, "day": 15.0, "swing": 25.0}
-# v10.2.17 — BIG-CAP level floors (keputusan user): koin harga > $100
-# (BTC/ETH/BNB dst) ATR-nya kecil → level formula terlalu rapat dan
-# profit tidak menutup fee exchange (~$4 per $100). Floor jarak MINIMUM
-# per profil; level formula yang lebih lebar tetap dipakai apa adanya.
-BIGCAP_LEVEL_FLOORS: dict[str, tuple[float, tuple[float, float, float]]] = {
+# v10.2.17 — LEVEL FLOORS untuk SEMUA koin (keputusan user): TP1/TP2
+# jangan pernah terlalu kecil sampai profit tidak menutup fee exchange
+# (~$4 per $100). Floor jarak MINIMUM per profil; level formula yang
+# lebih lebar tetap dipakai apa adanya. Berlaku untuk big-cap (> $100)
+# MAUPUN low-cap (< $100) — low-cap saat ATR tenang juga bisa rapat.
+LEVEL_FLOORS_MIN: dict[str, tuple[float, tuple[float, float, float]]] = {
     "scalper": (0.010, (0.010, 0.015, 0.020)),  # SL 1.0% · TP 1.0/1.5/2.0%
     "day":     (0.015, (0.015, 0.022, 0.030)),  # SL 1.5% · TP 1.5/2.2/3.0%
     "swing":   (0.025, (0.025, 0.035, 0.050)),  # SL 2.5% · TP 2.5/3.5/5.0%
@@ -405,8 +406,13 @@ async def execute_trade(
     # bukan override — level formula yang lebih lebar tetap dipakai).
     # Ditempatkan SEBELUM cabang fallback ccxt supaya berlaku di semua
     # jalur eksekusi; trade lama tidak diubah.
-    if entry > 100:
-        _bc = BIGCAP_LEVEL_FLOORS.get(str(profile or "").lower())
+    # v10.2.17 — Level floor (keputusan user): TP1/TP2 jangan terlalu
+    # kecil sampai tidak menutup fee — berlaku untuk SEMUA koin (big-cap
+    # maupun low-cap). Floor = jarak MINIMUM SL/TP per profil; level
+    # formula yang lebih lebar tetap dipakai. Ditempatkan SEBELUM cabang
+    # fallback ccxt supaya berlaku di semua jalur; trade lama tidak diubah.
+    if entry > 0:
+        _bc = LEVEL_FLOORS_MIN.get(str(profile or "").lower())
         if _bc:
             _bc_sgn = 1.0 if side == "BUY" else -1.0
             _bc_sl_min, _bc_tp_mins = _bc
