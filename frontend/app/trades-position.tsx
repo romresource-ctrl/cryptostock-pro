@@ -42,6 +42,7 @@ export default function TradesPositionScreen() {
   const { colors } = useTheme();
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
+  const { apiProfile } = useTraderProfile();
   const [deviceId, setDeviceId] = useState<string>("");
   const [trades, setTrades] = useState<AnyTrade[]>([]);
   const [prices, setPrices] = useState<Record<string, number>>({});
@@ -165,8 +166,6 @@ export default function TradesPositionScreen() {
   // v10.2.9 — Set id kartu yang sedang/baru dihapus secara optimistic;
   // dipakai load() untuk mencegat kartu "muncul lagi" akibat race poll.
   const deletedRef = useRef<Set<string>>(new Set());
-  // v10.2.9 — Profile user untuk prefetch chart saat kartu ditekan.
-  const { apiProfile } = useTraderProfile();
   const flashTimerRef = useRef<any>(null);
   const [flash, setFlash] = useState<Record<string, "up" | "down">>({});
   // v10.2.16 — WS aggTrade langsung dari device (sumber yang sama dengan

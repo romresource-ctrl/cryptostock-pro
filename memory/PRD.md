@@ -1855,3 +1855,8 @@ Keputusan user atas 5 pertanyaan:
 - Kedua jalur eksekusi melewati execute_trade yang sama: Full-Auto (scheduler, profile+formula_tag dari sinyal) dan Semi-Auto (AsiTradeSheet → /trades/execute, profile+formula_tag dari payload).
 - Flag hit_and_run & horizon_exit dihitung di dalam execute_trade → otomatis aktif di KEDUA mode tanpa perubahan tambahan.
 - Parameter default otomatis dari bot config (risk, leverage, tp_count, margin, entry_mode); user bisa set ulang di sheet sebelum execute. Untuk trade KISS Pivot, override SL/TP memaksa parameter paket hit-and-run terlepas dari input user.
+
+## v10.2.16 — Fix TDZ crash trades-position ("Cannot access 'apiProfile' before initialization")
+- Penyebab: fix lint sebelumnya menambah apiProfile ke dependency array useCallback (baris ~120) padahal deklarasinya di baris ~170.
+- Perbaikan: pindahkan deklarasi `const { apiProfile } = useTraderProfile()` ke atas (setelah useSafeAreaInsets), hapus deklarasi lama. Tanpa perubahan logika.
+- Terverifikasi: lint bersih, halaman /trades-position render normal tanpa error.
