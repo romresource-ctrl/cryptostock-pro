@@ -44,6 +44,10 @@ export default function ManageAssets() {
         setEditing(cur);
         setEditName(cur.name);
       }
+    } catch (e) {
+      // v10.2.16 — Tangkap error fetch (5xx/jaringan) agar tidak lolos
+      // sebagai unhandled rejection (layar merah). Data lama dipertahankan.
+      console.warn("[manage] load gagal:", (e as Error)?.message || e);
     } finally {
       setLoading(false);
     }

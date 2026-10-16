@@ -609,6 +609,12 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   ai_upgrade: { id: "Upgrade ke Premium", en: "Upgrade to Premium", ru: "Перейти на Премиум", cn: "升级到高级版" },
   ai_empty_title: { id: "Belum ada setup", en: "No setups yet", ru: "Пока нет сетапов", cn: "暂无信号" },
   ai_load_failed_title: { id: "Gagal memuat sinyal", en: "Failed to load signals", ru: "Не удалось загрузить сигналы", cn: "信号加载失败" },
+  dashboard_load_failed: {
+    id: "Gagal memuat data, coba lagi",
+    en: "Failed to load data, please retry",
+    ru: "Не удалось загрузить данные, повторите попытку",
+    cn: "数据加载失败，请重试",
+  },
   ai_load_failed_sub: {
     id: "Koneksi lambat atau server sedang sibuk memindai market. Ketuk Coba lagi untuk memuat ulang.",
     en: "Slow connection or the server is busy scanning the market. Tap Retry to reload.",

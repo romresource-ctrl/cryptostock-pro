@@ -248,6 +248,16 @@ async function get<T>(path: string, timeoutMs?: number): Promise<T> {
   } finally {
     if (timer) clearTimeout(timer);
   }
+  // v10.2.16 — Auto-retry 1x setelah 3 detik untuk error server 5xx
+  // (mis. 502 Bad Gateway saat backend restart / proxy gangguan sesaat).
+  // Keputusan user: gangguan sesaat tidak boleh langsung melempar error
+  // ke UI. Bila retry tetap gagal, caller menampilkan pesan + tombol
+  // Retry (bukan crash).
+  if (res.status >= 500) {
+    console.warn(`[api] HTTP ${res.status} pada ${path} — retry otomatis dalam 3 detik`);
+    await new Promise((r) => setTimeout(r, 3000));
+    res = await fetch(`${API_BASE}${path}`, { headers: COMMON_HEADERS });
+  }
   if (res.status === 426) {
     const err: Error & { code?: string } = new Error("Aplikasi Anda sudah kadaluarsa. Silakan install APK versi terbaru dari admin.");
     err.code = "upgrade_required";

@@ -318,6 +318,8 @@ export default function Dashboard() {
     world_stocks: [], gold_silver: [], commodity: [], forex: [],
   });
   const [premiumCount, setPremiumCount] = useState(0);
+  // v10.2.16 — Status gagal muat dashboard (banner + Retry).
+  const [loadError, setLoadError] = useState(false);
   // v8.1.3 — Tap-to-filter on the consensus strip. Tap PREMIUM/BUY/HOLD/SELL
   // to instantly filter every column to only show matching cards. Tap
   // the same filter again to clear.
@@ -654,6 +656,16 @@ export default function Dashboard() {
           watchlistExtrasRef.current
         );
       }
+      setLoadError(false);
+    } catch (e) {
+      // v10.2.16 — Tangkap error fetch dashboard (HTTP 5xx / jaringan
+      // putus). Sebelumnya load() try…finally TANPA catch → rejection
+      // lolos ke caller (void load) → unhandled rejection → layar merah
+      // "Uncaught Error: HTTP 502 on /dashboard/batch". Kini data lama
+      // tetap tampil (SWR) + banner error dengan tombol Retry; get()
+      // juga sudah auto-retry 1x setelah 3 detik untuk 5xx.
+      console.warn("[dashboard] load gagal:", (e as Error)?.message || e);
+      setLoadError(true);
     } finally {
       setLoadingMap((prev) => {
         const next = { ...prev };
@@ -928,6 +940,39 @@ export default function Dashboard() {
           )}
         </View>
       </View>
+
+      {/* v10.2.16 — Banner gagal muat dashboard (HTTP 5xx / jaringan
+          putus). Sebelumnya error 502 lolos sebagai unhandled rejection
+          → layar merah. Kini: data lama tetap tampil, banner + tombol
+          Retry menggantikan crash. */}
+      {loadError ? (
+        <View
+          testID="dashboard-error-banner"
+          style={{
+            marginHorizontal: 16, marginTop: 8, padding: 12,
+            borderRadius: 10, backgroundColor: colors.surface,
+            borderWidth: 1, borderColor: colors.accentDown,
+            flexDirection: "row", alignItems: "center", gap: 10,
+          }}
+        >
+          <Text style={{ color: colors.accentDown, flex: 1, fontSize: 12, fontWeight: "700" }}>
+            {t("dashboard_load_failed")}
+          </Text>
+          <TouchableOpacity
+            testID="dashboard-retry"
+            onPress={() => {
+              setLoadError(false);
+              void load(timeframe, ALL_CATEGORIES, regionFilter);
+            }}
+            style={{
+              paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8,
+              backgroundColor: colors.accentDown,
+            }}
+          >
+            <Text style={{ color: "#FFF", fontWeight: "900", fontSize: 12 }}>{t("retry")}</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       {/* v9.3.0 — ASI-Bot & Copy Trade CTA: dua tombol eye-catching di
           bawah header, mengikuti level estetika AI Suggestions. */}

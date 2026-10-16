@@ -1925,3 +1925,10 @@ Keputusan user atas 5 pertanyaan:
 - Akar desync: memo chart (candlesEqual) melewatkan redraw bila perubahan harga < 0.05% → pil menampilkan harga redraw terakhir sementara header mengikuti tiap tick.
 - Fix: ambang 0.05% dihapus; setiap perubahan harga memicu redraw pil, hanya dibatasi throttle 400ms. Konstan LIVE_LINE_MIN_PCT_CHANGE dihapus.
 - Verifikasi visual: header 82,260.60 = pil 82260.60 (hijau searah), chart normal + LIVE.
+
+## v10.2.16h — Penanganan 5xx menyeluruh + jawaban kasus KAS/GALA
+- get(): auto-retry 1x setelah 3 detik untuk HTTP 5xx (502 dst) SEBELUM melempar error — gangguan backend sesaat tidak lagi langsung tampil ke UI. POST/PUT/DELETE (send()) sengaja TIDAK di-auto-retry (risiko double-execute trade).
+- Dashboard load(): try…finally TANPA catch adalah akar red screen "HTTP 502 on /dashboard/batch" — kini catch → banner "Gagal memuat data, coba lagi" + tombol Retry (data lama tetap tampil). manage.tsx load() juga ditambah catch. Audit: semua poller halaman (dashboard, trades-position, asi-bot, news, copy-trade, chart) kini punya catch.
+- Uji nyata: 502 disimulasikan → tidak ada red screen, banner tampil, Retry memulihkan dashboard (36 kartu premium termuat).
+- KASUS KAS (jawaban user): SL Guard HANYA menggeser SL ke TP1 SETELAH TP1 benar-benar terisi di exchange (by design sesuai perintah user). Trade KAS tidak mencatat fill TP1 (0.03745) — harga berbalik sebelum TP1 — dan posisi tertutup di ≈entry (±0.2%) sehingga label jujur "BREAK_EVEN" ($0.00, tanpa loss). Tidak ada kode yang memindah SL ke entry — logika BE lama sudah digantikan SL→TP1 (scheduler.py v10.0.16).
+- KASUS GALA (jawaban user): trade itu dieksekusi dengan paket KISS Pivot LAMA (TP1 0.5% / TP2 0.8%) karena terjadi sebelum update 3-TP (0.9/1.2/1.5) di-publish. Trade KISS baru memakai paket 3-TP.
