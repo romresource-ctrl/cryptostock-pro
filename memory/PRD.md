@@ -1871,3 +1871,9 @@ Keputusan user atas 5 pertanyaan:
 - Akar masalah: promise prefetch di chartCache.ts reject TANPA handler (floating promise) → unhandled rejection → red screen di dev/crash di HP. Bukan dari get() itu sendiri.
 - Fix: promise prefetch dibungkus .catch → console.warn + return null (cache-miss). Halaman detail jatuh ke fetch normal (skeleton + retry banner). get() TIDAK diubah karena puluhan caller men-destructure respons (c.items, res.markets) — mengembalikan null akan memunculkan crash baru di tempat lain.
 - Terverifikasi: intercept network-abort pada endpoint chart → halaman tetap render (harga LIVE via WS + skeleton chart + banner retry), tanpa red screen.
+
+## v10.2.16b — KISS Pivot bracket diubah ke 3-TP (keputusan user)
+- SL 0.9% (seukuran TP1, lawan arah) · TP1 0.9% · TP2 1.2% · TP3 1.5% · split qty 50/25/25 (TP_SPLITS[3]).
+- Sebelumnya: SL 0.5% · TP1 0.5% · TP2 0.8% (2 TP, split 50/50).
+- Berlaku untuk trade KISS Pivot BARU saja; posisi existing tidak diubah. SL Guard (SL→TP1 setelah TP1) & horizon exit tetap berlaku.
+- Verifikasi: compile OK, math sanity BUY/SELL benar, backend sehat.

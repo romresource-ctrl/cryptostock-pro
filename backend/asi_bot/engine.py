@@ -65,9 +65,12 @@ TP_SPLITS: dict[int, tuple[float, ...]] = {
 # "masuk di tengah → keluar cepat sebelum berbalik, profit kecil pun
 # tidak apa-apa". HANYA untuk trade ber-formula_tag mengandung
 # "KISS Pivot". Trade lama (sudah open) TIDAK diubah.
-HAR_TP_PCTS = (0.005, 0.008)   # TP1 0.5% · TP2 0.8% dari entry
-HAR_SL_PCT = 0.005             # SL seukuran TP1 (0.5%), berlawanan arah
-HAR_TRAILING_RATE = 1.5        # trailing stop % setelah batas horizon
+# v10.2.16b — Keputusan user: naik ke 3 TP berbasis R terhadap SL.
+# SL 0.9% dan TP1 0.9% (sama besar → TP1 = 1:1 vs SL), TP2 1.2%,
+# TP3 1.5%. Split qty mengikuti TP_SPLITS[3] = 50/25/25.
+HAR_TP_PCTS = (0.009, 0.012, 0.015)  # TP1 0.9% · TP2 1.2% · TP3 1.5%
+HAR_SL_PCT = 0.009                   # SL 0.9% — seukuran TP1, lawan arah
+HAR_TRAILING_RATE = 1.5              # trailing stop % setelah batas horizon
 # Batas hold maksimum = horizon profil (dari kartu Trader Profile):
 # Scalper 5-15m · Intraday 1-4h · Swing 4-24h.
 HAR_MAX_HOLD_MIN = {"scalper": 15, "day": 240, "swing": 1440, "longterm": 1440}
@@ -369,20 +372,19 @@ async def execute_trade(
     tp_count = max(1, min(3, int(tp_count)))
     # v10.2.16 — HIT-AND-RUN bracket khusus formula KISS Pivot (keputusan
     # user): pola ini masuk di TENGAH pergerakan → wajib keluar cepat
-    # dengan profit kecil sebelum harga berbalik. Override level:
-    # SL 0.5% (seukuran TP1, lawan arah), TP1 0.5% / TP2 0.8%, split qty
-    # 50/50 via TP_SPLITS[2]. SL Guard memindah SL ke TP1 setelah TP1
-    # kena (trailing_callback_rate=0 supaya guard tidak diskip). Monitor
-    # _refresh_binance menutup posisi via market begitu umur trade
-    # melewati horizon profil (Scalper 15m · Intraday 4h · Swing 24h)
-    # jika masih profit.
+    # dengan profit kecil sebelum harga berbalik. Override level (3 TP):
+    # SL 0.9% (seukuran TP1, lawan arah), TP1 0.9% / TP2 1.2% / TP3 1.5%,
+    # split qty 50/25/25 via TP_SPLITS[3]. SL Guard memindah SL ke TP1
+    # setelah TP1 kena (trailing_callback_rate=0 supaya guard tidak
+    # diskip). Monitor _refresh_binance menutup posisi via market begitu
+    # umur trade melewati horizon profil (Scalper 15m · Intraday 4h ·
+    # Swing 24h) jika masih profit.
     hit_and_run = "kiss pivot" in str(formula_tag or "").lower()
     if hit_and_run and entry > 0:
-        tp_count = 2
+        tp_count = 3
         _har_sign = 1.0 if side == "BUY" else -1.0
         stop_loss = entry * (1 - _har_sign * HAR_SL_PCT)
-        tps = [entry * (1 + _har_sign * HAR_TP_PCTS[0]),
-               entry * (1 + _har_sign * HAR_TP_PCTS[1])]
+        tps = [entry * (1 + _har_sign * p) for p in HAR_TP_PCTS]
         trailing_callback_rate = 0.0
     # v10.2.16 — Horizon exit per profil (Scalper/Intraday/Swing) untuk
     # SEMUA formula: profit-cap ROE + batas waktu maksimum. Hanya trade
