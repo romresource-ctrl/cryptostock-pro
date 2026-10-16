@@ -85,7 +85,7 @@ PROFILE_PROFIT_CAP_ROE = {"scalper": 10.0, "day": 15.0, "swing": 25.0}
 # lebih lebar tetap dipakai apa adanya. Berlaku untuk big-cap (> $100)
 # MAUPUN low-cap (< $100) — low-cap saat ATR tenang juga bisa rapat.
 LEVEL_FLOORS_MIN: dict[str, tuple[float, tuple[float, float, float]]] = {
-    "scalper": (0.010, (0.010, 0.015, 0.020)),  # SL 1.0% · TP 1.0/1.5/2.0%
+    "scalper": (0.012, (0.012, 0.018, 0.025)),  # SL 1.2% · TP 1.2/1.8/2.5%
     "day":     (0.015, (0.015, 0.022, 0.030)),  # SL 1.5% · TP 1.5/2.2/3.0%
     "swing":   (0.025, (0.025, 0.035, 0.050)),  # SL 2.5% · TP 2.5/3.5/5.0%
 }

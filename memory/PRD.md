@@ -1952,3 +1952,7 @@ Keputusan user atas 5 pertanyaan:
 - Gate `entry > 100` dihapus → floor berlaku untuk semua koin. Konstanta di-rename BIGCAP_LEVEL_FLOORS → LEVEL_FLOORS_MIN.
 - Efek low-cap: FET scalper SL 0.92%→1.0%, TP 0.87/1.16/1.45% → 1.0/1.5/2.0%. KISS Pivot ikut kena floor (0.9/1.2/1.5 → 1.0/1.5/2.0 untuk scalper).
 - Urutan engine: KISS override → floor (semua koin) → simetri SL=TP1 (non-KISS). Compile OK, backend sehat.
+
+## v10.2.17c — Scalper floor jalan tengah (keputusan user): SL 1.2% · TP 1.2/1.8/2.5%
+- Dipilih user dari opsi jalan tengah (antara 1.0/1.5/2.0 dan samakan intraday 1.5/2.2/3.0).
+- Intraday & Swing tidak berubah. KISS Pivot scalper ikut floor ini.
