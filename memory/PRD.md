@@ -1883,3 +1883,25 @@ Keputusan user atas 5 pertanyaan:
 - Trade hasil engine longterm membawa profile "longterm" → otomatis TIDAK kena horizon exit/profit-cap (hold sesuai SL/TP1-3), sesuai aturan profil yang sudah disepakati.
 - Semua gate eksekusi (BTC regime, trend filter 4H, late-entry, min confidence) tetap berlaku untuk keempat engine.
 - Verifikasi: compile OK, backend restart sehat, scanner berjalan.
+
+## ⭐ BASELINE RESMI — AI Crypto Stock Pro v10.2.16 (16 Okt 2026)
+**Git tag: `baseline-v10.2.16` @ commit c73443f** — Titik pemulihan resmi atas permintaan user. Jika ada masalah di perubahan berikutnya, kembali ke titik ini.
+
+### Isi baseline (semua terverifikasi):
+1. Panic Guard DIHAPUS TOTAL (backend+frontend+i18n)
+2. Persistensi ASI-Bot: mode Full/Semi + parameter + disclaimer via AsyncStorage `@asi_bot_prefs`
+3. Cache koneksi/saldo exchange (TESTNET/MAINNET anti "Not connected" flicker)
+4. Anti-hang: timeout AI Suggestions 45s + tombol Retry; auth verify 8s; Play Billing init 6s
+5. Chart detail aset: prefetch semua kartu saat list dimuat + pageCache + skeleton (TANPA timeout chart — keputusan user)
+6. Mark price & PnL kartu realtime via WebSocket multi-ticker Binance langsung dari device
+7. Delete kartu sinkron lintas halaman (tombstone bersama)
+8. Dashboard profile switch: SWR cache + skeleton instan + prefetch 4 profil (termasuk longterm)
+9. Engine: BTC Regime Gate + Trend Filter 4H + anti-late-entry + min confidence (SEMUA tetap, tidak diubah)
+10. Horizon exit semua formula: Scalper 15m/cap 10% · Intraday 4h/cap 15% · Swing 24h/cap 25% · Confluence v9 hold SL/TP
+11. KISS Pivot hit-and-run: SL 0.9% · TP1 0.9% · TP2 1.2% · TP3 1.5% · split 50/25/25
+12. Full-Auto scan 4 engine sekaligus (scalper+day+swing+longterm)
+13. Red-screen prefetch crash fix (chartCache promise catch)
+
+### ATURAN KERAS (permintaan user):
+- Semua formula & perilaku di atas TIDAK BOLEH diubah oleh perubahan lain TANPA permintaan eksplisit user.
+- Jika ada masalah/regresi → `git checkout baseline-v10.2.16` (atau revert ke commit c73443f).
