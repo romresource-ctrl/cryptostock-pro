@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="8" time="18.479" timestamp="2026-10-16T17:14:56.906162+00:00" hostname="agent-env-beafbbb3-f2aa-4357-9ba4-c47526bf7bc0"><testcase classname="backend.tests.test_iter48_v10218_cache.TestRegression" name="test_health" time="0.277"><failure message="requests.exceptions.JSONDecodeError: Expecting value: line 1 column 1 (char 0)">/root/.venv/lib/python3.11/site-packages/requests/models.py:1116: in json
+    return complexjson.loads(self.text, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/json/__init__.py:346: in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/json/decoder.py:337: in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/json/decoder.py:355: in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+E   json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+During handling of the above exception, another exception occurred:
+backend/tests/test_iter48_v10218_cache.py:31: in test_health
+    assert r.json().get("status") == "ok"
+           ^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/models.py:1120: in json
+    raise RequestsJSONDecodeError(e.msg, e.doc, e.pos)
+E   requests.exceptions.JSONDecodeError: Expecting value: line 1 column 1 (char 0)</failure></testcase><testcase classname="backend.tests.test_iter48_v10218_cache.TestRegression" name="test_api_root" time="1.003" /><testcase classname="backend.tests.test_iter48_v10218_cache.TestRegression" name="test_scan_debug_has_v10217_fields" time="0.313" /><testcase classname="backend.tests.test_iter48_v10218_cache.TestDashboardBatchCache" name="test_batch_cache_second_call_cached" time="13.027" /><testcase classname="backend.tests.test_iter48_v10218_cache.TestDashboardBatchCache" name="test_batch_different_profile_distinct_cache_key" time="3.011" /><testcase classname="backend.tests.test_iter48_v10218_cache.TestDashboardBatchCache" name="test_batch_different_markets_distinct_cache_key" time="0.467" /><testcase classname="backend.tests.test_iter48_v10218_cache.TestLeaderboardCache" name="test_leaderboard_7d_cache" time="0.101" /><testcase classname="backend.tests.test_iter48_v10218_cache.TestLeaderboardCache" name="test_leaderboard_live_cache" time="0.105" /></testsuite></testsuites>

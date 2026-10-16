@@ -1181,6 +1181,18 @@ async def _build_dashboard_response(
     )
 
 
+# v10.2.18 — Response-level cache 60 detik untuk /dashboard/batch
+# (keputusan user: "endpoint terlalu lambat & 502 beruntun").
+# _snapshot_cache per simbol sudah ada, tapi request batch berulang
+# masih harus menyusun ulang Pydantic + premium filter + track-record
+# per market. Cache tingkat respons membuat request identik instan
+# dari memori dan mengurangi beban upstream Yahoo/Binance saat burst.
+_BATCH_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_BATCH_INFLIGHT: dict[str, "asyncio.Task[dict[str, Any]]"] = {}
+_BATCH_CACHE_TTL = 60.0
+_BATCH_CACHE_MAX = 64
+
+
 # v8.0.4 — Batch dashboard endpoint. Frontend used to fire 8 parallel
 # HTTP requests on cold start; even though each is cheap on the server
 # they cost ~50ms round-trip on real networks and force React to
@@ -1233,33 +1245,81 @@ async def dashboard_batch(
             min_wr if min_wr is not None else d_wr,
         )
 
-    tasks = []
-    for m in market_keys:
-        c, w = _cfg(m)
-        eff_m = "stock_id" if m == "stock" else ("stock_us" if m == "world_stocks" else m)
-        tasks.append(
-            _build_dashboard_response(
-                market=m,
-                timeframe=timeframe,
-                sort=sort,
-                full=full,
-                min_confidence=c,
-                min_wr=w,
-                # v8.1.3 — Only apply region to stock_us; other markets ignore it.
-                region=region if m in ("stock_us", "world_stocks") else None,
-                extras=extras_by_market.get(eff_m),
-                # v9.0.0 — Trader profile so batch signals match detail page.
-                profile=profile,
+    # v10.2.18 — Response-level cache + in-flight dedupe. Request
+    # IDENTIK (markets+timeframe+sort+full+min_conf+min_wr+region+
+    # extras+profile) dalam 60s kembali instan dari memori. N request
+    # bersamaan berbagi SATU penyusunan upstream (anti-stampede saat
+    # banyak client refresh berbarengan → juga menurunkan risiko 502).
+    extras_norm = ",".join(
+        f"{k}:{','.join(sorted(v))}"
+        for k, v in sorted(extras_by_market.items())
+    )
+    cache_key = (
+        f"{','.join(sorted(market_keys))}|{timeframe}|{sort}|{int(full)}|"
+        f"{min_confidence if min_confidence is not None else '-'}|"
+        f"{min_wr if min_wr is not None else '-'}|"
+        f"{region or '-'}|{profile or '-'}|{extras_norm}"
+    )
+    boundary = _candle_boundary(timeframe)
+    now = time.time()
+    hit = _BATCH_CACHE.get(cache_key)
+    if hit and (now - hit[0]) < _BATCH_CACHE_TTL \
+            and int(hit[1].get("_boundary") or 0) == boundary:
+        resp = dict(hit[1])
+        resp.pop("_boundary", None)
+        resp["cached"] = True
+        return resp
+
+    async def _compute() -> dict[str, Any]:
+        tasks = []
+        for m in market_keys:
+            c, w = _cfg(m)
+            eff_m = "stock_id" if m == "stock" else (
+                "stock_us" if m == "world_stocks" else m)
+            tasks.append(
+                _build_dashboard_response(
+                    market=m,
+                    timeframe=timeframe,
+                    sort=sort,
+                    full=full,
+                    min_confidence=c,
+                    min_wr=w,
+                    region=region if m in ("stock_us", "world_stocks") else None,
+                    extras=extras_by_market.get(eff_m),
+                    profile=profile,
+                )
             )
-        )
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    out: dict[str, Any] = {}
-    for m, r in zip(market_keys, results, strict=False):
-        if isinstance(r, Exception):
-            out[m] = {"error": str(r)[:200], "assets": [], "premium_count": 0}
-        else:
-            out[m] = r.model_dump()
-    return {"timeframe": timeframe, "markets": out, "server_time": _now_iso()}
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        out: dict[str, Any] = {}
+        for m, r in zip(market_keys, results, strict=False):
+            if isinstance(r, Exception):
+                out[m] = {"error": str(r)[:200], "assets": [],
+                          "premium_count": 0}
+            else:
+                out[m] = r.model_dump()
+        payload = {"timeframe": timeframe, "markets": out,
+                   "server_time": _now_iso(), "cached": False}
+        # Simpan dengan boundary candle supaya auto-expire saat candle baru.
+        _BATCH_CACHE[cache_key] = (
+            time.time(), {**payload, "_boundary": boundary})
+        if len(_BATCH_CACHE) > _BATCH_CACHE_MAX:
+            # Buang yang tertua.
+            oldest = sorted(_BATCH_CACHE.items(),
+                            key=lambda kv: kv[1][0])[:len(_BATCH_CACHE) - _BATCH_CACHE_MAX]
+            for k, _ in oldest:
+                _BATCH_CACHE.pop(k, None)
+        return payload
+
+    # In-flight dedupe: dua request bersamaan dengan kunci sama berbagi task.
+    task = _BATCH_INFLIGHT.get(cache_key)
+    if task is None or task.done():
+        task = asyncio.create_task(_compute())
+        _BATCH_INFLIGHT[cache_key] = task
+    try:
+        return await task
+    finally:
+        if _BATCH_INFLIGHT.get(cache_key) is task:
+            _BATCH_INFLIGHT.pop(cache_key, None)
 
 
 # -------- Asset detail --------

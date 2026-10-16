@@ -8,6 +8,37 @@ AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs
 ---
 
 ---
+## v10.2.18 — Dashboard/Leaderboard Cache + Copy-Trade Direct Execute (Oktober 2026)
+Empat permintaan user untuk performa & UX:
+1. **Dashboard /dashboard/batch lambat + 502**: tambah response-level
+   cache 60 detik + in-flight dedupe (anti-stampede). Kunci cache: markets,
+   timeframe, sort, full, min_conf, min_wr, region, extras, profile.
+   Boundary-aware (invalidate otomatis saat candle baru). Verified live:
+   cold 2.56s → warm 0.036s; respons berfield `cached:true/false`.
+   Error 5xx di frontend sudah ditangani v10.2.16 (banner Retry, tidak
+   crash merah).
+2. **Leaderboard lambat**: cache 60s + in-flight dedupe untuk
+   `/api/asi/leaderboard` dan `/api/asi/leaderboard/live`; limit tetap
+   25 item teratas. Verified: 0.209s → 0.058s.
+3. **Copy-Trade EXECUTE tanpa sheet**: AsiTradeSheet dihapus dari
+   copy-trade.tsx. Tombol EXECUTE sekarang langsung memanggil
+   `api.asi.executeTrade` memakai parameter yang sudah di-set user di
+   halaman ASI-Bot (risk%, leverage, margin_mode, tp_count,
+   trailing_callback_rate, entry_mode, active_testnet, exchange).
+   Entry = mark price saat ini. Sukses → `router.push("/trades-position")`.
+   Guard: belum setup bot → CTA ke /asi-bot; duplikat posisi → konfirmasi
+   pyramid; sinyal tanpa SL/TP → tolak.
+4. **Preview "Calculating…" stuck**: AsiTradeSheet kini punya watchdog
+   5 detik. Lewat batas atau request gagal tanpa HTTP code →
+   `previewTimeout=true`, panel menampilkan pesan error + tombol
+   Retry (`testID: ats-preview-retry`). Error HTTP backend tetap
+   menimpa preview seperti sebelumnya.
+
+Engine trading / formula sinyal / parameter ASI-Bot TIDAK diubah.
+File: backend/server.py, backend/asi_bot/routes.py, frontend/app/copy-trade.tsx,
+frontend/src/components/AsiTradeSheet.tsx, frontend/src/i18n/I18nContext.tsx.
+
+
 ## v10.2.17 — Anti-Loss BUY Gates (Oktober 2026)
 Keputusan user setelah analisis loss LONG beruntun (ENA/XLM/BNB/ETH/YFI/CFX/
 FET/GRT): BTC bounce singkat di tengah base 4H BEAR membuat rezim sesaat

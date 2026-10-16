@@ -1,0 +1,38 @@
+{
+  "summary": "v10.2.18 — Validated server-side cache (60s) for /api/dashboard/batch, /api/asi/leaderboard & /live, cache-key separation (profile/markets), v10.2.17 BUY-gates regression, and frontend EXECUTE wiring (copy-trade removes AsiTradeSheet, calls executeTrade + navigates). Backend 7/8 passed (/health 1 failure is EXPECTED — K8s ingress only routes /api/* to backend, /health hits the Expo web). Frontend copy-trade shows 25 copy-execute-{rank} buttons, no AsiTradeSheet/preview opens on tap (code paths & live DOM both confirm). Dynamic (a)/(b) scenarios could not be exercised because the live leaderboard in test env has 25 CLOSED rows only (no OPEN row → EXECUTE disabled). Watchdog + Retry (ats-preview-retry) and i18n keys verified via code review; dependency on previewAttempt confirms retry restart.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/health", "issue": "Not reachable from public URL — ingress only forwards /api/*. Backend defines it for internal K8s probe; tests must hit /api/ instead."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "copy-trade EXECUTE dynamic verification", "issue": "Could not exercise (a) no-bot Alert and (b) executeTrade→router.push dynamically because /leaderboard/live returned 25 CLOSED entries only (EXECUTE disabled for closed rows). Code paths (lines 42-128) correctly implement spec: getBot gate, Alert w/ CTA to /asi-bot, api.asi.executeTrade with bot params, router.push('/trades-position'). Main agent can self-verify by seeding one OPEN asi_trade in Mongo and retrying.", "affected_testIDs": ["copy-execute-1"]}
+    ],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter48_v10218_cache.py",
+    "/app/test_reports/pytest/iter48.xml"
+  ],
+  "action_items": [
+    "No action needed on backend cache or copy-trade handler — all server behaviour and testID wiring verified.",
+    "Optional: to live-test flow (a)/(b) end-to-end, main agent can seed an OPEN row in asi_trades for test-judge-device-001 (or any device_id) so copy-trade shows an enabled EXECUTE; backend changes NOT required."
+  ],
+  "critical_code_review_comments": [
+    "server.py /dashboard/batch cache (_BATCH_CACHE) correctly keys on markets+timeframe+sort+full+min_conf+min_wr+region+profile+extras and includes _boundary — invalidates on new candle. TTL 60s. In-flight dedupe implemented via _BATCH_INFLIGHT.",
+    "asi_bot/routes.py leaderboard & live cache (_lb_cache) TTL 60s + inflight dedupe; both call leaderboard/live_leaderboard with limit=25 enforcing items<=25.",
+    "copy-trade.tsx: AsiTradeSheet NOT rendered (only `formulaTagFromSignal` imported). onExecuteCopy: getBot → if !exists Alert w/ ASI-Bot CTA; else api.asi.executeTrade with bot's risk/leverage/tp/margin/entry_mode/active_testnet, then router.push('/trades-position'). Correct.",
+    "AsiTradeSheet.tsx: 5000ms watchdog in effect (line 184) sets previewTimeout=true if not cancelled; error with code/detail still overrides preview via setPreview() path (lines 210-216); error without code (network drop) hits setPreviewTimeout(true) branch. retryPreview increments previewAttempt and that value is in effect dependency array → re-runs preview. testID='ats-preview-retry' present."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "87.5% (7/8 — the 1 failure is expected: /health not routed via /api)", "frontend": "100% code-review verified; dynamic path blocked by lack of OPEN leaderboard rows"},
+  "seed_data_creation": "None required for backend tests. For live frontend verification of EXECUTE outcomes, main agent could seed an asi_trades.status='open' row for any device_id so leaderboard/live returns an active rank.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend cache suite file: /app/backend/tests/test_iter48_v10218_cache.py. Public URL env: EXPO_PUBLIC_BACKEND_URL. The /health probe is backend-local only (not via ingress) — test /api/ instead. Copy-trade EXECUTE testIDs are copy-execute-{rank} where rank is backend-provided integer; buttons are DISABLED (opacity 0.6, grey) for rows whose status is not 'open'. To exercise the full flow, seed an open position in Mongo collection asi_trades.",
+  "rca_of_issue": "n/a — this iteration validates a performance/UX change set; no bugs found."
+}

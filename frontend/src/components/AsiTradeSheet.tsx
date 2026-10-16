@@ -115,6 +115,17 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
   // Reset panel hasil tiap kali intent baru dibuka.
   useEffect(() => { setExecResult(null); setCredsLoaded(false); }, [intent, visible]);
 
+  // v10.2.18 — Preview "Calculating…" dulu bisa stuck selamanya bila
+  // request >5s / jaringan putus. Keputusan user: setelah 5 detik,
+  // tampilkan pesan error + tombol Retry (jangan diam saja).
+  const [previewTimeout, setPreviewTimeout] = useState(false);
+  const [previewAttempt, setPreviewAttempt] = useState(0);
+  const retryPreview = () => {
+    setPreviewTimeout(false);
+    setPreview(null);
+    setPreviewAttempt((n) => n + 1);
+  };
+
   useEffect(() => {
     if (!visible || !intent) return;
     (async () => {
@@ -161,10 +172,21 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
   useEffect(() => {
     if (!visible || !intent || !deviceId || !activeCred) {
       setPreview(null);
+      setPreviewTimeout(false);
       return;
     }
+    setPreviewTimeout(false);
+    let cancelled = false;
     const t = setTimeout(async () => {
       setLoading(true);
+      // v10.2.18 — Watchdog 5 detik: bila request tidak selesai di 5s,
+      // nyalakan state previewTimeout agar UI menampilkan tombol Retry.
+      const watchdog = setTimeout(() => {
+        if (!cancelled) {
+          setPreviewTimeout(true);
+          setLoading(false);
+        }
+      }, 5000);
       try {
         const p = await api.asi.previewTrade(deviceId, {
           exchange, symbol: intent.symbol, side: intent.side,
@@ -175,31 +197,35 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
           risk_pct: riskPct, leverage, tp_count: tpCount,
           testnet: activeTestnet,
         });
+        if (cancelled) return;
+        clearTimeout(watchdog);
         setPreview(p);
+        setPreviewTimeout(false);
       } catch (e: any) {
-        // v9.9.6/v9.9.9 — EXCEPTION jaringan/timeout TIDAK menimpa preview
-        // bagus terakhir (anti-flicker stepper). TAPI penolakan HTTP dari
-        // backend (punya e.code/e.detail — mis. jaringan belum terhubung,
-        // min notional) HARUS menimpa: itu keputusan bisnis, dan saat ganti
-        // chip jaringan user harus melihat keadaan jaringan baru, bukan
-        // angka jaringan lama.
+        if (cancelled) return;
+        clearTimeout(watchdog);
+        // v10.2.18 — Error jaringan tanpa code/detail → tampilkan Retry
+        // (jangan stuck "Calculating…"). Error HTTP backend tetap
+        // menimpa preview seperti sebelumnya.
         if (e?.code || e?.detail) {
           setPreview({
             ok: false, message: e?.detail?.message || e?.message || t("ats_no_preview"),
             balance_usdt: 0, margin_usdt: 0, size_usdt: 0, qty: 0,
             leverage, risk_pct: riskPct, est_loss_usdt: 0, tp_estimations: [],
           });
+          setPreviewTimeout(false);
         } else {
-          setPreview((prev) => prev?.ok ? prev : {
-            ok: false, message: e?.message || t("ats_no_preview"),
-            balance_usdt: 0, margin_usdt: 0, size_usdt: 0, qty: 0,
-            leverage, risk_pct: riskPct, est_loss_usdt: 0, tp_estimations: [],
-          });
+          setPreviewTimeout(true);
         }
-      } finally { setLoading(false); }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }, 250);
-    return () => clearTimeout(t);
-  }, [visible, intent, deviceId, exchange, riskPct, leverage, tpCount, activeCred, activeTestnet]);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [visible, intent, deviceId, exchange, riskPct, leverage, tpCount, activeCred, activeTestnet, previewAttempt]);
 
   const execute = async () => {
     if (!intent || !preview?.ok) return;
@@ -565,7 +591,28 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
 
                 {/* Preview */}
                 <View style={[s.preview, { backgroundColor: colors.background, borderColor: colors.border }]}>
-                  {loading && !preview ? (
+                  {previewTimeout ? (
+                    // v10.2.18 — Preview stuck/gagal >5s: tampilkan pesan
+                    // error + tombol Retry (jangan diam saja).
+                    <View style={{ gap: 10, alignItems: "flex-start" }}>
+                      <Text style={{ color: RED, fontSize: 12, lineHeight: 18 }}>
+                        {t("ats_preview_timeout")
+                          || "Perhitungan preview terlalu lama. Periksa koneksi lalu coba lagi."}
+                      </Text>
+                      <TouchableOpacity
+                        onPress={retryPreview}
+                        style={{
+                          paddingHorizontal: 14, paddingVertical: 8,
+                          borderRadius: 8, backgroundColor: MINT,
+                        }}
+                        testID="ats-preview-retry"
+                      >
+                        <Text style={{ color: "#FFFFFF", fontWeight: "900", fontSize: 12 }}>
+                          {t("common_retry") || "Coba Lagi"}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : loading && !preview ? (
                     <Text style={{ color: colors.textMuted, fontSize: 12 }}>{t("ats_calculating")}</Text>
                   ) : preview?.ok ? (
                     <>

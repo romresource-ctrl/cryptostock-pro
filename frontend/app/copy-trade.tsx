@@ -1,16 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, Platform, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
 import { useTheme } from "@/src/theme/ThemeContext";
 import { useI18n } from "@/src/i18n/I18nContext";
+import { useTraderProfile } from "@/src/lib/useTraderProfile";
 import { usePremiumAccess } from "@/src/lib/usePremiumAccess";
 import PremiumLocked from "@/src/components/PremiumLocked";
 import { api, type AsiLiveRow } from "@/src/lib/api";
+import { getDeviceId } from "@/src/lib/deviceId";
 import { readPageCache, writePageCache } from "@/src/lib/pageCache";
-import AsiTradeSheet, { type AsiTradeIntent } from "@/src/components/AsiTradeSheet";
+import { formulaTagFromSignal } from "@/src/components/AsiTradeSheet";
 
 const GOLD = "#F0B90B";
 const GREEN = "#22C55E";
@@ -30,38 +32,119 @@ export default function CopyTradeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const { hasAccess, loaded: accessLoaded } = usePremiumAccess();
-  // v9.9.9 — EXECUTE kini fungsional: membuka trade sheet berisi posisi
-  // trader yang di-copy dengan harga pasar SAAT INI (bukan entry lama).
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const [copyIntent, setCopyIntent] = useState<AsiTradeIntent | null>(null);
+  const { apiProfile } = useTraderProfile();
+  // v10.2.18 — Keputusan user: EXECUTE langsung eksekusi tanpa popup
+  // sheet parameter. Pakai setting user di halaman ASI-Bot (risk%,
+  // leverage, margin mode, jumlah TP, trailing callback, entry mode),
+  // lalu navigasi ke Running Positions.
   const [preparingRank, setPreparingRank] = useState<string | null>(null);
 
-  // v10.0.5 — Satu rank = SATU posisi. EXECUTE menyalin posisi tersebut
-  // dengan harga pasar SAAT INI (bukan entry lama).
   const onExecuteCopy = useCallback(async (row: AsiLiveRow) => {
     if (!row.symbol || !row.side) return;
+    const base = String(row.symbol).replace("/USDT", "").replace("USDT", "");
     const busyKey = String(row.rank);
     setPreparingRank(busyKey);
     try {
-      const base = String(row.symbol).replace("/USDT", "").replace("USDT", "");
-      let entry = row.entry_price || 0;
+      const did = await getDeviceId();
+      // Ambil parameter yang sudah di-set user di halaman ASI-Bot.
+      let bot: any = null;
+      try { bot = await api.asi.getBot(did); } catch { /* fallback default */ }
+      if (!bot?.exists) {
+        Alert.alert(
+          t("asi_copy_need_setup_title") || "Setup ASI-Bot dulu",
+          t("asi_copy_need_setup_body")
+            || "Hubungkan exchange dan atur parameter bot (Risk %, Leverage, TP, dst.) di halaman ASI-Bot sebelum menyalin posisi.",
+          [
+            { text: t("common_cancel") || "Batal", style: "cancel" },
+            { text: "ASI-Bot", onPress: () => router.push("/asi-bot" as never) },
+          ],
+        );
+        return;
+      }
+      // Entry = mark price saat ini (bukan entry trader historis).
+      let entry = Number(row.entry_price || 0);
       try {
         const p = await api.asi.price(base);
         if (p.price > 0) entry = p.price;
-      } catch { /* fallback ke entry trader bila ticker gagal */ }
-      setCopyIntent({
-        symbol: base,
-        side: row.side === "BUY" ? "BUY" : "SELL",
-        entry,
-        stop_loss: row.stop_loss || 0,
-        take_profits: row.take_profits || [],
-        source: "asi-bot-semi",
-      });
-      setSheetOpen(true);
+      } catch { /* keep fallback */ }
+      // Guard parameter minimal yang wajib ada untuk bracket.
+      if (!entry || !row.stop_loss || !(row.take_profits || []).length) {
+        Alert.alert(
+          t("asi_copy_bad_signal_title") || "Sinyal tidak lengkap",
+          t("asi_copy_bad_signal_body")
+            || "Posisi ini tidak punya SL/TP yang bisa disalin. Pilih rank lain atau coba lagi nanti.",
+        );
+        return;
+      }
+      const exchange = (bot.exchange || "binance") as
+        "binance" | "bybit" | "okx" | "bitget";
+      // Cek duplikat posisi terbuka pada symbol+exchange yang sama.
+      try {
+        const list = await api.asi.listTrades(did);
+        const dup = (list.items || []).find(
+          (tr: any) => String(tr.status || "").toLowerCase() === "open"
+            && String(tr.symbol || "").toUpperCase() === base.toUpperCase()
+            && (tr.exchange || "") === exchange,
+        );
+        if (dup) {
+          const dupBody = (t("ats_dup_body") || "Anda sudah punya posisi {side} {symbol} aktif di {exchange} (PnL ${pnl}). Tambah posisi lagi (pyramid)?")
+            .replace("{side}", String((dup as any).side))
+            .replace("{symbol}", base)
+            .replace("{exchange}", exchange.toUpperCase())
+            .replace("{pnl}", ((dup as any).pnl_usdt ?? 0).toFixed(2));
+          const proceed = Platform.OS === "web"
+            // eslint-disable-next-line no-alert
+            ? window.confirm(`${t("ats_dup_title") || "Posisi Sudah Terbuka"}\n\n${dupBody}`)
+            : await new Promise<boolean>((resolve) => {
+                Alert.alert(t("ats_dup_title") || "Posisi Sudah Terbuka", dupBody, [
+                  { text: t("ats_dup_cancel") || "Batal", style: "cancel", onPress: () => resolve(false) },
+                  { text: t("ats_dup_add") || "Ya, tambah", onPress: () => resolve(true) },
+                ]);
+              });
+          if (!proceed) return;
+        }
+      } catch { /* best effort dup check */ }
+      try {
+        await api.asi.executeTrade(did, {
+          exchange,
+          symbol: base,
+          side: row.side === "BUY" ? "BUY" : "SELL",
+          entry,
+          stop_loss: Number(row.stop_loss),
+          take_profits: (row.take_profits || []).map((v) => Number(v)),
+          risk_pct: Number(bot.risk_pct ?? 5),
+          leverage: Number(bot.leverage ?? 10),
+          mode: "semi",
+          tp_count: (Number(bot.tp_count ?? 3) as 1 | 2 | 3),
+          trailing_callback_rate: Number(bot.trailing_callback_rate ?? 2),
+          margin_mode: (bot.margin_mode || "isolated") as "isolated" | "cross",
+          testnet: bot.active_testnet ?? true,
+          profile: apiProfile ?? null,
+          formula_tag: formulaTagFromSignal(null, null, apiProfile),
+          entry_mode: (bot.entry_mode || "limit") as "limit" | "market",
+        } as any);
+        // Sukses → langsung buka Running Positions.
+        router.push("/trades-position" as never);
+      } catch (e: any) {
+        const code: string | undefined = e?.code;
+        const msg: string = e?.detail?.message || e?.message || String(e);
+        const title = t("asi_copy_exec_failed") || "Gagal mengeksekusi";
+        const body = code === "qty_zero"
+          ? (t("ats_err_qty_zero") || "Qty 0 — Risk/Leverage/Balance tidak cukup.")
+          : code === "min_notional"
+            ? (t("ats_err_min_notional") || "Ukuran posisi di bawah minimum notional exchange.").replace("{size}", String((e?.detail?.size_usdt ?? 0).toFixed?.(2) ?? "0.00")).replace("{min}", String((e?.detail?.min_notional ?? 5).toFixed?.(2) ?? "5.00"))
+            : (msg || "Unknown error");
+        if (Platform.OS === "web") {
+          // eslint-disable-next-line no-alert
+          window.alert(`${title}\n\n${body}`);
+        } else {
+          Alert.alert(title, body);
+        }
+      }
     } finally {
       setPreparingRank(null);
     }
-  }, []);
+  }, [apiProfile, router, t]);
 
   const load = useCallback(async () => {
     try {
@@ -461,12 +544,8 @@ export default function CopyTradeScreen() {
         )}
       </ScrollView>
 
-      {/* v9.9.9 — Trade sheet untuk eksekusi copy (pakai harga pasar kini) */}
-      <AsiTradeSheet
-        visible={sheetOpen}
-        onClose={() => setSheetOpen(false)}
-        intent={copyIntent}
-      />
+      {/* v10.2.18 — Trade sheet copy dihapus. EXECUTE kini langsung
+          mengeksekusi dengan parameter dari halaman ASI-Bot. */}
     </View>
   );
 }

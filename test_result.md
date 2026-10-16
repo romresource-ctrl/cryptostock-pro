@@ -3441,3 +3441,142 @@ agent_communication_v10217:
          ter-update tiap ~90s dengan field baru.
       CATATAN: mock _get_btc_regime/_compute_btc_regime di level modul
       agar test deterministik (jangan tergantung kondisi market live).
+
+# ======================================================
+# v10.2.18 — Dashboard/Leaderboard cache + Copy-Trade direct execute + preview watchdog
+# ======================================================
+backend_v10218:
+  - task: "Response-level cache 60s + in-flight dedupe untuk /dashboard/batch"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py (_BATCH_CACHE, _BATCH_INFLIGHT, _BATCH_CACHE_TTL=60)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Verified live: cold 2.56s -> warm 0.036s; respons berfield
+          "cached":true/false. Cache invalidate saat candle baru
+          (boundary-aware). In-flight dedupe: N request bersamaan
+          dengan kunci sama berbagi satu task upstream. Max 64 entri.
+  - task: "Cache 60s + in-flight dedupe untuk /asi/leaderboard & /asi/leaderboard/live (limit 25)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/asi_bot/routes.py (_lb_cache, _lb_inflight, _LB_TTL=60)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Verified live: /leaderboard/live 0.209s -> 0.058s cached.
+          "cached": true/false di respons. Limit tetap 25.
+
+frontend_v10218:
+  - task: "Copy-Trade EXECUTE langsung tanpa sheet, navigasi ke Running Positions"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/copy-trade.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          AsiTradeSheet dihapus dari halaman. onExecuteCopy memakai
+          parameter dari api.asi.getBot(deviceId): risk_pct, leverage,
+          margin_mode, tp_count, trailing_callback_rate, entry_mode,
+          active_testnet, exchange. Entry = api.asi.price(base).
+          Guard: belum setup -> CTA /asi-bot; duplikat posisi ->
+          konfirmasi pyramid; SL/TP kosong -> tolak. Sukses ->
+          router.push("/trades-position"). testID: copy-execute-{rank}.
+  - task: "AsiTradeSheet preview watchdog 5s + tombol Retry"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/components/AsiTradeSheet.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          State previewTimeout + previewAttempt. Watchdog setTimeout
+          5000ms; bila fetch tidak selesai -> previewTimeout=true,
+          loading=false, panel menampilkan pesan + tombol testID
+          "ats-preview-retry". Error HTTP backend (ada e.code/e.detail)
+          TETAP menimpa preview seperti sebelumnya. Retry menaikkan
+          previewAttempt -> effect dijalankan ulang.
+  - task: "i18n keys baru (EN/ID/RU/CN) utk watchdog & copy-trade dialog"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/i18n/I18nContext.tsx"
+    stuck_count: 0
+    priority: "low"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Keys: ats_preview_timeout, common_retry, common_cancel,
+          asi_copy_need_setup_title/body, asi_copy_bad_signal_title/body,
+          asi_copy_exec_failed. Lint bersih.
+
+metadata_v10218:
+  created_by: "main_agent"
+  version: "10.2.18"
+  test_sequence: 47
+  run_ui: false
+
+test_plan_v10218:
+  current_focus:
+    - "Response cache /dashboard/batch 60s + in-flight dedupe (bukti cached true/false, waktu respons)"
+    - "Response cache /asi/leaderboard & /asi/leaderboard/live 60s (limit 25, cached true/false)"
+    - "Copy-Trade EXECUTE langsung tanpa sheet -> navigasi ke /trades-position"
+    - "AsiTradeSheet preview watchdog 5s + Retry UI"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication_v10218:
+  - agent: "main"
+    message: |
+      v10.2.18 — PLEASE TEST (backend + frontend ringan). JANGAN ubah
+      engine/formula.
+      Backend:
+      1. GET /api/dashboard/batch?markets=crypto&timeframe=1h — call 1x
+         "cached":false, call 2x "cached":true; waktu respons warm <<
+         cold (~<100ms vs beberapa detik). Call dengan parameter berbeda
+         (profile=scalper atau markets=crypto,etf) menghasilkan kunci
+         berbeda sehingga cached:false lagi.
+      2. GET /api/asi/leaderboard/live — call 1x cached:false, call 2x
+         cached:true; items length <=25. Idem /api/asi/leaderboard?period_days=7.
+      3. In-flight dedupe: dua request bersamaan dengan kunci sama
+         tidak memicu dua pembangunan upstream (manifestasi di server
+         log; secara kualitatif waktu respons kedua = waktu respons
+         pertama).
+      Frontend (web preview sudah cukup; testID yang relevan: copy-back,
+      copy-execute-{rank}, ats-preview-retry):
+      4. Buka /copy-trade (premium): spinner cepat hilang (pakai cached
+         leaderboard); kartu rank muncul; tombol EXECUTE pada posisi
+         OPEN visible. (Credential test demo mungkin tidak ada; itu OK —
+         fokus perilaku UI dialog.)
+      5. Tap EXECUTE tanpa setup bot (device_id baru, api.asi.getBot
+         exists:false): muncul Alert "Setup ASI-Bot dulu" dengan tombol
+         ke /asi-bot. TIDAK ada popup sheet AsiTradeSheet.
+      6. Dengan device yang punya bot config dan credential testnet
+         (bisa seed di Mongo asi_credentials + asi_bot_config), tap
+         EXECUTE: api.asi.executeTrade terpanggil (mock boleh), lalu
+         router berpindah ke /trades-position. TIDAK ada popup sheet.
+      7. AsiTradeSheet preview watchdog: bisa diuji dari halaman Asset
+         Detail -> tap "Trade with ASI-Bot" (jika credential tidak
+         valid / backend lambat), tunggu 5 detik -> panel preview
+         menampilkan pesan + tombol "ats-preview-retry". Tap Retry ->
+         effect dijalankan ulang.
+      Catatan: user minta backend-only cache sudah mencegah 502
+      beruntun; frontend 502 handling (banner Retry) sudah ada di
+      v10.2.16 dan tidak diubah.

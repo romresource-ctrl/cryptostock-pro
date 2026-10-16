@@ -15,6 +15,7 @@ import asyncio
 import logging
 import os
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
@@ -884,17 +885,60 @@ def _attach_trade_routes(db: Any) -> None:
     async def pnl(device_id: str = Query(..., min_length=4)):
         return await pnl_summary(db, device_id)
 
+    # v10.2.18 — Leaderboard cache 60s + in-flight dedupe (keputusan
+    # user). Pipeline live_leaderboard melakukan agregasi Mongo cukup
+    # berat untuk tiap request; cache process-local meringankan beban
+    # saat banyak client refresh berbarengan.
+    _lb_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+    _lb_inflight: dict[str, "asyncio.Task[list[dict[str, Any]]]"] = {}
+    _LB_TTL = 60.0
+
     @router.get("/leaderboard")
     async def leader(period_days: int = Query(7, ge=1, le=90)):
-        return {"items": await leaderboard(db, period_days=period_days, limit=25),
-                "period_days": period_days}
+        import asyncio as _aio
+        key = f"period:{period_days}"
+        hit = _lb_cache.get(key)
+        if hit and (time.time() - hit[0]) < _LB_TTL:
+            return {"items": hit[1], "period_days": period_days, "cached": True}
+        task = _lb_inflight.get(key)
+        if task is None or task.done():
+            async def _fetch() -> list[dict[str, Any]]:
+                items = await leaderboard(db, period_days=period_days, limit=25)
+                _lb_cache[key] = (time.time(), items)
+                return items
+            task = _aio.create_task(_fetch())
+            _lb_inflight[key] = task
+        try:
+            items = await task
+        finally:
+            if _lb_inflight.get(key) is task:
+                _lb_inflight.pop(key, None)
+        return {"items": items, "period_days": period_days, "cached": False}
 
     @router.get("/leaderboard/live")
     async def leader_live():
         """v9.4.0 — Only traders CURRENTLY in open positions, ranked by
         live unrealized PnL. Rows disappear automatically when positions
         close. No time-window parameter needed."""
-        return {"items": await live_leaderboard(db, limit=25)}
+        import asyncio as _aio
+        key = "live"
+        hit = _lb_cache.get(key)
+        if hit and (time.time() - hit[0]) < _LB_TTL:
+            return {"items": hit[1], "cached": True}
+        task = _lb_inflight.get(key)
+        if task is None or task.done():
+            async def _fetch_live() -> list[dict[str, Any]]:
+                items = await live_leaderboard(db, limit=25)
+                _lb_cache[key] = (time.time(), items)
+                return items
+            task = _aio.create_task(_fetch_live())
+            _lb_inflight[key] = task
+        try:
+            items = await task
+        finally:
+            if _lb_inflight.get(key) is task:
+                _lb_inflight.pop(key, None)
+        return {"items": items, "cached": False}
 
     @router.get("/bot")
     async def get_bot(device_id: str = Query(..., min_length=4)):
