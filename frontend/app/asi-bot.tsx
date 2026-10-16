@@ -322,6 +322,20 @@ export default function ASIBotScreen() {
       const items = (await filterDeletedTrades(t2.items.slice(0, 100)))
         .filter((x) => !deletedIdsRef.current.has(String((x as any)._id || "")));
       setTrades(items);
+      // v10.2.16 — Prefetch chart untuk SEMUA kartu yang terlihat begitu
+      // list selesai dimuat (bukan hanya saat tap). Tap kartu → data
+      // sudah warm di cache → halaman detail aset tampil instan.
+      // chartCache internal dedupe TTL 90s + batas 60 entri.
+      try {
+        const bases = Array.from(new Set(
+          items.map((x) => String((x as any).symbol || "").replace(/USDT$/i, "").toUpperCase())
+              .filter(Boolean)
+        )).slice(0, 30);
+        bases.forEach((b, i) => setTimeout(
+          () => prefetchChart("crypto", b, "1h", apiProfile ?? undefined),
+          i * 120,
+        ));
+      } catch { /* abaikan — fallback fetch normal tetap jalan */ }
       // v10.2.9 — Simpan ke page cache: kunjungan berikutnya daftar
       // langsung tergambar instan sebelum refresh pertama selesai.
       writePageCache(`asibot-trades:${id}`, items);

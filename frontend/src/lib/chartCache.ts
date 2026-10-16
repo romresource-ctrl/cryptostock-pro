@@ -16,8 +16,8 @@ import { api, type ChartResponse, type Market, type Timeframe } from "./api";
 
 type Entry = { at: number; promise: Promise<ChartResponse> };
 const cache = new Map<string, Entry>();
-const TTL_MS = 60_000;
-const MAX_ENTRIES = 12;
+const TTL_MS = 90_000;
+const MAX_ENTRIES = 60;
 
 function keyOf(market: Market, symbol: string, tf: Timeframe, profile?: string): string {
   return `${market}|${symbol.toUpperCase()}|${tf}|${profile || "none"}`;

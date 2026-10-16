@@ -61,6 +61,17 @@ TP_SPLITS: dict[int, tuple[float, ...]] = {
     3: (0.5, 0.25, 0.25),
 }
 
+# v10.2.16 — HIT-AND-RUN (KISS Pivot) params, keputusan user:
+# "masuk di tengah → keluar cepat sebelum berbalik, profit kecil pun
+# tidak apa-apa". HANYA untuk trade ber-formula_tag mengandung
+# "KISS Pivot". Trade lama (sudah open) TIDAK diubah.
+HAR_TP_PCTS = (0.005, 0.008)   # TP1 0.5% · TP2 0.8% dari entry
+HAR_SL_PCT = 0.005             # SL seukuran TP1 (0.5%), berlawanan arah
+HAR_TRAILING_RATE = 1.5        # trailing stop % setelah batas horizon
+# Batas hold maksimum = horizon profil (dari kartu Trader Profile):
+# Scalper 5-15m · Intraday 1-4h · Swing 4-24h.
+HAR_MAX_HOLD_MIN = {"scalper": 15, "day": 240, "swing": 1440, "longterm": 1440}
+
 
 def _shift_tp_ladder(tps: list[float] | None, tp_count: int) -> list[float]:
     """v10.0.16 — Ladder TIDAK lagi digeser: memilih N TP memakai TP1..TPN
@@ -351,6 +362,23 @@ async def execute_trade(
     risk_pct = max(1.0, min(30.0, float(risk_pct)))
     leverage = max(1, min(125, int(leverage)))
     tp_count = max(1, min(3, int(tp_count)))
+    # v10.2.16 — HIT-AND-RUN bracket khusus formula KISS Pivot (keputusan
+    # user): pola ini masuk di TENGAH pergerakan → wajib keluar cepat
+    # dengan profit kecil sebelum harga berbalik. Override level:
+    # SL 0.5% (seukuran TP1, lawan arah), TP1 0.5% / TP2 0.8%, split qty
+    # 50/50 via TP_SPLITS[2]. SL Guard memindah SL ke TP1 setelah TP1
+    # kena (trailing_callback_rate=0 supaya guard tidak diskip). Monitor
+    # _refresh_binance menutup posisi via market begitu umur trade
+    # melewati horizon profil (Scalper 15m · Intraday 4h · Swing 24h)
+    # jika masih profit.
+    hit_and_run = "kiss pivot" in str(formula_tag or "").lower()
+    if hit_and_run and entry > 0:
+        tp_count = 2
+        _har_sign = 1.0 if side == "BUY" else -1.0
+        stop_loss = entry * (1 - _har_sign * HAR_SL_PCT)
+        tps = [entry * (1 + _har_sign * HAR_TP_PCTS[0]),
+               entry * (1 + _har_sign * HAR_TP_PCTS[1])]
+        trailing_callback_rate = 0.0
     # v10.0.9 — Geser ladder: tp_count<3 memakai level TP yang lebih tinggi.
     tps = _shift_tp_ladder(tps, tp_count)
     margin_mode = "cross" if str(margin_mode).lower() == "cross" else "isolated"
@@ -565,6 +593,7 @@ async def execute_trade(
             "stop_loss": sl_price, "take_profits": tps_rounded[:tp_count],
             "tp_count": tp_count,
             "trailing_callback_rate": float(trailing_callback_rate or 0.0),
+            "hit_and_run": hit_and_run,
             "trailing_order_id": None,
             "trailing_activated": False,
             "qty": qty, "leverage": leverage, "risk_pct": risk_pct,
@@ -789,6 +818,7 @@ async def execute_trade(
         "stop_loss": sl_price, "take_profits": tps_rounded[:tp_count],
         "tp_count": tp_count,
         "trailing_callback_rate": float(trailing_callback_rate or 0.0),
+        "hit_and_run": hit_and_run,
         "trailing_order_id": None,
         "trailing_activated": False,
         "qty": actual_qty, "leverage": leverage, "risk_pct": risk_pct,
@@ -949,6 +979,7 @@ async def _execute_ccxt_fallback(
         "stop_loss": stop_loss, "take_profits": tps[:tp_count],
         "tp_count": tp_count,
         "trailing_callback_rate": float(trailing_callback_rate or 0.0),
+        "hit_and_run": "kiss pivot" in str(formula_tag or "").lower(),
         "trailing_order_id": None,
         "trailing_activated": False,
         "qty": actual_qty, "leverage": leverage, "risk_pct": risk_pct,
@@ -1659,6 +1690,48 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
             _native_partial_upd["prev_position_amt"] = round(new_qty, 10)
         except Exception:
             _native_partial_upd = {"prev_position_amt": round(abs(amt), 10)}
+        # v10.2.16 — HIT-AND-RUN (KISS Pivot, keputusan user): pola ini
+        # wajib masuk & keluar cepat. Batas hold MAKSIMUM mengikuti
+        # horizon profil (Scalper 15m · Intraday 4h · Swing 24h) diukur
+        # dari entry. Lewat batas & TP2 belum tercapai:
+        #   · posisi profit → MARKET CLOSE sekarang ("sudah profit
+        #     langsung close TP maksimal sesuai waktu profil")
+        #   · posisi loss   → biarkan SL 0.5% yang ketat bekerja.
+        if (trade.get("hit_and_run")
+                and not trade.get("trailing_activated")
+                and not _native_partial_upd.get("trailing_activated")):
+            try:
+                _har_max_min = HAR_MAX_HOLD_MIN.get(
+                    str(trade.get("profile") or "day").lower(), 240)
+                _har_entry_at = trade.get("filled_at") or trade.get("created_at")
+                _har_age_min = None
+                if _har_entry_at:
+                    _har_age_min = (
+                        datetime.now(timezone.utc)
+                        - datetime.fromisoformat(
+                            str(_har_entry_at).replace("Z", "+00:00"))
+                    ).total_seconds() / 60
+                if _har_age_min is not None and _har_age_min >= _har_max_min:
+                    _har_tf = (_native_partial_upd.get("tp_filled")
+                               or list(trade.get("tp_filled") or []))
+                    _har_tp2_done = len(_har_tf) >= 2 and bool(_har_tf[1])
+                    if not _har_tp2_done:
+                        _har_entry_px = float(trade.get("entry_price") or 0)
+                        _har_mark = float(mark or 0)
+                        _har_sign = 1.0 if trade.get("side") == "BUY" else -1.0
+                        _har_profit = bool(
+                            _har_mark and _har_entry_px
+                            and (_har_mark - _har_entry_px) * _har_sign > 0)
+                        if _har_profit:
+                            _cr = await close_position(
+                                doc, symbol, trade.get("side") or "BUY", abs(amt))
+                            _native_partial_upd["har_timeout"] = (
+                                "market_close_profit" if _cr.get("ok")
+                                else f"close_failed: {str(_cr)[:120]}")
+                        # posisi loss → tidak dipaksa close; SL 0.5% ketat
+                        # yang bertugas menutup.
+            except Exception as _e:  # noqa: BLE001
+                _native_partial_upd["har_timeout_error"] = str(_e)[:200]
         # Verify bracket still armed in openAlgoOrders
         try:
             openalgos = await br.open_algo_orders(api_key, api_secret, is_testnet, bin_sym)

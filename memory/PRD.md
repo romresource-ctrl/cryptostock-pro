@@ -1830,3 +1830,12 @@ Keputusan user atas 5 pertanyaan:
 - AISuggestionsSheet: state load_failed kini tampil ⚠️ + tombol Coba Lagi (testID ai-retry) — sebelumnya jatuh ke tampilan kosong yang misleading.
 - Halaman detail aset: banner error kini tappable retry (testID chart-retry); timeout tidak di-retry 3x (banner ~30s, bukan ~90s).
 - Testing agent PASS: normal flow ~3s chart tampil + harga LIVE; hang simulasi → banner + retry bekerja; timeframe switch bersih.
+
+## v10.2.16 — KISS Pivot Hit-and-Run engine + prefetch chart saat list dimuat
+- PREFETCH (frontend-only, keluhan "jangan pakai timeout sebagai solusi"): saat list Recent Trades / Running Positions selesai dimuat, chart SEMUA kartu (max 30 simbol unik, stagger 120ms) langsung di-prefetch ke chartCache (TTL 90s, kapasitas 60). Tap kartu → halaman detail aset tampil instan.
+- HIT-AND-RUN engine (engine.py, keputusan user, HANYA trade formula_tag mengandung "KISS Pivot", trade lama tidak diubah):
+  · Level override saat eksekusi: SL 0.5% (seukuran TP1), TP1 0.5%, TP2 0.8%, split qty 50/50 (TP_SPLITS[2]), trailing_callback_rate=0 agar SL Guard aktif.
+  · Setelah TP1: 50% tertutup otomatis oleh bracket + SL Guard memindah SL ke harga TP1 (mekanisme existing v10.0.16).
+  · Batas hold maksimum = horizon profil dari entry (Scalper 15m · Intraday 4h · Swing/Confluence 24h): monitor _refresh_binance menutup posisi via market bila masih profit & TP2 belum tercapai; bila loss dibiarkan ke SL 0.5% ketat.
+- Verifikasi: py_compile OK, math sanity BUY/SELL OK, backend sehat, scanner jalan.
+- CATATAN: aturan deadline hanya dijalankan monitor native Binance (_refresh_binance). Jalur ccxt fallback (non-Binance) hanya mendapat override level.
