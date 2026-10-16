@@ -1092,6 +1092,10 @@ def _attach_trade_routes(db: Any) -> None:
             "devices_scanned": int((doc or {}).get("devices_scanned") or 0),
             "btc_regime": (doc or {}).get("btc_regime"),
             "btc_regime_detail": (doc or {}).get("btc_regime_detail"),
+            # v10.2.17 — anti-loss BUY gates (audit untuk user).
+            "btc_base_regime_4h": (doc or {}).get("btc_base_regime_4h"),
+            "btc_trend_up_streak": (doc or {}).get("btc_trend_up_streak"),
+            "buy_gates": (doc or {}).get("buy_gates"),
             "device_in_scanner": device_id in devices,
             "report": rep,
             "config": {

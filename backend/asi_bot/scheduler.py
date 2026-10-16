@@ -50,6 +50,19 @@ SCANNER_INTERVAL = 90
 TITAN_RELAY_INTERVAL = 25  # v10.0.15 — polling posisi master Titan-Bot
 # Minimum confidence required for full-auto execution.
 MIN_FULL_AUTO_CONFIDENCE = 90
+# v10.2.17 — Anti-loss BUY gates (keputusan user, analisis loss LONG
+# beruntun saat base 4H BTC bearish):
+# 1. ANTI-FLAP: rezim "trending_up" harus bertahan 3 siklus scanner
+#    berturut-turut sebelum BUY altcoin dipercaya (bounce 1 siklus di
+#    tengah dump tidak lagi memicu LONG).
+# 2. BEAR 4H: base_regime BTC "BEAR" → BUY tetap boleh tapi min
+#    confidence +5 poin (jalan tengah, BUKAN blokir total).
+# 3. KONFIRMASI 2 SIKLUS: sinyal BUY yang sama (device+symbol+side+
+#    fingerprint formula) harus muncul 2 siklus scanner berturut-turut
+#    sebelum Full-Auto mengeksekusi.
+TREND_UP_MIN_CYCLES = 3
+BEAR4H_CONF_BONUS = 5
+BUY_CONFIRM_CYCLES = 2
 
 
 async def _public_mark_price(exchange: str, ccxt_symbol: str, testnet: bool) -> float | None:
@@ -590,6 +603,38 @@ async def _enforce_daily_loss_limit(db: Any) -> None:
 REGIME_LATCH_MINUTES = 120  # 2 candle 1h (keputusan user, opsi 3=a)
 
 
+def _trend_up_streak(prev_fresh_regime: str | None, prev_streak: int,
+                     fresh_regime: str) -> int:
+    """v10.2.17 — Hitung berapa siklus berturut-turut rezim SEGAR BTC
+    berada di trending_up. Reset ke 0 begitu rezim berubah. Dipakai
+    untuk anti-flap: BUY hanya lolos bila streak >= TREND_UP_MIN_CYCLES.
+    Fungsi murni (mudah di-unit-test)."""
+    if fresh_regime == "trending_up":
+        return min(prev_streak + 1, 99) if prev_fresh_regime == "trending_up" else 1
+    return 0
+
+
+def _buy_confirm_eval(doc: dict[str, Any] | None, *, fingerprint: str,
+                      now: datetime, window_s: int) -> tuple[bool, int]:
+    """v10.2.17 — Evaluasi konfirmasi sinyal BUY 2 siklus berturut-turut.
+
+    Return (confirmed, new_count): confirmed=True hanya bila sinyal
+    dengan fingerprint SAMA terlihat pada siklus sebelumnya (last_seen
+    dalam window_s detik). Jendela 2× interval scanner menoleransi
+    jitter; siklus yang terlewat (sinyal absen) mereset hitungan.
+    Fungsi murni (mudah di-unit-test)."""
+    if doc and doc.get("fingerprint") == fingerprint \
+            and int(doc.get("count") or 0) >= 1:
+        try:
+            last = datetime.fromisoformat(
+                str(doc.get("last_seen_at")).replace("Z", "+00:00"))
+            if 0 <= (now - last).total_seconds() <= window_s:
+                return True, BUY_CONFIRM_CYCLES
+        except Exception:
+            pass
+    return False, 1
+
+
 async def _compute_btc_regime() -> dict[str, Any]:
     out: dict[str, Any] = {"regime": "neutral", "rsi": None, "chg_last": 0.0,
                            "chg_prev": 0.0, "slope_up": False, "slope_dn": False,
@@ -678,6 +723,26 @@ async def _get_btc_regime(db: Any) -> dict[str, Any]:
         doc = await db.asi_scan_status.find_one({"_id": "btc_regime"})
     except Exception:
         pass
+    # v10.2.17 — ANTI-FLAP: catat streak rezim trending_up SEGAR tiap
+    # siklus scanner (fungsi ini hanya dipanggil scanner, 1× per siklus).
+    # Disimpan di Mongo agar tahan restart / multi-replica.
+    streak = int((doc or {}).get("trend_up_streak") or 0)
+    if fresh.get("ok"):
+        streak = _trend_up_streak(
+            (doc or {}).get("last_fresh_regime"), streak, fresh["regime"])
+        try:
+            await db.asi_scan_status.update_one(
+                {"_id": "btc_regime"},
+                {"$set": {
+                    "last_fresh_regime": fresh["regime"],
+                    "trend_up_streak": streak,
+                    "streak_updated_at": now.isoformat(),
+                }},
+                upsert=True,
+            )
+        except Exception:
+            pass
+    fresh["trend_up_streak"] = streak
     if fresh.get("ok") and fresh["regime"] in ("bullish_reversal", "bearish_reversal"):
         # Reversal terdeteksi → (re)latch 120 menit.
         try:
@@ -710,6 +775,10 @@ async def _get_btc_regime(db: Any) -> dict[str, Any]:
                         "chg_prev": fresh.get("chg_prev", 0.0),
                         "slope_up": fresh.get("slope_up", False),
                         "slope_dn": fresh.get("slope_dn", False),
+                        # v10.2.17 — base 4H & streak ikut diteruskan saat
+                        # latch aktif (dipakai gate conf BEAR + anti-flap).
+                        "base_regime": fresh.get("base_regime"),
+                        "trend_up_streak": streak,
                         "latched": True}
         except Exception:
             pass
@@ -761,15 +830,19 @@ async def _run_full_auto_scanner(
     # 1h terakhir + slope EMA50 4H) dan di-latch 2 candle (120 menit) untuk
     # rezim reversal supaya tidak flicker.
     btc_regime = await _get_btc_regime(db)
+    # v10.2.17 — streak trending_up untuk anti-flap (BUY baru boleh bila
+    # rezim trending_up bertahan TREND_UP_MIN_CYCLES siklus berturut).
+    trend_up_streak = int(btc_regime.get("trend_up_streak") or 0)
     # Kapitulasi memblokir KEDUA arah (falling knife + late short).
     gate_block_sell = btc_regime["regime"] in (
         "bullish_reversal", "trending_up", "bear_capitulation")
     gate_block_buy = btc_regime["regime"] in (
         "bearish_reversal", "trending_down", "bear_capitulation")
     if btc_regime["regime"] != "neutral":
-        logger.info("btc-regime gate: %s (%s) → blokir %s",
+        logger.info("btc-regime gate: %s (%s) → blokir %s | streak_up=%d base4H=%s",
                     btc_regime["regime"], btc_regime.get("detail"),
-                    "SELL" if gate_block_sell else "BUY" if gate_block_buy else "-")
+                    "SELL" if gate_block_sell else "BUY" if gate_block_buy else "-",
+                    trend_up_streak, btc_regime.get("base_regime"))
     cursor = db.asi_bot_config.find({
         "$or": [
             {"full_enabled": True},
@@ -938,8 +1011,27 @@ async def _run_full_auto_scanner(
                         if sig["side"] == "BUY" and gate_block_buy:
                             _dev_reject(rep, f"btc_regime {btc_regime['regime']}: tolak BUY")
                             continue
-                    if int(sig.get("confidence") or 0) < user_min_conf:
-                        _dev_reject(rep, f"conf<{user_min_conf}")
+                        # v10.2.17 — ANTI-FLAP: bounce 1 siklus yang
+                        # mengangkat rezim ke trending_up TIDAK langsung
+                        # membebaskan BUY. Rezim harus bertahan
+                        # TREND_UP_MIN_CYCLES siklus scanner berturut.
+                        if (sig["side"] == "BUY"
+                                and btc_regime["regime"] == "trending_up"
+                                and trend_up_streak < TREND_UP_MIN_CYCLES):
+                            _dev_reject(
+                                rep,
+                                f"anti-flap: trending_up baru {trend_up_streak}/{TREND_UP_MIN_CYCLES} siklus")
+                            continue
+                    # v10.2.17 — BTC base 4H BEAR: BUY tetap BOLEH (bukan
+                    # blokir total) tapi min confidence +BEAR4H_CONF_BONUS
+                    # poin (keputusan user: jalan tengah, 90→95).
+                    _bear4h_buy = (sig["side"] == "BUY"
+                                   and btc_regime.get("base_regime") == "BEAR")
+                    _eff_min_conf = user_min_conf + (
+                        BEAR4H_CONF_BONUS if _bear4h_buy else 0)
+                    if int(sig.get("confidence") or 0) < _eff_min_conf:
+                        _dev_reject(rep, f"conf<{_eff_min_conf}"
+                                    + ("_bear4h" if _bear4h_buy else ""))
                         continue
                     # v10.2.12 — RSI per-aset DIPERTAHANKAN sebagai lapis
                     # kedua (anti sell-bottom/buy-top aset volatile).
@@ -1044,6 +1136,43 @@ async def _run_full_auto_scanner(
                             continue
                 except Exception as _tf_err:
                     logger.debug("trend-filter error %s: %s", sym, _tf_err)
+                # v10.2.17 — KONFIRMASI BUY 2 SIKLUS (keputusan user):
+                # sinyal BUY yang sama (device+symbol+side+fingerprint
+                # engine/formula) harus muncul di 2 siklus scanner
+                # berturut-turut sebelum dieksekusi. Siklus pertama
+                # hanya MENCATAT kandidat; eksekusi terjadi di siklus
+                # kedua bila sinyal identik masih lolos semua gate.
+                # SELL tidak berubah. State di Mongo (tahan restart).
+                _confirm_key: str | None = None
+                if sig["side"] == "BUY":
+                    _confirm_key = f"{device_id}:{sym}:BUY"
+                    _fprint = (f"{sig.get('profile') or ''}|"
+                               f"{sig.get('formula_tag') or ''}")
+                    _now_cf = datetime.now(timezone.utc)
+                    try:
+                        _doc_cf = await db.asi_buy_confirm.find_one(
+                            {"_id": _confirm_key})
+                        _confirmed, _cnt = _buy_confirm_eval(
+                            _doc_cf, fingerprint=_fprint, now=_now_cf,
+                            window_s=SCANNER_INTERVAL * 2)
+                        await db.asi_buy_confirm.update_one(
+                            {"_id": _confirm_key},
+                            {"$set": {
+                                "device_id": device_id, "symbol": sym,
+                                "fingerprint": _fprint, "count": _cnt,
+                                "confidence": int(sig.get("confidence") or 0),
+                                "last_seen_at": _now_cf.isoformat()}},
+                            upsert=True)
+                    except Exception as _cf_err:
+                        # Fail-CLOSED untuk BUY: gagal baca state → anggap
+                        # belum terkonfirmasi (lebih aman daripada double-buy).
+                        logger.debug("buy-confirm state error %s: %s", sym, _cf_err)
+                        _confirmed, _cnt = False, 1
+                    if not _confirmed:
+                        logger.info("full-auto BUY %s/%s menunggu konfirmasi "
+                                    "siklus 2 (fingerprint %s)", device_id, sym, _fprint)
+                        _dev_reject(rep, "buy_menunggu_konfirmasi_siklus_2")
+                        continue
                 # v10.1.2 — ANTI-DUPLIKAT ATOMIK (root cause "2 trade TRX
                 # identik"): dua proses scanner (multi-replica / restart)
                 # bisa sama-sama lolos dup-check lalu sama-sama eksekusi.
@@ -1150,6 +1279,17 @@ async def _run_full_auto_scanner(
                 await db.asi_trades.replace_one(
                     {"_id": rec["_id"]}, rec, upsert=True)
                 await _release_claim()
+                # v10.2.17 — BUY terkonfirmasi & tereksekusi → reset state
+                # konfirmasi supaya sinyal berikutnya mulai dari siklus 1.
+                if _confirm_key:
+                    try:
+                        await db.asi_buy_confirm.update_one(
+                            {"_id": _confirm_key},
+                            {"$set": {"count": 0,
+                                      "consumed_at": datetime.now(
+                                          timezone.utc).isoformat()}})
+                    except Exception:
+                        pass
                 placed += 1
                 rep["placed"] = int(rep.get("placed") or 0) + 1
                 total_placed += 1
@@ -1172,6 +1312,14 @@ async def _run_full_auto_scanner(
              # v10.2.12 — Rezim BTC gate siklus ini (untuk scan-debug UI).
              "btc_regime": btc_regime.get("regime"),
              "btc_regime_detail": btc_regime.get("detail"),
+             # v10.2.17 — state anti-loss BUY gates (audit via scan-debug).
+             "btc_base_regime_4h": btc_regime.get("base_regime"),
+             "btc_trend_up_streak": trend_up_streak,
+             "buy_gates": {
+                 "trend_up_min_cycles": TREND_UP_MIN_CYCLES,
+                 "bear4h_conf_bonus": BEAR4H_CONF_BONUS,
+                 "buy_confirm_cycles": BUY_CONFIRM_CYCLES,
+             },
              # v10.2.7 — per-device diagnostics (maks 20 device agar doc
              # tetap kecil; cukup untuk menjawab "kenapa bot saya tidak
              # eksekusi").

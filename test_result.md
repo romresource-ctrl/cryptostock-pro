@@ -3331,3 +3331,113 @@ metadata_v1015:
   notes: |
     Changes verified via Playwright screenshot. All 7 UI points PASS.
     Soft-watcher proteksi backend TETAP aktif; hanya UI dihilangkan.
+
+# ======================================================
+# v10.2.17 — Anti-Loss BUY Gates (anti-flap regime + bear4H conf + BUY 2-cycle confirm)
+# ======================================================
+backend_v10217:
+  - task: "Anti-flap BTC regime: BUY hanya bila trending_up >= 3 siklus scanner"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/asi_bot/scheduler.py (_trend_up_streak, _get_btc_regime, gate di _run_full_auto_scanner)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Keputusan user: BUY altcoin hanya lolos bila rezim segar BTC
+          trending_up bertahan TREND_UP_MIN_CYCLES=3 siklus berturut.
+          Streak di Mongo asi_scan_status.btc_regime (last_fresh_regime,
+          trend_up_streak). Unit test helper murni 5/5 PASS. Live scan
+          menulis btc_trend_up_streak=0 saat regime trending_down.
+  - task: "BTC base 4H BEAR: BUY tetap boleh, min confidence +5 (90->95)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/asi_bot/scheduler.py (BEAR4H_CONF_BONUS, _eff_min_conf; base_regime diteruskan di jalur latch)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          User memilih jalan tengah (bukan blokir total). Reject reason
+          "conf<95_bear4h". base_regime kini ikut di return latch
+          _get_btc_regime supaya gate tetap tahu base 4H saat reversal
+          ter-latch.
+  - task: "Konfirmasi sinyal BUY 2 siklus scanner berturut sebelum eksekusi"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/asi_bot/scheduler.py (_buy_confirm_eval, koleksi asi_buy_confirm)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Fingerprint = device:symbol:BUY + profile|formula_tag. Window
+          konfirmasi 2x SCANNER_INTERVAL (180s). Siklus 1 -> reject
+          "buy_menunggu_konfirmasi_siklus_2"; siklus 2 identik -> eksekusi
+          lalu count direset (consumed). SELL TIDAK berubah. Fail-CLOSED
+          bila DB state error. Unit test 5/5 PASS.
+  - task: "scan-debug expose field gate baru"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/routes.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          GET /api/asi/scan-debug kini mengembalikan btc_base_regime_4h,
+          btc_trend_up_streak, buy_gates. Diverifikasi curl live.
+
+metadata_v10217:
+  created_by: "main_agent"
+  version: "10.2.17"
+  test_sequence: 46
+  run_ui: false
+
+test_plan_v10217:
+  current_focus:
+    - "Anti-flap BTC regime 3 siklus untuk BUY"
+    - "Bear 4H conf +5 untuk BUY"
+    - "BUY 2-cycle confirmation (SELL tidak berubah)"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication_v10217:
+  - agent: "main"
+    message: |
+      v10.2.17 anti-loss BUY gates — PLEASE TEST BACKEND ONLY (jangan
+      sentuh exchange sungguhan / jangan buat order nyata):
+      1. Unit helper: _trend_up_streak (naik/reset) & _buy_confirm_eval
+         (window 180s, fingerprint berubah/absen -> reset).
+      2. INTEGRATION-SAFE: panggil _run_full_auto_scanner dengan DB
+         in-memory/fake + signal_fetcher stub + monkeypatch
+         scheduler.execute_trade (stub ok=True, entry_price>0,
+         entry_order_id dummy) dan resolve_credential stub. Skenario
+         wajib:
+         a. BUY siklus 1 -> TIDAK eksekusi (reject
+            buy_menunggu_konfirmasi_siklus_2); siklus 2 sinyal identik
+            -> execute_trade TERPANGGIL; siklus 3 identik lagi -> TIDAK
+            eksekusi (count sudah consumed=0 -> mulai dari 1 lagi).
+         b. BUY saat btc_regime trending_up streak<3 -> reject anti-flap;
+            streak>=3 -> lolos gate ini (mock _get_btc_regime atau set
+            doc asi_scan_status.btc_regime).
+         c. BUY saat base_regime BEAR dengan confidence 92 (<95) -> reject
+            conf<95_bear4h; confidence 96 -> lolos.
+         d. SELL confidence >= user_min_conf -> dieksekusi di SIKLUS
+            PERTAMA tanpa konfirmasi (regresi: SELL tidak berubah).
+      3. Endpoint: GET /api/asi/scan-debug?device_id=... mengembalikan
+         btc_base_regime_4h / btc_trend_up_streak / buy_gates.
+      4. Regresi ringan: /health OK; scanner doc asi_scan_status.scanner
+         ter-update tiap ~90s dengan field baru.
+      CATATAN: mock _get_btc_regime/_compute_btc_regime di level modul
+      agar test deterministik (jangan tergantung kondisi market live).

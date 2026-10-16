@@ -8,6 +8,33 @@ AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs
 ---
 
 ---
+## v10.2.17 — Anti-Loss BUY Gates (Oktober 2026)
+Keputusan user setelah analisis loss LONG beruntun (ENA/XLM/BNB/ETH/YFI/CFX/
+FET/GRT): BTC bounce singkat di tengah base 4H BEAR membuat rezim sesaat
+`trending_up` → bot borong LONG lalu kena SL. Tiga gate baru di jalur
+Full-Auto scheduler (dashboard/AI Suggestions TIDAK berubah):
+1. **Anti-flap BTC regime**: BUY altcoin hanya lolos bila rezim SEGAR BTC
+   `trending_up` bertahan ≥3 siklus scanner berturut-turut (±5 menit).
+   Streak disimpan di Mongo `asi_scan_status.btc_regime.trend_up_streak`
+   (tahan restart/multi-replica). Reject: "anti-flap: trending_up baru N/3".
+2. **BTC base 4H BEAR**: LONG tetap BOLEH (bukan blokir total, pilihan
+   user) tapi min confidence +5 poin (90→95). Reject: "conf<95_bear4h".
+3. **Konfirmasi BUY 2 siklus**: sinyal BUY yang sama (device+symbol+
+   fingerprint engine/formula) harus muncul 2 siklus scanner berturut-
+   turut (±3 menit) sebelum dieksekusi; siklus 1 hanya mencatat kandidat
+   di `asi_buy_confirm`. Sinyal absen >2× interval → hitungan reset.
+   SELL tidak berubah. Fail-CLOSED bila state DB error.
+Audit: `GET /api/asi/scan-debug` kini menampilkan `btc_base_regime_4h`,
+`btc_trend_up_streak`, dan `buy_gates` config.
+Verifikasi: testing agent 22/22 PASS (unit helper + integrasi fake-DB
+tanpa order nyata: siklus 1 catat, siklus 2 eksekusi, siklus 3 tidak
+re-eksekusi; anti-flap streak<3 reject; bear4H conf92 reject/conf96
+lolos; SELL tetap eksekusi siklus pertama). Fix susulan: state konfirmasi
+yang sudah `consumed` (count=0) tidak bisa dipakai konfirmasi ulang —
+sinyal baru wajib mulai dari siklus 1 lagi.
+Tidak ada order exchange sungguhan dalam pengujian.
+
+
 
 ## v10.2.6 — Panic Market Guard (Oktober 2026)
 
