@@ -1839,3 +1839,14 @@ Keputusan user atas 5 pertanyaan:
   · Batas hold maksimum = horizon profil dari entry (Scalper 15m · Intraday 4h · Swing/Confluence 24h): monitor _refresh_binance menutup posisi via market bila masih profit & TP2 belum tercapai; bila loss dibiarkan ke SL 0.5% ketat.
 - Verifikasi: py_compile OK, math sanity BUY/SELL OK, backend sehat, scanner jalan.
 - CATATAN: aturan deadline hanya dijalankan monitor native Binance (_refresh_binance). Jalur ccxt fallback (non-Binance) hanya mendapat override level.
+
+## v10.2.16 — Horizon exit digeneralisasi ke SEMUA formula (keputusan user)
+- Aturan waktu + profit-cap kini berlaku untuk semua formula pada trade BARU (flag `horizon_exit` di dokumen trade):
+  · Scalper: max 15 menit dari entry; profit ROE ≥ 10% → market-close segera.
+  · Intraday(day): max 4 jam; profit ROE ≥ 15% → market-close segera.
+  · Swing: max 24 jam; profit ROE ≥ 25% → market-close segera.
+  · Lewat horizon & masih profit → market-close; loss → dibiarkan ke SL.
+  · Confluence v9 / longterm: TIDAK ada cap & batas waktu — hold mengikuti SL/TP1-3.
+- KISS Pivot tetap mendapat override level khusus (SL 0.5% / TP1 0.5% / TP2 0.8% / split 50-50) + ikut aturan horizon di atas.
+- Posisi existing TIDAK terdampak (flag hanya ada pada trade baru).
+- Implementasi: engine.py execute_trade (flag) + _refresh_binance (monitor close). Compile OK, backend sehat.

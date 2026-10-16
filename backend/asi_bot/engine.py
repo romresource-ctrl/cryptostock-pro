@@ -71,6 +71,11 @@ HAR_TRAILING_RATE = 1.5        # trailing stop % setelah batas horizon
 # Batas hold maksimum = horizon profil (dari kartu Trader Profile):
 # Scalper 5-15m · Intraday 1-4h · Swing 4-24h.
 HAR_MAX_HOLD_MIN = {"scalper": 15, "day": 240, "swing": 1440, "longterm": 1440}
+# v10.2.16 — PROFIT CAP per profil (keputusan user): bila ROE posisi
+# sudah ≥ ambang ini → bot langsung market-close ("jika sudah profit
+# diatas X% - close"). Confluence v9 / longterm TIDAK punya cap & tidak
+# ada batas waktu — holding mengikuti SL/TP1-3.
+PROFILE_PROFIT_CAP_ROE = {"scalper": 10.0, "day": 15.0, "swing": 25.0}
 
 
 def _shift_tp_ladder(tps: list[float] | None, tp_count: int) -> list[float]:
@@ -379,6 +384,10 @@ async def execute_trade(
         tps = [entry * (1 + _har_sign * HAR_TP_PCTS[0]),
                entry * (1 + _har_sign * HAR_TP_PCTS[1])]
         trailing_callback_rate = 0.0
+    # v10.2.16 — Horizon exit per profil (Scalper/Intraday/Swing) untuk
+    # SEMUA formula: profit-cap ROE + batas waktu maksimum. Hanya trade
+    # BARU yang membawa flag ini; posisi existing tetap aturan lama.
+    horizon_exit = str(profile or "").lower() in PROFILE_PROFIT_CAP_ROE
     # v10.0.9 — Geser ladder: tp_count<3 memakai level TP yang lebih tinggi.
     tps = _shift_tp_ladder(tps, tp_count)
     margin_mode = "cross" if str(margin_mode).lower() == "cross" else "isolated"
@@ -594,6 +603,7 @@ async def execute_trade(
             "tp_count": tp_count,
             "trailing_callback_rate": float(trailing_callback_rate or 0.0),
             "hit_and_run": hit_and_run,
+            "horizon_exit": horizon_exit,
             "trailing_order_id": None,
             "trailing_activated": False,
             "qty": qty, "leverage": leverage, "risk_pct": risk_pct,
@@ -819,6 +829,7 @@ async def execute_trade(
         "tp_count": tp_count,
         "trailing_callback_rate": float(trailing_callback_rate or 0.0),
         "hit_and_run": hit_and_run,
+        "horizon_exit": horizon_exit,
         "trailing_order_id": None,
         "trailing_activated": False,
         "qty": actual_qty, "leverage": leverage, "risk_pct": risk_pct,
@@ -980,6 +991,7 @@ async def _execute_ccxt_fallback(
         "tp_count": tp_count,
         "trailing_callback_rate": float(trailing_callback_rate or 0.0),
         "hit_and_run": "kiss pivot" in str(formula_tag or "").lower(),
+        "horizon_exit": str(profile or "").lower() in PROFILE_PROFIT_CAP_ROE,
         "trailing_order_id": None,
         "trailing_activated": False,
         "qty": actual_qty, "leverage": leverage, "risk_pct": risk_pct,
@@ -1690,48 +1702,60 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
             _native_partial_upd["prev_position_amt"] = round(new_qty, 10)
         except Exception:
             _native_partial_upd = {"prev_position_amt": round(abs(amt), 10)}
-        # v10.2.16 — HIT-AND-RUN (KISS Pivot, keputusan user): pola ini
-        # wajib masuk & keluar cepat. Batas hold MAKSIMUM mengikuti
-        # horizon profil (Scalper 15m · Intraday 4h · Swing 24h) diukur
-        # dari entry. Lewat batas & TP2 belum tercapai:
-        #   · posisi profit → MARKET CLOSE sekarang ("sudah profit
-        #     langsung close TP maksimal sesuai waktu profil")
-        #   · posisi loss   → biarkan SL 0.5% yang ketat bekerja.
-        if (trade.get("hit_and_run")
+        # v10.2.16 — PROFILE HORIZON EXIT (keputusan user): "bot masuk
+        # dan keluar sesuai waktu profil". Berlaku untuk SEMUA formula
+        # pada trade BARU (flag horizon_exit) di profil Scalper/Intraday/
+        # Swing — posisi existing & Confluence v9 tidak terdampak.
+        #   1) Profit ROE ≥ cap (Scalper 10% · Intraday 15% · Swing 25%)
+        #      → market-close SEKARANG ("jika sudah profit diatas X% -
+        #      close").
+        #   2) Umur ≥ horizon maks (15m / 4h / 24h dari entry) & posisi
+        #      masih profit → market-close (keluar sesuai waktu profil).
+        #   3) Posisi loss saat horizon habis → dibiarkan ke SL.
+        #   Confluence v9 (longterm): TIDAK ada cap & tidak ada batas
+        #   waktu — holding mengikuti SL/TP1-3.
+        if ((trade.get("horizon_exit") or trade.get("hit_and_run"))
                 and not trade.get("trailing_activated")
                 and not _native_partial_upd.get("trailing_activated")):
             try:
-                _har_max_min = HAR_MAX_HOLD_MIN.get(
-                    str(trade.get("profile") or "day").lower(), 240)
-                _har_entry_at = trade.get("filled_at") or trade.get("created_at")
-                _har_age_min = None
-                if _har_entry_at:
-                    _har_age_min = (
-                        datetime.now(timezone.utc)
-                        - datetime.fromisoformat(
-                            str(_har_entry_at).replace("Z", "+00:00"))
-                    ).total_seconds() / 60
-                if _har_age_min is not None and _har_age_min >= _har_max_min:
-                    _har_tf = (_native_partial_upd.get("tp_filled")
-                               or list(trade.get("tp_filled") or []))
-                    _har_tp2_done = len(_har_tf) >= 2 and bool(_har_tf[1])
-                    if not _har_tp2_done:
-                        _har_entry_px = float(trade.get("entry_price") or 0)
-                        _har_mark = float(mark or 0)
-                        _har_sign = 1.0 if trade.get("side") == "BUY" else -1.0
-                        _har_profit = bool(
-                            _har_mark and _har_entry_px
-                            and (_har_mark - _har_entry_px) * _har_sign > 0)
-                        if _har_profit:
-                            _cr = await close_position(
-                                doc, symbol, trade.get("side") or "BUY", abs(amt))
-                            _native_partial_upd["har_timeout"] = (
-                                "market_close_profit" if _cr.get("ok")
-                                else f"close_failed: {str(_cr)[:120]}")
-                        # posisi loss → tidak dipaksa close; SL 0.5% ketat
-                        # yang bertugas menutup.
+                _hp = str(trade.get("profile") or "day").lower()
+                _hx_entry_px = float(trade.get("entry_price") or 0)
+                _hx_mark = float(mark or 0)
+                _hx_sign = 1.0 if trade.get("side") == "BUY" else -1.0
+                _hx_profit = bool(
+                    _hx_mark and _hx_entry_px
+                    and (_hx_mark - _hx_entry_px) * _hx_sign > 0)
+                _hx_close_why = None
+                _hx_cap = PROFILE_PROFIT_CAP_ROE.get(_hp)
+                if _hx_cap and _hx_mark and _hx_entry_px:
+                    _hx_lev = float(trade.get("actual_leverage")
+                                    or trade.get("leverage") or 1)
+                    _hx_roe = ((_hx_mark - _hx_entry_px) * _hx_sign
+                               / _hx_entry_px * _hx_lev * 100)
+                    if _hx_roe >= _hx_cap:
+                        _hx_close_why = f"profit_cap_{_hx_cap:g}pct"
+                if not _hx_close_why and _hx_profit:
+                    _hx_max_min = HAR_MAX_HOLD_MIN.get(_hp, 240)
+                    _hx_entry_at = (trade.get("filled_at")
+                                    or trade.get("created_at"))
+                    _hx_age_min = None
+                    if _hx_entry_at:
+                        _hx_age_min = (
+                            datetime.now(timezone.utc)
+                            - datetime.fromisoformat(
+                                str(_hx_entry_at).replace("Z", "+00:00"))
+                        ).total_seconds() / 60
+                    if (_hx_age_min is not None
+                            and _hx_age_min >= _hx_max_min):
+                        _hx_close_why = f"horizon_exit_{_hp}"
+                if _hx_close_why:
+                    _cr = await close_position(
+                        doc, symbol, trade.get("side") or "BUY", abs(amt))
+                    _native_partial_upd["horizon_exit_at"] = (
+                        _hx_close_why if _cr.get("ok")
+                        else f"close_failed: {str(_cr)[:120]}")
             except Exception as _e:  # noqa: BLE001
-                _native_partial_upd["har_timeout_error"] = str(_e)[:200]
+                _native_partial_upd["horizon_exit_error"] = str(_e)[:200]
         # Verify bracket still armed in openAlgoOrders
         try:
             openalgos = await br.open_algo_orders(api_key, api_secret, is_testnet, bin_sym)
