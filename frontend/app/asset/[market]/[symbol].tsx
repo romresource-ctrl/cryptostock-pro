@@ -241,7 +241,9 @@ export default function AssetDetail() {
         }
       } catch { /* lanjut fetch normal */ }
       // 3-attempt backoff (150ms → 300ms). Retries on transient failures
-      // (502 / network / fetch / timeout); other failures surface fast.
+      // (502 / network / fetch); other failures surface fast.
+      // v10.2.16 — Tidak ada timeout pada fetch chart (keputusan user):
+      // kecepatan datang dari prefetch+cache, bukan batas waktu.
       const backoffs = [150, 300];
       let lastErr: unknown = null;
       for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -256,12 +258,7 @@ export default function AssetDetail() {
           lastErr = e;
           if (attempt < 2) {
             const msg = String((e as Error)?.message || "");
-            // v10.2.16 — Timeout AbortController (30s) TIDAK di-retry:
-            // 3×30 detik membuat banner retry baru muncul ~90 detik.
-            // Timeout 30s sudah cukup toleran → langsung tampilkan
-            // banner agar user bisa menekan Coba Lagi.
-            const retryable = /\b502\b|network|fetch|failed to fetch/i.test(msg)
-              && !/^Timeout \d+ms/.test(msg);
+            const retryable = /\b502\b|network|fetch|failed to fetch/i.test(msg);
             if (retryable) {
               await new Promise((r) => setTimeout(r, backoffs[attempt]));
               continue;
@@ -893,8 +890,22 @@ export default function AssetDetail() {
               every timeframe tab tap). */}
           <View style={{ position: "relative" }}>
           {loadingChart && !chart ? (
-            <View style={styles.chartLoader}>
-              <ActivityIndicator color={colors.accentBlue} />
+            // v10.2.16 — SKELETON (bukan spinner): halaman tidak tampak
+            // "stuck berputar". Kondisi ini jarang terlihat karena chart
+            // sudah di-prefetch saat list trade dimuat (chartCache).
+            <View>
+              <View style={{
+                width: "100%", height: 220, borderRadius: 12,
+                backgroundColor: colors.surface,
+              }} />
+              <View style={{ flexDirection: "row", gap: 8, marginTop: 10, width: "100%" }}>
+                {[0, 1, 2].map((i) => (
+                  <View key={i} style={{
+                    flex: 1, height: 34, borderRadius: 8,
+                    backgroundColor: colors.surface,
+                  }} />
+                ))}
+              </View>
             </View>
           ) : chartType === "candlestick" ? (
             <CandlestickChart

@@ -342,10 +342,9 @@ export const api = {
   chart: (market: Market, symbol: string, timeframe: Timeframe, profile?: string) =>
     get<ChartResponse>(
       `/asset/${market}/${symbol}/chart?timeframe=${timeframe}${profile ? `&profile=${encodeURIComponent(profile)}` : ""}`,
-      // v10.2.16 — Timeout 30s: tanpa ini fetch grafik yang menggantung
-      // (jaringan lambat / upstream sibuk) membuat halaman detail aset
-      // spinner berputar tanpa selesai.
-      30_000,
+      // v10.2.16 — Timeout fetch chart DIHAPUS (keputusan user): kecepatan
+      // dijamin oleh prefetch+chartCache (list trade mem-prefetch semua
+      // kartu di background) + pageCache; bukan oleh batas waktu.
     ),
   analyze: (market: Market, symbol: string, timeframe: Timeframe, lang: "id" | "en" | "ru" | "cn" = "en", profile?: string) =>
     send<AnalyzeResponse>(

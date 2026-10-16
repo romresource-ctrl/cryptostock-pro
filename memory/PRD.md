@@ -1860,3 +1860,9 @@ Keputusan user atas 5 pertanyaan:
 - Penyebab: fix lint sebelumnya menambah apiProfile ke dependency array useCallback (baris ~120) padahal deklarasinya di baris ~170.
 - Perbaikan: pindahkan deklarasi `const { apiProfile } = useTraderProfile()` ke atas (setelah useSafeAreaInsets), hapus deklarasi lama. Tanpa perubahan logika.
 - Terverifikasi: lint bersih, halaman /trades-position render normal tanpa error.
+
+## v10.2.16 — Timeout fetch chart DIHAPUS (keputusan user), andalkan prefetch+cache+skeleton
+- api.chart: timeout 30s dihapus; get() tetap punya timeoutMs opsional (dipakai aiSuggestions 45s — tidak berubah).
+- [symbol].tsx: logika retry timeout-exclusion dihapus (retry tetap untuk 502/network); spinner loading awal diganti SKELETON (kotak chart + 3 bar stat) agar tidak tampak "stuck berputar"; tombol chart-retry tetap ada untuk error nyata.
+- Prefetch saat list dimuat sudah aktif dari perbaikan sebelumnya (trades-position + asi-bot, max 30 simbol, stagger 120ms, TTL 90s, kapasitas 60).
+- Smoke test: /asset/crypto/BTC chart termuat + harga LIVE, tanpa error.
