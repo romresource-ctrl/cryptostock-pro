@@ -1850,3 +1850,8 @@ Keputusan user atas 5 pertanyaan:
 - KISS Pivot tetap mendapat override level khusus (SL 0.5% / TP1 0.5% / TP2 0.8% / split 50-50) + ikut aturan horizon di atas.
 - Posisi existing TIDAK terdampak (flag hanya ada pada trade baru).
 - Implementasi: engine.py execute_trade (flag) + _refresh_binance (monitor close). Compile OK, backend sehat.
+
+## v10.2.16 — Verifikasi: aturan horizon/hit-and-run berlaku untuk SEMI & FULL auto
+- Kedua jalur eksekusi melewati execute_trade yang sama: Full-Auto (scheduler, profile+formula_tag dari sinyal) dan Semi-Auto (AsiTradeSheet → /trades/execute, profile+formula_tag dari payload).
+- Flag hit_and_run & horizon_exit dihitung di dalam execute_trade → otomatis aktif di KEDUA mode tanpa perubahan tambahan.
+- Parameter default otomatis dari bot config (risk, leverage, tp_count, margin, entry_mode); user bisa set ulang di sheet sebelum execute. Untuk trade KISS Pivot, override SL/TP memaksa parameter paket hit-and-run terlepas dari input user.
