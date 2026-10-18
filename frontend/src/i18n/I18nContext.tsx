@@ -796,6 +796,27 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     ru: "Не удалось закрыть позицию",
     cn: "平仓失败",
   },
+  // v10.2.27 — Tombol CLOSE ALL (tutup semua open + batalkan pending limit).
+  asi_close_all: {
+    id: "CLOSE ALL", en: "CLOSE ALL", ru: "ЗАКРЫТЬ ВСЁ", cn: "全部平仓",
+  },
+  asi_close_all_working: {
+    id: "menutup semua…", en: "closing all…", ru: "закрытие всех…", cn: "全部平仓中…",
+  },
+  asi_close_all_title: {
+    id: "Tutup Semua Posisi", en: "Close All Positions",
+    ru: "Закрыть все позиции", cn: "全部平仓",
+  },
+  asi_close_all_body: {
+    id: "Tutup SEMUA posisi open di harga pasar dan batalkan semua order LIMIT yang masih menunggu?",
+    en: "Close ALL open positions at market price and cancel all pending LIMIT orders?",
+    ru: "Закрыть ВСЕ открытые позиции по рынку и отменить все ожидающие LIMIT ордера?",
+    cn: "以市价平掉所有持仓并取消所有挂单 LIMIT 订单？",
+  },
+  asi_close_all_done: {
+    id: "posisi ditutup", en: "position(s) closed",
+    ru: "позиций закрыто", cn: "个仓位已平仓",
+  },
   // v10.0.15 — Dialog konfirmasi di halaman Positions (mengikuti bahasa user).
   pos_close_title: {
     id: "Tutup Posisi", en: "Close Position", ru: "Закрыть позицию", cn: "平仓",

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
@@ -92,6 +92,7 @@ export default function ASIBotScreen() {
   const [connectOpen, setConnectOpen] = useState(false);
   // v9.7.6 — track in-flight close requests per trade id
   const [closingIds, setClosingIds] = useState<Record<string, boolean>>({});
+  const [closingAll, setClosingAll] = useState(false);
   // v9.9.13 — Hapus kartu history dari Recent Trades (per-row ✕).
   const [deletingIds, setDeletingIds] = useState<Record<string, boolean>>({});
   // v10.2.9 — Anti-resurrect set untuk delete optimistic (dipakai refresh).
@@ -482,6 +483,39 @@ export default function ASIBotScreen() {
         delete next[lockKey];
         return next;
       });
+    }
+  };
+
+  // v10.2.27 — CLOSE ALL: tutup semua posisi open (market) + batalkan
+  // semua order LIMIT pending sekaligus (backend close-all menangani
+  // keduanya). Dipakai tombol di header Recent Trades.
+  const closeAllTrades = async () => {
+    if (closingAll) return;
+    const openCount = trades.filter((x) =>
+      (x as any).status === "open" || (x as any).status === "pending_entry").length;
+    if (openCount === 0) return;
+    const ask = Platform.OS === "web"
+      ? Promise.resolve(window.confirm(t("asi_close_all_body")))
+      : await new Promise<boolean>((resolve) => Alert.alert(
+          t("asi_close_all_title"), t("asi_close_all_body"),
+          [{ text: t("pos_btn_back"), style: "cancel", onPress: () => resolve(false) },
+           { text: t("asi_close_all"), style: "destructive", onPress: () => resolve(true) }]
+        ));
+    if (!ask) return;
+    setClosingAll(true);
+    try {
+      const res = await api.asi.closeAllTrades(deviceId);
+      if (res.errors && res.errors.length > 0) {
+        Alert.alert(
+          t("asi_close_failed"),
+          res.errors.map((e) => `${e.symbol}: ${e.error}`).join("\n"),
+        );
+      }
+      await refresh();
+    } catch (e: any) {
+      Alert.alert(t("asi_close_failed"), String(e?.message || e));
+    } finally {
+      setClosingAll(false);
     }
   };
 
@@ -1022,6 +1056,31 @@ export default function ASIBotScreen() {
           <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 13, letterSpacing: 0.3, flex: 1 }}>
             {t("asi_sec_recent")}
           </Text>
+          {/* v10.2.27 — CLOSE ALL di kanan atas, samping toggle jumlah.
+              Tutup semua posisi open + batalkan semua pending LIMIT. */}
+          {trades.some((x) => (x as any).status === "open" || (x as any).status === "pending_entry") ? (
+            <TouchableOpacity
+              onPress={closeAllTrades}
+              disabled={closingAll}
+              style={{
+                flexDirection: "row", alignItems: "center", gap: 4,
+                paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
+                borderWidth: 1, borderColor: RED,
+                backgroundColor: "rgba(239,68,68,0.12)",
+                opacity: closingAll ? 0.6 : 1, marginRight: 8,
+              }}
+              testID="asi-close-all"
+            >
+              {closingAll ? (
+                <ActivityIndicator size="small" color={RED} />
+              ) : (
+                <Ionicons name="close-circle" size={13} color={RED} />
+              )}
+              <Text style={{ color: RED, fontSize: 11, fontWeight: "900", letterSpacing: 0.4 }}>
+                {closingAll ? t("asi_close_all_working") : t("asi_close_all")}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
           {trades.length > 10 ? (
             <TouchableOpacity
               onPress={() => setTradesExpanded((v) => !v)}

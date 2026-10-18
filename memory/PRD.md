@@ -49,6 +49,25 @@ Trades, close-all):
    lagi mengirim order ganda karena mengira close gagal.
 Test: 4/4 skenario engine PASS; regresi iter50–53: 94/94 PASS.
 
+## v10.2.27 — Tombol CLOSE ALL (Oktober 2026)
+Permintaan user: satu tombol untuk menutup SEMUA posisi open sekaligus
++ membatalkan semua order LIMIT yang masih menunggu (pending).
+- **Recent Trades (asi-bot.tsx)**: tombol merah kompak "CLOSE ALL" di
+  kanan atas header section, samping toggle jumlah kartu; hanya tampil
+  bila ada posisi open/pending.
+- **Running Positions (trades-position.tsx)**: tombol merah KOMPAK di
+  kanan header (samping ikon refresh), gaya persis sama dengan tombol di
+  Recent Trades — revisi user: bukan full-width di atas kartu.
+  Hanya tampil bila ada posisi open/pending.
+- Konfirmasi dialog dulu (destructive), spinner saat berjalan, lalu
+  refresh daftar. Error per-simbol ditampilkan bila ada yang gagal.
+- Backend `POST /asi/trades/close-all` sudah menangani pending_entry
+  (cancel) + open (market close) — tidak ada perubahan backend.
+- i18n baru (id/en/ru/cn): asi_close_all, asi_close_all_working,
+  asi_close_all_title, asi_close_all_body, asi_close_all_done.
+- Verified via screenshot: tombol tampil di kedua halaman dengan device
+  user yang punya posisi open.
+
 
 ## v10.2.24 — Soft Delete Kartu Trade + Skip Simbol Tak Tersedia (Oktober 2026)
 Laporan user: "tidak ada sinyal yang dieksekusi sama sekali".

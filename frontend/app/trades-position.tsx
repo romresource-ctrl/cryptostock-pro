@@ -48,6 +48,7 @@ export default function TradesPositionScreen() {
   const [prices, setPrices] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [closingAll, setClosingAll] = useState(false);
   // v10.1.5 — Saldo DEMO/REAL untuk ringkasan dua kolom di atas list.
   const [balance, setBalance] = useState<{
     demo: { connected: boolean; available_usdt: number | null };
@@ -266,6 +267,35 @@ export default function TradesPositionScreen() {
       Alert.alert(t("asi_close_failed") || "Action failed", String(e?.message || e));
     } finally { setBusyId(null); }
   }, [deviceId, load, t]);
+
+  const onCloseAll = useCallback(async () => {
+    // v10.2.27 — CLOSE ALL: tutup semua open (market) + batalkan semua
+    // pending LIMIT (backend close-all menangani keduanya).
+    const targets = trades.filter((x) =>
+      x.status === "open" || x.status === "pending_entry");
+    if (targets.length === 0 || closingAll) return;
+    const ask = Platform.OS === "web"
+      ? Promise.resolve(window.confirm(t("asi_close_all_body")))
+      : new Promise<boolean>((resolve) => Alert.alert(
+          t("asi_close_all_title"), t("asi_close_all_body"),
+          [{ text: t("pos_btn_back"), style: "cancel", onPress: () => resolve(false) },
+           { text: t("asi_close_all"), style: "destructive", onPress: () => resolve(true) }]
+        ));
+    if (!(await ask)) return;
+    setClosingAll(true);
+    try {
+      const res = await api.asi.closeAllTrades(deviceId);
+      if (res.errors && res.errors.length > 0) {
+        Alert.alert(
+          t("asi_close_failed"),
+          res.errors.map((e) => `${e.symbol}: ${e.error}`).join("\n"),
+        );
+      }
+      await load();
+    } catch (e: any) {
+      Alert.alert(t("asi_close_failed") || "Action failed", String(e?.message || e));
+    } finally { setClosingAll(false); }
+  }, [trades, closingAll, deviceId, load, t]);
 
   const onDelete = useCallback(async (tr: AnyTrade) => {
     const tid = String(tr.id || (tr as any)._id || "");
@@ -652,9 +682,34 @@ export default function TradesPositionScreen() {
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn} testID="tp-back">
           <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 16 }}>
+        <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 16, flex: 1 }}>
           Running Positions · {openList.length + pendList.length}
         </Text>
+        {/* v10.2.27 — CLOSE ALL kompak di kanan header (sama seperti
+            di Recent Trades), bukan tombol full-width. */}
+        {(openList.length + pendList.length) > 0 ? (
+          <TouchableOpacity
+            onPress={onCloseAll}
+            disabled={closingAll}
+            style={{
+              flexDirection: "row", alignItems: "center", gap: 4,
+              paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
+              borderWidth: 1, borderColor: RED,
+              backgroundColor: "rgba(239,68,68,0.12)",
+              opacity: closingAll ? 0.6 : 1, marginRight: 6,
+            }}
+            testID="tp-close-all"
+          >
+            {closingAll ? (
+              <ActivityIndicator size="small" color={RED} />
+            ) : (
+              <Ionicons name="close-circle" size={13} color={RED} />
+            )}
+            <Text style={{ color: RED, fontSize: 11, fontWeight: "900", letterSpacing: 0.4 }}>
+              {closingAll ? t("asi_close_all_working") : t("asi_close_all")}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
         <TouchableOpacity onPress={load} style={s.backBtn}>
           <Ionicons name="refresh" size={20} color={colors.textPrimary} />
         </TouchableOpacity>

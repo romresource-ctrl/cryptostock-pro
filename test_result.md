@@ -4153,3 +4153,31 @@ agent_communication_v10225:
 
       JIKA LULUS: laporkan WR regresi tetap sama atau lebih baik dari
       iter52 untuk suite yang sama.
+
+# ======================================================
+# v10.2.27 — Tombol CLOSE ALL (Recent Trades + Running Positions)
+# ======================================================
+frontend_v10227:
+  - task: "Tombol CLOSE ALL: tutup semua open + cancel pending limit sekaligus"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/asi-bot.tsx (header Recent Trades, samping toggle), /app/frontend/app/trades-position.tsx (di atas kartu teratas), /app/frontend/src/i18n/I18nContext.tsx (5 key baru)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Tombol merah "CLOSE ALL" di 2 lokasi sesuai permintaan user.
+          Konfirmasi dialog destructive, spinner saat proses, error
+          per-simbol ditampilkan. Backend close-all sudah menangani
+          pending_entry (cancel) + open (market close) — tanpa perubahan
+          backend. Screenshot verified: tampil di kedua halaman dengan
+          device user (FET open). Lint bersih kedua file.
+
+metadata_v10227:
+  created_by: "main_agent"
+  version: "10.2.27"
+  test_sequence: 55
+  run_ui: false
