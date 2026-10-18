@@ -99,12 +99,19 @@ BUY_CHASE_PCT = 3.0
 BUY_CHASE_WINDOW_H = 6
 BUY_DUMP_GUARD_PCT = 2.5
 BUY_DUMP_GUARD_WINDOW_H = 2
-# v10.2.24 — Set simbol yang TIDAK terdaftar di jaringan aktif (contoh:
-# ICP tidak ada di Binance Futures TESTNET). Diisi saat execute_trade
-# menolak dengan reason=symbol_filters_missing; siklus berikutnya skip
-# dini tanpa memakai slot konfirmasi atau spam log. Level modul supaya
-# bertahan lintas siklus scanner (fungsi scanner dipanggil ulang tiap
-# 90 detik); reset saat backend restart.
+# v10.2.25 — Lesson 18/10 14:02-14:09 UTC: 7 SHORT serentak di dasar
+# candle 13:00 UTC (semua alt -1 s/d -1,5% dalam 1 jam) → BTC bounce
+# kecil, semua kena SL/BE. Dua tambahan:
+# A. SELL short-window: SELL ditolak bila alt turun >SELL_SHORT_DUMP_PCT
+#    dalam SELL_SHORT_DUMP_WINDOW_H jam terakhir (anti-shorting-dasar-bar).
+#    Simetris dengan dump-guard BUY.
+# B. SIDE_CONCURRENCY: posisi OPEN per device per arah dibatasi
+#    MAX_OPEN_PER_SIDE. Mencegah correlated correlated-loss saat regime
+#    flip melepas banyak sinyal serentak.
+SELL_SHORT_DUMP_PCT = 1.2
+SELL_SHORT_DUMP_WINDOW_H = 2
+MAX_OPEN_PER_SIDE = 3
+# Set simbol yang TIDAK terdaftar di jaringan aktif (ICP testnet).
 _UNAVAILABLE_SYMS: set[str] = set()
 
 
@@ -1104,6 +1111,26 @@ async def _run_full_auto_scanner(
                             f"symbol_{sym}_tidak_tersedia_di_"
                             f"{'testnet' if net else 'mainnet'}")
                         continue
+                    # v10.2.25 — SIDE CONCURRENCY: batasi N posisi OPEN
+                    # per arah (BUY/SELL) agar tidak terjadi correlated
+                    # loss saat regime flip melepas banyak sinyal
+                    # serentak (kasus 18/10 14:02-14:09 UTC: 7 SHORT
+                    # masuk dalam 8 menit, satu bounce BTC → semua
+                    # tertekan). Hitung dari asi_trades.status=open
+                    # (soft-delete sudah dikecualikan).
+                    try:
+                        _open_side = await db.asi_trades.count_documents({
+                            "device_id": device_id, "status": "open",
+                            "side": sig["side"],
+                            "deleted": {"$ne": True},
+                        })
+                        if _open_side >= MAX_OPEN_PER_SIDE:
+                            _dev_reject(
+                                rep,
+                                f"max_open_{sig['side'].lower()}_{_open_side}_>=_{MAX_OPEN_PER_SIDE}")
+                            continue
+                    except Exception as _co_err:
+                        logger.debug("side-concurrency check gagal: %s", _co_err)
                     # v10.2.12 — BTC REGIME GATE: rezim BTC menentukan arah
                     # yang boleh dieksekusi untuk ALTCOIN (BTC sendiri
                     # dikecualikan — ia referensi, bukan ikutan). Rezim
@@ -1289,6 +1316,24 @@ async def _run_full_auto_scanner(
                                     _dev_reject(
                                         rep,
                                         f"anti_chase_sell_{abs(chg_pct):.1f}pct_{n}h")
+                                    continue
+                            # v10.2.25 — SELL short-window dump guard
+                            # (pelajaran 18/10 14:02-14:09 UTC: 7 SHORT
+                            # di dasar bar -1 s/d -1,5%/1h → bounce →
+                            # semua SL/BE). Lebih sensitif dari window
+                            # 6h di atas.
+                            n2 = min(SELL_SHORT_DUMP_WINDOW_H,
+                                     len(c1h) - 1)
+                            if n2 >= 2 and c1h[-1 - n2] > 0:
+                                chg2 = (c1h[-1] - c1h[-1 - n2]) / c1h[-1 - n2] * 100
+                                if chg2 <= -SELL_SHORT_DUMP_PCT:
+                                    logger.info(
+                                        "full-auto short-dump skip %s/%s: "
+                                        "SELL ditolak (turun %.2f%% dalam %dj — dasar bar)",
+                                        device_id, sym, chg2, n2)
+                                    _dev_reject(
+                                        rep,
+                                        f"sell_short_dump_{abs(chg2):.1f}pct_{n2}h")
                                     continue
                         else:  # BUY
                             n6 = min(BUY_CHASE_WINDOW_H, len(c1h) - 1)
@@ -1536,6 +1581,10 @@ async def _run_full_auto_scanner(
                  "circuit_breaker_losses": CIRCUIT_BREAKER_LOSSES,
                  "circuit_breaker_pause_hours": CIRCUIT_BREAKER_PAUSE_HOURS,
                  "symbol_loss_cooldown_hours": SYMBOL_LOSS_COOLDOWN_HOURS,
+                 # v10.2.25 — pelajaran 7 SHORT serentak 18/10.
+                 "sell_short_dump_pct": SELL_SHORT_DUMP_PCT,
+                 "sell_short_dump_window_h": SELL_SHORT_DUMP_WINDOW_H,
+                 "max_open_per_side": MAX_OPEN_PER_SIDE,
              },
              # v10.2.7 — per-device diagnostics (maks 20 device agar doc
              # tetap kecil; cukup untuk menjawab "kenapa bot saya tidak

@@ -4007,3 +4007,116 @@ metadata_v10224:
           symbol_filters_missing tiap siklus. Kini masuk _UNAVAILABLE_SYMS
           per jaringan; siklus berikut reject dini
           'symbol_ICP_tidak_tersedia_di_testnet'. Live-verified 13:54 UTC.
+
+# ======================================================
+# v10.2.25 — SELL short-dump guard + side concurrency cap
+# ======================================================
+backend_v10225:
+  - task: "SELL short-window dump guard (-1.2%/2h) & side concurrency cap (max 3 per side)"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/scheduler.py (SELL_SHORT_DUMP_*, MAX_OPEN_PER_SIDE, blok short-dump di jalur SELL, side-concurrency check sebelum konfirmasi)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          v10.2.25 implementation: short-dump guard + side-concurrency cap.
+      - working: true
+        agent: "testing"
+        comment: |
+          iter53 (/app/test_reports/pytest/iter53.xml): 19/19 PASS setelah
+          fix test-harness whitelist (LOLOS → FET/LINK) + reject label
+          dinormalkan ke `sell_short_dump_<pct>pct_<n>h` (sebelumnya
+          `sell_dump_guard_` membingungkan karena simetri dengan
+          `buy_dump_guard_`). Regresi iter50-52: 94/94 PASS. buy_gates live
+          mengekspos sell_short_dump_pct=1.2, sell_short_dump_window_h=2,
+          max_open_per_side=3. Engine/formula tidak disentuh.
+
+metadata_v10225:
+  created_by: "main_agent"
+  version: "10.2.25"
+  test_sequence: 54
+  run_ui: false
+
+test_plan_v10225:
+  current_focus:
+    - "v10.2.25 side concurrency cap: MAX_OPEN_PER_SIDE=3 blokir sinyal ke-4 pada arah yang sama; arah lawan tetap jalan"
+    - "v10.2.25 SELL short-dump guard: alt turun >1.2%/2h → reject sell_short_dump; <1.2% → lolos"
+    - "Soft-delete trade tidak ikut dihitung dalam MAX_OPEN_PER_SIDE"
+    - "Regresi v10.2.17-24 TIDAK terdampak: anti-flap BTC up-streak, konfirmasi BUY/SELL 2 siklus, anti-chase SELL (3%/6h), anti-chase BUY (3%/6h), buy_dump_guard (2.5%/2h), cooldown per-simbol <4h, circuit breaker PnL, _UNAVAILABLE_SYMS skip dini"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication_v10225:
+  - agent: "main"
+    message: |
+      v10.2.25 — PLEASE TEST BACKEND (deterministic/mock DB + stubbed
+      execute_trade; JANGAN place order Binance nyata; JANGAN pakai
+      kredensial user — fake credential doc jika perlu).
+
+      Pola mock sama seperti iter49-52 untuk v10.2.21-23.
+
+      SKENARIO WAJIB:
+
+      1. SIDE-CONCURRENCY CAP (MAX_OPEN_PER_SIDE=3):
+         a. Fake DB asi_trades: 2 doc {status: open, side: SELL,
+            device_id: TEST, deleted!=true} → signal_fetcher stub
+            memunculkan SELL untuk simbol baru → EXECUTED (tidak di-reject
+            oleh max_open_sell). Signal BUY juga tetap lolos cap.
+         b. Fake DB: 3 doc open SELL → signal baru SELL untuk simbol
+            berbeda → REJECTED dgn reason mengandung "max_open_sell_3_>=_3".
+         c. Fake DB: 3 doc open SELL → signal BUY untuk simbol lain →
+            LOLOS cap (arah berlawanan tidak terpengaruh).
+         d. Fake DB: 3 doc open SELL tetapi 2 di antaranya memiliki
+            deleted=true → cap count hanya 1 → sinyal SELL baru LOLOS.
+         e. Fake DB: 3 doc open SELL dengan device_id BERBEDA → cap
+            dihitung per device_id → sinyal SELL untuk TEST tetap lolos.
+
+      2. SELL SHORT-DUMP GUARD (-1.2%/2h):
+         Monkeypatch market_data.get_crypto_snapshot timeframe '1h':
+         a. closes untuk 2 jam terakhir turun -1.5% dari high → SELL
+            REJECTED dgn reason mengandung "sell_short_dump" (atau nama
+            serupa yang terdokumentasi di buy_gates).
+         b. closes untuk 2 jam terakhir turun hanya -0.8% → SELL LOLOS
+            short-dump guard (gate lainnya tidak di-trigger).
+         c. closes turun -3%/6h tetapi hanya -0.5%/2h → SELL harus kena
+            anti_chase_sell_* v10.2.21 (regresi), BUKAN short-dump.
+         d. BTC sendiri: short-dump guard tidak mengubah logika BTC
+            (BTC dikecualikan dari banyak guard sesuai v10.2.17).
+
+      3. REGRESI v10.2.17-24 (jalankan test suite iter52 relevan):
+         - Anti-flap BTC up-streak 3 siklus untuk BUY.
+         - Konfirmasi BUY/SELL 2 siklus.
+         - anti_chase_buy_*/6h, buy_dump_guard_*/2h.
+         - cooldown_loss_*<4h setelah simbol loss.
+         - circuit-breaker 3 loss campur <2h.
+         - _UNAVAILABLE_SYMS skip dini (ICP testnet).
+         - BTC regime gate: trending_up → tolak SELL alt; trending_down
+           → tolak BUY alt.
+
+      4. buy_gates dump (/api/asi/scan-debug) harus menampilkan field
+         baru: sell_short_dump_pct=1.2, sell_short_dump_window_h=2,
+         max_open_per_side=3 (lihat scheduler.py line ~1585-1587).
+
+      5. Smoke: 1 cycle _run_full_auto_scanner dengan fake DB +
+         execute_trade stub + credential stub → cycle selesai tanpa
+         exception; reports (_dev_reject) mencatat alasan yang sesuai.
+
+      FILE RELEVAN:
+      - /app/backend/asi_bot/scheduler.py (titik ubah utama)
+      - /app/backend/asi_bot/routes.py (scan-debug endpoint)
+      - /app/backend/asi_bot/engine.py (DO NOT MODIFY, formula/engine
+        intentionally untouched)
+
+      JANGAN:
+      - Jangan panggil Binance Futures nyata.
+      - Jangan modifikasi test_credentials.md / konfigurasi user asli.
+      - Jangan ubah logic engine/formula sinyal.
+      - Jangan backfill kartu lama.
+
+      JIKA LULUS: laporkan WR regresi tetap sama atau lebih baik dari
+      iter52 untuk suite yang sama.

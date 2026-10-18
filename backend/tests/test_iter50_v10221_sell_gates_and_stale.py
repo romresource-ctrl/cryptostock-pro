@@ -360,11 +360,13 @@ class TestAntiChaseSell:
     def test_sell_not_rejected_when_1h_drop_2pct(self, monkeypatch):
         db, exec_stub, fetcher = make_harness(
             monkeypatch, side="SELL", conf=95, regime="neutral",
-            base="BEAR", streak=0, c1h_drop_pct=-2.0)
+            base="BEAR", streak=0, c1h_drop_pct=-1.0)
         run_scan(db, fetcher)
         rej = rejects_of(db)
         # anti_chase must NOT be present
         assert not any(r.startswith("anti_chase_sell_") for r in rej), rej
+        # v10.2.25 short-dump guard also must NOT fire (<1.2%/2h)
+        assert not any(r.startswith("sell_short_dump_") for r in rej), rej
         # SELL now goes through confirmation (2 cycles) — expect
         # sell_menunggu_konfirmasi_siklus_2 on first scan
         assert "sell_menunggu_konfirmasi_siklus_2" in rej, rej

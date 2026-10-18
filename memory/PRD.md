@@ -8,6 +8,32 @@ AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs
 ---
 
 ---
+## v10.2.25 — Short-Dump Guard & Side Concurrency Cap (Oktober 2026)
+Pelajaran 18/10 14:02–14:09 UTC: 7 SHORT (SUI, DASH, AR, WIF, SOL, SEI,
+XLM) masuk dalam 8 menit tepat setelah BTC flip trending_down 13:38 UTC
+(gate melepas antrean SELL). Entry berada di DEKAT LOW candle 13:00 UTC
+yang baru saja −1 s/d −1,5%/1 jam — bot "shorting dasar bar bearish".
+BTC bounce teknikal 14:15 UTC +0,17% → wick menyentuh SEI SL (−$20,95)
+dan XLM BE (−$10,86); 4 SHORT lain floating. SUI akhirnya profit
++$13,73. Analisis: ARAH BENAR (BTC terus turun, dn-streak 31; base 4H
+BEAR) — TIMING yang salah.
+Dua fix (gate scheduler, formula sinyal tidak disentuh):
+1. **SELL short-dump guard (window 2 jam)**: SELL ditolak bila alt
+   turun >1,2%/2 jam. Lebih sensitif dari anti-chase 6h/3%; menargetkan
+   kasus "shorting di dasar bar bearish". Simetris dengan dump-guard BUY
+   yang sudah ada. Reject label: `sell_short_dump_<pct>pct_<n>h`.
+2. **Side concurrency cap (MAX_OPEN_PER_SIDE=3)**: posisi OPEN per
+   device per arah dibatasi 3. Mencegah correlated-loss saat regime
+   flip melepas banyak sinyal serentak. Reject label:
+   `max_open_<side>_<n>_>=_3`. Hitungan hanya `status=open` &
+   `deleted!=true`, scoped per `device_id`.
+
+**Testing (iter53, 94 regression tests)**: 19/19 unit v10.2.25 PASS;
+iter50–52 regression 75/75 PASS. buy_gates live mengekspos
+`sell_short_dump_pct=1.2`, `sell_short_dump_window_h=2`,
+`max_open_per_side=3`. Engine/formula sinyal tidak disentuh.
+
+
 ## v10.2.24 — Soft Delete Kartu Trade + Skip Simbol Tak Tersedia (Oktober 2026)
 Laporan user: "tidak ada sinyal yang dieksekusi sama sekali".
 Investigasi: bot tidak mati — periode hening 12:04–13:38 UTC adalah
