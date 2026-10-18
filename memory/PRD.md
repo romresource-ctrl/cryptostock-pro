@@ -8,6 +8,61 @@ AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs
 ---
 
 ---
+## v10.2.22 — Fix Bias Arah: Relaksasi Slope Trend-Filter 4H (Oktober 2026)
+Laporan user: "3 hari semua posisi SHORT, tidak ada satu pun LONG padahal
+BTC spike — loss besar, ada yang tidak beres."
+Investigasi (data riil preview DB + log backend + scan-debug):
+- 3 hari: 22 SELL vs 8 BUY dieksekusi; 0 slot konfirmasi BUY tercipta.
+- Penyebab BUKAN engine sinyal dan BUKAN gate v10.2.17, melainkan
+  trend-filter EMA50 4H per-koin (ditambahkan 15/10 pagi untuk mencegah
+  bounce-trap): LONG wajib harga>EMA50 DAN slope EMA50 tidak menurun.
+  EMA50 4H ≈ memori 200 jam (8 hari) → setelah dump seminggu, slope-nya
+  tetap turun 1–2 hari pasca V-reversal, sehingga SEMUA LONG ditolak
+  meski harga alt sudah kembali di atas EMA50 dan BTC sudah trending_up.
+- Bukti live: siklus 04:44–04:47 UTC sinyal BUY FLOW ditolak gate ini
+  (FLOW masih price<EMA50 → penolakan tetap valid).
+
+Fix (keputusan user via judgment): saat BTC `trending_up` bertahan ≥3
+siklus (streak anti-flap v10.2.17), LONG cukup syarat harga>EMA50
+(slope dibebaskan). Simetris: streak `trending_down` ≥3 siklus → SHORT
+cukup harga<EMA50. Ditambah pelacak `_trend_down_streak` (Mongo, tahan
+restart). Saat BTC tidak terkonfirmasi, aturan slope penuh tetap aktif
+(proteksi bounce-trap 15/10 tidak dihapus). Syarat harga vs EMA50 TIDAK
+pernah dibebaskan — koin yang masih di bawah EMA50 4H-nya tetap ditolak.
+Audit: scan-debug menampilkan `btc_trend_down_streak` + buy_gates baru
+`trend4h_slope_relax_on_confirmed_btc`.
+Teruji 10/10 unit (streak up/down naik-reset, relax saat streak≥3,
+proteksi bounce-trap tetap aktif saat streak<3, bias tidak pernah
+dibebaskan, simetri SHORT). Engine/formula tidak diubah.
+
+
+## v10.2.21 — Anti-Loss SHORT & Early-Exit Longterm (Oktober 2026)
+Analisis loss BCH SHORT 16/10: bot mengejar short di dasar lokal (BCH
+sudah −4,3% dalam 9 jam sebelum entry), lalu BCH mean-reverting naik
+6 jam berturut sampai kena SL penuh (−2,1%). Proteksi v10.2.17 hanya
+BUY-side. Tiga guard baru di scheduler (BUKAN mengubah formula sinyal):
+1. **ANTI-CHASE SELL**: SELL ditolak bila alt turun >`SELL_CHASE_PCT=3%`
+   dalam `SELL_CHASE_WINDOW_H=6` jam. Mencegah short di dasar lokal
+   yang berisiko bounce mean-reversion tinggi. Reject reason
+   `anti_chase_sell_<pct>pct_<n>h`.
+2. **KONFIRMASI SELL 2 SIKLUS**: simetris dengan BUY (keputusan user
+   via judgment agent — base BTC 4H BEAR berkepanjangan memicu banyak
+   sinyal SELL yang over-aggressive). `SELL_CONFIRM_CYCLES=2`. State di
+   `asi_buy_confirm` (sekarang menyimpan `side` juga). Fail-CLOSED.
+3. **EARLY-EXIT LONGTERM STALE**: posisi Confluence v9 / longterm /
+   swing yang berjalan >`LONGTERM_STALE_HOURS=3` jam TAPI tidak pernah
+   mencapai profit floating > `LONGTERM_STALE_MIN_PROFIT_PCT=0.5%`
+   ditutup di market agar tidak kena SL penuh. Memakai field baru
+   `max_floating_pct` di DB trade (histori). `close_reason='stale_exit'`
+   dengan detail `longterm_stale_<age>h_max<+/-pct>`.
+Audit via `/api/asi/scan-debug` → `buy_gates` kini juga memuat
+`sell_confirm_cycles`, `sell_chase_pct`, `sell_chase_window_h`,
+`longterm_stale_hours`, `longterm_stale_min_profit_pct`.
+Verifikasi: 10/10 unit test PASS (helper confirm BUY/SELL default &
+override; konstanta; simulasi anti-chase dump tajam vs grind lambat
+vs flat); backend restart & /scan-debug mengembalikan field baru.
+
+
 ## v10.2.20 — Engine Lossless Fill Attribution (Oktober 2026)
 Keputusan user: perbaiki LOGIKA ENGINE agar event TP1/TP2/TP3/SL hit
 terdeteksi & dicatat benar untuk SEMUA koin dan SEMUA profil ke depan,

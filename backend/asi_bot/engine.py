@@ -2017,6 +2017,59 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
                         else f"close_failed: {str(_cr)[:120]}")
             except Exception as _e:  # noqa: BLE001
                 _native_partial_upd["horizon_exit_error"] = str(_e)[:200]
+        # v10.2.21 — EARLY-EXIT STALE LONGTERM (Confluence v9): posisi
+        # longterm yg berjalan >LONGTERM_STALE_HOURS jam TAPI tidak
+        # pernah mencapai profit floating > LONGTERM_STALE_MIN_PROFIT_PCT
+        # ditutup di market agar tidak kena SL penuh (kasus BCH/XTZ
+        # 16/10 yang grind lawan arah 6+ jam sampai SL). Memakai
+        # pct_floating saat ini + histori max tersimpan di DB.
+        try:
+            _lp = str(trade.get("profile") or "").lower()
+            _lt_tag = str(trade.get("formula_tag") or "").lower()
+            _is_longterm = (
+                _lp in ("longterm", "long_term", "long-term", "swing")
+                or "confluence" in _lt_tag)
+            if _is_longterm and amt and not _native_partial_upd.get("horizon_exit_at"):
+                from asi_bot.scheduler import (
+                    LONGTERM_STALE_HOURS as _LT_H,
+                    LONGTERM_STALE_MIN_PROFIT_PCT as _LT_MIN,
+                )
+                _entry_px = float(trade.get("entry_price") or 0)
+                try:
+                    _mark_px = float(mark or 0)
+                except Exception:
+                    _mark_px = 0.0
+                _sign = 1.0 if (trade.get("side") or "BUY") == "BUY" else -1.0
+                _pct = (((_mark_px - _entry_px) / _entry_px) * 100.0 * _sign
+                        if _entry_px and _mark_px else None)
+                _prev_max = float(trade.get("max_floating_pct") or -1e9)
+                if _pct is not None and _pct > _prev_max:
+                    _native_partial_upd["max_floating_pct"] = round(_pct, 4)
+                    _effective_max = _pct
+                else:
+                    _effective_max = _prev_max
+                _entry_at = trade.get("filled_at") or trade.get("created_at")
+                _age_h = None
+                if _entry_at:
+                    try:
+                        _age_h = (
+                            datetime.now(timezone.utc)
+                            - datetime.fromisoformat(
+                                str(_entry_at).replace("Z", "+00:00"))
+                        ).total_seconds() / 3600.0
+                    except Exception:
+                        _age_h = None
+                if (_age_h is not None and _age_h >= _LT_H
+                        and _effective_max < _LT_MIN
+                        and _effective_max > -1e8):
+                    _cr2 = await close_position(
+                        doc, symbol, trade.get("side") or "BUY", abs(amt))
+                    _native_partial_upd["stale_exit_at"] = (
+                        f"longterm_stale_{_age_h:.1f}h_max{_effective_max:+.2f}pct"
+                        if _cr2.get("ok") else f"close_failed: {str(_cr2)[:120]}")
+                    _native_partial_upd["close_reason"] = "stale_exit"
+        except Exception as _se:  # noqa: BLE001
+            _native_partial_upd["stale_exit_error"] = str(_se)[:200]
         # Verify bracket still armed in openAlgoOrders
         try:
             openalgos = await br.open_algo_orders(api_key, api_secret, is_testnet, bin_sym)

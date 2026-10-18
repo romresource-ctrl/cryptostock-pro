@@ -3687,3 +3687,176 @@ agent_communication_v10220:
          close_reason=SL, sl_fill terisi, status=closed.
       Catatan: v10.2.17 gates & v10.2.18 cache tetap aktif
       (jangan di-regress). JANGAN membuat order Binance nyata.
+
+# ======================================================
+# v10.2.21 — Anti-chase SELL + SELL 2-cycle confirmation + early-exit stale longterm
+# ======================================================
+backend_v10221:
+  - task: "Anti-chase SELL: tolak bila alt turun >3% dalam 6 jam terakhir"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/asi_bot/scheduler.py (_run_full_auto_scanner, konstanta SELL_CHASE_PCT=3.0 SELL_CHASE_WINDOW_H=6)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Memakai get_crypto_snapshot('1h') (biasanya cache); hitung
+          (last-first)/first dari n+1 candle terakhir. Reject reason
+          anti_chase_sell_<pct>pct_<n>h. BUY & BTC tidak terdampak.
+          Error fetch → tidak blokir (fail-OPEN; sudah ada gate lain).
+  - task: "SELL confirmation 2 siklus (simetris BUY)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/asi_bot/scheduler.py (sig['side'] in BUY/SELL; _buy_confirm_eval diperluas dgn required_cycles)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Fingerprint = device:symbol:SIDE + profile|formula_tag.
+          Reject reason sell_menunggu_konfirmasi_siklus_2. State di
+          koleksi asi_buy_confirm (menyimpan field side baru). Fail-
+          CLOSED bila Mongo error. 3 unit test helper PASS.
+  - task: "Early-exit stale longterm: close bila >3h tanpa pernah profit >0.5%"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/asi_bot/engine.py (_refresh_binance; track max_floating_pct; panggil close_position bila stale)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Trigger hanya untuk profile longterm/swing atau formula_tag
+          mengandung 'confluence'. Hitung pct floating dari entry vs
+          markPrice signed by side; update max_floating_pct persist di DB.
+          Age dari filled_at atau created_at. Konstanta impor dari
+          scheduler. Setelah close_position OK → set close_reason=
+          'stale_exit' + stale_exit_at='longterm_stale_<age>h_max<pct>'.
+          Horizon exit lama tetap berjalan; stale hanya aktif bila
+          horizon tidak memicu.
+  - task: "scan-debug expose field baru"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/routes.py + scheduler.py buy_gates"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          curl /api/asi/scan-debug?device_id=hc mengembalikan buy_gates
+          dgn sell_confirm_cycles=2, sell_chase_pct=3.0,
+          sell_chase_window_h=6, longterm_stale_hours=3.0,
+          longterm_stale_min_profit_pct=0.5.
+
+metadata_v10221:
+  created_by: "main_agent"
+  version: "10.2.21"
+  test_sequence: 50
+  run_ui: false
+
+test_plan_v10221:
+  current_focus:
+    - "SELL baru dgn alt turun >3%/6h di-reject (anti_chase_sell_*)"
+    - "SELL konfirmasi 2 siklus (siklus 1 tolak dgn sell_menunggu_konfirmasi_siklus_2; siklus 2 identik lolos)"
+    - "BUY tetap bekerja seperti v10.2.17 (anti-flap, bear4H conf+5, buy confirm 2 siklus)"
+    - "Posisi longterm/Confluence v9 >3h tanpa profit >0.5% ditutup via close_position dengan close_reason=stale_exit"
+    - "Regresi v10.2.20 lossless fill attribution"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication_v10221:
+  - agent: "main"
+    message: |
+      v10.2.21 — PLEASE TEST BACKEND (mock, JANGAN order nyata).
+      Scope: scheduler._run_full_auto_scanner + engine._refresh_binance
+      early-exit stale.
+      1. Anti-chase SELL — monkeypatch market_data.get_crypto_snapshot
+         untuk simbol tertentu agar mengembalikan 1h closes dgn
+         (first→last) = -5% (blokir) vs -2% (lolos). Panggil scanner
+         1 siklus (atau unit-level dgn stub signal_fetcher) &
+         verifikasi reject reason / tidak reject.
+      2. SELL confirmation — simulasi 2 siklus dgn signal yg sama;
+         siklus 1 harus reject sell_menunggu_konfirmasi_siklus_2 &
+         siklus 2 harus lolos & memanggil execute_trade (yg di-stub).
+         Juga pastikan BUY tetap pakai BUY_CONFIRM_CYCLES=2 (regresi
+         v10.2.17).
+      3. Early-exit stale longterm — panggil engine._refresh_binance
+         untuk trade profile='longterm' / formula_tag='Confluence v9'
+         dgn created_at >3h lalu, markPrice yg menghasilkan pct <0.5%
+         (dan prev max_floating_pct <0.5%). Stub br.position_risk,
+         br.open_algo_orders, br.open_orders_legacy, br._request
+         (/fapi/v1/userTrades), engine.close_position (return ok=True).
+         Verifikasi update menulis close_reason='stale_exit' + field
+         stale_exit_at. Trade dgn age <3h ATAU max_floating_pct >=0.5%
+         JANGAN ditutup.
+      Catatan: v10.2.17/v10.2.18/v10.2.20 tetap aktif. Mock
+      br.* dan engine.close_position seperti test iter49.
+
+# ======================================================
+# v10.2.22 — Relaksasi slope trend-filter 4H saat BTC terkonfirmasi
+# ======================================================
+backend_v10222:
+  - task: "BUY tidak lagi diblokir slope EMA50 4H saat BTC trending_up >=3 siklus (simetris SHORT saat trending_down)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/asi_bot/scheduler.py (_trend_down_streak, trend filter block, buy_gates)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Root cause 3-hari-short-only: trend-filter EMA50 4H (15/10)
+          menolak semua LONG pasca V-reversal karena slope EMA50 (memori
+          200 jam) masih turun. Fix: streak trending_up>=3 → LONG cukup
+          harga>EMA50 (slope dibebaskan); simetris SHORT via
+          trend_down_streak>=3. Bias (harga vs EMA50) TIDAK pernah
+          dibebaskan. Proteksi bounce-trap tetap aktif saat BTC tidak
+          terkonfirmasi. 10/10 unit test PASS. Live: kode aktif
+          (streak 19-20, field baru di scan-debug); satu-satunya
+          kandidat LONG (FLOW) ditolak valid karena price<EMA50.
+
+metadata_v10222:
+  created_by: "main_agent"
+  version: "10.2.22"
+  test_sequence: 51
+  run_ui: false
+
+test_plan_v10222:
+  current_focus:
+    - "Trend-filter 4H: LONG bias_up+slope_dn lolos saat up_streak>=3, diblokir saat <3"
+    - "Simetri SHORT dengan trend_down_streak"
+    - "Bias (price vs EMA50) tidak pernah dibebaskan"
+    - "Regresi v10.2.17-21 gates"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication_v10222:
+  - agent: "main"
+    message: |
+      v10.2.22 — PLEASE TEST BACKEND (mock, JANGAN order nyata):
+      1. Unit _trend_down_streak (naik/reset) & _trend_up_streak regresi.
+      2. Integrasi scanner dengan signal_fetcher stub + monkeypatch
+         market_data.get_crypto_snapshot('4h') sehingga closes menghasilkan
+         EMA50: (a) LONG dengan harga>EMA50 & slope turun: saat
+         btc_regime doc trend_up_streak=3 → execute_trade terpanggil
+         (setelah 2 siklus konfirmasi); saat streak=0 → reject
+         trend_filter_4h_blokir_LONG. (b) SHORT dengan harga<EMA50 &
+         slope naik: dn_streak=3 → lolos; dn_streak=0 → reject.
+         (c) LONG dengan harga<EMA50: SELALU reject berapapun streak.
+      3. GET /api/asi/scan-debug menampilkan btc_trend_down_streak dan
+         buy_gates.trend4h_slope_relax_on_confirmed_btc=true.
+      4. Regresi ringan: gates v10.2.17-21 (anti-flap, bear4h conf,
+         buy/sell confirm, anti-chase) tetap berfungsi.

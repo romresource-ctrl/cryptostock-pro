@@ -63,6 +63,21 @@ MIN_FULL_AUTO_CONFIDENCE = 90
 TREND_UP_MIN_CYCLES = 3
 BEAR4H_CONF_BONUS = 5
 BUY_CONFIRM_CYCLES = 2
+# v10.2.21 — Guard anti-loss baru (keputusan user, analisis loss BCH
+# SHORT 16/10 yang masuk di dasar lokal −4,3% dalam 9 jam lalu kena SL):
+# 4. ANTI-CHASE SELL: SELL ditolak bila alt sudah turun >SELL_CHASE_PCT
+#    dalam SELL_CHASE_WINDOW_H jam terakhir (anti-short-di-dasar).
+# 5. KONFIRMASI SELL 2 SIKLUS: simetri dgn BUY — SELL yang sama harus
+#    muncul 2 siklus scanner berturut sebelum dieksekusi.
+# 6. EARLY EXIT LONGTERM: posisi Confluence v9 (longterm) yang berjalan
+#    >LONGTERM_STALE_HOURS jam tanpa pernah mencapai profit floating
+#    > LONGTERM_STALE_MIN_PROFIT_PCT ditutup di market agar tidak kena
+#    SL penuh (mengurangi exposure posisi "mati").
+SELL_CHASE_PCT = 3.0            # %
+SELL_CHASE_WINDOW_H = 6         # jam
+SELL_CONFIRM_CYCLES = 2
+LONGTERM_STALE_HOURS = 3.0
+LONGTERM_STALE_MIN_PROFIT_PCT = 0.5  # %
 
 
 async def _public_mark_price(exchange: str, ccxt_symbol: str, testnet: bool) -> float | None:
@@ -614,8 +629,19 @@ def _trend_up_streak(prev_fresh_regime: str | None, prev_streak: int,
     return 0
 
 
+def _trend_down_streak(prev_fresh_regime: str | None, prev_streak: int,
+                       fresh_regime: str) -> int:
+    """v10.2.22 — Pasangan simetris _trend_up_streak untuk trending_down.
+    Dipakai agar relaksasi slope trend-filter 4H bersifat dua arah
+    (LONG & SHORT diperlakukan setara)."""
+    if fresh_regime == "trending_down":
+        return min(prev_streak + 1, 99) if prev_fresh_regime == "trending_down" else 1
+    return 0
+
+
 def _buy_confirm_eval(doc: dict[str, Any] | None, *, fingerprint: str,
-                      now: datetime, window_s: int) -> tuple[bool, int]:
+                      now: datetime, window_s: int,
+                      required_cycles: int = BUY_CONFIRM_CYCLES) -> tuple[bool, int]:
     """v10.2.17 — Evaluasi konfirmasi sinyal BUY 2 siklus berturut-turut.
 
     Return (confirmed, new_count): confirmed=True hanya bila sinyal
@@ -629,7 +655,7 @@ def _buy_confirm_eval(doc: dict[str, Any] | None, *, fingerprint: str,
             last = datetime.fromisoformat(
                 str(doc.get("last_seen_at")).replace("Z", "+00:00"))
             if 0 <= (now - last).total_seconds() <= window_s:
-                return True, BUY_CONFIRM_CYCLES
+                return True, required_cycles
         except Exception:
             pass
     return False, 1
@@ -727,15 +753,21 @@ async def _get_btc_regime(db: Any) -> dict[str, Any]:
     # siklus scanner (fungsi ini hanya dipanggil scanner, 1× per siklus).
     # Disimpan di Mongo agar tahan restart / multi-replica.
     streak = int((doc or {}).get("trend_up_streak") or 0)
+    streak_dn = int((doc or {}).get("trend_down_streak") or 0)
     if fresh.get("ok"):
         streak = _trend_up_streak(
             (doc or {}).get("last_fresh_regime"), streak, fresh["regime"])
+        # v10.2.22 — streak simetris untuk trending_down (dipakai relaksasi
+        # slope trend-filter 4H untuk SHORT, pasangan anti-flap BUY).
+        streak_dn = _trend_down_streak(
+            (doc or {}).get("last_fresh_regime"), streak_dn, fresh["regime"])
         try:
             await db.asi_scan_status.update_one(
                 {"_id": "btc_regime"},
                 {"$set": {
                     "last_fresh_regime": fresh["regime"],
                     "trend_up_streak": streak,
+                    "trend_down_streak": streak_dn,
                     "streak_updated_at": now.isoformat(),
                 }},
                 upsert=True,
@@ -743,6 +775,7 @@ async def _get_btc_regime(db: Any) -> dict[str, Any]:
         except Exception:
             pass
     fresh["trend_up_streak"] = streak
+    fresh["trend_down_streak"] = streak_dn
     if fresh.get("ok") and fresh["regime"] in ("bullish_reversal", "bearish_reversal"):
         # Reversal terdeteksi → (re)latch 120 menit.
         try:
@@ -779,6 +812,7 @@ async def _get_btc_regime(db: Any) -> dict[str, Any]:
                         # latch aktif (dipakai gate conf BEAR + anti-flap).
                         "base_regime": fresh.get("base_regime"),
                         "trend_up_streak": streak,
+                        "trend_down_streak": streak_dn,
                         "latched": True}
         except Exception:
             pass
@@ -833,6 +867,8 @@ async def _run_full_auto_scanner(
     # v10.2.17 — streak trending_up untuk anti-flap (BUY baru boleh bila
     # rezim trending_up bertahan TREND_UP_MIN_CYCLES siklus berturut).
     trend_up_streak = int(btc_regime.get("trend_up_streak") or 0)
+    # v10.2.22 — streak trending_down simetris (relaksasi slope SHORT).
+    trend_down_streak = int(btc_regime.get("trend_down_streak") or 0)
     # Kapitulasi memblokir KEDUA arah (falling knife + late short).
     gate_block_sell = btc_regime["regime"] in (
         "bullish_reversal", "trending_up", "bear_capitulation")
@@ -1118,60 +1154,119 @@ async def _run_full_auto_scanner(
                         slope_up = ema50_4h > ema50_prev
                         slope_dn = ema50_4h < ema50_prev
                         want_long = sig["side"] == "BUY"
-                        if want_long and (not bias_up or slope_dn):
+                        # v10.2.22 — RELAKSASI SLOPE SAAT BTC TERKONFIRMASI
+                        # (keputusan user, kasus 16–18/10: 3 hari 0 BUY
+                        # padahal BTC V-reversal). EMA50 4H ≈ memori 8 hari
+                        # sehingga slope-nya tetap turun lama setelah dump,
+                        # memblokir semua LONG meski harga sudah kembali di
+                        # atas EMA50. Saat BTC sudah trending_up ≥3 siklus
+                        # (anti-flap v10.2.17 lolos), LONG cukup butuh
+                        # harga > EMA50. Simetris untuk SHORT saat
+                        # trending_down ≥3 siklus. Saat BTC netral/tidak
+                        # terkonfirmasi, aturan slope penuh tetap berlaku
+                        # (proteksi bounce-trap 15/10 tidak dihapus).
+                        _long_relaxed = trend_up_streak >= TREND_UP_MIN_CYCLES
+                        _short_relaxed = trend_down_streak >= TREND_UP_MIN_CYCLES
+                        if want_long and (not bias_up
+                                          or (slope_dn and not _long_relaxed)):
                             logger.info("full-auto trend-filter skip %s/%s: "
-                                        "LONG ditolak (price%sEMA50 %.4f, slope %s)",
+                                        "LONG ditolak (price%sEMA50 %.4f, slope %s, btc_up_streak=%d)",
                                         device_id, sym,
                                         ">" if bias_up else "<", ema50_4h,
-                                        "turun" if slope_dn else "naik/datar")
+                                        "turun" if slope_dn else "naik/datar",
+                                        trend_up_streak)
                             _dev_reject(rep, "trend_filter_4h_blokir_LONG")
                             continue
-                        if not want_long and (bias_up or slope_up):
+                        if not want_long and (bias_up
+                                              or (slope_up and not _short_relaxed)):
                             logger.info("full-auto trend-filter skip %s/%s: "
-                                        "SHORT ditolak (price%sEMA50 %.4f, slope %s)",
+                                        "SHORT ditolak (price%sEMA50 %.4f, slope %s, btc_dn_streak=%d)",
                                         device_id, sym,
                                         ">" if bias_up else "<", ema50_4h,
-                                        "naik" if slope_up else "turun/datar")
+                                        "naik" if slope_up else "turun/datar",
+                                        trend_down_streak)
                             _dev_reject(rep, "trend_filter_4h_blokir_SHORT")
                             continue
                 except Exception as _tf_err:
                     logger.debug("trend-filter error %s: %s", sym, _tf_err)
-                # v10.2.17 — KONFIRMASI BUY 2 SIKLUS (keputusan user):
-                # sinyal BUY yang sama (device+symbol+side+fingerprint
-                # engine/formula) harus muncul di 2 siklus scanner
-                # berturut-turut sebelum dieksekusi. Siklus pertama
-                # hanya MENCATAT kandidat; eksekusi terjadi di siklus
-                # kedua bila sinyal identik masih lolos semua gate.
-                # SELL tidak berubah. State di Mongo (tahan restart).
+                # v10.2.21 — ANTI-CHASE SELL (keputusan user, kasus BCH
+                # 16/10): SELL ditolak bila alt sudah turun >SELL_CHASE_PCT
+                # dalam SELL_CHASE_WINDOW_H jam terakhir — mencegah short
+                # di dasar lokal yang berisiko tinggi bounce mean-reversion.
+                # Memakai snapshot 1h yang biasanya sudah cache (tidak
+                # menambah beban upstream signifikan). BUY tidak terdampak.
+                if sig["side"] == "SELL" and sym != "BTC":
+                    try:
+                        from market_data import get_crypto_snapshot
+                        snap1h = await get_crypto_snapshot(sym, "1h")
+                        c1h = [float(c["close"]) for c in
+                               ((snap1h or {}).get("candles") or [])
+                               if c.get("close")]
+                        n = min(SELL_CHASE_WINDOW_H, len(c1h) - 1)
+                        if n >= 2:
+                            first_close = c1h[-1 - n]
+                            last_close = c1h[-1]
+                            if first_close > 0:
+                                chg_pct = (last_close - first_close) / first_close * 100
+                                if chg_pct <= -SELL_CHASE_PCT:
+                                    logger.info(
+                                        "full-auto anti-chase skip %s/%s: SELL "
+                                        "ditolak (turun %.2f%% dalam %dj, "
+                                        "ambang -%.1f%%)",
+                                        device_id, sym, chg_pct, n, SELL_CHASE_PCT)
+                                    _dev_reject(
+                                        rep,
+                                        f"anti_chase_sell_{abs(chg_pct):.1f}pct_{n}h")
+                                    continue
+                    except Exception as _ac_err:
+                        logger.debug("anti-chase SELL error %s: %s", sym, _ac_err)
+                # v10.2.17/v10.2.21 — KONFIRMASI SINYAL 2 SIKLUS. Awalnya
+                # hanya BUY (anti-flap BTC trending_up); kini SIMETRIS
+                # untuk SELL juga karena base BTC 4H BEAR berkepanjangan
+                # memicu banyak sinyal SELL yang terkadang over-aggressive.
+                # Sinyal yang SAMA (device+symbol+side+fingerprint
+                # engine/formula) harus muncul 2 siklus scanner berturut-
+                # turut sebelum dieksekusi. Siklus pertama hanya MENCATAT
+                # kandidat; eksekusi terjadi di siklus kedua. State di
+                # Mongo (tahan restart). Fail-CLOSED bila DB state error.
                 _confirm_key: str | None = None
-                if sig["side"] == "BUY":
-                    _confirm_key = f"{device_id}:{sym}:BUY"
+                if sig["side"] in ("BUY", "SELL"):
+                    _confirm_key = f"{device_id}:{sym}:{sig['side']}"
                     _fprint = (f"{sig.get('profile') or ''}|"
                                f"{sig.get('formula_tag') or ''}")
                     _now_cf = datetime.now(timezone.utc)
+                    _req_cycles = (BUY_CONFIRM_CYCLES if sig["side"] == "BUY"
+                                   else SELL_CONFIRM_CYCLES)
                     try:
                         _doc_cf = await db.asi_buy_confirm.find_one(
                             {"_id": _confirm_key})
                         _confirmed, _cnt = _buy_confirm_eval(
                             _doc_cf, fingerprint=_fprint, now=_now_cf,
-                            window_s=SCANNER_INTERVAL * 2)
+                            window_s=SCANNER_INTERVAL * 2,
+                            required_cycles=_req_cycles)
                         await db.asi_buy_confirm.update_one(
                             {"_id": _confirm_key},
                             {"$set": {
                                 "device_id": device_id, "symbol": sym,
+                                "side": sig["side"],
                                 "fingerprint": _fprint, "count": _cnt,
                                 "confidence": int(sig.get("confidence") or 0),
                                 "last_seen_at": _now_cf.isoformat()}},
                             upsert=True)
                     except Exception as _cf_err:
-                        # Fail-CLOSED untuk BUY: gagal baca state → anggap
-                        # belum terkonfirmasi (lebih aman daripada double-buy).
-                        logger.debug("buy-confirm state error %s: %s", sym, _cf_err)
+                        # Fail-CLOSED untuk BUY/SELL: gagal baca state →
+                        # anggap belum terkonfirmasi (lebih aman daripada
+                        # double-exec saat Mongo blip).
+                        logger.debug("signal-confirm state error %s: %s", sym, _cf_err)
                         _confirmed, _cnt = False, 1
                     if not _confirmed:
-                        logger.info("full-auto BUY %s/%s menunggu konfirmasi "
-                                    "siklus 2 (fingerprint %s)", device_id, sym, _fprint)
-                        _dev_reject(rep, "buy_menunggu_konfirmasi_siklus_2")
+                        logger.info("full-auto %s %s/%s menunggu konfirmasi "
+                                    "siklus 2 (fingerprint %s)",
+                                    sig["side"], device_id, sym, _fprint)
+                        _dev_reject(
+                            rep,
+                            ("buy" if sig["side"] == "BUY" else "sell")
+                            + "_menunggu_konfirmasi_siklus_2")
                         continue
                 # v10.1.2 — ANTI-DUPLIKAT ATOMIK (root cause "2 trade TRX
                 # identik"): dua proses scanner (multi-replica / restart)
@@ -1315,10 +1410,19 @@ async def _run_full_auto_scanner(
              # v10.2.17 — state anti-loss BUY gates (audit via scan-debug).
              "btc_base_regime_4h": btc_regime.get("base_regime"),
              "btc_trend_up_streak": trend_up_streak,
+             "btc_trend_down_streak": trend_down_streak,
              "buy_gates": {
                  "trend_up_min_cycles": TREND_UP_MIN_CYCLES,
                  "bear4h_conf_bonus": BEAR4H_CONF_BONUS,
                  "buy_confirm_cycles": BUY_CONFIRM_CYCLES,
+                 "sell_confirm_cycles": SELL_CONFIRM_CYCLES,
+                 "sell_chase_pct": SELL_CHASE_PCT,
+                 "sell_chase_window_h": SELL_CHASE_WINDOW_H,
+                 "longterm_stale_hours": LONGTERM_STALE_HOURS,
+                 "longterm_stale_min_profit_pct": LONGTERM_STALE_MIN_PROFIT_PCT,
+                 # v10.2.22 — relaksasi slope trend-filter 4H saat BTC
+                 # terkonfirmasi (streak ≥ TREND_UP_MIN_CYCLES).
+                 "trend4h_slope_relax_on_confirmed_btc": True,
              },
              # v10.2.7 — per-device diagnostics (maks 20 device agar doc
              # tetap kecil; cukup untuk menjawab "kenapa bot saya tidak

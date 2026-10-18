@@ -1,0 +1,36 @@
+{
+  "summary": "v10.2.21 BCH SHORT anti-loss trio validated (25/25 PASS). Covered: (1) Anti-chase SELL blocks non-BTC alt SELL when 1h snapshot shows last 6h drop >= 3% with reject prefix 'anti_chase_sell_<pct>pct_<h>h'; -2% does NOT block (continues to confirm gate). (2) SELL confirmation 2 cycles via _buy_confirm_eval(required_cycles=SELL_CONFIRM_CYCLES=2): cycle-1 rejects 'sell_menunggu_konfirmasi_siklus_2' + no execute_trade, cycle-2 identical fires execute_trade, count resets to 0 + consumed_at set after exec. (3) BUY regressions preserved: 2-cycle confirmation, anti-flap trending_up (streak<3), bear4h conf+5 bonus. (4) Engine stale-exit for longterm/Confluence v9 trades (age>3h, max_floating_pct<0.5%, |floating|<0.5%): close_position called + close_reason='stale_exit' + stale_exit_at='longterm_stale_<age>h_max<pct>pct'. max_floating_pct persisted when higher. Negative controls (age<3h, prev max>=0.5%, current pct>0.5%, scalper, day) do NOT close. Horizon-exit-first-tick prevents double close_position (swing+hit_and_run+aged>24h triggers horizon_exit, stale-exit guard skips). (5) GET /api/asi/scan-debug?device_id=hc returns buy_gates with all 6 fields and correct values (buy_confirm_cycles=2, sell_confirm_cycles=2, sell_chase_pct=3.0, sell_chase_window_h=6, longterm_stale_hours=3.0, longterm_stale_min_profit_pct=0.5). (6) iter49 lossless-fill regression (TP attribution via /fapi/v1/userTrades + idempotency) still 12 PASS. All br.*, engine.close_position, engine.move_sl_to_breakeven, engine.decrypt, market_data.get_crypto_snapshot, scheduler.execute_trade & resolve_credential monkeypatched — no real exchange calls.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "pytest tests/test_iter47_v10217_buy_gates.py", "issue": "3 pre-existing tests fail as EXPECTED regressions after v10.2.21: (a) test_consumed_doc_still_confirms_within_window — iter47 docs 'actual (buggy) behavior'; now hardened _buy_confirm_eval requires count>=1 so consumed count=0 doc correctly fails (False,1). (b) test_buy_reexecutes_if_position_row_gone_within_window — same root cause, no longer re-executes. (c) test_sell_executes_first_cycle_no_confirmation — SELL now goes through 2-cycle confirmation by design (symmetric with BUY). Main agent should update iter47 to assert the new (correct) behavior or mark these as xfail with v10.2.21 note."},
+      {"endpoint": "pytest tests/test_iter48_v10218_cache.py::TestRegression::test_health", "issue": "Pre-existing network blip on BASE_URL /api/ probe (JSONDecodeError empty body) — unrelated to v10.2.21."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter50_v10221_sell_gates_and_stale.py",
+    "/app/test_reports/pytest/iter50.xml"
+  ],
+  "action_items": [
+    "Update iter47 three failing tests to assert new (correct) v10.2.21 behavior: consumed doc (count=0) must NOT confirm; SELL must require 2 cycles. Alternative: mark as xfail with 'superseded by v10.2.21'.",
+    "Consider renaming _buy_confirm_eval → _signal_confirm_eval since it now serves both BUY and SELL (purely cosmetic)."
+  ],
+  "critical_code_review_comments": [
+    "engine._refresh_binance is now ~2160 lines; stale-exit + horizon-exit + lossless-fill blocks live inline. Extract into _apply_longterm_stale_exit(trade, mark, amt, _native_partial_upd) helper would improve readability and unit-testability (currently probed only via _refresh_binance wrapper).",
+    "scheduler.py line 1168: `n = min(SELL_CHASE_WINDOW_H, len(c1h) - 1)` then `first_close = c1h[-1 - n]`. For `SELL_CHASE_WINDOW_H=6` to represent a true 6-hour window the snapshot must deliver 1h-interval candles AND the last candle must be the closed one; running candle inflates/deflates chg_pct intermittently. Not a correctness bug — just a drift to document.",
+    "engine.py stale-exit block imports LONGTERM_STALE_* inside the try — the import happens every refresh tick. Fine (Python caches modules) but moving to module-level import would make dependency explicit."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (25/25 new) + 12/12 iter49 regression", "frontend": "n/a (backend-only review)"},
+  "seed_data_creation": "None — all tests use in-memory synthetic trade dict + FakeDB + monkeypatched br.*/execute_trade/get_crypto_snapshot/close_position.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Test file test_iter50_v10221_sell_gates_and_stale.py reuses the FakeDB + harness pattern from iter47 (scheduler) and the engine-mock pattern from iter49 (engine). Key fixtures: make_harness(side, conf, regime, base, streak, c1h_drop_pct=None) toggles get_crypto_snapshot 1h candles to drive anti-chase SELL branch. _install_engine_mocks(monkeypatch, pos, close_result=None) replaces engine.close_position with a capturing stub — critical since v10.2.21 stale-exit path invokes it. For double-close guard, use profile='swing' + horizon_exit=True + hit_and_run=True + aged>24h + mark slightly above entry so horizon_exit fires FIRST and populates _native_partial_upd['horizon_exit_at'], then stale-exit guard `not _native_partial_upd.get('horizon_exit_at')` short-circuits. Note iter47 has 3 pre-existing test failures that are intentional regressions (hardened _buy_confirm_eval + SELL 2-cycle confirm) — do not revert.",
+  "rca_of_issue": "User reported BCH SHORT entering near local bottom + grinding against SL for 6+ hours (classic BCH 16/10 case). Fix is a 3-layer defence at scheduler level (no signal-formula change): (1) ANTI-CHASE SELL — if alt already down >=3% in last 6h, reject SELL to avoid shorting at the capitulation low where mean-reversion bounce probability spikes. (2) SELL CONFIRMATION 2 CYCLES — require identical SELL signal in two consecutive scanner cycles (~90s apart) to filter out one-shot flap-prone signals; symmetric with the BUY confirmation added in v10.2.17. (3) EARLY-EXIT STALE LONGTERM — for Confluence v9 / longterm / swing trades older than 3h that never reached +0.5% floating profit, close at market instead of waiting for full SL hit (saves 50-70% of SL loss size on grind-against trades). Engine persists max_floating_pct per refresh tick to track the historical high; horizon_exit always wins if both would fire in same tick. All constants exposed via GET /api/asi/scan-debug.buy_gates for in-app monitoring. No live exchange orders placed during testing — mocks for br.*, close_position, execute_trade, snapshot, credential."
+}

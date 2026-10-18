@@ -1139,6 +1139,7 @@ def _attach_trade_routes(db: Any) -> None:
             # v10.2.17 — anti-loss BUY gates (audit untuk user).
             "btc_base_regime_4h": (doc or {}).get("btc_base_regime_4h"),
             "btc_trend_up_streak": (doc or {}).get("btc_trend_up_streak"),
+            "btc_trend_down_streak": (doc or {}).get("btc_trend_down_streak"),
             "buy_gates": (doc or {}).get("buy_gates"),
             "device_in_scanner": device_id in devices,
             "report": rep,

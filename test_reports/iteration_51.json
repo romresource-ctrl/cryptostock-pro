@@ -1,0 +1,37 @@
+{
+  "summary": "v10.2.22 symmetric 4H trend-filter slope relaxation validated (25/25 PASS). Covered: (1) Unit _trend_down_streak: rises 1->2->3 on consecutive trending_down, resets to 0 on any other regime, first-after-other=1, capped at 99. (2) Unit _trend_up_streak regression (v10.2.17 behavior intact). (3) _get_btc_regime persistence: trend_down_streak accumulates 1->2->3 in asi_scan_status.btc_regime doc, resets to 0 on regime change, trend_up_streak still tracked, latch path (bearish_reversal) carries trend_down_streak field. (4) Scanner integration (FakeDB + signal_fetcher stub + monkeypatched market_data.get_crypto_snapshot/execute_trade/resolve_credential/_get_btc_regime): LONG with price>EMA50 & slope_dn passes trend-filter when regime=trending_up & trend_up_streak>=3 (proceeds to 2-cycle confirm then executes); rejected 'trend_filter_4h_blokir_LONG' when streak=0 (neutral/unconfirmed). SHORT with price<EMA50 & slope_up passes when regime=trending_down & trend_down_streak>=3; rejected 'trend_filter_4h_blokir_SHORT' when streak=0. BIAS NEVER RELAXED: LONG with price<EMA50 rejected even at streak=20; SHORT with price>EMA50 rejected even at dn_streak=20. (5) Scanner doc + GET /api/asi/scan-debug?device_id=hc expose btc_trend_down_streak and buy_gates.trend4h_slope_relax_on_confirmed_btc=true (verified live: regime=trending_up, up_streak=21, dn_streak=0, flag=true). (6) Regressions: iter50 v10.2.21 suite 25 PASS + anti-flap/bear4h/2-cycle-confirm gates re-verified inside iter51; iter49 v10.2.20 lossless fills 12 PASS. iter47 has the same 3 known expected failures documented in iteration_50.json (superseded by v10.2.21) — unchanged. EMA slope/bias test series verified numerically against indicators._ema before use. No real Binance orders placed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "pytest tests/test_iter47_v10217_buy_gates.py", "issue": "Same 3 pre-existing expected failures carried over from iter50 (consumed-doc confirm, re-execute-within-window, SELL-first-cycle) — intentionally superseded by v10.2.21 hardening. Still pending: main agent should mark them xfail or update assertions."},
+      {"endpoint": "asi_bot/scheduler.py:1169", "issue": "_short_relaxed uses TREND_UP_MIN_CYCLES for the DOWN streak threshold. Functionally correct (both are 3) but a TREND_DOWN_MIN_CYCLES alias would prevent a future asymmetric change from silently breaking symmetry."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter51_v10222_trend_down_streak.py",
+    "/app/test_reports/pytest/iter51.xml"
+  ],
+  "action_items": [
+    "Update/mark-xfail the 3 iter47 tests superseded by v10.2.21 (still open from iter50).",
+    "Cosmetic: consider TREND_DOWN_MIN_CYCLES = TREND_UP_MIN_CYCLES alias in scheduler.py so the symmetric threshold is explicit.",
+    "Optional live monitoring: watch scan-debug over next cycles to confirm LONG signals now pass the 4H trend-filter when BTC trending_up streak>=3 (live state already shows up_streak=21, relax flag true)."
+  ],
+  "critical_code_review_comments": [
+    "Trend-filter gate logic (scheduler.py:1168-1189) is correct and symmetric: LONG rejected iff (not bias_up) or (slope_dn and not _long_relaxed); SHORT iff (bias_up) or (slope_up and not _short_relaxed). Bias condition is outside the relaxation in both directions — matches the v10.2.22 spec exactly.",
+    "_get_btc_regime computes both streaks BEFORE the latch return and carries them through the latched dict (scheduler.py:814-815) — verified by test_latch_path_carries_trend_down_streak. Note: during an active reversal latch the streaks keep tracking the FRESH regime (not the latched one); this matches v10.2.17 semantics and is intentional, but worth documenting since a 120-min latch with fresh regime flipping will reset streaks even though the effective gate regime stays latched.",
+    "Live sanity: scan-debug shows btc_trend_up_streak=21 with relax flag true, and the only current BUY candidate (FLOW) is correctly rejected because price 0.0310 < EMA50 0.0313 — consistent with 'bias is never relaxed'."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (25/25 new) + 37/37+1skip regression (iter49+iter50); iter47 19/22 with 3 known expected failures", "frontend": "n/a (backend-only review)"},
+  "seed_data_creation": "None — all tests use in-memory FakeDB + monkeypatched _compute_btc_regime/_get_btc_regime/get_crypto_snapshot/execute_trade/resolve_credential.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Test file test_iter51_v10222_trend_down_streak.py reuses iter50's FakeDB harness. Key additions: _regime_stub now accepts streak_dn (trend_down_streak) param; _snapshot_stub accepts custom closes_4h lists. The two slope/bias series are: closes_long_relax() = slow 102->100 decline over 59 candles + last candle 101.2 (price>EMA50, slope_dn=True) and closes_short_relax() = mirror (price<EMA50, slope_up=True) — both verified numerically against indicators._ema; reusing them is safe. IMPORTANT harness subtlety: to test 'streak=0 -> trend_filter reject' for LONG use regime=neutral (not trending_up), because the anti-flap gate fires first when regime=trending_up and streak<3. Run iter49+iter50 from /app (iter49 imports backend.asi_bot), iter47+iter51 from /app/backend. The 3 iter47 failures are expected regressions from v10.2.21 — do not revert.",
+  "rca_of_issue": "Root cause of the user-reported bug (3 days of SHORT-only executions despite BTC V-reversal): the per-coin 4H trend-filter added 15/10 required BOTH price>EMA50 AND non-falling EMA50 slope for LONG. EMA50 on 4H has ~200h memory, so its slope keeps falling for 1-2 days after a dump even when price has reclaimed EMA50 and BTC is trending_up — rejecting every LONG. Fix v10.2.22 (option 1, user-approved): when BTC regime stays trending_up for >=TREND_UP_MIN_CYCLES(3) scanner cycles, the slope condition for LONG is relaxed (price>EMA50 alone suffices); symmetric relaxation for SHORT via the new _trend_down_streak tracker persisted in asi_scan_status.btc_regime. The price-vs-EMA50 bias condition is never relaxed, and full slope protection remains active when BTC is unconfirmed (neutral/streak<3) — preserving the 15/10 bounce-trap protection. Mitigation verified by 25 new tests + 37 regression tests; no real exchange orders during testing."
+}
