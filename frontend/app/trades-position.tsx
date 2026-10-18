@@ -682,7 +682,7 @@ export default function TradesPositionScreen() {
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn} testID="tp-back">
           <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 16, flex: 1 }}>
+        <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 16 }}>
           Running Positions · {openList.length + pendList.length}
         </Text>
         <TouchableOpacity onPress={load} style={s.backBtn}>
