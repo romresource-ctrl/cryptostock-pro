@@ -3960,3 +3960,34 @@ agent_communication_v10223:
          execute_trade stub) memastikan reject tercatat di report.
       5. Regresi iter49-51 tetap hijau.
       Pola mock sama seperti iter49-51.
+
+# ======================================================
+# v10.2.24 — Soft delete kartu trade (proteksi breaker/cooldown)
+# ======================================================
+backend_v10224:
+  - task: "DELETE /trades/{id} jadi soft delete agar circuit breaker & cooldown tidak kehilangan riwayat"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/routes.py (delete_trade: $set deleted=true; list_trades: filter deleted!=true)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Verifikasi end-to-end via API: kartu tampil di list -> DELETE
+          -> hilang dari list -> record TETAP di DB dengan deleted=true.
+          Sebelumnya hard delete membuat breaker v10.2.23 buta terhadap
+          loss yang kartunya dihapus user. Test doc dibersihkan.
+          Catatan investigasi terkait laporan 'bot tidak eksekusi':
+          periode hening 12:04-13:38 UTC adalah kombinasi breaker aktif
+          + gate trending_up blokir SELL + kandidat LONG (FLOW) di bawah
+          EMA50 4H. Setelah BTC flip trending_down 13:38, eksekusi jalan
+          lagi (BCH & FET SHORT 13:40-41 via konfirmasi 2 siklus).
+
+metadata_v10224:
+  created_by: "main_agent"
+  version: "10.2.24"
+  test_sequence: 53
+  run_ui: false

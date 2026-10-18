@@ -8,6 +8,23 @@ AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs
 ---
 
 ---
+## v10.2.24 — Soft Delete Kartu Trade (Oktober 2026)
+Laporan user: "tidak ada sinyal yang dieksekusi sama sekali".
+Investigasi: bot tidak mati — periode hening 12:04–13:38 UTC adalah
+kombinasi (1) circuit breaker v10.2.23 aktif (3 loss beruntun),
+(2) BTC trending_up streak 80 memblokir semua SELL, (3) kandidat LONG
+(FLOW) ditolak valid karena di bawah EMA50 4H-nya. Setelah BTC flip
+trending_down 13:38, eksekusi normal kembali (BCH & FET SHORT 13:40–41
+lewat konfirmasi 2 siklus).
+Temuan desain nyata: delete kartu trade adalah HARD delete dari
+asi_trades → circuit breaker & cooldown per-simbol (v10.2.23) kehilangan
+riwayat loss saat user membersihkan kartu. Fix: delete kini SOFT DELETE
+(deleted=true + deleted_at); GET /trades mengecualikan deleted, tapi
+record tetap di DB untuk breaker/cooldown/statistik engine. Verifikasi
+end-to-end: kartu tampil → DELETE → hilang dari list → record tetap ada
+dengan deleted=true.
+
+
 ## v10.2.23 — Anti-Loss Sisi BUY + Circuit Breaker Tangguh (Oktober 2026)
 Laporan user: loss beruntun sejak v10.2.20, profit kecil loss besar.
 Investigasi data riil 18/10 (UTC): SAND di-LONG 3× beruntun saat dump

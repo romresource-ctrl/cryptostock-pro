@@ -710,7 +710,10 @@ def _attach_trade_routes(db: Any) -> None:
         if str(t.get("status") or "").lower() in ("open", "pending_entry"):
             raise HTTPException(
                 400, "active position cannot be deleted — close/cancel it first")
-        await db.asi_trades.delete_one({"_id": t["_id"]})
+        await db.asi_trades.update_one(
+            {"_id": t["_id"]},
+            {"$set": {"deleted": True,
+                      "deleted_at": datetime.now(timezone.utc).isoformat()}})
         return {"ok": True}
 
     @router.post("/trades/close-all")
@@ -858,7 +861,12 @@ def _attach_trade_routes(db: Any) -> None:
         # menampung 100 posisi di Recent Trades & Running Positions).
         rows: list[dict[str, Any]] = []
         async for d in db.asi_trades.find(
-            {"device_id": device_id, "status": {"$ne": "placing"}}
+            {"device_id": device_id, "status": {"$ne": "placing"},
+             # v10.2.24 — kartu yang dihapus user tidak tampil di list,
+             # tapi record-nya TETAP ADA (soft delete) agar circuit
+             # breaker / cooldown per-simbol / statistik engine tidak
+             # kehilangan jejak loss (v10.2.23).
+             "deleted": {"$ne": True}}
         ).sort("created_at", -1).limit(limit):
             # v9.7.6 — keep `_id` so frontend can call POST /trades/{id}/close
             tid = d.pop("_id", None)
