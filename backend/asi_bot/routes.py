@@ -688,16 +688,26 @@ def _attach_trade_routes(db: Any) -> None:
             raise HTTPException(400, "credential missing")
         try:
             await close_position(cred, t["symbol"], t["side"], float(t.get("qty") or 0))
-            upd = await refresh_trade_pnl(cred, t)
-            now = datetime.now(timezone.utc).isoformat()
-            await db.asi_trades.update_one({"_id": t["_id"]}, {"$set": {
-                "status": "closed", "close_reason": "manual",
-                "closed_at": now, "updated_at": now,
-                **{k: v for k, v in upd.items() if k in ("pnl_usdt", "mark_price", "closed_price")},
-            }})
-            return {"ok": True}
         except Exception as e:  # noqa: BLE001
             raise HTTPException(500, str(e)[:200])
+        # v10.2.26 — Posisi SUDAH tertutup di exchange pada titik ini.
+        # refresh_trade_pnl hanya kosmetik (angka PnL penutup): bila ia
+        # gagal (API hiccup), JANGAN balas 500 — kartu tetap harus
+        # ditandai closed agar tidak "nyangkut open" di UI dan user
+        # mengira close gagal lalu mengirim order ganda.
+        try:
+            upd = await refresh_trade_pnl(cred, t)
+        except Exception as _rp_err:  # noqa: BLE001
+            logger.warning("close ok tapi refresh pnl gagal %s: %s",
+                           t.get("_id"), _rp_err)
+            upd = {}
+        now = datetime.now(timezone.utc).isoformat()
+        await db.asi_trades.update_one({"_id": t["_id"]}, {"$set": {
+            "status": "closed", "close_reason": "manual",
+            "closed_at": now, "updated_at": now,
+            **{k: v for k, v in upd.items() if k in ("pnl_usdt", "mark_price", "closed_price")},
+        }})
+        return {"ok": True}
 
     @router.delete("/trades/{trade_id}")
     async def delete_trade(trade_id: str, device_id: str = Query(..., min_length=4)):
@@ -749,7 +759,13 @@ def _attach_trade_routes(db: Any) -> None:
                     errors.append({"symbol": t.get("symbol", "?"), "error": "credential missing"})
                     continue
                 await close_position(cred, t["symbol"], t["side"], float(t.get("qty") or 0))
-                upd = await refresh_trade_pnl(cred, t)
+                # v10.2.26 — refresh PnL kosmetik: kegagalannya tidak
+                # boleh membatalkan status closed (posisi sudah tertutup
+                # di exchange).
+                try:
+                    upd = await refresh_trade_pnl(cred, t)
+                except Exception:
+                    upd = {}
                 now = datetime.now(timezone.utc).isoformat()
                 await db.asi_trades.update_one(
                     {"_id": t["_id"]},

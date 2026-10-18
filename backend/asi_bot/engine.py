@@ -1389,19 +1389,56 @@ async def close_position(doc: dict[str, Any], symbol: str, side: Side,
                 bool(doc.get("testnet", True)), bin_sym,
             )
             live = abs(float((pos or {}).get("positionAmt") or 0))
-            if live > 0:
-                qty = live
+            # v10.2.26 — positionRisk SUKSES & flat → tidak ada yang perlu
+            # ditutup; jangan kirim market order sia-sia (DB qty bisa
+            # basi). Sebelumnya jatuh ke qty DB → Binance -2022 → user
+            # melihat "gagal closing".
+            if live <= 0:
+                return {"ok": True, "id": None, "avg": None,
+                        "note": "no_position"}
+            qty = live
         except Exception:
             pass
+        # v10.2.26 — PRECISION FIX untuk SEMUA kartu: qty live dari
+        # positionRisk bisa mengandung sisa desimal di luar stepSize
+        # (mis. 58.113 padahal step 0.01 setelah partial TP) → Binance
+        # menolak market close dengan error LOT_SIZE dan user melihat
+        # "gagal closing" walau posisi masih terbuka. Bulatkan TURUN ke
+        # step; sisa debu di bawah 1 step tidak bisa diorder (Binance
+        # memang menolaknya) dan akan dibersihkan monitor.
+        if qty > 0:
+            try:
+                _base = symbol.upper().split("/")[0].split("USDT")[0].split("-")[0]
+                _filt = await binance_symbol_filters(bool(doc.get("testnet", True)))
+                _step = ((_filt or {}).get(_base) or {}).get("step") or 0.0
+                qty = round_to_step(qty, _step)
+            except Exception:
+                pass
         if qty <= 0:
             return {"ok": True, "id": None, "avg": None, "note": "no_position"}
     client = await _get_client(doc)
     try:
         exch_sym = _ccxt_symbol(doc["exchange"], symbol)
-        o = await client.create_order(
-            exch_sym, "market", _opposite(side), qty, None,
-            params={"reduceOnly": True},
-        )
+        try:
+            o = await client.create_order(
+                exch_sym, "market", _opposite(side), qty, None,
+                params={"reduceOnly": True},
+            )
+        except Exception as close_err:
+            # v10.2.26 — Posisi ternyata SUDAH flat di exchange (mis. SL
+            # tersentuh tepat sebelum user menekan CLOSE, atau close
+            # sebelumnya sukses tapi respons API gagal): Binance menolak
+            # reduceOnly dengan -2022. Perlakukan sebagai SUKSES —
+            # tujuan user (posisi tertutup) sudah tercapai; kartu harus
+            # ditandai closed, bukan melempar error 500 yang
+            # membingungkan.
+            _msg = str(close_err).lower()
+            if "reduceonly" in _msg or "-2022" in _msg or "no position" in _msg:
+                logger.info("close_position %s: posisi sudah flat (%s)",
+                            symbol, close_err)
+                return {"ok": True, "id": None, "avg": None,
+                        "note": "no_position"}
+            raise
         return {"ok": True, "id": o.get("id"), "avg": o.get("average")}
     finally:
         try:

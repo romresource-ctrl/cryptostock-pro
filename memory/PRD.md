@@ -33,6 +33,22 @@ iter50–52 regression 75/75 PASS. buy_gates live mengekspos
 `sell_short_dump_pct=1.2`, `sell_short_dump_window_h=2`,
 `max_open_per_side=3`. Engine/formula sinyal tidak disentuh.
 
+## v10.2.26 — Fix Manual Close Semua Kartu (Oktober 2026)
+Laporan user: close BCH SHORT di preview gagal. Curl langsung sukses
+(BCH closed +$23.10) → bukan bug spesifik kartu, tapi 3 kerapuhan
+generik diperbaiki untuk SEMUA kartu close (Running Positions, Recent
+Trades, close-all):
+1. **Precision qty**: qty live dari positionRisk dibulatkan turun ke
+   stepSize Binance — sisa desimal pasca partial TP tidak lagi membuat
+   market close ditolak filter LOT_SIZE.
+2. **Flat = sukses**: posisi sudah 0 di exchange (SL telanjur hit /
+   close sebelumnya sukses tapi respons hilang) → diperlakukan sukses,
+   kartu langsung closed, bukan error 500.
+3. **Refresh PnL non-fatal**: close sukses di exchange tetapi refresh
+   PnL gagal → request tetap OK & kartu ditandai closed; user tidak
+   lagi mengirim order ganda karena mengira close gagal.
+Test: 4/4 skenario engine PASS; regresi iter50–53: 94/94 PASS.
+
 
 ## v10.2.24 — Soft Delete Kartu Trade + Skip Simbol Tak Tersedia (Oktober 2026)
 Laporan user: "tidak ada sinyal yang dieksekusi sama sekali".

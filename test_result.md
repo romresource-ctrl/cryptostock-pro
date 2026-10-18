@@ -4041,6 +4041,39 @@ metadata_v10225:
   test_sequence: 54
   run_ui: false
 
+# ======================================================
+# v10.2.26 — Fix manual close untuk SEMUA kartu
+# ======================================================
+backend_v10226:
+  - task: "Close position tangguh: precision qty, reduceOnly-flat = sukses, refresh pnl non-fatal"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/engine.py (close_position), /app/backend/asi_bot/routes.py (close_one_trade, close_all_trades)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Laporan user: "close BCH short tidak bisa". Curl langsung ke
+          endpoint berhasil (BCH closed manual, +$23.10) → bukan bug
+          spesifik kartu, tapi 3 kerapuhan generik diperbaiki utk SEMUA
+          kartu (Running Positions, Recent Trades, close-all):
+          1. PRECISION: qty live positionRisk dibulatkan TURUN ke stepSize
+             (58.113 @ step 0.01 → 58.11) — sebelumnya sisa desimal pasca
+             partial TP bisa membuat market close ditolak LOT_SIZE.
+          2. FLAT = SUKSES: positionRisk sukses & posisi 0 → langsung
+             no_position (tidak kirim order sia-sia dari qty DB basi);
+             reduceOnly -2022 (posisi flat tepat sebelum close) kini
+             diperlakukan sukses, kartu ditandai closed — bukan 500.
+          3. REFRESH NON-FATAL: close_position sukses di exchange tapi
+             refresh_trade_pnl gagal → request TETAP ok & kartu closed
+             (sebelumnya 500, kartu nyangkut open, user kirim order ganda).
+          Test: 4/4 skenario engine PASS (precision-round,
+          reduceonly-reject, flat-position, normal-close). Regresi
+          iter50-53: 94/94 PASS.
+
 test_plan_v10225:
   current_focus:
     - "v10.2.25 side concurrency cap: MAX_OPEN_PER_SIDE=3 blokir sinyal ke-4 pada arah yang sama; arah lawan tetap jalan"
