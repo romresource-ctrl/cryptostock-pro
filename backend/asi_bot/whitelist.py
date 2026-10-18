@@ -125,14 +125,24 @@ async def binance_symbol_filters(testnet: bool = False) -> dict[str, dict[str, f
                 and s.get("status") == "TRADING"
             ):
                 tick = step = None
+                lot_max = mkt_max = 0.0
                 for f in s.get("filters", []):
                     if f.get("filterType") == "PRICE_FILTER":
                         tick = float(f.get("tickSize") or 0)
                     elif f.get("filterType") == "LOT_SIZE":
                         step = float(f.get("stepSize") or 0)
+                        lot_max = float(f.get("maxQty") or 0)
+                    elif f.get("filterType") == "MARKET_LOT_SIZE":
+                        mkt_max = float(f.get("maxQty") or 0)
                 base = (s.get("baseAsset") or "").upper()
                 if base:
-                    out[base] = {"tick": tick or 0.0, "step": step or 0.0}
+                    # v10.2.28 — max_qty (MARKET_LOT_SIZE, fallback
+                    # LOT_SIZE) untuk clamp qty entry. Kasus ILV testnet:
+                    # qty dari risk%×leverage > batas → Binance -4005
+                    # "Quantity greater than max quantity" dan sinyal
+                    # valid gagal eksekusi berulang kali.
+                    out[base] = {"tick": tick or 0.0, "step": step or 0.0,
+                                 "max_qty": mkt_max or lot_max}
         if out:
             _FILTERS_CACHE[testnet] = (now, out)
             return out

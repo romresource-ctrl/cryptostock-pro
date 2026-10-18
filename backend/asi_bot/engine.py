@@ -588,6 +588,20 @@ async def execute_trade(
     size_usdt = margin * leverage
     qty_raw = size_usdt / entry if entry > 0 else 0.0
     qty = round_to_step(qty_raw, step)
+    # v10.2.28 — Clamp ke batas maksimal qty per order Binance
+    # (MARKET_LOT_SIZE). Kasus nyata ILV testnet: qty hasil risk%×leverage
+    # melebihi batas → -4005 "Quantity greater than max quantity" dan
+    # sinyal valid gagal tereksekusi 7× beruntun. Clamp ke BAWAH = risiko
+    # berkurang (aman), posisi tetap terbuka dengan ukuran maksimal yang
+    # diizinkan exchange.
+    max_qty = float(f.get("max_qty") or 0.0)
+    qty_clamped = False
+    if max_qty > 0 and qty > max_qty:
+        qty_clamped = True
+        qty = round_to_step(max_qty, step)
+        logger.info(
+            "qty clamp %s: %.6f → %.6f (batas maksimal Binance)",
+            bin_sym, round_to_step(qty_raw, step), qty)
     if qty <= 0:
         return {"ok": False, "reason": "qty_zero",
                 "message": "Margin too small for 1 contract step. Raise Risk % or Leverage."}
@@ -673,6 +687,7 @@ async def execute_trade(
             "margin_mode": margin_mode,
             "actual_margin_mode": None,
             "actual_leverage": None,
+            "qty_clamped_max": qty_clamped,
             "layered": layering,
             "anchor_shift": 0,
             "entry_mode": entry_mode,
@@ -904,6 +919,7 @@ async def execute_trade(
         "layered": layering,
         "anchor_shift": round(anchor_shift, 10),
         "entry_mode": entry_mode,
+        "qty_clamped_max": qty_clamped,
         "leverage_note": (
             f"Requested {leverage}x tetapi Binance set {actual_leverage}x"
             + (f" ({lev_rejected})" if lev_rejected else "")

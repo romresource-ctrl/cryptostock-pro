@@ -4181,3 +4181,23 @@ metadata_v10227:
   version: "10.2.27"
   test_sequence: 55
   run_ui: false
+
+# ======================================================
+# v10.2.28 — Clamp qty ke max Binance (fix ILV -4005)
+# ======================================================
+backend_v10228:
+  - task: "Clamp qty entry ke MARKET_LOT_SIZE maxQty (kasus ILV -4005)"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/whitelist.py (ekstrak max_qty), /app/backend/asi_bot/engine.py (clamp di execute_trade + field qty_clamped_max)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          ILV SELL valid gagal 7x beruntun: qty risk%xleverage > batas
+          order Binance testnet. Kini qty di-clamp ke bawah (risiko
+          berkurang, posisi tetap terbuka). Clamp logic 3/3 PASS,
+          regresi iter50-53 94/94 PASS.

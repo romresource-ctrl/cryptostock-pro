@@ -68,6 +68,20 @@ Permintaan user: satu tombol untuk menutup SEMUA posisi open sekaligus
 - Verified via screenshot: tombol tampil di kedua halaman dengan device
   user yang punya posisi open.
 
+## v10.2.28 — Clamp Qty ke Batas Maksimal Binance (Oktober 2026)
+Bug nyata ditemukan saat audit "banyak sinyal tidak dieksekusi": ILV
+SELL valid tapi gagal 7× beruntun dengan error `-4005 Quantity greater
+than max quantity`. Bot menghitung qty dari risk%×leverage tanpa
+membatasi ke batas order Binance.
+Fix:
+1. `whitelist.binance_symbol_filters` kini mengekstrak `max_qty`
+   (MARKET_LOT_SIZE, fallback LOT_SIZE maxQty) per simbol per jaringan.
+2. `engine.execute_trade` meng-clamp qty ke `max_qty` (dibulatkan turun
+   ke step). Clamp ke bawah = risiko berkurang, posisi tetap terbuka
+   dengan ukuran maksimal yang diizinkan. Tercatat di field trade
+   `qty_clamped_max`.
+Test: clamp logic 3/3 PASS; regresi iter50–53: 94/94 PASS.
+
 
 ## v10.2.24 — Soft Delete Kartu Trade + Skip Simbol Tak Tersedia (Oktober 2026)
 Laporan user: "tidak ada sinyal yang dieksekusi sama sekali".
