@@ -3860,3 +3860,103 @@ agent_communication_v10222:
          buy_gates.trend4h_slope_relax_on_confirmed_btc=true.
       4. Regresi ringan: gates v10.2.17-21 (anti-flap, bear4h conf,
          buy/sell confirm, anti-chase) tetap berfungsi.
+
+# ======================================================
+# v10.2.23 — Anti-chase BUY + dump-guard BUY + cooldown per-simbol + circuit breaker berbasis PnL
+# ======================================================
+backend_v10223:
+  - task: "Circuit breaker berbasis PnL (menggantikan v10.2.5 yg hanya hitung close_reason==SL)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/asi_bot/scheduler.py (device precheck; CIRCUIT_BREAKER_LOSSES=3, CIRCUIT_BREAKER_PAUSE_HOURS=2)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          3 closed terakhir semua pnl < -$1 (alasan apa pun) & terbaru
+          <2 jam → _dev_skip 2 jam. Fetch 25 closed terbaru sekali per
+          device per siklus; sekaligus membangun peta cooldown simbol.
+          Unit: campur reason (SL+external) AKTIF; profit/BE memutus;
+          loss >2h bebas.
+  - task: "Cooldown per-simbol 4 jam setelah loss (anti revenge-entry)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/asi_bot/scheduler.py (_sym_loss_cd; reject cooldown_loss_<SYM>_<4h)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Simbol dengan closed pnl<-$1 dalam 4 jam terakhir ditolak di
+          loop sinyal (setelah late_entry, sebelum BTC gate). BTC juga
+          tunduk. Unit: SAND cooldown, BTC profit bebas, CRV loss >4h
+          bebas.
+  - task: "Anti-chase BUY >3%/6h + dump-guard BUY >2.5%/2h"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/asi_bot/scheduler.py (momentum guards dua arah, satu fetch 1h snapshot per sinyal)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Kasus nyata tercakup: TIA +4.6%/6h → anti_chase_buy; SAND
+          -4.9%/2h → buy_dump_guard; flat lolos; SELL anti-chase
+          (v10.2.21) regresi utuh. BTC dikecualikan.
+  - task: "buy_gates audit scan-debug (7 field baru)"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/scheduler.py + routes.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Live curl menampilkan buy_chase_pct/window, buy_dump_guard_pct/
+          window, circuit_breaker_losses/pause_hours,
+          symbol_loss_cooldown_hours.
+
+metadata_v10223:
+  created_by: "main_agent"
+  version: "10.2.23"
+  test_sequence: 52
+  run_ui: false
+
+test_plan_v10223:
+  current_focus:
+    - "Circuit breaker PnL: 3 loss beruntun (reason campur) <2h → device di-skip; profit/BE memutus; >2h bebas"
+    - "Cooldown simbol: sinyal pada simbol yg rugi <4h → reject cooldown_loss_*"
+    - "Anti-chase BUY: alt +3%/6h → reject anti_chase_buy_*; dump-guard: -2.5%/2h → reject buy_dump_guard_*"
+    - "Regresi v10.2.17-22 (anti-flap, bear4h conf, konfirmasi BUY/SELL, anti-chase SELL, trend4h relax)"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication_v10223:
+  - agent: "main"
+    message: |
+      v10.2.23 — PLEASE TEST BACKEND (mock, JANGAN order nyata).
+      1. Circuit breaker: fake DB dengan 3 closed terakhir pnl negatif
+         (reason campur: SL, position_closed_externally, SL) & closed_at
+         <2 jam → device di-skip dgn alasan 'circuit-breaker'. Varian:
+         salah satu pnl>0 → tidak skip; closed_at terbaru >2 jam → tidak
+         skip; pnl 0.03 (BE) di tengah → tidak skip.
+      2. Cooldown: fake DB dgn SAND closed loss 1 jam lalu → sinyal SAND
+         reject 'cooldown_loss_SAND_<4h'; simbol lain lolos.
+      3. Momentum guards: monkeypatch market_data.get_crypto_snapshot
+         '1h' → closes +4.6%/6h (BUY ditolak anti_chase_buy), -4.9%/2h
+         (BUY ditolak buy_dump_guard), -5%/6h (SELL ditolak
+         anti_chase_sell regresi), flat (lolos). BTC tidak kena guard.
+      4. Integrasi 1 siklus scanner dgn signal_fetcher stub (fake DB +
+         execute_trade stub) memastikan reject tercatat di report.
+      5. Regresi iter49-51 tetap hijau.
+      Pola mock sama seperti iter49-51.

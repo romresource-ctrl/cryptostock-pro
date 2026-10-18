@@ -78,6 +78,27 @@ SELL_CHASE_WINDOW_H = 6         # jam
 SELL_CONFIRM_CYCLES = 2
 LONGTERM_STALE_HOURS = 3.0
 LONGTERM_STALE_MIN_PROFIT_PCT = 0.5  # %
+# v10.2.23 — Paket anti-loss sisi BUY + circuit breaker yang tangguh
+# (analisis loss beruntun 18/10: TIA LONG di puncak pump +3,7%, SAND
+# di-LONG 3× beruntun saat dump → SL semua, total -$205; breaker lama
+# v10.2.5 tidak aktif karena hanya menghitung close_reason=="SL"
+# sedangkan loss beralasan lain memutus streak).
+# 1. CIRCUIT BREAKER berbasis PnL: N closed terakhir semua rugi
+#    (pnl < -$1, alasan APA PUN) & terbaru <2 jam → istirahat 2 jam.
+# 2. COOLDOWN per-simbol: simbol yang baru rugi <4 jam tidak boleh
+#    di-entry ulang (anti revenge-entry, kasus SAND 18/10).
+# 3. ANTI-CHASE BUY (cermin SELL): LONG ditolak bila alt sudah naik
+#    >BUY_CHASE_PCT dalam BUY_CHASE_WINDOW_H jam (kasus TIA: +4,6%/6 jam).
+# 4. DUMP GUARD BUY: LONG ditolak bila alt turun >BUY_DUMP_GUARD_PCT
+#    dalam BUY_DUMP_GUARD_WINDOW_H jam terakhir (menangkap pisau jatuh,
+#    kasus SAND: -3,4%/2 jam saat entry).
+CIRCUIT_BREAKER_LOSSES = 3
+CIRCUIT_BREAKER_PAUSE_HOURS = 2
+SYMBOL_LOSS_COOLDOWN_HOURS = 4
+BUY_CHASE_PCT = 3.0
+BUY_CHASE_WINDOW_H = 6
+BUY_DUMP_GUARD_PCT = 2.5
+BUY_DUMP_GUARD_WINDOW_H = 2
 
 
 async def _public_mark_price(exchange: str, ccxt_symbol: str, testnet: bool) -> float | None:
@@ -910,28 +931,51 @@ async def _run_full_auto_scanner(
             if placed >= max_tr:
                 _dev_skip(device_id, f"daily limit tercapai ({placed}/{max_tr} trades hari ini)")
                 continue
-            # v10.2.5 — LOSS-STREAK BREAKER: bila 3 trade terakhir yang
-            # closed SEMUANYA kena SL dan SL terbaru < 2 jam lalu, bot
-            # istirahat dulu (skip siklus ini). Mencegah loss beruntun
-            # membesar seperti pagi 15/10 (-$150 dalam satu sesi dump).
+            # v10.2.23 — CIRCUIT BREAKER berbasis PnL + COOLDOWN per-
+            # simbol (menggantikan loss-streak breaker v10.2.5 yang hanya
+            # menghitung close_reason=="SL"; loss beralasan lain — mis.
+            # "position_closed_externally" seperti ZIL 18/10 — dulu
+            # MEMUTUS streak sehingga breaker tidak aktif saat loss
+            # campur aduk). Aturan: CIRCUIT_BREAKER_LOSSES closed
+            # terakhir semua rugi (pnl < -$1, alasan apa pun) DAN yang
+            # terbaru <2 jam lalu → istirahat 2 jam. Sekaligus bangun
+            # peta cooldown: simbol yang baru rugi <
+            # SYMBOL_LOSS_COOLDOWN_HOURS jam tidak boleh di-entry ulang
+            # (anti revenge-entry — kasus SAND 18/10 di-LONG 3× beruntun,
+            # SL semua: -$60, -$42, -$102).
+            _sym_loss_cd: dict[str, str] = {}
             try:
                 _recent_closed = [
                     t async for t in db.asi_trades.find(
                         {"device_id": device_id, "status": "closed"}
-                    ).sort("closed_at", -1).limit(3)
+                    ).sort("closed_at", -1).limit(25)
                 ]
-                if len(_recent_closed) == 3 and all(
-                    t.get("close_reason") == "SL" for t in _recent_closed
-                ):
-                    _cutoff = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
-                    if str(_recent_closed[0].get("closed_at") or "") > _cutoff:
-                        logger.warning(
-                            "loss-streak breaker: %s 3 SL beruntun <2 jam → istirahat siklus ini",
-                            device_id)
-                        _dev_skip(device_id, "loss-streak breaker (3 SL beruntun <2 jam)")
-                        continue
+                _now_cb = datetime.now(timezone.utc)
+                _cutoff_cb = (_now_cb - timedelta(
+                    hours=CIRCUIT_BREAKER_PAUSE_HOURS)).isoformat()
+                if (len(_recent_closed) >= CIRCUIT_BREAKER_LOSSES
+                        and all(float(t.get("pnl_usdt") or 0) < -1.0
+                                for t in _recent_closed[:CIRCUIT_BREAKER_LOSSES])
+                        and str(_recent_closed[0].get("closed_at") or "") > _cutoff_cb):
+                    logger.warning(
+                        "circuit-breaker: %s %d loss beruntun <%dj → istirahat",
+                        device_id, CIRCUIT_BREAKER_LOSSES,
+                        CIRCUIT_BREAKER_PAUSE_HOURS)
+                    _dev_skip(
+                        device_id,
+                        f"circuit-breaker: {CIRCUIT_BREAKER_LOSSES} loss "
+                        f"beruntun <{CIRCUIT_BREAKER_PAUSE_HOURS} jam")
+                    continue
+                _cd_cut = (_now_cb - timedelta(
+                    hours=SYMBOL_LOSS_COOLDOWN_HOURS)).isoformat()
+                for t in _recent_closed:
+                    _s = str(t.get("symbol") or "").upper()
+                    if (_s and float(t.get("pnl_usdt") or 0) < -1.0
+                            and str(t.get("closed_at") or "") > _cd_cut
+                            and _s not in _sym_loss_cd):
+                        _sym_loss_cd[_s] = str(t.get("closed_at"))
             except Exception as _ls_err:
-                logger.debug("loss-streak check gagal (skip, fail-open): %s", _ls_err)
+                logger.debug("circuit-breaker check gagal (skip, fail-open): %s", _ls_err)
             # v9.7.3 — BUG FIX: empty whitelist silently disabled the bot
             # ("ACTIVE" tapi tidak pernah scan). Default ke Top-100 futures
             # agar Full-Auto langsung bekerja tanpa konfigurasi tambahan.
@@ -1034,6 +1078,15 @@ async def _run_full_auto_scanner(
                     # longgar tapi gagal gate eksekusi ketat 3-candle/1.5ATR).
                     if sig.get("late_entry"):
                         _dev_reject(rep, "late_entry")
+                        continue
+                    # v10.2.23 — COOLDOWN per-simbol setelah loss: simbol
+                    # yang baru rugi <4 jam tidak boleh di-entry ulang
+                    # (anti revenge-entry SAND 18/10: LONG 3× beruntun,
+                    # SL semua). BTC juga tunduk — revenge-entry di BTC
+                    # sama berbahayanya.
+                    if sym in _sym_loss_cd:
+                        _dev_reject(
+                            rep, f"cooldown_loss_{sym}_<{SYMBOL_LOSS_COOLDOWN_HOURS}h")
                         continue
                     # v10.2.12 — BTC REGIME GATE: rezim BTC menentukan arah
                     # yang boleh dieksekusi untuk ALTCOIN (BTC sendiri
@@ -1189,37 +1242,65 @@ async def _run_full_auto_scanner(
                             continue
                 except Exception as _tf_err:
                     logger.debug("trend-filter error %s: %s", sym, _tf_err)
-                # v10.2.21 — ANTI-CHASE SELL (keputusan user, kasus BCH
-                # 16/10): SELL ditolak bila alt sudah turun >SELL_CHASE_PCT
-                # dalam SELL_CHASE_WINDOW_H jam terakhir — mencegah short
-                # di dasar lokal yang berisiko tinggi bounce mean-reversion.
-                # Memakai snapshot 1h yang biasanya sudah cache (tidak
-                # menambah beban upstream signifikan). BUY tidak terdampak.
-                if sig["side"] == "SELL" and sym != "BTC":
+                # v10.2.21/v10.2.23 — MOMENTUM GUARDS dua arah (fetch 1h
+                # snapshot SEKALI per sinyal, biasanya cache):
+                #   • ANTI-CHASE SELL: SELL ditolak bila alt turun
+                #     >3%/6 jam (short di dasar — kasus BCH 16/10).
+                #   • ANTI-CHASE BUY (v10.2.23): BUY ditolak bila alt
+                #     naik >3%/6 jam (long di puncak — kasus TIA 18/10
+                #     entry di ujung candle +3,67%, sekarang -43% ROE).
+                #   • DUMP GUARD BUY (v10.2.23): BUY ditolak bila alt
+                #     turun >2,5%/2 jam (menangkap pisau jatuh — kasus
+                #     SAND 18/10: LONG saat dump -3,4%/2 jam, SL 3×).
+                # BTC dikecualikan (referensi; regim BTC sendiri sudah
+                # di-gate di hulu).
+                if sym != "BTC":
                     try:
                         from market_data import get_crypto_snapshot
                         snap1h = await get_crypto_snapshot(sym, "1h")
                         c1h = [float(c["close"]) for c in
                                ((snap1h or {}).get("candles") or [])
                                if c.get("close")]
-                        n = min(SELL_CHASE_WINDOW_H, len(c1h) - 1)
-                        if n >= 2:
-                            first_close = c1h[-1 - n]
-                            last_close = c1h[-1]
-                            if first_close > 0:
-                                chg_pct = (last_close - first_close) / first_close * 100
+                        if sig["side"] == "SELL":
+                            n = min(SELL_CHASE_WINDOW_H, len(c1h) - 1)
+                            if n >= 2 and c1h[-1 - n] > 0:
+                                chg_pct = (c1h[-1] - c1h[-1 - n]) / c1h[-1 - n] * 100
                                 if chg_pct <= -SELL_CHASE_PCT:
                                     logger.info(
                                         "full-auto anti-chase skip %s/%s: SELL "
-                                        "ditolak (turun %.2f%% dalam %dj, "
-                                        "ambang -%.1f%%)",
+                                        "ditolak (turun %.2f%% dalam %dj, ambang -%.1f%%)",
                                         device_id, sym, chg_pct, n, SELL_CHASE_PCT)
                                     _dev_reject(
                                         rep,
                                         f"anti_chase_sell_{abs(chg_pct):.1f}pct_{n}h")
                                     continue
+                        else:  # BUY
+                            n6 = min(BUY_CHASE_WINDOW_H, len(c1h) - 1)
+                            if n6 >= 2 and c1h[-1 - n6] > 0:
+                                chg6 = (c1h[-1] - c1h[-1 - n6]) / c1h[-1 - n6] * 100
+                                if chg6 >= BUY_CHASE_PCT:
+                                    logger.info(
+                                        "full-auto anti-chase skip %s/%s: BUY "
+                                        "ditolak (naik %.2f%% dalam %dj — long di puncak)",
+                                        device_id, sym, chg6, n6)
+                                    _dev_reject(
+                                        rep,
+                                        f"anti_chase_buy_{chg6:.1f}pct_{n6}h")
+                                    continue
+                            n2 = min(BUY_DUMP_GUARD_WINDOW_H, len(c1h) - 1)
+                            if n2 >= 2 and c1h[-1 - n2] > 0:
+                                chg2 = (c1h[-1] - c1h[-1 - n2]) / c1h[-1 - n2] * 100
+                                if chg2 <= -BUY_DUMP_GUARD_PCT:
+                                    logger.info(
+                                        "full-auto dump-guard skip %s/%s: BUY "
+                                        "ditolak (turun %.2f%% dalam %dj — pisau jatuh)",
+                                        device_id, sym, chg2, n2)
+                                    _dev_reject(
+                                        rep,
+                                        f"buy_dump_guard_{abs(chg2):.1f}pct_{n2}h")
+                                    continue
                     except Exception as _ac_err:
-                        logger.debug("anti-chase SELL error %s: %s", sym, _ac_err)
+                        logger.debug("momentum-guard error %s: %s", sym, _ac_err)
                 # v10.2.17/v10.2.21 — KONFIRMASI SINYAL 2 SIKLUS. Awalnya
                 # hanya BUY (anti-flap BTC trending_up); kini SIMETRIS
                 # untuk SELL juga karena base BTC 4H BEAR berkepanjangan
@@ -1423,6 +1504,14 @@ async def _run_full_auto_scanner(
                  # v10.2.22 — relaksasi slope trend-filter 4H saat BTC
                  # terkonfirmasi (streak ≥ TREND_UP_MIN_CYCLES).
                  "trend4h_slope_relax_on_confirmed_btc": True,
+                 # v10.2.23 — paket anti-loss BUY + breaker tangguh.
+                 "buy_chase_pct": BUY_CHASE_PCT,
+                 "buy_chase_window_h": BUY_CHASE_WINDOW_H,
+                 "buy_dump_guard_pct": BUY_DUMP_GUARD_PCT,
+                 "buy_dump_guard_window_h": BUY_DUMP_GUARD_WINDOW_H,
+                 "circuit_breaker_losses": CIRCUIT_BREAKER_LOSSES,
+                 "circuit_breaker_pause_hours": CIRCUIT_BREAKER_PAUSE_HOURS,
+                 "symbol_loss_cooldown_hours": SYMBOL_LOSS_COOLDOWN_HOURS,
              },
              # v10.2.7 — per-device diagnostics (maks 20 device agar doc
              # tetap kecil; cukup untuk menjawab "kenapa bot saya tidak

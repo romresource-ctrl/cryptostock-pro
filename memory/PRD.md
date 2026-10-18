@@ -8,6 +8,38 @@ AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs
 ---
 
 ---
+## v10.2.23 — Anti-Loss Sisi BUY + Circuit Breaker Tangguh (Oktober 2026)
+Laporan user: loss beruntun sejak v10.2.20, profit kecil loss besar.
+Investigasi data riil 18/10 (UTC): SAND di-LONG 3× beruntun saat dump
+pasca-pump +11% (SL semua: -$60, -$42, -$102) dan TIA LONG tepat di
+puncak candle pump +3,67% (floating -43% ROE, SL lebar 4,4%). BTC sendiri
+flat-chop seharian. Catatan: v10.2.20 murni perbaikan pencatatan fill
+(tidak mengubah keputusan); keran LONG baru terbuka oleh v10.2.22
+(relaksasi slope) — dan sisi BUY ternyata tidak punya pelindung momentum.
+Akar sistemik:
+1. Anti-chase hanya ada untuk SELL (v10.2.21); sisi BUY mengejar puncak
+   pump (TIA) dan menangkap pisau jatuh (SAND).
+2. Tidak ada cooldown per-koin setelah loss → revenge re-entry SAND 3×
+   dalam 2,5 jam.
+3. Circuit breaker lama (v10.2.5) punya LUBANG: hanya menghitung
+   close_reason=="SL"; loss beralasan lain (mis. "position_closed_
+   externally" ZIL 18/10) memutus streak → breaker tidak pernah aktif.
+Perbaikan (layer gate, formula sinyal TIDAK diubah):
+- **Circuit breaker berbasis PnL**: 3 closed terakhir semua rugi
+  (pnl < -$1, alasan APA PUN) & terbaru <2 jam → istirahat 2 jam.
+- **Cooldown per-simbol 4 jam**: simbol yang baru rugi tidak boleh
+  di-entry ulang (anti revenge-entry).
+- **Anti-chase BUY**: LONG ditolak bila alt naik >3%/6 jam (puncak pump).
+- **Dump-guard BUY**: LONG ditolak bila alt turun >2,5%/2 jam (pisau
+  jatuh). BTC dikecualikan dari momentum guard (sudah di-gate regim).
+Audit: semua ambang terlihat di scan-debug → buy_gates (7 field baru).
+Reject reason: anti_chase_buy_*, buy_dump_guard_*, cooldown_loss_*,
+skip device "circuit-breaker: 3 loss beruntun <2 jam".
+Teruji unit 12/12 (TIA +4,6%/6h blokir, SAND -4,9%/2h blokir, flat
+lolos, regresi SELL anti-chase, breaker PnL campur reason AKTIF,
+profit/BE memutus streak, loss lama >2h bebas, cooldown simbol tepat).
+
+
 ## v10.2.22 — Fix Bias Arah: Relaksasi Slope Trend-Filter 4H (Oktober 2026)
 Laporan user: "3 hari semua posisi SHORT, tidak ada satu pun LONG padahal
 BTC spike — loss besar, ada yang tidak beres."

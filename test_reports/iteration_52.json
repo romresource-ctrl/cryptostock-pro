@@ -1,0 +1,40 @@
+{
+  "summary": "v10.2.23 anti-loss BUY package validated (25/25 PASS). Covered: (1) Circuit breaker PnL-based: 3 closed terakhir pnl<-1 dengan close_reason CAMPUR (SL, position_closed_externally, SL) & terbaru 30 mnt lalu -> device di-skip 'circuit-breaker: 3 loss beruntun <2 jam' (kasus bug lama v10.2.5 yang memutus streak pada reason non-SL kini tertutup). Varian semua benar TIDAK skip: salah satu pnl>0; terbaru >2 jam; pnl 0.03 (BE) di tengah; hanya 2 loss; pnl tepat -1.00 (boundary, aturan strict < -$1). (2) Cooldown per-simbol: SAND closed loss 1 jam lalu -> sinyal SAND reject 'cooldown_loss_SAND_<4h' tercatat di report device, ETH tetap lolos; profit <4 jam -> lolos; loss >4 jam -> lolos; loss -0.50 (< ambang $1) -> lolos. (3) Anti-chase BUY: closes 1h +4.6%/6 jam -> BUY reject 'anti_chase_buy_4.6pct_6h'; flat -> lolos; BTC dikecualikan dari momentum guards (BUY BTC saat +4.6%/6 jam tetap lolos ke konfirmasi). (4) Dump-guard BUY: -4.9%/2 jam -> reject 'buy_dump_guard_4.9pct_2h' (dan bukan anti_chase). (5) Regresi anti-chase SELL v10.2.21: -5%/6 jam -> reject 'anti_chase_sell_5.0pct_6h'. (6) Integrasi scanner 2 siklus: SAND kena cooldown, ETH lolos gates -> siklus 1 'buy_menunggu_konfirmasi_siklus_2', siklus 2 TEREKSEKUSI (ExecStub, trade tersimpan open di fake DB). (7) buy_gates audit: 7 field baru (buy_chase_pct=3.0, buy_chase_window_h=6, buy_dump_guard_pct=2.5, buy_dump_guard_window_h=2, circuit_breaker_losses=3, circuit_breaker_pause_hours=2, symbol_loss_cooldown_hours=4) tertulis di scanner doc DAN terverifikasi LIVE via GET /api/asi/scan-debug?device_id=hc (scanner doc fresh, age ~60s). (8) Regresi gates v10.2.17/21/22 (anti-flap BUY, bear4h conf+5, konfirmasi 2 siklus BUY/SELL, trend4h slope relax LONG) semua hijau; suite iter49 v10.2.20 lossless fills 12 PASS + iter50 25 PASS + iter51 25 PASS. iter47 tetap 3 expected-failures lama yang sama (superseded v10.2.21, sudah didokumentasikan iter50/51). Tidak ada order Binance nyata.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "pytest tests/test_iter47_v10217_buy_gates.py", "issue": "3 pre-existing expected failures yang sama seperti iter50/51 (consumed-doc confirm, re-execute-within-window, SELL-first-cycle) — intentionally superseded oleh v10.2.21. Masih pending: main agent tandai xfail atau update assertions."},
+      {"endpoint": "asi_bot/scheduler.py:956-959", "issue": "Observasi (bukan bug): circuit breaker membandingkan closed_at sebagai STRING ISO vs cutoff ISO — benar untuk format ISO UTC konsisten, tapi rapuh bila ada doc lama dengan format berbeda (mis. tanpa tz). Saat ini semua writer memakai isoformat() UTC sehingga aman."},
+      {"endpoint": "asi_bot/scheduler.py:946-976", "issue": "Observasi: breaker+cooldown fetch 25 closed terakhir per device per siklus tanpa projection — OK untuk volume kecil; bila jumlah device besar bisa ditambah projection {symbol,pnl_usdt,closed_at}."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter52_v10223_buy_guards_breaker.py",
+    "/app/test_reports/pytest/iter52.xml"
+  ],
+  "action_items": [
+    "Update/mark-xfail 3 test iter47 yang superseded v10.2.21 (masih terbawa dari iter50/51).",
+    "Opsional: pertimbangkan projection pada query 25 closed trades breaker/cooldown untuk hemat IO saat jumlah device besar.",
+    "Live monitoring: perhatikan scan-debug beberapa siklus ke depan — breaker saat ini OFF untuk device preview (hanya 2 loss beruntun + COMP BE memutus, sesuai aturan baru yang menghitung BE sebagai pemutus); konfirmasi perilaku ini memang diinginkan user."
+  ],
+  "critical_code_review_comments": [
+    "Logika breaker (scheduler.py:956-968) benar: len>=3 AND all(pnl < -1.0 pada 3 terbaru setelah sort closed_at desc) AND closed_at terbaru > cutoff 2 jam. Urutan sort desc memastikan [:3] = 3 TERBARU. pnl None/0 diperlakukan 0.0 -> tidak dihitung rugi (aman, BE memutus streak seperti kasus COMP 04:25 yang disebut user).",
+    "Cooldown map (scheduler.py:969-976) dibangun dari 25 closed terakhir, key simbol upper, hanya pnl<-1 DAN closed_at>cutoff 4 jam, first-wins (karena iterasi newest-first, tersimpan closed_at terbaru per simbol). Ditempatkan SETELAH breaker sehingga tetap aktif walau breaker tidak trip — diverifikasi test cooldown tanpa breaker.",
+    "Momentum guards (scheduler.py:1257-1301) dua arah benar: SELL pakai SELL_CHASE window 6h; BUY cek anti_chase (>= +3.0%/6h) LALU dump_guard (<= -2.5%/2h) dalam satu fetch 1h; BTC dikecualikan; n>=2 guard mencegah IndexError pada seri pendek; fail-open via try/except.",
+    "Penempatan cooldown_loss check (line 1087) di dalam loop results SETELAH late_entry tapi SEBELUM btc-regime/conf/RSI gate — reject tercatat lebih awal, tidak mengubah prioritas gate lain. Diverifikasi: sinyal lolos tetap melalui konfirmasi 2 siklus (integration test).",
+    "Konstanta persis sesuai spec user: CIRCUIT_BREAKER_LOSSES=3, CIRCUIT_BREAKER_PAUSE_HOURS=2, SYMBOL_LOSS_COOLDOWN_HOURS=4, BUY_CHASE_PCT=3.0, BUY_CHASE_WINDOW_H=6, BUY_DUMP_GUARD_PCT=2.5, BUY_DUMP_GUARD_WINDOW_H=2 — ter-assert di TestConstants dan live scan-debug."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (25/25 new) + 62/62+1skip regression (iter49+iter50+iter51); iter47 19/22 dengan 3 known expected failures yang sama", "frontend": "n/a (backend-only review)"},
+  "seed_data_creation": "None — semua test memakai in-memory FakeDB + monkeypatched _get_btc_regime/get_crypto_snapshot/execute_trade/resolve_credential. HTTP scan-debug read-only.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Test file test_iter52_v10223_buy_guards_breaker.py memakai harness FakeDB iter51 yang diperluas: _snapshot_stub kini menerima closes_1h custom (flat/pump+4.6%/dump-4.9%/dump-5%), _closed_trade() membuat doc closed (device_id, symbol, status=closed, pnl_usdt, close_reason, closed_at/updated_at/created_at ISO). PENTING: (1) seri 1h sengaja <16 candle agar RSI1h gate fail-open dan tidak mengganggu momentum-guard test; (2) closed_at memakai waktu real sekarang (breaker bandingkan dg datetime.now); (3) updated_at diset = closed_at agar cooldown_15menit (v10.1.7, cek updated_at) tidak ikut menembak di test cooldown 4 jam; (4) breaker test varian no-skip membutuhkan harness penuh (cred+fetcher) agar scan jalan dan skip_reason bisa di-assert bukan circuit-breaker. Jalankan iter52 dari /app/backend; iter49+iter50 dari /app; iter47+iter51 dari /app/backend. 3 failure iter47 adalah expected (superseded v10.2.21) — jangan revert. BASE_URL: env EXPO_PUBLIC_BACKEND_URL (frontend/.env), fallback hardcode preview URL.",
+  "rca_of_issue": "Akar masalah loss beruntun 18/10 (SAND 3x SL -$60/-$42/-$102, TIA LONG di puncak +3.67%): (1) anti-chase hanya ada utk SELL — BUY bebas mengejar puncak/pisau jatuh; (2) tidak ada cooldown per-koin setelah loss sehingga SAND langsung di-entry ulang; (3) circuit breaker v10.2.5 hanya menghitung close_reason=='SL' sehingga loss beralasan position_closed_externally MEMUTUS streak dan breaker tidak pernah aktif. Fix v10.2.23: breaker berbasis PnL murni (3 closed terakhir pnl<-1 alasan apa pun & terbaru <2 jam -> istirahat 2 jam via _dev_skip), cooldown per-simbol 4 jam (reject cooldown_loss_<SYM>_<4h), anti-chase BUY (>+3%/6 jam tolak LONG), dump-guard BUY (<-2.5%/2 jam tolak LONG). Mitigasi terverifikasi 25 test baru + 62 test regresi; tidak ada order exchange nyata selama pengujian."
+}
