@@ -685,31 +685,6 @@ export default function TradesPositionScreen() {
         <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 16, flex: 1 }}>
           Running Positions · {openList.length + pendList.length}
         </Text>
-        {/* v10.2.27 — CLOSE ALL kompak di kanan header (sama seperti
-            di Recent Trades), bukan tombol full-width. */}
-        {(openList.length + pendList.length) > 0 ? (
-          <TouchableOpacity
-            onPress={onCloseAll}
-            disabled={closingAll}
-            style={{
-              flexDirection: "row", alignItems: "center", gap: 4,
-              paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
-              borderWidth: 1, borderColor: RED,
-              backgroundColor: "rgba(239,68,68,0.12)",
-              opacity: closingAll ? 0.6 : 1, marginRight: 6,
-            }}
-            testID="tp-close-all"
-          >
-            {closingAll ? (
-              <ActivityIndicator size="small" color={RED} />
-            ) : (
-              <Ionicons name="close-circle" size={13} color={RED} />
-            )}
-            <Text style={{ color: RED, fontSize: 11, fontWeight: "900", letterSpacing: 0.4 }}>
-              {closingAll ? t("asi_close_all_working") : t("asi_close_all")}
-            </Text>
-          </TouchableOpacity>
-        ) : null}
         <TouchableOpacity onPress={load} style={s.backBtn}>
           <Ionicons name="refresh" size={20} color={colors.textPrimary} />
         </TouchableOpacity>
@@ -806,6 +781,34 @@ export default function TradesPositionScreen() {
                 </View>
               );
             })()}
+            {/* v10.2.27 — CLOSE ALL kompak, rata KANAN, tepat di atas
+                kartu posisi teratas (gaya sama dengan tombol di header
+                Recent Trades). */}
+            {(openList.length + pendList.length) > 0 ? (
+              <View style={{ flexDirection: "row", justifyContent: "flex-end" }}>
+                <TouchableOpacity
+                  onPress={onCloseAll}
+                  disabled={closingAll}
+                  style={{
+                    flexDirection: "row", alignItems: "center", gap: 4,
+                    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
+                    borderWidth: 1, borderColor: RED,
+                    backgroundColor: "rgba(239,68,68,0.12)",
+                    opacity: closingAll ? 0.6 : 1,
+                  }}
+                  testID="tp-close-all"
+                >
+                  {closingAll ? (
+                    <ActivityIndicator size="small" color={RED} />
+                  ) : (
+                    <Ionicons name="close-circle" size={13} color={RED} />
+                  )}
+                  <Text style={{ color: RED, fontSize: 11, fontWeight: "900", letterSpacing: 0.4 }}>
+                    {closingAll ? t("asi_close_all_working") : t("asi_close_all")}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
             {openList.length > 0 && openList.map(renderCard)}
             {pendList.length > 0 && (
               <>
