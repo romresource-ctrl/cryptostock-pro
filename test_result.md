@@ -3991,3 +3991,19 @@ metadata_v10224:
   version: "10.2.24"
   test_sequence: 53
   run_ui: false
+  - task: "Skip dini simbol yang tidak terdaftar di jaringan aktif (kasus ICP testnet)"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/scheduler.py (_UNAVAILABLE_SYMS modul-level)"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          ICPUSDT tidak ada di Binance Futures TESTNET (0 entri
+          exchangeInfo; 528 simbol lain ada) → execute_trade menolak
+          symbol_filters_missing tiap siklus. Kini masuk _UNAVAILABLE_SYMS
+          per jaringan; siklus berikut reject dini
+          'symbol_ICP_tidak_tersedia_di_testnet'. Live-verified 13:54 UTC.

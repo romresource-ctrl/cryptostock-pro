@@ -8,7 +8,7 @@ AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs
 ---
 
 ---
-## v10.2.24 — Soft Delete Kartu Trade (Oktober 2026)
+## v10.2.24 — Soft Delete Kartu Trade + Skip Simbol Tak Tersedia (Oktober 2026)
 Laporan user: "tidak ada sinyal yang dieksekusi sama sekali".
 Investigasi: bot tidak mati — periode hening 12:04–13:38 UTC adalah
 kombinasi (1) circuit breaker v10.2.23 aktif (3 loss beruntun),
@@ -16,13 +16,23 @@ kombinasi (1) circuit breaker v10.2.23 aktif (3 loss beruntun),
 (FLOW) ditolak valid karena di bawah EMA50 4H-nya. Setelah BTC flip
 trending_down 13:38, eksekusi normal kembali (BCH & FET SHORT 13:40–41
 lewat konfirmasi 2 siklus).
-Temuan desain nyata: delete kartu trade adalah HARD delete dari
+Temuan desain nyata #1: delete kartu trade adalah HARD delete dari
 asi_trades → circuit breaker & cooldown per-simbol (v10.2.23) kehilangan
 riwayat loss saat user membersihkan kartu. Fix: delete kini SOFT DELETE
 (deleted=true + deleted_at); GET /trades mengecualikan deleted, tapi
 record tetap di DB untuk breaker/cooldown/statistik engine. Verifikasi
 end-to-end: kartu tampil → DELETE → hilang dari list → record tetap ada
 dengan deleted=true.
+Temuan #2 (lanjutan laporan "sinyal tampil tapi tidak dieksekusi"):
+sinyal ICP gagal terus dengan symbol_filters_missing — akar: ICPUSDT
+memang TIDAK TERDAFTAR di Binance Futures TESTNET (0 entri di
+exchangeInfo testnet; 528 simbol lain ada). Dashboard menampilkan sinyal
+dari data mainnet, tapi eksekusi DEMO/testnet mustahil untuk simbol
+yang tidak ada di testnet. Fix: saat execute_trade menolak dgn
+symbol_filters_missing, simbol masuk set `_UNAVAILABLE_SYMS`
+(modul-level, per jaringan) → siklus berikutnya skip dini dgn reason
+jelas `symbol_<SYM>_tidak_tersedia_di_<jaringan>` tanpa spam log/slot
+konfirmasi. Terverifikasi live: 13:54 UTC ICP di-skip dini.
 
 
 ## v10.2.23 — Anti-Loss Sisi BUY + Circuit Breaker Tangguh (Oktober 2026)

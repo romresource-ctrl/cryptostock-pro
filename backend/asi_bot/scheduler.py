@@ -99,6 +99,13 @@ BUY_CHASE_PCT = 3.0
 BUY_CHASE_WINDOW_H = 6
 BUY_DUMP_GUARD_PCT = 2.5
 BUY_DUMP_GUARD_WINDOW_H = 2
+# v10.2.24 — Set simbol yang TIDAK terdaftar di jaringan aktif (contoh:
+# ICP tidak ada di Binance Futures TESTNET). Diisi saat execute_trade
+# menolak dengan reason=symbol_filters_missing; siklus berikutnya skip
+# dini tanpa memakai slot konfirmasi atau spam log. Level modul supaya
+# bertahan lintas siklus scanner (fungsi scanner dipanggil ulang tiap
+# 90 detik); reset saat backend restart.
+_UNAVAILABLE_SYMS: set[str] = set()
 
 
 async def _public_mark_price(exchange: str, ccxt_symbol: str, testnet: bool) -> float | None:
@@ -1088,6 +1095,15 @@ async def _run_full_auto_scanner(
                         _dev_reject(
                             rep, f"cooldown_loss_{sym}_<{SYMBOL_LOSS_COOLDOWN_HOURS}h")
                         continue
+                    # v10.2.24 — Simbol tidak terdaftar di jaringan aktif
+                    # (mis. ICP di testnet): skip dini, jangan pakai slot
+                    # konfirmasi / spam log tiap siklus.
+                    if f"{net}:{sym}" in _UNAVAILABLE_SYMS:
+                        _dev_reject(
+                            rep,
+                            f"symbol_{sym}_tidak_tersedia_di_"
+                            f"{'testnet' if net else 'mainnet'}")
+                        continue
                     # v10.2.12 — BTC REGIME GATE: rezim BTC menentukan arah
                     # yang boleh dieksekusi untuk ALTCOIN (BTC sendiri
                     # dikecualikan — ia referensi, bukan ikutan). Rezim
@@ -1429,6 +1445,14 @@ async def _run_full_auto_scanner(
                     # v10.1.2 — Log alasan skip supaya tidak jadi black box.
                     logger.info("full-auto skip %s/%s: %s | %s", device_id, sym,
                                 res.get("reason"), str(res.get("message") or "")[:120])
+                    # v10.2.24 — Simbol yang tidak terdaftar di jaringan
+                    # aktif (mis. ICP tidak ada di Binance Futures TESTNET)
+                    # tidak akan pernah berhasil berapapun kali dicoba.
+                    # Masukkan ke set tidak-tersedia per (jaringan) supaya
+                    # siklus berikutnya skip dini tanpa memakai slot
+                    # konfirmasi & spam log. Reset saat backend restart.
+                    if res.get("reason") == "symbol_filters_missing":
+                        _UNAVAILABLE_SYMS.add(f"{net}:{sym}")
                     _dev_reject(rep, f"execute_ditolak: {res.get('reason')}")
                     await _release_claim()
                     continue
