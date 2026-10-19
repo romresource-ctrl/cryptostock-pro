@@ -4265,3 +4265,27 @@ backend_v10232:
           tidak diubah. Live: exhausted_up=False saat BTC rally → 3 BUY
           terbuka (ARB/JUP/AAVE, semua profit), side-cap 3 menahan ke-4.
           Test 101/101 PASS.
+
+# ======================================================
+# v10.2.33 — tp_count user dihormati engine (hapus override HAR)
+# ======================================================
+backend_v10233:
+  - task: "Hapus paksaan tp_count=3 pada formula KISS Pivot (hit-and-run)"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/engine.py (blok hit_and_run: baris 'tp_count = 3' dihapus)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          ROOT CAUSE keluhan user "set 1 TP tapi eksekusi 3 TP": sinyal
+          scalper/day/swing membawa formula_tag mengandung "KISS pivot"
+          → blok hit_and_run di engine.execute_trade memaksa tp_count=3
+          mengabaikan preferensi user. Override dihapus; ladder HAR
+          (0.9/1.2/1.5%) tetap, dislice _shift_tp_ladder sesuai tp_count
+          user dengan split TP_SPLITS (1→100%, 2→50/50, 3→50/25/25).
+          Berlaku semua profil & koin. Test: verifikasi ladder+split
+          3/3 PASS, regresi iter50-53: 101/101 PASS.

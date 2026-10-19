@@ -7,6 +7,12 @@ masalah di masa depan, KEMBALI KE TITIK INI.**
 
 Git restore point: tag `baseline-v10.2.32` (commit lihat `git log`).
 
+> **AMANDEMEN v10.2.33 (permintaan eksplisit user, hari yang sama):**
+> setting jumlah TP user (1/2/3) kini WAJIB dihormati untuk SEMUA profil
+> termasuk KISS Pivot — override `tp_count=3` pada hit-and-run DIHAPUS
+> dari `engine.py`. 1 TP→100% di TP1, 2 TP→50/50, 3 TP→50/25/25.
+> Test baseline tetap 101/101 PASS.
+
 ---
 
 ## A. FORMULA SINYAL (TERKUNCI — JANGAN DIUBAH)

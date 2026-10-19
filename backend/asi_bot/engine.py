@@ -391,7 +391,12 @@ async def execute_trade(
     # Swing 24h) jika masih profit.
     hit_and_run = "kiss pivot" in str(formula_tag or "").lower()
     if hit_and_run and entry > 0:
-        tp_count = 3
+        # v10.2.33 — Keputusan user TERBARU (menimpa v10.2.16b): setting
+        # jumlah TP user di halaman ASI-Bot WAJIB dihormati untuk SEMUA
+        # profil & formula, termasuk KISS Pivot. Override `tp_count=3`
+        # lama DIHAPUS — ladder HAR (0.9/1.2/1.5%) tetap, tapi dislice
+        # oleh _shift_tp_ladder sesuai tp_count user (1→100% di TP1,
+        # 2→50/50, 3→50/25/25).
         _har_sign = 1.0 if side == "BUY" else -1.0
         stop_loss = entry * (1 - _har_sign * HAR_SL_PCT)
         tps = [entry * (1 + _har_sign * p) for p in HAR_TP_PCTS]
