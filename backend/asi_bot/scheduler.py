@@ -678,6 +678,53 @@ def _trend_down_streak(prev_fresh_regime: str | None, prev_streak: int,
     return 0
 
 
+# v10.2.32 — ANTI-CHASE BERBASIS MOMENTUM BTC (keputusan user).
+# Threshold % tetap (3%/5%) DIBUANG — salah karena memblokir sinyal di
+# tengah rally besar. Pengganti: deteksi momentum aktif vs exhaustion.
+#   • Momentum AKTIF searah → arah itu BEBAS dieksekusi (jangan blokir).
+#   • Momentum MELEMAH/BERBALIK (flat, RSI exhaustion, atau candle
+#     terakhir berlawanan) → blokir entry BARU di arah LAMA saja.
+# Simetris naik/turun, berlaku untuk semua profil.
+BTC_MOM_DIR_PCT = 0.3     # |chg_6h| minimum untuk menetapkan "arah lama"
+BTC_MOM_CONT_PCT = 0.1    # |chg_3h| minimum = momentum masih berlanjut
+BTC_MOM_REV_PCT = 0.15    # candle 1h terakhir berlawanan = tanda reversal
+BTC_MOM_RSI_HI = 72.0     # RSI 1h ≥ ini saat momentum up = exhaustion
+BTC_MOM_RSI_LO = 28.0     # RSI 1h ≤ ini saat momentum down = exhaustion
+
+
+def _btc_momentum(regime: dict[str, Any]) -> dict[str, Any]:
+    """Klasifikasi momentum BTC → keputusan anti-chase dua arah.
+
+    direction      : arah pergerakan 6 jam ("up"/"down"/"none")
+    alive_up/down  : momentum searah MASIH berlanjut (continuation +
+                     candle terakhir searah + RSI belum exhaustion)
+    exhausted_up   : arah "up" tapi momentum sudah padam → blokir BUY baru
+    exhausted_down : arah "down" tapi momentum sudah padam → blokir SELL baru
+    BTC flat (direction none) → tidak ada arah lama → dua arah bebas.
+    """
+    rsi = regime.get("rsi")
+    chg_last = float(regime.get("chg_last") or 0.0)
+    chg_3h = float(regime.get("chg_3h") or 0.0)
+    chg_6h = float(regime.get("chg_6h") or 0.0)
+    direction = ("up" if chg_6h > BTC_MOM_DIR_PCT
+                 else "down" if chg_6h < -BTC_MOM_DIR_PCT else "none")
+    alive_up = (chg_3h > BTC_MOM_CONT_PCT
+                and chg_last > -BTC_MOM_REV_PCT
+                and (rsi is None or rsi < BTC_MOM_RSI_HI))
+    alive_down = (chg_3h < -BTC_MOM_CONT_PCT
+                  and chg_last < BTC_MOM_REV_PCT
+                  and (rsi is None or rsi > BTC_MOM_RSI_LO))
+    return {
+        "direction": direction,
+        "alive_up": alive_up,
+        "alive_down": alive_down,
+        "exhausted_up": direction == "up" and not alive_up,
+        "exhausted_down": direction == "down" and not alive_down,
+        "chg_3h": chg_3h,
+        "chg_6h": chg_6h,
+    }
+
+
 def _buy_confirm_eval(doc: dict[str, Any] | None, *, fingerprint: str,
                       now: datetime, window_s: int,
                       required_cycles: int = BUY_CONFIRM_CYCLES) -> tuple[bool, int]:
@@ -729,6 +776,11 @@ async def _compute_btc_regime() -> dict[str, Any]:
     btc_chg_6h = 0.0
     if len(closes1h) >= 8 and closes1h[-8]:
         btc_chg_6h = (closes1h[-2] - closes1h[-8]) / closes1h[-8] * 100.0
+    # v10.2.32 — BTC change 3-hour: proxy "momentum masih berlanjut?"
+    # untuk anti-chase berbasis momentum (bukan threshold % tetap).
+    btc_chg_3h = 0.0
+    if len(closes1h) >= 5 and closes1h[-5]:
+        btc_chg_3h = (closes1h[-2] - closes1h[-5]) / closes1h[-5] * 100.0
     rsi = _rsi(closes1h[:-1], 14)
     closes4h = [float(c["close"]) for c in ((btc4h or {}).get("candles") or [])
                 if c.get("close")]
@@ -755,7 +807,7 @@ async def _compute_btc_regime() -> dict[str, Any]:
         else {"regime": "UNKNOWN"}
     base_regime = base.get("regime", "UNKNOWN")
     out.update({"rsi": rsi, "chg_last": chg_last, "chg_prev": chg_prev,
-                "chg_6h": btc_chg_6h,
+                "chg_3h": btc_chg_3h, "chg_6h": btc_chg_6h,
                 "slope_up": slope_up, "slope_dn": slope_dn, "ok": True,
                 "base_regime": base_regime})
     if rsi is not None and (
@@ -921,6 +973,9 @@ async def _run_full_auto_scanner(
         "bullish_reversal", "trending_up", "bear_capitulation")
     gate_block_buy = btc_regime["regime"] in (
         "bearish_reversal", "trending_down", "bear_capitulation")
+    # v10.2.32 — Momentum BTC untuk anti-chase adaptif (tanpa threshold
+    # % tetap). Dihitung SEKALI per siklus dari regime BTC.
+    btc_mom = _btc_momentum(btc_regime)
     if btc_regime["regime"] != "neutral":
         logger.info("btc-regime gate: %s (%s) → blokir %s | streak_up=%d base4H=%s",
                     btc_regime["regime"], btc_regime.get("detail"),
@@ -1318,19 +1373,33 @@ async def _run_full_auto_scanner(
                         c1h = [float(c["close"]) for c in
                                ((snap1h or {}).get("candles") or [])
                                if c.get("close")]
+                        # v10.2.32 — ANTI-CHASE MOMENTUM (menggantikan
+                        # threshold % tetap v10.2.21/23/30): blokir entry
+                        # baru di arah lama HANYA saat momentum BTC arah
+                        # itu sudah padam (flat / candle berlawanan /
+                        # RSI exhaustion). Selama momentum aktif, LONG &
+                        # SHORT bebas — bot ikut seluruh rally/flush.
+                        if sig["side"] == "BUY" and btc_mom["exhausted_up"]:
+                            logger.info(
+                                "full-auto anti-chase %s/%s: BUY ditolak — "
+                                "momentum BTC UP padam (3h %+.2f%%, 1h %+.2f%%, "
+                                "RSI %s)",
+                                device_id, sym, btc_mom["chg_3h"],
+                                float(btc_regime.get("chg_last") or 0),
+                                btc_regime.get("rsi"))
+                            _dev_reject(rep, "anti_chase_buy_btc_momentum_padam")
+                            continue
+                        if sig["side"] == "SELL" and btc_mom["exhausted_down"]:
+                            logger.info(
+                                "full-auto anti-chase %s/%s: SELL ditolak — "
+                                "momentum BTC DOWN padam (3h %+.2f%%, 1h %+.2f%%, "
+                                "RSI %s)",
+                                device_id, sym, btc_mom["chg_3h"],
+                                float(btc_regime.get("chg_last") or 0),
+                                btc_regime.get("rsi"))
+                            _dev_reject(rep, "anti_chase_sell_btc_momentum_padam")
+                            continue
                         if sig["side"] == "SELL":
-                            n = min(SELL_CHASE_WINDOW_H, len(c1h) - 1)
-                            if n >= 2 and c1h[-1 - n] > 0:
-                                chg_pct = (c1h[-1] - c1h[-1 - n]) / c1h[-1 - n] * 100
-                                if chg_pct <= -SELL_CHASE_PCT:
-                                    logger.info(
-                                        "full-auto anti-chase skip %s/%s: SELL "
-                                        "ditolak (turun %.2f%% dalam %dj, ambang -%.1f%%)",
-                                        device_id, sym, chg_pct, n, SELL_CHASE_PCT)
-                                    _dev_reject(
-                                        rep,
-                                        f"anti_chase_sell_{abs(chg_pct):.1f}pct_{n}h")
-                                    continue
                             # v10.2.25 — SELL short-window dump guard
                             # (pelajaran 18/10 14:02-14:09 UTC: 7 SHORT
                             # di dasar bar -1 s/d -1,5%/1h → bounce →
@@ -1350,36 +1419,9 @@ async def _run_full_auto_scanner(
                                         f"sell_short_dump_{abs(chg2):.1f}pct_{n2}h")
                                     continue
                         else:  # BUY
-                            # v10.2.30 — ANTI-CHASE BUY ADAPTIF
-                            # (keputusan user: "anti-chase harus relatif
-                            # terhadap BTC, bukan absolut 3%/6h"):
-                            # • BTC_6h < BUY_CHASE_PCT (3%)  → BTC masih
-                            #   di fase awal rally; alt yang ikut naik
-                            #   BELUM dianggap chasing → anti-chase
-                            #   DIMATIKAN.
-                            # • BTC_6h ≥ BUY_CHASE_PCT         → BTC
-                            #   sudah bergerak signifikan; alt dianggap
-                            #   chasing hanya bila OUTPACE BTC lebih
-                            #   dari BUY_CHASE_PCT (gap relatif).
-                            # Logika sebelumnya (absolut) menolak semua
-                            # alt setelah BTC pump — bot melewatkan
-                            # seluruh fase rally.
-                            btc_6h = float(btc_regime.get("chg_6h") or 0.0)
-                            n6 = min(BUY_CHASE_WINDOW_H, len(c1h) - 1)
-                            if n6 >= 2 and c1h[-1 - n6] > 0:
-                                chg6 = (c1h[-1] - c1h[-1 - n6]) / c1h[-1 - n6] * 100
-                                _btc_late = btc_6h >= BUY_CHASE_PCT
-                                _rel_gap = chg6 - btc_6h
-                                if _btc_late and _rel_gap >= BUY_CHASE_PCT:
-                                    logger.info(
-                                        "full-auto anti-chase skip %s/%s: "
-                                        "alt +%.2f%% vs BTC +%.2f%% (gap "
-                                        "+%.2f%%) — alt chasing di puncak",
-                                        device_id, sym, chg6, btc_6h, _rel_gap)
-                                    _dev_reject(
-                                        rep,
-                                        f"anti_chase_buy_rel_{_rel_gap:.1f}pct_vs_btc")
-                                    continue
+                            # v10.2.32 — anti-chase BUY berbasis momentum
+                            # sudah ditangani di atas (btc_mom.exhausted_up).
+                            # Di sini tersisa DUMP GUARD BUY saja.
                             n2 = min(BUY_DUMP_GUARD_WINDOW_H, len(c1h) - 1)
                             if n2 >= 2 and c1h[-1 - n2] > 0:
                                 chg2 = (c1h[-1] - c1h[-1 - n2]) / c1h[-1 - n2] * 100
@@ -1598,22 +1640,22 @@ async def _run_full_auto_scanner(
                  "bear4h_conf_bonus": BEAR4H_CONF_BONUS,
                  "buy_confirm_cycles": BUY_CONFIRM_CYCLES,
                  "sell_confirm_cycles": SELL_CONFIRM_CYCLES,
-                 "sell_chase_pct": SELL_CHASE_PCT,
-                 "sell_chase_window_h": SELL_CHASE_WINDOW_H,
                  "longterm_stale_hours": LONGTERM_STALE_HOURS,
                  "longterm_stale_min_profit_pct": LONGTERM_STALE_MIN_PROFIT_PCT,
                  # v10.2.22 — relaksasi slope trend-filter 4H saat BTC
                  # terkonfirmasi (streak ≥ TREND_UP_MIN_CYCLES).
                  "trend4h_slope_relax_on_confirmed_btc": True,
                  # v10.2.23 — paket anti-loss BUY + breaker tangguh.
-                 "buy_chase_pct": BUY_CHASE_PCT,
-                 "buy_chase_window_h": BUY_CHASE_WINDOW_H,
-                 # v10.2.30 — anti-chase BUY sekarang RELATIF terhadap
-                 # BTC: hanya aktif saat BTC_6h ≥ buy_chase_pct DAN alt
-                 # outpace BTC >= buy_chase_pct (gap). Field berikut
-                 # memaparkan BTC 6h change aktual siklus ini.
-                 "buy_chase_mode": "relative_to_btc",
-                 "btc_chg_6h": round(float(btc_regime.get("chg_6h") or 0.0), 2),
+                 # v10.2.32 — anti-chase berbasis MOMENTUM BTC
+                 # (threshold % tetap dibuang): blokir arah lama hanya
+                 # saat momentum padam (flat / candle berlawanan / RSI
+                 # exhaustion). Field memaparkan state aktual siklus ini.
+                 "anti_chase_mode": "btc_momentum",
+                 "btc_mom_direction": btc_mom["direction"],
+                 "btc_mom_chg_3h": round(btc_mom["chg_3h"], 2),
+                 "btc_mom_chg_6h": round(btc_mom["chg_6h"], 2),
+                 "btc_mom_exhausted_up": btc_mom["exhausted_up"],
+                 "btc_mom_exhausted_down": btc_mom["exhausted_down"],
                  "buy_dump_guard_pct": BUY_DUMP_GUARD_PCT,
                  "buy_dump_guard_window_h": BUY_DUMP_GUARD_WINDOW_H,
                  "circuit_breaker_losses": CIRCUIT_BREAKER_LOSSES,

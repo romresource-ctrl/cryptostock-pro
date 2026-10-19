@@ -135,6 +135,32 @@ cooldown loss 4h, circuit breaker, trend filter 4H, BTC regime gate.
 Bukti live: setelah deploy, scan report tidak lagi menampilkan
 "menunggu_konfirmasi" untuk BUY. Test: 98/98 PASS.
 
+## v10.2.32 — Anti-Chase Berbasis Momentum BTC (Oktober 2026)
+Koreksi user atas v10.2.30: "JANGAN pakai threshold % tetap (3%/5%) —
+itu memblokir sinyal di tengah rally besar. Ganti deteksi momentum
+aktif." Diimplementasikan persis:
+- **Momentum AKTIF** (chg_3h searah >±0.1% DAN candle terakhir tidak
+  berlawanan >0.15% DAN RSI 1h belum exhaustion 28/72) → LONG/SHORT
+  searah momentum BEBAS dieksekusi. Bot ikut SELURUH pergerakan BTC
+  dari awal hingga akhir, bukan hanya 3% pertama.
+- **Momentum PADAM** (arah 6h sudah terbentuk tapi flat / candle
+  berbalik / RSI exhaustion) → blokir entry BARU di arah lama saja.
+  Reject: `anti_chase_buy_btc_momentum_padam` /
+  `anti_chase_sell_btc_momentum_padam`.
+- BTC flat (|chg_6h| ≤ 0.3%) → tidak ada arah lama → dua arah bebas.
+- Simetris naik/turun, berlaku semua profil. Guard per-simbol lain
+  (short-dump 1.2%/2h, buy-dump 2.5%/2h, side-cap, cooldown, circuit
+  breaker, RSI 72/28, trend filter 4H) TIDAK diubah.
+Konstanta lama BUY/SELL_CHASE_* tidak lagi dipakai scanner;
+`buy_gates` kini mengekspos `anti_chase_mode="btc_momentum"` +
+state momentum aktual.
+Bukti live: BTC up (chg_6h +1.25%, chg_3h +0.41%) → exhausted_up=False
+→ LONG mengalir; bot membuka 3 BUY (ARB +$29.3, JUP +$8.3, AAVE +$9.8)
+sampai side-cap 3 menahan kandidat ke-4 — proteksi konsentrasi bekerja.
+Test: 101/101 PASS (suite anti-chase ditulis ulang ke semantik
+momentum: flat/reversal/RSI-exhaustion memblokir, momentum hidup bebas,
+dua arah simetris).
+
 
 ## v10.2.24 — Soft Delete Kartu Trade + Skip Simbol Tak Tersedia (Oktober 2026)
 Laporan user: "tidak ada sinyal yang dieksekusi sama sekali".

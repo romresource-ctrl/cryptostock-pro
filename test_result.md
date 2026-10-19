@@ -4243,3 +4243,25 @@ backend_v10230:
           fase 2 (BTC late ≥3%) hanya reject jika gap alt-vs-btc ≥3%.
           Bukti live: btc_chg_6h=1.61, anti_chase_buy_* HILANG dari
           reject report. Test 98/98 PASS (4 test baru).
+
+# ======================================================
+# v10.2.32 — Anti-chase berbasis MOMENTUM BTC (simetris)
+# ======================================================
+backend_v10232:
+  - task: "Ganti threshold % tetap anti-chase dengan deteksi momentum aktif/padam"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/scheduler.py (_btc_momentum helper, chg_3h di _compute_btc_regime, blok chase diganti exhausted_up/down)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Spesifikasi user persis: momentum aktif → bebas LONG/SHORT
+          searah; momentum padam (flat/RSI exhaustion/candle berbalik)
+          → blokir arah lama saja; simetris semua profil. Guard lain
+          tidak diubah. Live: exhausted_up=False saat BTC rally → 3 BUY
+          terbuka (ARB/JUP/AAVE, semua profit), side-cap 3 menahan ke-4.
+          Test 101/101 PASS.

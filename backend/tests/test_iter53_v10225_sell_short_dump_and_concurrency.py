@@ -473,18 +473,19 @@ class TestSellShortDumpGuard:
         assert not any(r.startswith("anti_chase_sell_") for r in rej), rej
         assert "sell_menunggu_konfirmasi_siklus_2" in rej, rej
 
-    def test_b3_anti_chase_sell_takes_precedence_when_6h_drop_only(
+    def test_b3_sell_6h_drop_only_btc_flat_goes_to_confirmation(
             self, monkeypatch):
-        """-3%/6h but only ~-1.02%/2h → anti_chase_sell_* v10.2.21 fires
-        (check order: anti_chase_sell at L1308 before short-dump L1325).
-        Short-dump should NOT fire (chg_2h ≈ -1.02% > -1.2%)."""
+        """v10.2.32 — threshold % anti-chase dibuang: -3%/6h (tapi hanya
+        ~-1.02%/2h) dengan BTC flat → anti_chase TIDAK muncul, short-dump
+        juga tidak (-1.02% > -1.2%) → SELL lanjut konfirmasi 2 siklus."""
         db, exec_stub, fetcher = make_harness(
             monkeypatch, side="SELL", whitelist=["FET"],
             closes_1h=closes_1h_sell_antichase_only())
         run_scan(db, fetcher)
         rej = rejects_of(db)
-        assert any(r.startswith("anti_chase_sell_") for r in rej), rej
+        assert not any(r.startswith("anti_chase_sell_") for r in rej), rej
         assert not any(r.startswith("sell_short_dump_") for r in rej), rej
+        assert "sell_menunggu_konfirmasi_siklus_2" in rej, rej
         assert len(exec_stub.calls) == 0
 
     def test_b4_btc_excluded_from_short_dump(self, monkeypatch):
@@ -537,14 +538,17 @@ class TestRegression:
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
 
-    def test_c4_anti_chase_sell_regression_5pct_6h(self, monkeypatch):
+    def test_c4_sell_dump_btc_flat_short_dump_guard_only(self, monkeypatch):
+        """v10.2.32 — regresi diperbarui: dump -5%/6h dengan BTC flat →
+        anti_chase TIDAK ada; short-dump guard per-simbol menahan."""
         db, exec_stub, fetcher = make_harness(
             monkeypatch, side="SELL", base="BEAR",
             closes_4h=closes_downtrend(),
             closes_1h=closes_1h_dump5())
         run_scan(db, fetcher)
         rej = rejects_of(db)
-        assert any(r.startswith("anti_chase_sell_") for r in rej), rej
+        assert not any(r.startswith("anti_chase_sell_") for r in rej), rej
+        assert any(r.startswith("sell_short_dump_") for r in rej), rej
         assert len(exec_stub.calls) == 0
 
     def test_c5_btc_regime_blocks_sell_in_trending_up(self, monkeypatch):
@@ -581,8 +585,9 @@ class TestBuyGatesAuditV10225:
         assert gates.get("sell_short_dump_pct") == 1.2, gates
         assert gates.get("sell_short_dump_window_h") == 2, gates
         assert gates.get("max_open_per_side") == 3, gates
+        # v10.2.32: chase % tetap diganti mode momentum
+        assert gates.get("anti_chase_mode") == "btc_momentum", gates
         # regression: previous keys still present
-        assert gates.get("buy_chase_pct") == 3.0, gates
         assert gates.get("buy_dump_guard_pct") == 2.5, gates
         assert gates.get("circuit_breaker_losses") == 3, gates
         assert gates.get("symbol_loss_cooldown_hours") == 4, gates

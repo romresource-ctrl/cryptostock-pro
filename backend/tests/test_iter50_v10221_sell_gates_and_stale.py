@@ -347,14 +347,17 @@ class TestBuyConfirmEvalRequiredCycles:
 # INTEGRATION: anti-chase SELL
 # ════════════════════════════════════════════════════════════════════════
 class TestAntiChaseSell:
-    def test_sell_rejected_when_1h_drop_5pct(self, monkeypatch):
+    def test_sell_dump_btc_flat_short_dump_guard_only(self, monkeypatch):
+        """v10.2.32 — threshold % anti-chase dibuang. Alt dump -5%/6h
+        dengan BTC flat → anti_chase TIDAK muncul; short-dump guard
+        per-simbol (-1.2%/2h) yang menahan."""
         db, exec_stub, fetcher = make_harness(
             monkeypatch, side="SELL", conf=95, regime="neutral",
             base="BEAR", streak=0, c1h_drop_pct=-5.0)
         run_scan(db, fetcher)
         rej = rejects_of(db)
-        assert any(r.startswith("anti_chase_sell_") for r in rej), (
-            f"expected anti_chase_sell_* reject, got {rej}")
+        assert not any(r.startswith("anti_chase_sell_") for r in rej), rej
+        assert any(r.startswith("sell_short_dump_") for r in rej), rej
         assert len(exec_stub.calls) == 0
 
     def test_sell_not_rejected_when_1h_drop_2pct(self, monkeypatch):
@@ -653,13 +656,12 @@ class TestScanDebugHTTP:
         body = r.json()
         gates = body.get("buy_gates") or {}
         for f in ("buy_confirm_cycles", "sell_confirm_cycles",
-                  "sell_chase_pct", "sell_chase_window_h",
+                  "anti_chase_mode",
                   "longterm_stale_hours", "longterm_stale_min_profit_pct"):
             assert f in gates, f"missing field {f} in buy_gates={gates}"
         assert gates["buy_confirm_cycles"] == 1  # v10.2.31
         assert gates["sell_confirm_cycles"] == 2
-        assert gates["sell_chase_pct"] == 3.0
-        assert gates["sell_chase_window_h"] == 6
+        assert gates["anti_chase_mode"] == "btc_momentum"  # v10.2.32
         assert gates["longterm_stale_hours"] == 3.0
         assert gates["longterm_stale_min_profit_pct"] == 0.5
 
