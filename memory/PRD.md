@@ -170,6 +170,24 @@ Test: 101/101 PASS (suite anti-chase ditulis ulang ke semantik
 momentum: flat/reversal/RSI-exhaustion memblokir, momentum hidup bebas,
 dua arah simetris).
 
+## v10.2.33 — tp_count User Dihormati Semua Profil (Oktober 2026)
+Root cause keluhan "set 1 TP tapi eksekusi 3 TP": sinyal Scalper/
+Intraday/Swing membawa formula_tag "KISS pivot" → blok hit-and-run di
+`engine.execute_trade` memaksa `tp_count=3`. Override dihapus — setting
+TP user kini berlaku untuk SEMUA profil & koin: 1 TP→100%, 2 TP→50/50,
+3 TP→50/25/25 (ladder HAR 0.9/1.2/1.5% tetap, hanya dislice).
+Test ladder+split 3/3 PASS; regresi 101/101 PASS.
+
+## v10.2.34 — Chunked Close (Oktober 2026)
+Root cause "CLOSE tidak bisa / tombol aktif lagi": posisi besar (kasus
+nyata JUP 15.236 qty testnet) melebihi batas 1 market order Binance
+→ `-4005 Quantity greater than max quantity`, gagal 4× beruntun.
+`close_position` kini memecah close besar menjadi beberapa market order
+reduceOnly ≤ MARKET_LOT_SIZE max_qty sampai posisi habis. Berlaku untuk
+CLOSE per kartu DAN Close-All (keduanya lewat close_position).
+Bukti live: JUP closed sukses (HTTP 200, close_reason=manual).
+Regresi 101/101 PASS.
+
 
 ## v10.2.24 — Soft Delete Kartu Trade + Skip Simbol Tak Tersedia (Oktober 2026)
 Laporan user: "tidak ada sinyal yang dieksekusi sama sekali".
