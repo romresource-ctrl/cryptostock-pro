@@ -4312,3 +4312,34 @@ backend_v10234:
           Berlaku untuk CLOSE per kartu DAN Close-All (keduanya memakai
           close_position). Live test: JUP closed sukses (HTTP 200,
           close_reason=manual). Regresi 101/101 PASS.
+
+# ======================================================
+# v10.2.35 — Fix -2021 bracket gagal + error i18n
+# ======================================================
+backend_v10235:
+  - task: "Clamp trigger TP vs mark price (fix -2021 would immediately trigger) + pesan error backend Inggris"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/engine.py (guard TP vs markPrice, -2021 retry-clamp TP, SL -2021 fail-fast, pesan _emergency_close Inggris)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Kasus user (AI Suggestions semi-auto): SHORT gagal execute
+          karena -2021 "Order would immediately trigger" — harga bergerak
+          melewati TP/SL antara fill & pemasangan bracket → 3x retry
+          harga sama → rollback. Fix: (1) guard TP vs markPrice terkini
+          sebelum pasang (clamp 0.1% ke arah profit bila terlewati);
+          (2) TP -2021 → re-clamp vs mark segar + retry; (3) SL -2021 →
+          fail-fast (harga memang sudah tembus stop, retry sia-sia).
+          Pesan error backend kini English (kode tetap machine-readable).
+          Formula TP/SL tidak diubah — clamp hanya fallback eksekusi.
+frontend_v10235:
+  - task: "Body error bracket mengikuti bahasa user"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/AsiTradeSheet.tsx + I18nContext.tsx (4 key baru: ats_err_bracket_sl/tp/verify/rollback_failed, 4 locale)"
+    comment: "Sebelumnya code bracket_* jatuh ke pesan mentah backend (Indonesia) walau user locale EN."

@@ -757,6 +757,31 @@ async def execute_trade(
             tps_rounded = [round_to_tick(actual_entry - risk_dist * 1.5, tick)]
     tp_count = min(3, max(1, len(tps_rounded)))
 
+    # v10.2.35 — GUARD TP vs MARK PRICE TERKINI (bukan hanya vs entry).
+    # Kasus user (AI Suggestions): harga bergerak melewati TP antara fill
+    # entry & pemasangan bracket → Binance -2021 "Order would immediately
+    # trigger" → 3× retry gagal → posisi di-rollback ("tidak bisa
+    # execute"). Fix level-eksekusi (formula TP/SL tidak disentuh):
+    # trigger yang sudah terlewati di-clamp ke jarak minimal valid dari
+    # mark (0.1% ke arah profit) agar bracket tetap terpasang.
+    try:
+        _mark_now = float(pos_final.get("markPrice") or 0.0)
+    except Exception:
+        _mark_now = 0.0
+    if _mark_now > 0:
+        _clamped_tps: list[float] = []
+        for _t in tps_rounded:
+            if side == "BUY" and _t <= _mark_now:
+                _t = round_to_tick(_mark_now * 1.001, tick)
+                if _t <= _mark_now:
+                    _t = round_to_tick(_mark_now + tick, tick)
+            elif side == "SELL" and _t >= _mark_now:
+                _t = round_to_tick(_mark_now * 0.999, tick)
+                if _t >= _mark_now:
+                    _t = round_to_tick(_mark_now - tick, tick)
+            _clamped_tps.append(_t)
+        tps_rounded = _clamped_tps
+
     # v9.9.4 — AUTO-REBALANCE BRACKET saat layering: batalkan SL/TP lama
     # dari layer sebelumnya (qty-nya sudah usang), lalu pasang ulang di
     # bawah ini untuk TOTAL posisi gabungan dengan average entry baru.
@@ -799,8 +824,8 @@ async def execute_trade(
             return {
                 "ok": False, "reason": "bracket_failed_rollback_failed",
                 "message": (
-                    f"Entry sukses, bracket GAGAL ({detail}), rollback juga GAGAL. "
-                    "SEGERA tutup posisi manual di Binance!"
+                    f"Entry succeeded, bracket FAILED ({detail}), rollback also FAILED. "
+                    "Close the position manually on Binance IMMEDIATELY!"
                 ),
                 "requires_manual_action": True,
                 "symbol": bin_sym, "qty": actual_qty, "side": side,
@@ -808,10 +833,10 @@ async def execute_trade(
         return {
             "ok": False, "reason": reason,
             "message": (
-                f"Bracket SL/TP tidak dapat terpasang di Binance ({detail}). "
-                + ("Seluruh posisi gabungan (termasuk layer sebelumnya) otomatis ditutup. "
-                   if layering else "Posisi otomatis ditutup. ")
-                + "Balance Anda aman. Silakan coba lagi."
+                f"SL/TP bracket could not be placed on Binance ({detail}). "
+                + ("Combined position (incl. previous layers) was auto-closed. "
+                   if layering else "Position was auto-closed. ")
+                + "Your balance is safe. Please try again."
             ),
             "rollback_done": True,
         }
@@ -840,6 +865,14 @@ async def execute_trade(
                     await br.cancel_all_legacy(api_key, api_secret, is_testnet, bin_sym)
                 except Exception:
                     pass
+            # v10.2.35 — -2021 "would immediately trigger" pada SL:
+            # harga SUDAH menembus level stop saat bracket dipasang →
+            # retry dengan harga yang sama tidak akan pernah berhasil.
+            # Hentikan retry; posisi memang sudah seharusnya tertutup.
+            if "-2021" in sl_error:
+                sl_error = ("price already beyond stop level "
+                            f"({sl_error})")
+                break
             await asyncio.sleep(0.4)
 
     if not sl_algo_id:
@@ -869,6 +902,27 @@ async def execute_trade(
             except Exception as e:
                 last_err = str(e)[:200]
                 logger.warning("TP%d attempt %d %s: %s", i + 1, attempt + 1, bin_sym, last_err)
+                # v10.2.35 — -2021: harga sudah melewati target TP saat
+                # bracket dipasang (pasar bergerak cepat). Ambil mark
+                # terkini lalu clamp trigger ke jarak minimal valid
+                # (0.1% ke arah profit) dan coba lagi — eksekusi tidak
+                # boleh batal total hanya karena pasar bergerak duluan.
+                if "-2021" in last_err:
+                    try:
+                        _pos = await br.position_risk(
+                            api_key, api_secret, is_testnet, bin_sym)
+                        _m = float((_pos or {}).get("markPrice") or 0.0)
+                        if _m > 0:
+                            if side == "BUY" and tp <= _m:
+                                tp = round_to_tick(_m * 1.001, tick)
+                                if tp <= _m:
+                                    tp = round_to_tick(_m + tick, tick)
+                            elif side == "SELL" and tp >= _m:
+                                tp = round_to_tick(_m * 0.999, tick)
+                                if tp >= _m:
+                                    tp = round_to_tick(_m - tick, tick)
+                    except Exception:
+                        pass
                 await asyncio.sleep(0.4)
         if not placed_id:
             tp_errors.append(f"TP{i + 1}: {last_err}")
@@ -891,12 +945,12 @@ async def execute_trade(
     if not sl_verified:
         return await _emergency_close(
             "bracket_sl_not_verified",
-            f"SL algoId {sl_algo_id} tidak terlihat di openAlgoOrders",
+            f"SL algoId {sl_algo_id} not visible in openAlgoOrders",
         )
     if tp_verified_count < expected_tp_count:
         return await _emergency_close(
             "bracket_tp_incomplete",
-            f"{tp_verified_count}/{expected_tp_count} TP terpasang. {'; '.join(tp_errors)[:150]}",
+            f"{tp_verified_count}/{expected_tp_count} TP placed. {'; '.join(tp_errors)[:150]}",
         )
 
     # (10) All verified → save trade as HARD bracket

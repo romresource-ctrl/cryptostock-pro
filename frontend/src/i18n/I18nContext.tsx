@@ -1136,6 +1136,32 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     ru: "Ошибка исполнения. Попробуйте снова.",
     cn: "执行失败。请重试。",
   },
+  // v10.2.35 — Body error bracket mengikuti bahasa user (sebelumnya
+  // backend mengirim Bahasa Indonesia mentah ke semua locale).
+  ats_err_bracket_sl: {
+    id: "Stop-Loss tidak dapat terpasang di exchange (harga mungkin sudah melewati level stop). Posisi otomatis ditutup. Saldo Anda aman — silakan coba lagi.",
+    en: "Stop-Loss could not be placed on the exchange (price may have already crossed the stop level). Position was auto-closed. Your balance is safe — please try again.",
+    ru: "Не удалось выставить стоп-лосс на бирже (цена, возможно, уже пересекла уровень стопа). Позиция закрыта автоматически. Средства в безопасности — попробуйте снова.",
+    cn: "无法在交易所设置止损（价格可能已越过止损位）。仓位已自动平仓。资金安全——请重试。",
+  },
+  ats_err_bracket_tp: {
+    id: "Take-Profit tidak dapat terpasang lengkap di exchange (target mungkin sudah terlewati harga). Posisi otomatis ditutup. Saldo Anda aman — silakan coba lagi.",
+    en: "Take-Profit orders could not be fully placed on the exchange (targets may already be crossed by price). Position was auto-closed. Your balance is safe — please try again.",
+    ru: "Не удалось полностью выставить тейк-профит на бирже (цель, возможно, уже пройдена ценой). Позиция закрыта автоматически. Средства в безопасности — попробуйте снова.",
+    cn: "无法在交易所完整设置止盈（目标价可能已被价格越过）。仓位已自动平仓。资金安全——请重试。",
+  },
+  ats_err_bracket_verify: {
+    id: "SL/TP tidak terverifikasi di exchange setelah pemasangan. Posisi otomatis ditutup demi keamanan. Saldo Anda aman.",
+    en: "SL/TP could not be verified on the exchange after placement. Position was auto-closed for safety. Your balance is safe.",
+    ru: "SL/TP не подтверждены на бирже после выставления. Позиция закрыта автоматически ради безопасности. Средства в безопасности.",
+    cn: "SL/TP 在交易所下单后未通过验证。为安全起见仓位已自动平仓。资金安全。",
+  },
+  ats_err_rollback_failed: {
+    id: "Entry berhasil, bracket GAGAL, dan rollback otomatis juga GAGAL. SEGERA tutup posisi secara manual di Binance!",
+    en: "Entry succeeded, bracket FAILED, and the automatic rollback also FAILED. Close the position manually on Binance IMMEDIATELY!",
+    ru: "Вход выполнен, брекет НЕ удался, автооткат тоже НЕ удался. НЕМЕДЛЕННО закройте позицию вручную на Binance!",
+    cn: "入场成功，但括号单失败，自动回滚也失败。请立即在 Binance 手动平仓！",
+  },
   // v9.9.2 — Auto-rollback & margin mismatch dialogs
   ats_bracket_rollback_title: {
     id: "⚠️ Entry Dibatalkan — SL/TP Gagal",

@@ -326,6 +326,12 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
         if (code === "margin_mode_set_failed") return t("ats_err_mm_failed");
         if (code === "position_not_visible") return t("ats_err_pos_not_visible");
         if (code === "execute_failed") return t("ats_err_execute_generic");
+        // v10.2.35 — Bracket failures: body mengikuti bahasa user
+        // (sebelumnya jatuh ke pesan mentah backend).
+        if (code === "bracket_sl_failed") return t("ats_err_bracket_sl");
+        if (code === "bracket_tp_incomplete") return t("ats_err_bracket_tp");
+        if (code === "bracket_sl_not_verified") return t("ats_err_bracket_verify");
+        if (code === "bracket_failed_rollback_failed") return t("ats_err_rollback_failed");
         return msg || t("ats_err_execute_generic");
       })();
       let title = t("ats_exec_failed");
