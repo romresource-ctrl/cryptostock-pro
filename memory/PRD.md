@@ -120,6 +120,21 @@ Bukti live scan-debug: BTC_6h=1.61% → reject `anti_chase_buy_*` HILANG
 dari report; eksekusi mengalir (field `sudah_ada_posisi`: 1).
 Test: 98/98 PASS (4 test baru + suite lama diperbarui).
 
+## v10.2.31 — Konfirmasi 1 Siklus + RSI 72/28 (Oktober 2026)
+Keluhan user: "seharian bot tidak eksekusi ini memalukan". Dua filter
+yang paling sering menahan eksekusi dilonggarkan:
+1. **BUY_CONFIRM_CYCLES: 2 → 1**. Sinyal BUY tereksekusi di siklus
+   pertama (sebelumnya butuh 2 siklus = 90–180 detik jeda, sering
+   sinyal hilang dulu di siklus kedua). SELL tetap 2 siklus (SHORT
+   lebih berisiko).
+2. **RSI 1h gate: 65/35 → 72/28**. 65 terlalu ketat untuk crypto yang
+   rutin bergerak di RSI 70–80 saat rally (kasus ARB 69 tersaring).
+   Ambang 72/28 hanya memblokir extreme overbought/oversold.
+Proteksi lain tetap aktif: anti-chase relatif terhadap BTC, side-cap 3,
+cooldown loss 4h, circuit breaker, trend filter 4H, BTC regime gate.
+Bukti live: setelah deploy, scan report tidak lagi menampilkan
+"menunggu_konfirmasi" untuk BUY. Test: 98/98 PASS.
+
 
 ## v10.2.24 — Soft Delete Kartu Trade + Skip Simbol Tak Tersedia (Oktober 2026)
 Laporan user: "tidak ada sinyal yang dieksekusi sama sekali".

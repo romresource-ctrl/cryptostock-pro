@@ -461,7 +461,7 @@ class TestSymbolLossCooldown:
         run_scan(db, fetcher)
         rej = rejects_of(db)
         assert "cooldown_loss_SAND_<4h" in rej, rej
-        assert "buy_menunggu_konfirmasi_siklus_2" in rej, rej  # ETH lolos
+        assert "buy_menunggu_konfirmasi_siklus_1" in rej, rej  # ETH lolos
         assert len(exec_stub.calls) == 0
 
     def test_symbol_profit_within_4h_passes(self, monkeypatch):
@@ -473,7 +473,7 @@ class TestSymbolLossCooldown:
         run_scan(db, fetcher)
         rej = rejects_of(db)
         assert not any(r.startswith("cooldown_loss_") for r in rej), rej
-        assert "buy_menunggu_konfirmasi_siklus_2" in rej, rej
+        assert "buy_menunggu_konfirmasi_siklus_1" in rej, rej
 
     def test_symbol_loss_older_than_4h_passes(self, monkeypatch):
         """Simbol yang loss >4 jam lalu → cooldown sudah lewat → lolos."""
@@ -483,7 +483,7 @@ class TestSymbolLossCooldown:
         run_scan(db, fetcher)
         rej = rejects_of(db)
         assert not any(r.startswith("cooldown_loss_") for r in rej), rej
-        assert "buy_menunggu_konfirmasi_siklus_2" in rej, rej
+        assert "buy_menunggu_konfirmasi_siklus_1" in rej, rej
 
     def test_small_loss_within_threshold_no_cooldown(self, monkeypatch):
         """Loss kecil (-0.50, di dalam ambang -$1) TIDAK memicu cooldown."""
@@ -493,7 +493,7 @@ class TestSymbolLossCooldown:
         run_scan(db, fetcher)
         rej = rejects_of(db)
         assert not any(r.startswith("cooldown_loss_") for r in rej), rej
-        assert "buy_menunggu_konfirmasi_siklus_2" in rej, rej
+        assert "buy_menunggu_konfirmasi_siklus_1" in rej, rej
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -514,7 +514,7 @@ class TestAntiChaseBuy:
         run_scan(db, fetcher)
         rej = rejects_of(db)
         assert not any(r.startswith("anti_chase_buy_") for r in rej), rej
-        assert "buy_menunggu_konfirmasi_siklus_2" in rej, rej
+        assert "buy_menunggu_konfirmasi_siklus_1" in rej, rej
 
     def test_alt_pump_btc_late_small_gap_NOT_rejected(self, monkeypatch):
         """Alt +4.6%/6h, BTC +4%/6h → BTC late tapi gap hanya +0.6%
@@ -525,7 +525,7 @@ class TestAntiChaseBuy:
         run_scan(db, fetcher)
         rej = rejects_of(db)
         assert not any(r.startswith("anti_chase_buy_") for r in rej), rej
-        assert "buy_menunggu_konfirmasi_siklus_2" in rej, rej
+        assert "buy_menunggu_konfirmasi_siklus_1" in rej, rej
 
     def test_alt_outpace_btc_wide_gap_REJECTED(self, monkeypatch):
         """Alt +9%/6h, BTC +3%/6h → BTC late DAN alt outpace BTC +6%
@@ -546,7 +546,7 @@ class TestAntiChaseBuy:
         run_scan(db, fetcher)
         rej = rejects_of(db)
         assert not any(r.startswith("anti_chase_buy_") for r in rej), rej
-        assert "buy_menunggu_konfirmasi_siklus_2" in rej, rej
+        assert "buy_menunggu_konfirmasi_siklus_1" in rej, rej
 
     def test_buy_passes_when_flat(self, monkeypatch):
         """closes 1h flat → anti-chase BUY tidak aktif → lolos ke
@@ -556,7 +556,7 @@ class TestAntiChaseBuy:
         run_scan(db, fetcher)
         rej = rejects_of(db)
         assert not any(r.startswith("anti_chase_buy_") for r in rej), rej
-        assert "buy_menunggu_konfirmasi_siklus_2" in rej, rej
+        assert "buy_menunggu_konfirmasi_siklus_1" in rej, rej
 
     def test_btc_not_subject_to_buy_guards(self, monkeypatch):
         """BTC dikecualikan dari momentum guards (referensi regime): BUY
@@ -568,7 +568,7 @@ class TestAntiChaseBuy:
         rej = rejects_of(db)
         assert not any(r.startswith("anti_chase_buy_") for r in rej), rej
         assert not any(r.startswith("buy_dump_guard_") for r in rej), rej
-        assert "buy_menunggu_konfirmasi_siklus_2" in rej, rej
+        assert "buy_menunggu_konfirmasi_siklus_1" in rej, rej
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -620,7 +620,7 @@ class TestScannerIntegration:
         run_scan(db, fetcher)
         rej1 = rejects_of(db)
         assert "cooldown_loss_SAND_<4h" in rej1, rej1
-        assert rej1.get("buy_menunggu_konfirmasi_siklus_2") == 1, rej1
+        assert rej1.get("buy_menunggu_konfirmasi_siklus_1") == 1, rej1
         assert len(exec_stub.calls) == 0
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
@@ -658,7 +658,7 @@ class TestGateRegressions:
         assert len(exec_stub.calls) == 0
         rej = rejects_of(db)
         assert not any(r.startswith("anti-flap") for r in rej), rej
-        assert "buy_menunggu_konfirmasi_siklus_2" in rej, rej
+        assert "buy_menunggu_konfirmasi_siklus_1" in rej, rej
 
     def test_buy_bear4h_conf_bonus(self, monkeypatch):
         """v10.2.17: base4H BEAR → min conf +5 (92 < 95 → reject)."""
@@ -673,7 +673,7 @@ class TestGateRegressions:
         db, exec_stub, fetcher = make_harness(monkeypatch, side="BUY")
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 0
-        assert "buy_menunggu_konfirmasi_siklus_2" in rejects_of(db)
+        assert "buy_menunggu_konfirmasi_siklus_1" in rejects_of(db)
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
 
@@ -698,7 +698,7 @@ class TestGateRegressions:
         run_scan(db, fetcher)
         rej = rejects_of(db)
         assert "trend_filter_4h_blokir_LONG" not in rej, rej
-        assert "buy_menunggu_konfirmasi_siklus_2" in rej, rej
+        assert "buy_menunggu_konfirmasi_siklus_1" in rej, rej
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
 

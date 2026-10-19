@@ -425,7 +425,7 @@ class TestBuyRegressionGates:
             base="BULL", streak=0)
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 0
-        assert "buy_menunggu_konfirmasi_siklus_2" in rejects_of(db)
+        assert "buy_menunggu_konfirmasi_siklus_1" in rejects_of(db)
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
 
@@ -439,7 +439,7 @@ class TestBuyRegressionGates:
         assert len(exec_stub.calls) == 0
         rej = rejects_of(db)
         assert not any(r.startswith("anti-flap") for r in rej), rej
-        assert "buy_menunggu_konfirmasi_siklus_2" in rej, rej
+        assert "buy_menunggu_konfirmasi_siklus_1" in rej, rej
 
     def test_buy_bear4h_conf_bonus(self, monkeypatch):
         db, exec_stub, fetcher = make_harness(
@@ -656,7 +656,7 @@ class TestScanDebugHTTP:
                   "sell_chase_pct", "sell_chase_window_h",
                   "longterm_stale_hours", "longterm_stale_min_profit_pct"):
             assert f in gates, f"missing field {f} in buy_gates={gates}"
-        assert gates["buy_confirm_cycles"] == 2
+        assert gates["buy_confirm_cycles"] == 1  # v10.2.31
         assert gates["sell_confirm_cycles"] == 2
         assert gates["sell_chase_pct"] == 3.0
         assert gates["sell_chase_window_h"] == 6

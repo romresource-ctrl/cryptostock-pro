@@ -62,7 +62,11 @@ MIN_FULL_AUTO_CONFIDENCE = 90
 #    sebelum Full-Auto mengeksekusi.
 TREND_UP_MIN_CYCLES = 3
 BEAR4H_CONF_BONUS = 5
-BUY_CONFIRM_CYCLES = 2
+BUY_CONFIRM_CYCLES = 1
+# v10.2.31 — Keputusan user (eksekusi lebih sering, "jangan sampai
+# seharian tidak eksekusi"): BUY tidak lagi butuh 2 siklus konfirmasi;
+# satu siklus cukup. Risiko flap kecil karena proteksi lain tetap:
+# anti-chase relatif, RSI, trend 4H, side-cap 3, cooldown loss 4h.
 # v10.2.21 — Guard anti-loss baru (keputusan user, analisis loss BCH
 # SHORT 16/10 yang masuk di dasar lokal −4,3% dalam 9 jam lalu kena SL):
 # 4. ANTI-CHASE SELL: SELL ditolak bila alt sudah turun >SELL_CHASE_PCT
@@ -1177,11 +1181,16 @@ async def _run_full_auto_scanner(
                     if _timing_ready:
                         _wl = sig["side"] == "BUY"
                         if _rsi1h is not None:
-                            if not _wl and _rsi1h < 35:
-                                _dev_reject(rep, f"RSI1h {_rsi1h:.0f}<35 oversold: tolak SELL")
+                            # v10.2.31 — Ambang RSI 1h dilonggarkan dari
+                            # 65/35 → 72/28 (keputusan user: crypto rutin
+                            # bergerak di RSI 70-80 saat trending; 65
+                            # terlalu ketat sehingga alt di rally awal
+                            # pun langsung terblokir — kasus ARB 69).
+                            if not _wl and _rsi1h < 28:
+                                _dev_reject(rep, f"RSI1h {_rsi1h:.0f}<28 oversold: tolak SELL")
                                 continue
-                            if _wl and _rsi1h > 65:
-                                _dev_reject(rep, f"RSI1h {_rsi1h:.0f}>65 overbought: tolak BUY")
+                            if _wl and _rsi1h > 72:
+                                _dev_reject(rep, f"RSI1h {_rsi1h:.0f}>72 overbought: tolak BUY")
                                 continue
                     sigs_found += 1
                     rep["signals"] = int(rep.get("signals") or 0) + 1
@@ -1426,12 +1435,12 @@ async def _run_full_auto_scanner(
                         _confirmed, _cnt = False, 1
                     if not _confirmed:
                         logger.info("full-auto %s %s/%s menunggu konfirmasi "
-                                    "siklus 2 (fingerprint %s)",
-                                    sig["side"], device_id, sym, _fprint)
+                                    "siklus %d (fingerprint %s)",
+                                    sig["side"], device_id, sym, _req_cycles, _fprint)
                         _dev_reject(
                             rep,
                             ("buy" if sig["side"] == "BUY" else "sell")
-                            + "_menunggu_konfirmasi_siklus_2")
+                            + f"_menunggu_konfirmasi_siklus_{_req_cycles}")
                         continue
                 # v10.1.2 — ANTI-DUPLIKAT ATOMIK (root cause "2 trade TRX
                 # identik"): dua proses scanner (multi-replica / restart)

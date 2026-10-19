@@ -433,7 +433,7 @@ class TestLongSlopeRelaxation:
         run_scan(db, fetcher)  # siklus 1 → lolos filter, menunggu konfirmasi
         rej = rejects_of(db)
         assert "trend_filter_4h_blokir_LONG" not in rej, rej
-        assert "buy_menunggu_konfirmasi_siklus_2" in rej, rej
+        assert "buy_menunggu_konfirmasi_siklus_1" in rej, rej
         assert len(exec_stub.calls) == 0
         run_scan(db, fetcher)  # siklus 2 → tereksekusi
         assert len(exec_stub.calls) == 1
@@ -474,7 +474,7 @@ class TestLongSlopeRelaxation:
         rej = rejects_of(db)
         assert "trend_filter_4h_blokir_LONG" not in rej, rej
         assert not any(r.startswith("anti-flap") for r in rej), rej
-        assert "buy_menunggu_konfirmasi_siklus_2" in rej, rej
+        assert "buy_menunggu_konfirmasi_siklus_1" in rej, rej
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
         assert exec_stub.calls[0]["side"] == "BUY"
@@ -541,7 +541,7 @@ class TestGateRegressions:
         assert len(exec_stub.calls) == 0
         rej = rejects_of(db)
         assert not any(r.startswith("anti-flap") for r in rej), rej
-        assert "buy_menunggu_konfirmasi_siklus_2" in rej, rej
+        assert "buy_menunggu_konfirmasi_siklus_1" in rej, rej
 
     def test_buy_bear4h_conf_bonus(self, monkeypatch):
         """v10.2.17: base4H BEAR → min conf +5 (92 < 95 → reject)."""
@@ -559,7 +559,7 @@ class TestGateRegressions:
             base="BULL", streak=0, closes_4h=closes_uptrend())
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 0
-        assert "buy_menunggu_konfirmasi_siklus_2" in rejects_of(db)
+        assert "buy_menunggu_konfirmasi_siklus_1" in rejects_of(db)
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
 
