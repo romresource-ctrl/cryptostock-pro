@@ -1427,12 +1427,17 @@ async def close_position(doc: dict[str, Any], symbol: str, side: Side,
         # "gagal closing" walau posisi masih terbuka. Bulatkan TURUN ke
         # step; sisa debu di bawah 1 step tidak bisa diorder (Binance
         # memang menolaknya) dan akan dibersihkan monitor.
+        _max_qty = 0.0
         if qty > 0:
             try:
                 _base = symbol.upper().split("/")[0].split("USDT")[0].split("-")[0]
                 _filt = await binance_symbol_filters(bool(doc.get("testnet", True)))
-                _step = ((_filt or {}).get(_base) or {}).get("step") or 0.0
+                _fsym = (_filt or {}).get(_base) or {}
+                _step = _fsym.get("step") or 0.0
                 qty = round_to_step(qty, _step)
+                # v10.2.34 — Ambil juga batas maksimal qty per order
+                # (MARKET_LOT_SIZE) untuk chunked close di bawah.
+                _max_qty = float(_fsym.get("max_qty") or 0.0)
             except Exception:
                 pass
         if qty <= 0:
@@ -1440,27 +1445,51 @@ async def close_position(doc: dict[str, Any], symbol: str, side: Side,
     client = await _get_client(doc)
     try:
         exch_sym = _ccxt_symbol(doc["exchange"], symbol)
-        try:
-            o = await client.create_order(
-                exch_sym, "market", _opposite(side), qty, None,
-                params={"reduceOnly": True},
-            )
-        except Exception as close_err:
-            # v10.2.26 — Posisi ternyata SUDAH flat di exchange (mis. SL
-            # tersentuh tepat sebelum user menekan CLOSE, atau close
-            # sebelumnya sukses tapi respons API gagal): Binance menolak
-            # reduceOnly dengan -2022. Perlakukan sebagai SUKSES —
-            # tujuan user (posisi tertutup) sudah tercapai; kartu harus
-            # ditandai closed, bukan melempar error 500 yang
-            # membingungkan.
-            _msg = str(close_err).lower()
-            if "reduceonly" in _msg or "-2022" in _msg or "no position" in _msg:
-                logger.info("close_position %s: posisi sudah flat (%s)",
-                            symbol, close_err)
-                return {"ok": True, "id": None, "avg": None,
-                        "note": "no_position"}
-            raise
-        return {"ok": True, "id": o.get("id"), "avg": o.get("average")}
+        # v10.2.34 — CHUNKED CLOSE (kasus nyata JUP testnet: posisi
+        # 15236 > batas maksimal 1 market order → Binance -4005 "Quantity
+        # greater than max quantity", CLOSE gagal total 4× dan user
+        # melihat tombol aktif lagi tanpa penjelasan). Tutup posisi
+        # besar dengan beberapa market order reduceOnly berukuran
+        # ≤ max_qty sampai habis.
+        placed: list[dict[str, Any]] = []
+        remaining = qty
+        while remaining > 1e-12:
+            chunk = remaining
+            if _max_qty > 0 and chunk > _max_qty:
+                try:
+                    _base = symbol.upper().split("/")[0].split("USDT")[0].split("-")[0]
+                    _filt = await binance_symbol_filters(bool(doc.get("testnet", True)))
+                    _step = ((_filt or {}).get(_base) or {}).get("step") or 0.0
+                    chunk = round_to_step(_max_qty, _step)
+                except Exception:
+                    chunk = _max_qty
+            if chunk <= 0:
+                break
+            try:
+                o = await client.create_order(
+                    exch_sym, "market", _opposite(side), chunk, None,
+                    params={"reduceOnly": True},
+                )
+                placed.append(o)
+                remaining = round(remaining - chunk, 10)
+            except Exception as close_err:
+                # v10.2.26 — Posisi ternyata SUDAH flat di exchange (mis. SL
+                # tersentuh tepat sebelum user menekan CLOSE, atau close
+                # sebelumnya sukses tapi respons API gagal): Binance menolak
+                # reduceOnly dengan -2022. Perlakukan sebagai SUKSES —
+                # tujuan user (posisi tertutup) sudah tercapai; kartu harus
+                # ditandai closed, bukan melempar error 500 yang
+                # membingungkan.
+                _msg = str(close_err).lower()
+                if "reduceonly" in _msg or "-2022" in _msg or "no position" in _msg:
+                    logger.info("close_position %s: posisi sudah flat (%s)",
+                                symbol, close_err)
+                    return {"ok": True, "id": None, "avg": None,
+                            "note": "no_position"}
+                raise
+        last = placed[-1] if placed else {}
+        return {"ok": True, "id": last.get("id"), "avg": last.get("average"),
+                "chunks": len(placed)}
     finally:
         try:
             await client.close()

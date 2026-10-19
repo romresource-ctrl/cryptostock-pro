@@ -4289,3 +4289,26 @@ backend_v10233:
           user dengan split TP_SPLITS (1→100%, 2→50/50, 3→50/25/25).
           Berlaku semua profil & koin. Test: verifikasi ladder+split
           3/3 PASS, regresi iter50-53: 101/101 PASS.
+
+# ======================================================
+# v10.2.34 — CHUNKED CLOSE (fix -4005 max qty saat close)
+# ======================================================
+backend_v10234:
+  - task: "Close posisi besar dibagi beberapa market order ≤ MARKET_LOT_SIZE"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/engine.py (close_position: loop chunk ≤ max_qty)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          ROOT CAUSE "close tidak bisa": posisi JUP 15236 qty melebihi
+          batas 1 market order Binance testnet → -4005, gagal 4× (log).
+          Fix v10.2.28 hanya clamp ENTRY; close_position kini chunked:
+          loop reduceOnly market order ≤ max_qty sampai posisi habis.
+          Berlaku untuk CLOSE per kartu DAN Close-All (keduanya memakai
+          close_position). Live test: JUP closed sukses (HTTP 200,
+          close_reason=manual). Regresi 101/101 PASS.
