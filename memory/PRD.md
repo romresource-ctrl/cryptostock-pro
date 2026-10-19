@@ -188,6 +188,21 @@ CLOSE per kartu DAN Close-All (keduanya lewat close_position).
 Bukti live: JUP closed sukses (HTTP 200, close_reason=manual).
 Regresi 101/101 PASS.
 
+## v10.2.35 — Fix -2021 Bracket + Error i18n (Oktober 2026)
+Keluhan user (AI Suggestions semi-auto): execute gagal dengan
+`-2021 Order would immediately trigger` dan notifikasi error tampil
+Bahasa Indonesia padahal locale EN.
+1. **Clamp TP vs mark price**: harga bisa bergerak melewati TP antara
+   fill entry & pemasangan bracket. Kini trigger yang terlewati
+   di-clamp 0.1% ke arah profit (fallback eksekusi, formula TP/SL
+   tidak diubah). TP yang kena -2021 saat placement di-retry dengan
+   clamp vs mark segar. SL yang kena -2021 (harga sudah tembus stop)
+   fail-fast → rollback dengan pesan jelas.
+2. **Error i18n**: pesan backend `_emergency_close` kini English;
+   frontend AsiTradeSheet memetakan code bracket_* ke 4 locale
+   (id/en/ru/cn) — notifikasi mengikuti bahasa user.
+Test: 101/101 PASS; lint bersih.
+
 
 ## v10.2.24 — Soft Delete Kartu Trade + Skip Simbol Tak Tersedia (Oktober 2026)
 Laporan user: "tidak ada sinyal yang dieksekusi sama sekali".
