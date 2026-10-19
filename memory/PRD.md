@@ -1,5 +1,14 @@
 # AI Crypto Stock Pro — PRD
 
+> ## 🔒 BASELINE TERKUNCI: v10.2.32 (19 Oktober 2026)
+> User telah menetapkan v10.2.32 sebagai **titik dasar resmi aplikasi**.
+> Semua formula sinyal, gate scanner, risk protection, engine TP/SL, dan
+> UI pada titik ini **DILARANG diubah** oleh perubahan apa pun kecuali
+> atas **permintaan eksplisit user**. Dokumen lengkap kebijakan baseline:
+> **`/app/memory/BASELINE_v10.2.32.md`**. Git restore point: tag
+> **`baseline-v10.2.32`**. Jika ada masalah → kembali ke titik ini.
+> Test baseline wajib hijau: **101/101** (iter50–53).
+
 ## Product Summary
 AI-powered trading signal dashboard covering crypto, IDX stocks, US stocks, ETFs, gold/silver, commodity, forex. Bilingual (ID/EN/RU/CN), premium unlock, chatroom, AI Market Brief, WR history.
 
