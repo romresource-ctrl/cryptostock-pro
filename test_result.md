@@ -4201,3 +4201,24 @@ backend_v10228:
           order Binance testnet. Kini qty di-clamp ke bawah (risiko
           berkurang, posisi tetap terbuka). Clamp logic 3/3 PASS,
           regresi iter50-53 94/94 PASS.
+
+# ======================================================
+# v10.2.29 — LONG langsung saat BTC trending_up
+# ======================================================
+backend_v10229:
+  - task: "Cabut anti-flap BUY 3 siklus + percepat relaksasi slope LONG"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/scheduler.py (blok anti-flap dihapus; _long_relaxed = regime==trending_up)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Keputusan user eksplisit ("PERBAIKI!"). Sisi SELL tidak diubah.
+          Live scan-debug: reject anti-flap hilang; satu-satunya BUY
+          reject = anti_chase_buy_8.1pct_6h (alt pump +8.1%/6h — desain).
+          Suite test diperbarui ke ekspektasi baru + 1 test baru
+          relaksasi streak=1. Total 95/95 PASS (iter50-53).

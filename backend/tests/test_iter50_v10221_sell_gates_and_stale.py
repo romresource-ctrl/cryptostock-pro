@@ -430,13 +430,16 @@ class TestBuyRegressionGates:
         assert len(exec_stub.calls) == 1
 
     def test_buy_anti_flap_trending_up_streak_below_3(self, monkeypatch):
+        # v10.2.29 — anti-flap DICABUT: trending_up streak=1 TIDAK lagi
+        # menolak BUY; sinyal lanjut ke konfirmasi 2 siklus.
         db, exec_stub, fetcher = make_harness(
             monkeypatch, side="BUY", conf=95, regime="trending_up",
             base="BULL", streak=1)
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 0
-        assert any(r.startswith("anti-flap: trending_up baru 1/3")
-                   for r in rejects_of(db)), rejects_of(db)
+        rej = rejects_of(db)
+        assert not any(r.startswith("anti-flap") for r in rej), rej
+        assert "buy_menunggu_konfirmasi_siklus_2" in rej, rej
 
     def test_buy_bear4h_conf_bonus(self, monkeypatch):
         db, exec_stub, fetcher = make_harness(

@@ -1143,17 +1143,14 @@ async def _run_full_auto_scanner(
                         if sig["side"] == "BUY" and gate_block_buy:
                             _dev_reject(rep, f"btc_regime {btc_regime['regime']}: tolak BUY")
                             continue
-                        # v10.2.17 — ANTI-FLAP: bounce 1 siklus yang
-                        # mengangkat rezim ke trending_up TIDAK langsung
-                        # membebaskan BUY. Rezim harus bertahan
-                        # TREND_UP_MIN_CYCLES siklus scanner berturut.
-                        if (sig["side"] == "BUY"
-                                and btc_regime["regime"] == "trending_up"
-                                and trend_up_streak < TREND_UP_MIN_CYCLES):
-                            _dev_reject(
-                                rep,
-                                f"anti-flap: trending_up baru {trend_up_streak}/{TREND_UP_MIN_CYCLES} siklus")
-                            continue
+                        # v10.2.29 — ANTI-FLAP DICABUT (keputusan user):
+                        # menahan BUY 3 siklus setelah BTC flip
+                        # trending_up membuat bot kehilangan momentum
+                        # awal rally ("saat BTC naik alt harus langsung
+                        # bisa LONG"). Begitu rezim trending_up, BUY
+                        # langsung boleh dievaluasi — proteksi palsu-
+                        # bounce tetap ada di lapis lain (konfirmasi 2
+                        # siklus, anti-chase, RSI, trend filter 4H).
                     # v10.2.17 — BTC base 4H BEAR: BUY tetap BOLEH (bukan
                     # blokir total) tapi min confidence +BEAR4H_CONF_BONUS
                     # poin (keputusan user: jalan tengah, 90→95).
@@ -1255,13 +1252,13 @@ async def _run_full_auto_scanner(
                         # padahal BTC V-reversal). EMA50 4H ≈ memori 8 hari
                         # sehingga slope-nya tetap turun lama setelah dump,
                         # memblokir semua LONG meski harga sudah kembali di
-                        # atas EMA50. Saat BTC sudah trending_up ≥3 siklus
-                        # (anti-flap v10.2.17 lolos), LONG cukup butuh
-                        # harga > EMA50. Simetris untuk SHORT saat
-                        # trending_down ≥3 siklus. Saat BTC netral/tidak
-                        # terkonfirmasi, aturan slope penuh tetap berlaku
-                        # (proteksi bounce-trap 15/10 tidak dihapus).
-                        _long_relaxed = trend_up_streak >= TREND_UP_MIN_CYCLES
+                        # atas EMA50.
+                        # v10.2.29 — Relaksasi LONG dipercepat (keputusan
+                        # user): aktif SEGERA saat BTC trending_up (tanpa
+                        # menunggu streak 3) — LONG cukup butuh harga >
+                        # EMA50. SHORT tetap menunggu streak 3 (sisi SELL
+                        # tidak diubah).
+                        _long_relaxed = btc_regime["regime"] == "trending_up"
                         _short_relaxed = trend_down_streak >= TREND_UP_MIN_CYCLES
                         if want_long and (not bias_up
                                           or (slope_dn and not _long_relaxed)):

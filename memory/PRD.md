@@ -82,6 +82,24 @@ Fix:
    `qty_clamped_max`.
 Test: clamp logic 3/3 PASS; regresi iter50–53: 94/94 PASS.
 
+## v10.2.29 — LONG Langsung Saat BTC Naik (Oktober 2026)
+Keluhan user: "BTC sudah naik, bot terjegal — kesempatan LONG hilang
+sebelum streak tercapai." Dua penahan BUY dipercepat (sisi SELL tidak
+diubah):
+1. **Anti-flap v10.2.17 DICABUT**: BUY tidak lagi ditahan 3 siklus
+   setelah BTC flip `trending_up` — sinyal LONG langsung dievaluasi.
+   Proteksi bounce-palsu tetap ada di lapis lain: konfirmasi 2 siklus,
+   anti-chase (3%/6h), dump-guard, RSI 1h, trend filter 4H.
+2. **Relaksasi slope EMA50 4H untuk LONG dipercepat**: aktif SEGERA saat
+   BTC `trending_up` (sebelumnya menunggu streak ≥3). LONG cukup butuh
+   harga > EMA50 4H; slope EMA50 yang masih turun pasca-dump tidak lagi
+   menahan. Bias (harga harus di atas EMA50) TIDAK pernah dibebaskan.
+Verifikasi live: reject `anti-flap` hilang dari scan-debug; kandidat
+yang tersisa hanya ditolak `anti_chase_buy_8.1pct_6h` (alt sudah pump
++8.1%/6 jam — proteksi anti-kejar-puncak bekerja sesuai desain).
+Test: suite diperbarui (anti-flap → ekspektasi baru), +1 test relaksasi
+streak=1; total 95/95 PASS.
+
 
 ## v10.2.24 — Soft Delete Kartu Trade + Skip Simbol Tak Tersedia (Oktober 2026)
 Laporan user: "tidak ada sinyal yang dieksekusi sama sekali".

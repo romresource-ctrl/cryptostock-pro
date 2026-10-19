@@ -608,13 +608,15 @@ class TestScannerIntegration:
 # ════════════════════════════════════════════════════════════════════════
 class TestGateRegressions:
     def test_buy_anti_flap_streak_below_3(self, monkeypatch):
-        """v10.2.17: trending_up baru 1 siklus → BUY ditolak anti-flap."""
+        """v10.2.29: anti-flap dicabut — trending_up 1 siklus → BUY lanjut
+        ke konfirmasi 2 siklus."""
         db, exec_stub, fetcher = make_harness(
             monkeypatch, side="BUY", regime="trending_up", streak=1)
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 0
-        assert any(r.startswith("anti-flap: trending_up baru 1/3")
-                   for r in rejects_of(db)), rejects_of(db)
+        rej = rejects_of(db)
+        assert not any(r.startswith("anti-flap") for r in rej), rej
+        assert "buy_menunggu_konfirmasi_siklus_2" in rej, rej
 
     def test_buy_bear4h_conf_bonus(self, monkeypatch):
         """v10.2.17: base4H BEAR → min conf +5 (92 < 95 → reject)."""

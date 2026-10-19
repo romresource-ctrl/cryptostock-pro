@@ -462,6 +462,23 @@ class TestLongSlopeRelaxation:
         assert "trend_filter_4h_blokir_LONG" in rej, rej
         assert len(exec_stub.calls) == 0
 
+    def test_long_slope_relaxed_immediately_on_trending_up_v10229(
+            self, monkeypatch):
+        """v10.2.29 — Relaksasi slope LONG aktif SEGERA saat BTC
+        trending_up (streak=1, tanpa tunggu 3 siklus): harga>EMA50 &
+        slope turun → LOLOS filter, lanjut konfirmasi 2 siklus."""
+        db, exec_stub, fetcher = make_harness(
+            monkeypatch, side="BUY", conf=95, regime="trending_up",
+            base="BULL", streak=1, closes_4h=closes_long_relax())
+        run_scan(db, fetcher)
+        rej = rejects_of(db)
+        assert "trend_filter_4h_blokir_LONG" not in rej, rej
+        assert not any(r.startswith("anti-flap") for r in rej), rej
+        assert "buy_menunggu_konfirmasi_siklus_2" in rej, rej
+        run_scan(db, fetcher)
+        assert len(exec_stub.calls) == 1
+        assert exec_stub.calls[0]["side"] == "BUY"
+
 
 # ════════════════════════════════════════════════════════════════════════
 # INTEGRASI SCANNER: relaksasi slope SHORT saat BTC trending_down terkonfirmasi
@@ -515,15 +532,16 @@ class TestShortSlopeRelaxation:
 # ════════════════════════════════════════════════════════════════════════
 class TestGateRegressions:
     def test_buy_anti_flap_streak_below_3(self, monkeypatch):
-        """v10.2.17: trending_up baru 1 siklus → BUY ditolak anti-flap
-        (meski 4h uptrend bersih)."""
+        """v10.2.29: anti-flap dicabut — trending_up baru 1 siklus, BUY
+        lanjut ke konfirmasi (bukan ditolak anti-flap)."""
         db, exec_stub, fetcher = make_harness(
             monkeypatch, side="BUY", conf=95, regime="trending_up",
             base="BULL", streak=1, closes_4h=closes_uptrend())
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 0
-        assert any(r.startswith("anti-flap: trending_up baru 1/3")
-                   for r in rejects_of(db)), rejects_of(db)
+        rej = rejects_of(db)
+        assert not any(r.startswith("anti-flap") for r in rej), rej
+        assert "buy_menunggu_konfirmasi_siklus_2" in rej, rej
 
     def test_buy_bear4h_conf_bonus(self, monkeypatch):
         """v10.2.17: base4H BEAR → min conf +5 (92 < 95 → reject)."""
