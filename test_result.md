@@ -4222,3 +4222,24 @@ backend_v10229:
           reject = anti_chase_buy_8.1pct_6h (alt pump +8.1%/6h — desain).
           Suite test diperbarui ke ekspektasi baru + 1 test baru
           relaksasi streak=1. Total 95/95 PASS (iter50-53).
+
+# ======================================================
+# v10.2.30 — Anti-chase BUY RELATIF terhadap BTC
+# ======================================================
+backend_v10230:
+  - task: "Anti-chase BUY: ganti absolut (3%/6h) → relatif terhadap BTC"
+    implemented: true
+    working: true
+    file: "/app/backend/asi_bot/scheduler.py (_compute_btc_regime: tambah chg_6h; anti-chase BUY di scanner: adaptive gate)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Logika absolut lama: alt +9.1%/6h ditolak absolut → bot
+          melewatkan rally. Logika baru: fase 1 (BTC early <3%) OFF;
+          fase 2 (BTC late ≥3%) hanya reject jika gap alt-vs-btc ≥3%.
+          Bukti live: btc_chg_6h=1.61, anti_chase_buy_* HILANG dari
+          reject report. Test 98/98 PASS (4 test baru).

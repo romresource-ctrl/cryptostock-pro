@@ -718,6 +718,13 @@ async def _compute_btc_regime() -> dict[str, Any]:
     # Index -1 = candle berjalan; closed terakhir = -2, sebelumnya = -3.
     chg_last = (closes1h[-2] - closes1h[-3]) / closes1h[-3] * 100.0 if closes1h[-3] else 0.0
     chg_prev = (closes1h[-3] - closes1h[-4]) / closes1h[-4] * 100.0 if closes1h[-4] else 0.0
+    # v10.2.30 — BTC change 6-hour (persentase, dari candle closed
+    # terakhir vs. 6 candle sebelumnya). Dipakai anti-chase relatif:
+    # bot menolak membeli alt hanya ketika BTC-nya SENDIRI sudah
+    # bergerak jauh (BTC yang "late", bukan alt yang "early").
+    btc_chg_6h = 0.0
+    if len(closes1h) >= 8 and closes1h[-8]:
+        btc_chg_6h = (closes1h[-2] - closes1h[-8]) / closes1h[-8] * 100.0
     rsi = _rsi(closes1h[:-1], 14)
     closes4h = [float(c["close"]) for c in ((btc4h or {}).get("candles") or [])
                 if c.get("close")]
@@ -744,6 +751,7 @@ async def _compute_btc_regime() -> dict[str, Any]:
         else {"regime": "UNKNOWN"}
     base_regime = base.get("regime", "UNKNOWN")
     out.update({"rsi": rsi, "chg_last": chg_last, "chg_prev": chg_prev,
+                "chg_6h": btc_chg_6h,
                 "slope_up": slope_up, "slope_dn": slope_dn, "ok": True,
                 "base_regime": base_regime})
     if rsi is not None and (
@@ -1333,17 +1341,35 @@ async def _run_full_auto_scanner(
                                         f"sell_short_dump_{abs(chg2):.1f}pct_{n2}h")
                                     continue
                         else:  # BUY
+                            # v10.2.30 — ANTI-CHASE BUY ADAPTIF
+                            # (keputusan user: "anti-chase harus relatif
+                            # terhadap BTC, bukan absolut 3%/6h"):
+                            # • BTC_6h < BUY_CHASE_PCT (3%)  → BTC masih
+                            #   di fase awal rally; alt yang ikut naik
+                            #   BELUM dianggap chasing → anti-chase
+                            #   DIMATIKAN.
+                            # • BTC_6h ≥ BUY_CHASE_PCT         → BTC
+                            #   sudah bergerak signifikan; alt dianggap
+                            #   chasing hanya bila OUTPACE BTC lebih
+                            #   dari BUY_CHASE_PCT (gap relatif).
+                            # Logika sebelumnya (absolut) menolak semua
+                            # alt setelah BTC pump — bot melewatkan
+                            # seluruh fase rally.
+                            btc_6h = float(btc_regime.get("chg_6h") or 0.0)
                             n6 = min(BUY_CHASE_WINDOW_H, len(c1h) - 1)
                             if n6 >= 2 and c1h[-1 - n6] > 0:
                                 chg6 = (c1h[-1] - c1h[-1 - n6]) / c1h[-1 - n6] * 100
-                                if chg6 >= BUY_CHASE_PCT:
+                                _btc_late = btc_6h >= BUY_CHASE_PCT
+                                _rel_gap = chg6 - btc_6h
+                                if _btc_late and _rel_gap >= BUY_CHASE_PCT:
                                     logger.info(
-                                        "full-auto anti-chase skip %s/%s: BUY "
-                                        "ditolak (naik %.2f%% dalam %dj — long di puncak)",
-                                        device_id, sym, chg6, n6)
+                                        "full-auto anti-chase skip %s/%s: "
+                                        "alt +%.2f%% vs BTC +%.2f%% (gap "
+                                        "+%.2f%%) — alt chasing di puncak",
+                                        device_id, sym, chg6, btc_6h, _rel_gap)
                                     _dev_reject(
                                         rep,
-                                        f"anti_chase_buy_{chg6:.1f}pct_{n6}h")
+                                        f"anti_chase_buy_rel_{_rel_gap:.1f}pct_vs_btc")
                                     continue
                             n2 = min(BUY_DUMP_GUARD_WINDOW_H, len(c1h) - 1)
                             if n2 >= 2 and c1h[-1 - n2] > 0:
@@ -1573,6 +1599,12 @@ async def _run_full_auto_scanner(
                  # v10.2.23 — paket anti-loss BUY + breaker tangguh.
                  "buy_chase_pct": BUY_CHASE_PCT,
                  "buy_chase_window_h": BUY_CHASE_WINDOW_H,
+                 # v10.2.30 — anti-chase BUY sekarang RELATIF terhadap
+                 # BTC: hanya aktif saat BTC_6h ≥ buy_chase_pct DAN alt
+                 # outpace BTC >= buy_chase_pct (gap). Field berikut
+                 # memaparkan BTC 6h change aktual siklus ini.
+                 "buy_chase_mode": "relative_to_btc",
+                 "btc_chg_6h": round(float(btc_regime.get("chg_6h") or 0.0), 2),
                  "buy_dump_guard_pct": BUY_DUMP_GUARD_PCT,
                  "buy_dump_guard_window_h": BUY_DUMP_GUARD_WINDOW_H,
                  "circuit_breaker_losses": CIRCUIT_BREAKER_LOSSES,

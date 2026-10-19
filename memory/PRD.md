@@ -100,6 +100,26 @@ yang tersisa hanya ditolak `anti_chase_buy_8.1pct_6h` (alt sudah pump
 Test: suite diperbarui (anti-flap → ekspektasi baru), +1 test relaksasi
 streak=1; total 95/95 PASS.
 
+## v10.2.30 — Anti-Chase Relatif Terhadap BTC (Oktober 2026)
+Keluhan user yang tajam dan BENAR: "anti-chase 3%/6h absolut bodoh —
+BTC baru naik +0.5% dan alt sudah ditolak, padahal alt belum terlambat.
+BTC rally 0.5→5→8→10% harus tetap bisa LONG, bukan dijegal selamanya."
+Logika baru (adaptif, konteks penuh, seperti trader profesional):
+- Fase 1 — **BTC early rally** (BTC_6h < BUY_CHASE_PCT=3%):
+  anti-chase BUY **DIMATIKAN**. Alt yang ikut naik dianggap on-time.
+- Fase 2 — **BTC late** (BTC_6h ≥ 3%):
+  anti-chase hanya aktif jika alt OUTPACE BTC — gap `alt_6h - btc_6h`
+  ≥ 3%. Alt yang cuma mengikuti beta BTC tidak dihalangi.
+- Fase 3 — **BTC bull run berkelanjutan** (BTC terus naik +5, +8, +10%+):
+  bot tetap bisa masuk LONG selama alt tidak "lari lebih kencang"
+  dari BTC. Rally panjang tidak lagi memblokir eksekusi selamanya.
+Reject label baru: `anti_chase_buy_rel_<gap>pct_vs_btc`.
+Scan-debug `buy_gates` mengekspos `buy_chase_mode="relative_to_btc"`
++ `btc_chg_6h` aktual.
+Bukti live scan-debug: BTC_6h=1.61% → reject `anti_chase_buy_*` HILANG
+dari report; eksekusi mengalir (field `sudah_ada_posisi`: 1).
+Test: 98/98 PASS (4 test baru + suite lama diperbarui).
+
 
 ## v10.2.24 — Soft Delete Kartu Trade + Skip Simbol Tak Tersedia (Oktober 2026)
 Laporan user: "tidak ada sinyal yang dieksekusi sama sekali".

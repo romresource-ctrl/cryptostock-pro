@@ -239,12 +239,14 @@ class ExecStub:
         }
 
 
-def _regime_stub(regime: str, base: str, streak: int, streak_dn: int = 0):
+def _regime_stub(regime: str, base: str, streak: int, streak_dn: int = 0,
+                 chg_6h: float = 0.0):
     async def _fake(db):
         return {"regime": regime, "ok": True, "detail": "test-stub",
                 "base_regime": base, "trend_up_streak": streak,
                 "trend_down_streak": streak_dn,
                 "rsi": 50.0, "chg_last": 0.0, "chg_prev": 0.0,
+                "chg_6h": chg_6h,
                 "slope_up": False, "slope_dn": False}
     return _fake
 
@@ -295,6 +297,7 @@ def make_harness(monkeypatch, *, side: str = "BUY", conf: int = 95,
                  streak_dn: int = 0, whitelist=None,
                  closes_4h: list[float] | None = None,
                  closes_1h: list[float] | None = None,
+                 btc_chg_6h: float = 0.0,
                  trades: list[dict] | None = None):
     db = FakeDB()
     db.asi_bot_config.docs[DEV] = _cfg(whitelist)
@@ -309,7 +312,8 @@ def make_harness(monkeypatch, *, side: str = "BUY", conf: int = 95,
         return {"_id": f"cred-{device_id}", "testnet": True}
 
     monkeypatch.setattr(sched, "_get_btc_regime",
-                        _regime_stub(regime, base, streak, streak_dn))
+                        _regime_stub(regime, base, streak, streak_dn,
+                                     chg_6h=btc_chg_6h))
     monkeypatch.setattr(sched, "resolve_credential", _cred)
     monkeypatch.setattr(sched, "execute_trade", exec_stub)
     if closes_4h is None:
@@ -496,15 +500,53 @@ class TestSymbolLossCooldown:
 # ANTI-CHASE BUY (cermin anti-chase SELL v10.2.21)
 # ════════════════════════════════════════════════════════════════════════
 class TestAntiChaseBuy:
-    def test_buy_rejected_when_pumped_4_6pct_6h(self, monkeypatch):
-        """closes 1h +4.6%/6 jam → BUY reject 'anti_chase_buy_*'
-        (kasus TIA 18/10: LONG di puncak pump +3,67%)."""
+    """v10.2.30 — ANTI-CHASE RELATIF TERHADAP BTC. Dipicu HANYA bila BTC
+    sendiri sudah bergerak signifikan (chg_6h ≥ BUY_CHASE_PCT) DAN alt
+    outpace BTC (gap ≥ BUY_CHASE_PCT). Alt yang ikut BTC early rally
+    tidak lagi diblokir — keluhan user: 'bot melewatkan seluruh rally'."""
+
+    def test_alt_pump_btc_early_rally_NOT_rejected(self, monkeypatch):
+        """Alt +4.6%/6h, BTC +0.5%/6h → BTC masih early → anti-chase OFF.
+        Sinyal lanjut ke konfirmasi 2 siklus."""
         db, exec_stub, fetcher = make_harness(
-            monkeypatch, side="BUY", closes_1h=closes_1h_pump())
+            monkeypatch, side="BUY", btc_chg_6h=0.5,
+            closes_1h=closes_1h_pump())
         run_scan(db, fetcher)
         rej = rejects_of(db)
-        assert any(r.startswith("anti_chase_buy_") for r in rej), rej
+        assert not any(r.startswith("anti_chase_buy_") for r in rej), rej
+        assert "buy_menunggu_konfirmasi_siklus_2" in rej, rej
+
+    def test_alt_pump_btc_late_small_gap_NOT_rejected(self, monkeypatch):
+        """Alt +4.6%/6h, BTC +4%/6h → BTC late tapi gap hanya +0.6%
+        (<3%) → alt cuma beta BTC, anti-chase OFF."""
+        db, exec_stub, fetcher = make_harness(
+            monkeypatch, side="BUY", btc_chg_6h=4.0,
+            closes_1h=closes_1h_pump())
+        run_scan(db, fetcher)
+        rej = rejects_of(db)
+        assert not any(r.startswith("anti_chase_buy_") for r in rej), rej
+        assert "buy_menunggu_konfirmasi_siklus_2" in rej, rej
+
+    def test_alt_outpace_btc_wide_gap_REJECTED(self, monkeypatch):
+        """Alt +9%/6h, BTC +3%/6h → BTC late DAN alt outpace BTC +6%
+        (gap ≥ 3%) → alt genuinely chasing → anti-chase AKTIF."""
+        wide = [100.0] * 6 + [109.0]
+        db, exec_stub, fetcher = make_harness(
+            monkeypatch, side="BUY", btc_chg_6h=3.0, closes_1h=wide)
+        run_scan(db, fetcher)
+        rej = rejects_of(db)
+        assert any(r.startswith("anti_chase_buy_rel_") for r in rej), rej
         assert len(exec_stub.calls) == 0
+
+    def test_alt_pump_btc_late_moderate_gap_NOT_rejected(self, monkeypatch):
+        """Alt +5%/6h, BTC +3%/6h → BTC late tapi gap +2% (<3%) → aman."""
+        mid = [100.0] * 6 + [105.0]
+        db, exec_stub, fetcher = make_harness(
+            monkeypatch, side="BUY", btc_chg_6h=3.0, closes_1h=mid)
+        run_scan(db, fetcher)
+        rej = rejects_of(db)
+        assert not any(r.startswith("anti_chase_buy_") for r in rej), rej
+        assert "buy_menunggu_konfirmasi_siklus_2" in rej, rej
 
     def test_buy_passes_when_flat(self, monkeypatch):
         """closes 1h flat → anti-chase BUY tidak aktif → lolos ke
