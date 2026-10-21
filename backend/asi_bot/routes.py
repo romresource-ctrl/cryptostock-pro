@@ -210,6 +210,8 @@ class TradePayload(BaseModel):
     entry_mode: Literal["limit", "market"] = "limit"
     # v9.6.0 — TP strategy & trailing stop
     tp_count: Literal[1, 2, 3] = 3
+    # v10.2.36 — Auto-Close Profit ROI % dari margin (0 = off → pakai TP).
+    auto_close_pct: Literal[0, 10, 15, 20, 25, 50, 100] = 0
     trailing_callback_rate: float = Field(2.0, ge=0.0, le=10.0)
     # v9.9.0 — Margin mode dipilih user sebelum eksekusi (wajib).
     # Default ISOLATED: kerugian terbatas pada margin posisi saja.
@@ -259,6 +261,9 @@ class BotConfigPayload(BaseModel):
     full_enabled: bool = False
     # v9.6.0 — TP strategy. 1=TP1 100%, 2=TP1/TP2 50/50, 3=TP1/TP2/TP3 33/33/34.
     tp_count: Literal[1, 2, 3] = 3
+    # v10.2.36 — Auto-Close Profit ROI % dari margin. 0 = off. Bila > 0,
+    # tombol 1/2/3 TP dilepas: posisi ditutup 100% saat ROI tercapai.
+    auto_close_pct: Literal[0, 10, 15, 20, 25, 50, 100] = 0
     # v9.6.0 — Trailing stop callback rate %. 0 = disabled. Active after TP1.
     trailing_callback_rate: float = Field(2.0, ge=0.0, le=10.0)
     # Set to null to CLEAR previous auto-disable (when user re-enables manually).
@@ -620,6 +625,7 @@ def _attach_trade_routes(db: Any) -> None:
             profile=payload.profile,
             formula_tag=payload.formula_tag,
             entry_mode=payload.entry_mode,
+            auto_close_pct=payload.auto_close_pct,
         )
         if not res.get("ok"):
             # v9.9.2 — Pass through structured reason & message so frontend
@@ -1059,6 +1065,7 @@ def _attach_trade_routes(db: Any) -> None:
                     profile=None,
                     formula_tag="Titan-Bot",
                     entry_mode=str(cfg.get("entry_mode") or "limit"),
+                    auto_close_pct=int(cfg.get("auto_close_pct") or 0),
                 )
                 if not res.get("ok"):
                     fail_cnt += 1

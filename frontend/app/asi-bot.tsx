@@ -885,13 +885,13 @@ export default function ASIBotScreen() {
             v9.7.4 — warna aktif mengikuti mode: Semi-Auto=hijau, Full-Auto=orange */}
         <View style={{ flexDirection: "row", gap: 8, marginBottom: 6 }}>
           {([1, 2, 3] as const).map((n) => {
-            const active = (bot.tp_count ?? 3) === n;
+            const active = !bot.auto_close_pct && (bot.tp_count ?? 3) === n;
             const accent = bot.mode === "full" ? ORANGE : GOLD;
             const label = n === 1 ? t("asi_tp_1_label") : n === 2 ? t("asi_tp_2_label") : t("asi_tp_3_label");
             return (
               <TouchableOpacity
                 key={n}
-                onPress={() => saveBot({ tp_count: n })}
+                onPress={() => saveBot({ tp_count: n, auto_close_pct: 0 })}
                 style={[s.tpChip, {
                   borderColor: active ? accent : colors.border,
                   backgroundColor: active ? accent : colors.surface,
@@ -907,6 +907,34 @@ export default function ASIBotScreen() {
         </View>
         <Text style={{ color: colors.textMuted, fontSize: 11, marginBottom: 10, lineHeight: 16 }}>
           {t("asi_tp_hint")}
+        </Text>
+        {/* v10.2.36 — Auto-Close Profit (ROI % margin). Eksklusif dgn 1/2/3 TP. */}
+        <Text style={{ color: colors.textPrimary, fontWeight: "800", fontSize: 12.5, marginBottom: 6 }}>
+          {t("asi_autoclose_title")}
+        </Text>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
+          {([10, 15, 20, 25, 50, 100] as const).map((p) => {
+            const active = bot.auto_close_pct === p;
+            const accent = bot.mode === "full" ? ORANGE : GOLD;
+            return (
+              <TouchableOpacity
+                key={p}
+                onPress={() => saveBot({ auto_close_pct: active ? 0 : p })}
+                style={[s.acChip, {
+                  borderColor: active ? accent : colors.border,
+                  backgroundColor: active ? accent : colors.surface,
+                }]}
+                testID={`asi-autoclose-${p}`}
+              >
+                <Text style={{ color: active ? ACCENT_TEXT : colors.textPrimary, fontWeight: "900", fontSize: 12.5 }}>
+                  {active ? "✓ " : ""}{p}%
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+        <Text style={{ color: colors.textMuted, fontSize: 11, marginBottom: 10, lineHeight: 16 }}>
+          {bot.auto_close_pct ? t("asi_autoclose_on").replace("{p}", String(bot.auto_close_pct)) : t("asi_autoclose_hint")}
         </Text>
         {bot.mode === "full" ? (
           <ParamRow label={t("asi_max_trades_day")} value={`${bot.max_trades_per_day}`}
@@ -1880,6 +1908,7 @@ const s = StyleSheet.create({
   rowLabel: { fontWeight: "800" },
   modeChip: { flex: 1, borderWidth: 1.5, borderRadius: 14, padding: 12, alignItems: "flex-start", gap: 6 },
   tpChip: { flex: 1, borderWidth: 1.5, borderRadius: 10, paddingVertical: 10, alignItems: "center" },
+  acChip: { width: "30.5%", minHeight: 44, borderWidth: 1.5, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   modeTitle: { fontWeight: "900", fontSize: 13 },
   modeSub: { fontSize: 10.5, lineHeight: 15 },
   paramRow: { flexDirection: "row", alignItems: "center", padding: 10, borderWidth: 1, borderRadius: 10, marginBottom: 8, gap: 10 },

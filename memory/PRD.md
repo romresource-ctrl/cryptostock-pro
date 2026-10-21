@@ -2389,3 +2389,8 @@ Production berjalan di batas CPU 0.25 core. Perubahan berikut WAJIB dipertahanka
 - `dashboard_batch` memakai stale-while-revalidate (`_BATCH_STALE_MAX`).
 - `/health` harus `async def` dan ringan.
 Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
+
+## v10.2.36 — Auto-Close Profit + Anti-Whipsaw (Oct 2026)
+- Auto-Close Profit: config/trade `auto_close_pct` ∈ {0,10,15,20,25,50,100} (ROI % of margin). When >0: 1 native TP at entry×(1±pct/lev) closes 100%, tp_count=1, trailing/HAR/horizon disabled for that trade. Mutually exclusive with 1/2/3 TP in UI (ASI-Bot page + AsiTradeSheet). New trades only.
+- Full-Auto filters: max 2 same-side entries per 30 min (SIDE_BURST_*); after 2 consecutive same-side losses (latest <60m) the opposite side is blocked 60 min (WHIPSAW_*).
+- Tests: backend/tests/test_iter60_v10236_autoclose_whipsaw.py (9 passed, mock only).

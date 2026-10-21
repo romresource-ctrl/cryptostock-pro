@@ -55,6 +55,8 @@ Side = Literal["BUY", "SELL"]
 ENTRY_LIMIT_TTL_SEC = 7200
 # v10.0.16 — Komposisi split baru (keputusan user): TP1 menutup 50%,
 # TP2 25%, TP3 25% (bukan lagi 33/33/34). Untuk 2 TP tetap 50/50.
+# v10.2.36 — Pilihan target Auto-Close Profit (ROI % dari margin). 0 = off.
+AUTO_CLOSE_PCTS = (0, 10, 15, 20, 25, 50, 100)
 TP_SPLITS: dict[int, tuple[float, ...]] = {
     1: (1.0,),
     2: (0.5, 0.5),
@@ -370,6 +372,7 @@ async def execute_trade(
     profile: str | None = None,
     formula_tag: str | None = None,
     entry_mode: str = "limit",
+    auto_close_pct: int = 0,
 ) -> dict[str, Any]:
     """v9.9.2 — Place entry + VERIFIED bracket SL/TP. Auto-rollback jika
     bracket tidak dapat terpasang & terverifikasi di exchange.
@@ -456,6 +459,22 @@ async def execute_trade(
                             else max(_old_dist, _sym_sl_dist * 2.0)
                 _sym_tps.append(entry + _sym_sgn * _new_dist)
             tps = _sym_tps
+    # v10.2.36 — AUTO-CLOSE PROFIT (keputusan user): target ROI % dari
+    # margin (10/15/20/25/50/100). Menggantikan ladder TP: 1 TP native
+    # 100% di harga entry × (1 ± pct/leverage). TP native di-anchor ke
+    # fill aktual (anchor_shift), sehingga tidak ada close ganda.
+    auto_close_pct = int(auto_close_pct or 0)
+    if auto_close_pct not in AUTO_CLOSE_PCTS:
+        auto_close_pct = 0
+    if auto_close_pct and entry > 0:
+        _ac_sgn = 1.0 if side == "BUY" else -1.0
+        tps = [entry * (1 + _ac_sgn * auto_close_pct / 100.0 / leverage)]
+        tp_count = 1
+        trailing_callback_rate = 0.0
+        # Target user menang: profit-cap/horizon profil & HAR tidak boleh
+        # menutup lebih awal (anti tabrakan).
+        hit_and_run = False
+        horizon_exit = False
     # v10.0.9 — Geser ladder: tp_count<3 memakai level TP yang lebih tinggi.
     tps = _shift_tp_ladder(tps, tp_count)
     margin_mode = "cross" if str(margin_mode).lower() == "cross" else "isolated"
@@ -686,6 +705,7 @@ async def execute_trade(
             "trailing_callback_rate": float(trailing_callback_rate or 0.0),
             "hit_and_run": hit_and_run,
             "horizon_exit": horizon_exit,
+        "auto_close_pct": auto_close_pct,
             "trailing_order_id": None,
             "trailing_activated": False,
             "qty": qty, "leverage": leverage, "risk_pct": risk_pct,
@@ -967,6 +987,7 @@ async def execute_trade(
         "trailing_callback_rate": float(trailing_callback_rate or 0.0),
         "hit_and_run": hit_and_run,
         "horizon_exit": horizon_exit,
+        "auto_close_pct": auto_close_pct,
         "trailing_order_id": None,
         "trailing_activated": False,
         "qty": actual_qty, "leverage": leverage, "risk_pct": risk_pct,

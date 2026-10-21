@@ -104,6 +104,7 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
   const [riskPct, setRiskPct] = useState(5);
   const [leverage, setLeverage] = useState(10);
   const [tpCount, setTpCount] = useState<1 | 2 | 3>(3);
+  const [autoClosePct, setAutoClosePct] = useState<0 | 10 | 15 | 20 | 25 | 50 | 100>(0);
   const [trailingCbRate, setTrailingCbRate] = useState<number>(2);
   const [preview, setPreview] = useState<AsiPreview | null>(null);
   const [loading, setLoading] = useState(false);
@@ -159,7 +160,10 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
         // ASI-Bot). Credential tiap jaringan slot terpisah.
         net = b.exists ? ((b as any).active_testnet ?? true) : true;
         setActiveTestnet(net);
-        if (b.exists) setBotCfg(b);
+        if (b.exists) {
+          setBotCfg(b);
+          setAutoClosePct(((b as any).auto_close_pct ?? 0) as any);
+        }
       } catch {}
       try {
         const r = await api.asi.listCredentials(did);
@@ -278,6 +282,7 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
         take_profits: intent.take_profits,
         risk_pct: riskPct, leverage, mode: "semi",
         tp_count: tpCount, trailing_callback_rate: trailingCbRate,
+        auto_close_pct: autoClosePct,
         margin_mode: marginMode,
         testnet: activeTestnet,
         // v9.9.13 — label formula di kartu Recent Trades
@@ -589,12 +594,28 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
                 {/* v9.6.0 — TP Strategy selector */}
                 <View style={{ flexDirection: "row", gap: 6, marginTop: 10 }}>
                   {([1, 2, 3] as const).map((n) => {
-                    const act = tpCount === n;
+                    const act = !autoClosePct && tpCount === n;
                     const lbl = n === 1 ? "1 TP · 100%" : n === 2 ? "2 TP · 50/50" : "3 TP · 50/25/25";
                     return (
-                      <TouchableOpacity key={n} onPress={() => setTpCount(n)}
+                      <TouchableOpacity key={n} onPress={() => { setTpCount(n); setAutoClosePct(0); }}
                         style={[s.exChip, { flex: 1, alignItems: "center", backgroundColor: act ? MINT : colors.background, borderColor: act ? MINT : colors.border }]}>
                         <Text style={{ color: act ? "#FFFFFF" : colors.textPrimary, fontWeight: "900", fontSize: 10.5 }}>{lbl}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                {/* v10.2.36 — Auto-Close Profit (ROI % margin), eksklusif dgn TP */}
+                <Text style={{ color: colors.textMuted, fontSize: 10.5, fontWeight: "800", marginTop: 8 }}>
+                  {t("asi_autoclose_title")}
+                </Text>
+                <View style={{ flexDirection: "row", gap: 6, marginTop: 6 }}>
+                  {([10, 15, 20, 25, 50, 100] as const).map((p) => {
+                    const act = autoClosePct === p;
+                    return (
+                      <TouchableOpacity key={p} onPress={() => setAutoClosePct(act ? 0 : p)}
+                        testID={`ats-autoclose-${p}`}
+                        style={[s.exChip, { flex: 1, alignItems: "center", paddingHorizontal: 0, backgroundColor: act ? MINT : colors.background, borderColor: act ? MINT : colors.border }]}>
+                        <Text style={{ color: act ? "#FFFFFF" : colors.textPrimary, fontWeight: "900", fontSize: 10.5 }}>{p}%</Text>
                       </TouchableOpacity>
                     );
                   })}

@@ -115,6 +115,34 @@ BUY_DUMP_GUARD_WINDOW_H = 2
 SELL_SHORT_DUMP_PCT = 1.2
 SELL_SHORT_DUMP_WINDOW_H = 2
 MAX_OPEN_PER_SIDE = 3
+# v10.2.36 — Anti-cluster & anti-whipsaw (keputusan user 20/10):
+# maks 2 entry searah per 30 menit; setelah 2 loss beruntun searah
+# (terbaru < 60 menit) arah BERLAWANAN diblok 60 menit.
+SIDE_BURST_MAX = 2
+SIDE_BURST_WINDOW_MIN = 30
+WHIPSAW_LOSS_STREAK = 2
+WHIPSAW_BLOCK_MIN = 60
+
+
+def _whipsaw_block_side(recent_closed: list[dict[str, Any]],
+                        now: datetime) -> str | None:
+    """Return sisi ("BUY"/"SELL") yang diblok, atau None. recent_closed
+    terurut closed_at desc. Fungsi murni."""
+    last = recent_closed[:WHIPSAW_LOSS_STREAK]
+    if len(last) < WHIPSAW_LOSS_STREAK:
+        return None
+    sides = {str(t.get("side") or "") for t in last}
+    if len(sides) != 1 or not all(float(t.get("pnl_usdt") or 0) < -1.0 for t in last):
+        return None
+    try:
+        closed = datetime.fromisoformat(
+            str(last[0].get("closed_at")).replace("Z", "+00:00"))
+    except Exception:
+        return None
+    if (now - closed).total_seconds() > WHIPSAW_BLOCK_MIN * 60:
+        return None
+    side = sides.pop()
+    return "BUY" if side == "SELL" else "SELL" if side == "BUY" else None
 # Set simbol yang TIDAK terdaftar di jaringan aktif (ICP testnet).
 _UNAVAILABLE_SYMS: set[str] = set()
 
@@ -1025,6 +1053,7 @@ async def _run_full_auto_scanner(
             # (anti revenge-entry — kasus SAND 18/10 di-LONG 3× beruntun,
             # SL semua: -$60, -$42, -$102).
             _sym_loss_cd: dict[str, str] = {}
+            _recent_closed: list[dict[str, Any]] = []
             try:
                 _recent_closed = [
                     t async for t in db.asi_trades.find(
@@ -1057,6 +1086,10 @@ async def _run_full_auto_scanner(
                         _sym_loss_cd[_s] = str(t.get("closed_at"))
             except Exception as _ls_err:
                 logger.debug("circuit-breaker check gagal (skip, fail-open): %s", _ls_err)
+            # v10.2.36 — ANTI-WHIPSAW (keputusan user, kasus 20/10: 4 SHORT
+            # 08:01-08:19 kena SL lalu langsung LONG 10:38).
+            _whip_block_side = _whipsaw_block_side(
+                _recent_closed, datetime.now(timezone.utc))
             # v9.7.3 — BUG FIX: empty whitelist silently disabled the bot
             # ("ACTIVE" tapi tidak pernah scan). Default ke Top-100 futures
             # agar Full-Auto langsung bekerja tanpa konfigurasi tambahan.
@@ -1198,6 +1231,31 @@ async def _run_full_auto_scanner(
                             continue
                     except Exception as _co_err:
                         logger.debug("side-concurrency check gagal: %s", _co_err)
+                    # v10.2.36 — ANTI-WHIPSAW: blok arah berlawanan
+                    # 60 menit setelah loss beruntun searah.
+                    if _whip_block_side and sig["side"] == _whip_block_side:
+                        _dev_reject(
+                            rep,
+                            f"whipsaw_block_{sig['side'].lower()}_after_sl_streak_<{WHIPSAW_BLOCK_MIN}m")
+                        continue
+                    # v10.2.36 — Maks N entry searah dalam jendela 30 menit
+                    # (anti correlated-cluster).
+                    try:
+                        _win_cut = (datetime.now(timezone.utc) - timedelta(
+                            minutes=SIDE_BURST_WINDOW_MIN)).isoformat()
+                        _burst = await db.asi_trades.count_documents({
+                            "device_id": device_id, "side": sig["side"],
+                            "created_at": {"$gte": _win_cut},
+                            "status": {"$nin": ["expired"]},
+                            "deleted": {"$ne": True},
+                        })
+                        if _burst >= SIDE_BURST_MAX:
+                            _dev_reject(
+                                rep,
+                                f"burst_{sig['side'].lower()}_{_burst}_in_{SIDE_BURST_WINDOW_MIN}m")
+                            continue
+                    except Exception as _bu_err:
+                        logger.debug("side-burst check gagal: %s", _bu_err)
                     # v10.2.12 — BTC REGIME GATE: rezim BTC menentukan arah
                     # yang boleh dieksekusi untuk ALTCOIN (BTC sendiri
                     # dikecualikan — ia referensi, bukan ikutan). Rezim
@@ -1554,6 +1612,7 @@ async def _run_full_auto_scanner(
                         profile=sig.get("profile") or bot_profile,
                         formula_tag=sig.get("formula_tag"),
                         entry_mode=str(cfg.get("entry_mode") or "limit"),
+                        auto_close_pct=int(cfg.get("auto_close_pct") or 0),
                     )
                 except Exception as e:
                     logger.warning("full-auto execute failed %s/%s: %s", device_id, sym, e)
@@ -1821,6 +1880,7 @@ async def _run_titan_relay(db: Any) -> None:
                         profile=None,
                         formula_tag="Titan-Bot",
                         entry_mode="market",  # relay selalu market (follow master)
+                        auto_close_pct=int(u.get("auto_close_pct") or 0),
                     )
                     if not res.get("ok"):
                         continue
