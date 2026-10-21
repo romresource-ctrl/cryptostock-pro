@@ -4343,3 +4343,25 @@ frontend_v10235:
     working: true
     file: "/app/frontend/src/components/AsiTradeSheet.tsx + I18nContext.tsx (4 key baru: ats_err_bracket_sl/tp/verify/rollback_failed, 4 locale)"
     comment: "Sebelumnya code bracket_* jatuh ke pesan mentah backend (Indonesia) walau user locale EN."
+
+# ======================================================
+# v10.2.36 — Fix back-stuck setelah execute AI Suggestions
+# ======================================================
+frontend_v10236:
+  - task: "goToRecentTrades origin-aware (canGoBack → push, else replace)"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/AsiTradeSheet.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Sebelumnya goToRecentTrades selalu router.replace('/asi-bot')
+          → layar di bawah (aset/AI suggestions) terhapus dari stack →
+          panah back di halaman ASI-Bot/Recent Trades tidak punya tujuan
+          (stuck). Kini: sudah di /asi-bot → cukup tutup sheet; ada
+          layar di bawah → router.push (back normal); tanpa riwayat →
+          replace fallback. Lint bersih.

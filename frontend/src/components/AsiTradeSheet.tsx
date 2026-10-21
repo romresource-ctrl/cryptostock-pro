@@ -10,7 +10,7 @@ import {
   Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text,
   TouchableOpacity, View,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { usePathname, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -73,17 +73,29 @@ type Props = {
 
 export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: Props) {
   const router = useRouter();
+  const pathname = usePathname();
   const { colors } = useTheme();
   const { t, tEN } = useI18n();
   const { apiProfile } = useTraderProfile();
   const insets = useSafeAreaInsets();
 
   // v9.8.7 — Tutup SEMUA layer (trade sheet + suggestions popup) lalu
-  // kembali ke ASI-Bot. router.replace (bukan push) supaya tidak menumpuk
-  // route yang sama ketika user memang sudah di /asi-bot.
+  // kembali ke ASI-Bot.
+  // v10.2.36 — ORIGIN-AWARE (fix back-stuck): sebelumnya selalu
+  // router.replace → layar di bawah (aset/AI suggestions) TERHAPUS dari
+  // stack sehingga panah back di halaman ASI-Bot tidak punya tujuan
+  // (stuck di Recent Trades). Sekarang:
+  //   • sudah di /asi-bot      → cukup tutup sheet (tanpa duplikat stack)
+  //   • ada layar di bawah     → PUSH (layar bawah terjaga, back normal)
+  //   • tidak ada riwayat      → replace sebagai fallback aman.
   const goToRecentTrades = () => {
     if (onCloseAll) onCloseAll(); else onClose();
-    router.replace("/asi-bot" as never);
+    if (pathname === "/asi-bot") return;
+    if (router.canGoBack()) {
+      router.push("/asi-bot" as never);
+    } else {
+      router.replace("/asi-bot" as never);
+    }
   };
 
   const [deviceId, setDeviceId] = useState("");
@@ -407,7 +419,7 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
                 </Text>
                 <TouchableOpacity
                   style={[s.cta, { backgroundColor: MINT, marginTop: 14 }]}
-                  onPress={() => { if (onCloseAll) onCloseAll(); else onClose(); router.replace("/asi-bot" as never); }}>
+                  onPress={goToRecentTrades}>
                   <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.6 }}>{t("ats_connect_cta")}</Text>
                 </TouchableOpacity>
               </View>
