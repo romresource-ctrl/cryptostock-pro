@@ -2401,3 +2401,6 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 - Trailing stop disabled for new trades → after TP1 hit, SL guard moves SL to TP1 price (native & soft). Trailing UI replaced with hint.
 - AC badge on Running Positions cards.
 - Tests: backend/tests/test_iter61_v10237_sl_margin.py.
+
+## v10.2.38 — Sizing selector
+- SizingSelector: user ticks Risk per Trade (%) OR Margin per Trade ($). Risk mode saves margin_usdt=0 (backend falls back to risk_pct). Used on ASI-Bot page + AsiTradeSheet (risk_pct now loaded from config).

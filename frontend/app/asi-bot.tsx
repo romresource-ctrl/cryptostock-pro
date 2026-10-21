@@ -19,7 +19,7 @@ import { readPageCache, writePageCache } from "@/src/lib/pageCache";
 import { useBinanceMultiTicker } from "@/src/hooks/useBinanceMultiTicker";
 import { markTradeDeleted, filterDeletedTrades } from "@/src/lib/deletedTrades";
 import PremiumLocked from "@/src/components/PremiumLocked";
-import MarginInputRow from "@/src/components/MarginInputRow";
+import SizingSelector from "@/src/components/SizingSelector";
 import AISuggestionsSheet from "@/src/components/AISuggestionsSheet";
 import { getDeviceId } from "@/src/lib/deviceId";
 import {
@@ -801,9 +801,12 @@ export default function ASIBotScreen() {
 
         {/* Parameters */}
         <SectionHeader title={t("asi_sec_risk")} />
-        <MarginInputRow label={t("asi_margin_per_trade")} value={bot.margin_usdt ?? 0}
-                  onCommit={(v) => saveBot({ margin_usdt: v })}
-                  colors={colors} testID="asi-margin-usdt" />
+        <SizingSelector riskPct={bot.risk_pct} marginUsd={bot.margin_usdt ?? 0}
+                  onRisk={(v) => saveBot({ risk_pct: v })}
+                  onMargin={(v) => saveBot({ margin_usdt: v })}
+                  riskLabel={t("asi_risk_per_trade")} marginLabel={t("asi_margin_per_trade")}
+                  accent={bot.mode === "full" ? ORANGE : GOLD}
+                  colors={colors} testPrefix="asi" />
         <ParamRow label="Leverage" value={`${bot.leverage}x`}
                   onDec={() => saveBot({ leverage: Math.max(1, bot.leverage - 1) })}
                   onInc={() => saveBot({ leverage: Math.min(125, bot.leverage + 1) })}

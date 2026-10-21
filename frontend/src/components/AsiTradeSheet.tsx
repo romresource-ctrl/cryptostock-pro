@@ -16,7 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { useTheme } from "@/src/theme/ThemeContext";
 import { useI18n } from "@/src/i18n/I18nContext";
-import MarginInputRow from "@/src/components/MarginInputRow";
+import SizingSelector from "@/src/components/SizingSelector";
 import { useTraderProfile } from "@/src/lib/useTraderProfile";
 import { getDeviceId } from "@/src/lib/deviceId";
 import {
@@ -102,7 +102,7 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
   const [deviceId, setDeviceId] = useState("");
   const [creds, setCreds] = useState<AsiCredential[]>([]);
   const [exchange, setExchange] = useState<"binance" | "bybit" | "okx" | "bitget">("binance");
-  const [riskPct] = useState(5);
+  const [riskPct, setRiskPct] = useState(5);
   const [leverage, setLeverage] = useState(10);
   const [tpCount, setTpCount] = useState<1 | 2 | 3>(3);
   const [autoClosePct, setAutoClosePct] = useState<0 | 10 | 15 | 20 | 25 | 50 | 100>(0);
@@ -166,6 +166,7 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
           setBotCfg(b);
           setAutoClosePct(((b as any).auto_close_pct ?? 0) as any);
           setMarginUsd(Number((b as any).margin_usdt ?? 0));
+          if ((b as any).risk_pct) setRiskPct(Number((b as any).risk_pct));
         }
       } catch {}
       try {
@@ -509,8 +510,10 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
 
                 {/* Risk & Leverage */}
                 <View style={{ marginTop: 10 }}>
-                  <MarginInputRow label={t("asi_margin_per_trade")} value={marginUsd}
-                    onCommit={setMarginUsd} colors={colors} testID="ats-margin-usdt" />
+                  <SizingSelector riskPct={riskPct} marginUsd={marginUsd}
+                    onRisk={setRiskPct} onMargin={setMarginUsd}
+                    riskLabel={t("ats_risk_per_trade")} marginLabel={t("asi_margin_per_trade")}
+                    accent={MINT} colors={colors} testPrefix="ats" />
                 </View>
                 <StepperRow label={t("ats_leverage")} value={`${leverage}x`} colors={colors}
                   onDec={() => setLeverage(Math.max(1, leverage - 1))}
