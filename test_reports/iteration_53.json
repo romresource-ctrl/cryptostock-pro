@@ -1,0 +1,42 @@
+{
+  "summary": "iter53 (v10.2.36/v10.2.37): Backend + Frontend verification of Auto-Close Profit chips, SL clamp 1-2%, Margin per Trade ($), and AC badge. ALL CORE FLOWS PASS. Backend: 14/14 new iter60+iter61 unit tests pass; 101/101 iter5x regression tests pass; 15/15 live /api/asi/bot persistence+validation tests pass (auto_close_pct accepts 0/10/15/20/25/50/100, rejects 30/5/200/-10 with 422; margin_usdt rejects negative, accepts 0/positive, persists correctly). Frontend /asi-bot: all required testIDs render (asi-margin-usdt, asi-autoclose-10..100, asi-tp-1/2/3). Interactions verified visually via background-color: tap AC chip -> all TP chips go inactive and AC chip highlights; tap TP chip -> AC chip clears; tap active AC chip again -> AC turns off and previously-selected TP reactivates. Trailing Stop stepper removed; SL guard hint '1-2%' displayed. Running Positions page renders ac-badge-<id> with text 'AC 15%' for seeded synthetic open trade (auto_close_pct=15).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/trades-position",
+       "issues": ["Non-blocking React Web warning: '<button> cannot be a descendant of <button>' hydration error logged in console. Likely a TouchableOpacity nested inside another on card. Not affecting functionality but should be cleaned up."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter60_v10236_autoclose_whipsaw.py (pre-existing, 14 pass)",
+    "/app/backend/tests/test_iter61_v10237_sl_margin.py (pre-existing, included in 14 pass)",
+    "/app/backend/tests/test_iter53_bot_autoclose_margin_live.py (NEW, 15 pass against public URL)",
+    "/app/test_reports/pytest/iter53_new.xml",
+    "/app/test_reports/pytest/iter53_regression.xml",
+    "/app/test_reports/pytest/iter53_live.xml",
+    "/app/test_reports/screenshots/iter53_asibot_initial.jpeg",
+    "/app/test_reports/screenshots/iter53_asibot_interactions.jpeg",
+    "/app/test_reports/screenshots/iter53_trades_pos_ac2.jpeg"
+  ],
+  "action_items": [
+    "(Optional, non-blocking) Fix nested <button> warning in /app/frontend/app/trades-position.tsx card component to clear React hydration warning on web preview."
+  ],
+  "critical_code_review_comments": [
+    "engine.py _clamp_sl enforces [0.01, 0.02] range correctly for both BUY/SELL directions.",
+    "engine.py execute_trade sets trailing_callback_rate=0.0 unconditionally for new trades (v10.2.37 as specified).",
+    "engine.py sets tp_count=1 and clears TPs ladder to a single ROI-based level when auto_close_pct>0 — correct per spec.",
+    "routes.py BotConfigPayload: auto_close_pct uses Literal[0,10,15,20,25,50,100] (rejects 30/5/200/-10 with 422); margin_usdt uses Field(ge=0.0,le=1e6) rejecting negatives — verified live."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter53_bot_autoclose_margin_live.py (NEW live sanity test)"
+  ],
+  "success_rate": {"backend": "100% (14/14 new + 101/101 regression + 15/15 live)", "frontend": "100% of required flows"},
+  "seed_data_creation": "Inserted synthetic asi_trades doc _id='test-judge-device-001:TEST_AC_BADGE_001' (BTC, open, auto_close_pct=15) to verify AC badge; CLEANED UP post-test. Also inserted/cleaned bot_config under TEST_iter53_* device_id prefix.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "To test ASI-Bot UI as premium user on web preview: set localStorage.cryptostock.device_fingerprint='test-judge-device-001' + localStorage.unlock_code='C924-337C-D665' before navigation. A disclaimer modal appears first time after chip interactions trigger a save; dismiss with 'I Agree' before further interactions. AsiTradeSheet (ats-* testIDs) was NOT exercised because it requires exchange credentials and AI Suggestions flow; code review confirms testIDs ats-margin-usdt + ats-autoclose-{10..100} are present at AsiTradeSheet.tsx:513 and :622.",
+  "rca_of_issue": "N/A — no bugs found."
+}

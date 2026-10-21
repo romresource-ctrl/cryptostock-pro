@@ -679,8 +679,8 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   asi_legal_link: { id: "Baca Terms, Privacy & Compliance Lengkap →", en: "Read full Terms, Privacy & Compliance →", ru: "Полные Условия и Конфиденциальность →", cn: "阅读完整条款、隐私与合规 →" },
   asi_sec_tp: { id: "Strategi Take Profit", en: "Take Profit Strategy", ru: "Стратегия Take Profit", cn: "止盈策略" },
   asi_tp_hint: {
-    id: "Pilih berapa target TP. Trailing Stop otomatis aktif setelah TP1 tercapai untuk mengunci profit.",
-    en: "Choose how many TP targets. Trailing Stop auto-activates after TP1 is hit to lock in profits.",
+    id: "Pilih berapa target TP. Setelah TP1 tercapai, SL digeser ke TP1 untuk mengunci profit.",
+    en: "Choose how many TP targets. After TP1 is hit, SL moves to TP1 to lock in profit.",
     ru: "Выберите количество TP. Trailing Stop активируется после TP1, чтобы зафиксировать прибыль.",
     cn: "选择 TP 目标数量。TP1 达成后自动启用追踪止损以锁定利润。",
   },
