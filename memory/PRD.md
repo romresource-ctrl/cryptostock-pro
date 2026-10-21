@@ -2394,3 +2394,10 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 - Auto-Close Profit: config/trade `auto_close_pct` ∈ {0,10,15,20,25,50,100} (ROI % of margin). When >0: 1 native TP at entry×(1±pct/lev) closes 100%, tp_count=1, trailing/HAR/horizon disabled for that trade. Mutually exclusive with 1/2/3 TP in UI (ASI-Bot page + AsiTradeSheet). New trades only.
 - Full-Auto filters: max 2 same-side entries per 30 min (SIDE_BURST_*); after 2 consecutive same-side losses (latest <60m) the opposite side is blocked 60 min (WHIPSAW_*).
 - Tests: backend/tests/test_iter60_v10236_autoclose_whipsaw.py (9 passed, mock only).
+
+## v10.2.37 — Loss control (user decision 21/10 from 20/10 analysis)
+- SL clamp: every new trade SL distance forced into 1–2% of entry (engine._clamp_sl, also preview); SL=TP1 symmetry follows.
+- Margin per Trade ($): config/trade `margin_usdt` (0 → legacy risk_pct). UI replaces Risk % stepper (MarginInputRow) on ASI-Bot page + trade sheet. Binance path + preview.
+- Trailing stop disabled for new trades → after TP1 hit, SL guard moves SL to TP1 price (native & soft). Trailing UI replaced with hint.
+- AC badge on Running Positions cards.
+- Tests: backend/tests/test_iter61_v10237_sl_margin.py.

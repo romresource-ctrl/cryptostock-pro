@@ -547,6 +547,7 @@ export type AsiTradeBody = {
   tp_count?: 1 | 2 | 3;
   // v10.2.36 — Auto-Close Profit ROI % dari margin (0 = off)
   auto_close_pct?: 0 | 10 | 15 | 20 | 25 | 50 | 100;
+  margin_usdt?: number;
   trailing_callback_rate?: number;
   // v9.9.0 — Margin mode wajib dipilih user sebelum eksekusi
   margin_mode?: "isolated" | "cross";
@@ -665,6 +666,7 @@ export type AsiBotConfig = {
   // v9.6.0 — TP flexibility & trailing stop
   tp_count?: 1 | 2 | 3;
   auto_close_pct?: 0 | 10 | 15 | 20 | 25 | 50 | 100;
+  margin_usdt?: number;
   trailing_callback_rate?: number;
   // v9.7.6 — independent Semi/Full enable flags
   semi_enabled?: boolean;

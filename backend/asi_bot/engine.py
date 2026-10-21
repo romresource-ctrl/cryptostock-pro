@@ -57,6 +57,25 @@ ENTRY_LIMIT_TTL_SEC = 7200
 # TP2 25%, TP3 25% (bukan lagi 33/33/34). Untuk 2 TP tetap 50/50.
 # v10.2.36 — Pilihan target Auto-Close Profit (ROI % dari margin). 0 = off.
 AUTO_CLOSE_PCTS = (0, 10, 15, 20, 25, 50, 100)
+# v10.2.37 — Jarak SL wajib 1–2% dari entry (keputusan user).
+SL_MIN_PCT = 0.01
+SL_MAX_PCT = 0.02
+
+
+def _clamp_sl(entry: float, stop_loss: float, side: str) -> float:
+    sgn = 1.0 if side == "BUY" else -1.0
+    dist = abs(entry - stop_loss) / entry
+    dist = min(SL_MAX_PCT, max(SL_MIN_PCT, dist))
+    return entry * (1 - sgn * dist)
+
+
+def _resolve_margin(bal: float, risk_pct: float, margin_usdt: float | None) -> float:
+    """v10.2.37 — Margin per trade ($) user; fallback risk % saldo (legacy).
+    Tidak boleh melebihi saldo tersedia."""
+    m = float(margin_usdt or 0)
+    if m > 0:
+        return min(m, bal)
+    return bal * risk_pct / 100.0
 TP_SPLITS: dict[int, tuple[float, ...]] = {
     1: (1.0,),
     2: (0.5, 0.5),
@@ -305,6 +324,7 @@ async def preview_trade(
     entry: float, stop_loss: float, tps: list[float],
     risk_pct: float, leverage: int,
     tp_count: int = 3,
+    margin_usdt: float = 0.0,
 ) -> dict[str, Any]:
     """Hitung besaran margin & qty TANPA eksekusi — untuk Semi-Auto preview."""
     risk_pct = max(1.0, min(30.0, float(risk_pct)))
@@ -318,7 +338,7 @@ async def preview_trade(
         if bad:
             return {"ok": False, "reason": bad[0], "message": bad[1]}
         bal = await _fetch_usdt_balance(client)
-        margin = round(bal * risk_pct / 100.0, 2)
+        margin = round(_resolve_margin(bal, risk_pct, margin_usdt), 2)
         size_usdt = round(margin * leverage, 2)
         # v9.8.8 — Tolak sejak PREVIEW bila ukuran posisi di bawah
         # min-notional exchange (Binance -4164). User langsung tahu harus
@@ -338,9 +358,11 @@ async def preview_trade(
             }
     finally:
         await client.close()
-    margin = round(bal * risk_pct / 100.0, 2)
+    margin = round(_resolve_margin(bal, risk_pct, margin_usdt), 2)
     size_usdt = margin * leverage
     qty = size_usdt / entry if entry > 0 else 0
+    if entry > 0 and stop_loss:
+        stop_loss = _clamp_sl(entry, float(stop_loss), side)  # v10.2.37
     risk_per_unit = abs(entry - stop_loss)
     est_loss = round(risk_per_unit * qty, 2)
     weights = TP_SPLITS[tp_count]
@@ -373,6 +395,7 @@ async def execute_trade(
     formula_tag: str | None = None,
     entry_mode: str = "limit",
     auto_close_pct: int = 0,
+    margin_usdt: float = 0.0,
 ) -> dict[str, Any]:
     """v9.9.2 — Place entry + VERIFIED bracket SL/TP. Auto-rollback jika
     bracket tidak dapat terpasang & terverifikasi di exchange.
@@ -437,6 +460,11 @@ async def execute_trade(
                 _bc_tps.append(_bc_tp)
             tps = _bc_tps
 
+    # v10.2.37 — SL CLAMP 1–2% (keputusan user, loss TIA 20/10: SL 5,1%
+    # → -57% margin). Semua trade baru: jarak Entry→SL dipaksa di
+    # rentang [SL_MIN_PCT, SL_MAX_PCT]. Simetri di bawah ikut menyesuaikan TP1.
+    if entry > 0 and stop_loss:
+        stop_loss = _clamp_sl(entry, float(stop_loss), side)
     # v10.2.17 — SIMETRI SL=TP1 (keputusan user): jarak Entry→SL harus
     # SAMA DENGAN jarak Entry→TP1 (R = 1:1). TP2 & TP3 ikut digeser
     # berdasarkan rasio ladder asli (menjaga progresi 1R/1.5R/2R). Jika
@@ -475,6 +503,10 @@ async def execute_trade(
         # menutup lebih awal (anti tabrakan).
         hit_and_run = False
         horizon_exit = False
+    # v10.2.37 — Keputusan user: setelah TP1 hit, SL digeser ke TP1 (SL
+    # guard), BUKAN diganti trailing stop (trailing membatalkan SL & sering
+    # menutup di sekitar entry). Trailing dimatikan untuk trade baru.
+    trailing_callback_rate = 0.0
     # v10.0.9 — Geser ladder: tp_count<3 memakai level TP yang lebih tinggi.
     tps = _shift_tp_ladder(tps, tp_count)
     margin_mode = "cross" if str(margin_mode).lower() == "cross" else "isolated"
@@ -608,7 +640,7 @@ async def execute_trade(
     except Exception as e:
         return {"ok": False, "reason": "balance_fetch_failed",
                 "message": str(e)[:200]}
-    margin = bal * risk_pct / 100.0
+    margin = _resolve_margin(bal, risk_pct, margin_usdt)
     size_usdt = margin * leverage
     qty_raw = size_usdt / entry if entry > 0 else 0.0
     qty = round_to_step(qty_raw, step)

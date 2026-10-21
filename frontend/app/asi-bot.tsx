@@ -19,6 +19,7 @@ import { readPageCache, writePageCache } from "@/src/lib/pageCache";
 import { useBinanceMultiTicker } from "@/src/hooks/useBinanceMultiTicker";
 import { markTradeDeleted, filterDeletedTrades } from "@/src/lib/deletedTrades";
 import PremiumLocked from "@/src/components/PremiumLocked";
+import MarginInputRow from "@/src/components/MarginInputRow";
 import AISuggestionsSheet from "@/src/components/AISuggestionsSheet";
 import { getDeviceId } from "@/src/lib/deviceId";
 import {
@@ -800,10 +801,9 @@ export default function ASIBotScreen() {
 
         {/* Parameters */}
         <SectionHeader title={t("asi_sec_risk")} />
-        <ParamRow label={t("asi_risk_per_trade")} value={`${bot.risk_pct}%`}
-                  onDec={() => saveBot({ risk_pct: Math.max(1, bot.risk_pct - 1) })}
-                  onInc={() => saveBot({ risk_pct: Math.min(30, bot.risk_pct + 1) })}
-                  colors={colors} testID="asi-risk" />
+        <MarginInputRow label={t("asi_margin_per_trade")} value={bot.margin_usdt ?? 0}
+                  onCommit={(v) => saveBot({ margin_usdt: v })}
+                  colors={colors} testID="asi-margin-usdt" />
         <ParamRow label="Leverage" value={`${bot.leverage}x`}
                   onDec={() => saveBot({ leverage: Math.max(1, bot.leverage - 1) })}
                   onInc={() => saveBot({ leverage: Math.min(125, bot.leverage + 1) })}
@@ -951,15 +951,8 @@ export default function ASIBotScreen() {
           {t("asi_daily_loss_hint")}
         </Text>
 
-        <ParamRow
-          label={t("asi_trailing_label")}
-          value={(bot.trailing_callback_rate ?? 0) === 0 ? "OFF" : `${(bot.trailing_callback_rate ?? 0).toFixed(1)}%`}
-          onDec={() => saveBot({ trailing_callback_rate: Math.max(0, Math.round(((bot.trailing_callback_rate ?? 0) - 0.5) * 10) / 10) })}
-          onInc={() => saveBot({ trailing_callback_rate: Math.min(10, Math.round(((bot.trailing_callback_rate ?? 0) + 0.5) * 10) / 10) })}
-          colors={colors} testID="asi-trailing"
-        />
-        <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: -4, marginBottom: 8, lineHeight: 16 }}>
-          {t("asi_trailing_hint")}
+        <Text style={{ color: colors.textMuted, fontSize: 11, marginBottom: 8, lineHeight: 16 }}>
+          {t("asi_slguard_hint")}
         </Text>
 
         {bot.auto_disabled_reason ? (

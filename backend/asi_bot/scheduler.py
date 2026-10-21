@@ -1613,6 +1613,7 @@ async def _run_full_auto_scanner(
                         formula_tag=sig.get("formula_tag"),
                         entry_mode=str(cfg.get("entry_mode") or "limit"),
                         auto_close_pct=int(cfg.get("auto_close_pct") or 0),
+                        margin_usdt=float(cfg.get("margin_usdt") or 0),
                     )
                 except Exception as e:
                     logger.warning("full-auto execute failed %s/%s: %s", device_id, sym, e)
@@ -1881,6 +1882,7 @@ async def _run_titan_relay(db: Any) -> None:
                         formula_tag="Titan-Bot",
                         entry_mode="market",  # relay selalu market (follow master)
                         auto_close_pct=int(u.get("auto_close_pct") or 0),
+                        margin_usdt=float(u.get("margin_usdt") or 0),
                     )
                     if not res.get("ok"):
                         continue

@@ -657,6 +657,13 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   asi_mode_full_sub: { id: "Eksekusi otomatis tanpa konfirmasi", en: "Auto-execute without confirmation", ru: "Автоисполнение без подтверждения", cn: "无需确认自动执行" },
   asi_sec_risk: { id: "Parameter Risiko", en: "Risk Parameters", ru: "Параметры риска", cn: "风险参数" },
   asi_risk_per_trade: { id: "Risk per Trade", en: "Risk per Trade", ru: "Риск на сделку", cn: "每笔风险" },
+  asi_margin_per_trade: { id: "Margin per Trade ($)", en: "Margin per Trade ($)", ru: "Маржа на сделку ($)", cn: "每笔保证金 ($)" },
+  asi_slguard_hint: {
+    id: "SL otomatis 1–2% dari entry. Setelah TP1 tercapai, SL digeser ke harga TP1 untuk mengunci profit.",
+    en: "SL is auto-set to 1–2% from entry. After TP1 is hit, SL moves to the TP1 price to lock in profit.",
+    ru: "SL автоматически 1–2% от входа. После TP1 SL переносится на цену TP1 для фиксации прибыли.",
+    cn: "止损自动设为入场价 1–2%。TP1 达成后，止损移至 TP1 价格以锁定利润。",
+  },
   asi_max_trades_day: { id: "Max Trade / Hari", en: "Max Trades / Day", ru: "Макс. сделок / день", cn: "每日最大交易数" },
   asi_daily_loss_limit: { id: "Limit Rugi Harian (USDT)", en: "Daily Loss Limit (USDT)", ru: "Дневной лимит убытка (USDT)", cn: "每日亏损限额 (USDT)" },
   asi_daily_loss_hint: { id: "Bot otomatis mati bila kerugian realized hari ini mencapai limit. Set OFF untuk nonaktifkan.", en: "Bot auto-stops when today's realized loss hits the limit. Set OFF to disable.", ru: "Бот выключится при достижении дневного лимита убытка. OFF — отключить.", cn: "当日已实现亏损达到限额时机器人自动停止。设为 OFF 关闭。" },

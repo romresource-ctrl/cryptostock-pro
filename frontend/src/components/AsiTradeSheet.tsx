@@ -16,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { useTheme } from "@/src/theme/ThemeContext";
 import { useI18n } from "@/src/i18n/I18nContext";
+import MarginInputRow from "@/src/components/MarginInputRow";
 import { useTraderProfile } from "@/src/lib/useTraderProfile";
 import { getDeviceId } from "@/src/lib/deviceId";
 import {
@@ -101,11 +102,12 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
   const [deviceId, setDeviceId] = useState("");
   const [creds, setCreds] = useState<AsiCredential[]>([]);
   const [exchange, setExchange] = useState<"binance" | "bybit" | "okx" | "bitget">("binance");
-  const [riskPct, setRiskPct] = useState(5);
+  const [riskPct] = useState(5);
   const [leverage, setLeverage] = useState(10);
   const [tpCount, setTpCount] = useState<1 | 2 | 3>(3);
   const [autoClosePct, setAutoClosePct] = useState<0 | 10 | 15 | 20 | 25 | 50 | 100>(0);
-  const [trailingCbRate, setTrailingCbRate] = useState<number>(2);
+  const [marginUsd, setMarginUsd] = useState<number>(0);
+  const [trailingCbRate] = useState<number>(0);
   const [preview, setPreview] = useState<AsiPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [executing, setExecuting] = useState(false);
@@ -163,6 +165,7 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
         if (b.exists) {
           setBotCfg(b);
           setAutoClosePct(((b as any).auto_close_pct ?? 0) as any);
+          setMarginUsd(Number((b as any).margin_usdt ?? 0));
         }
       } catch {}
       try {
@@ -211,6 +214,7 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
           // (2 TP → [TP2,TP3], 1 TP → [TP2]) supaya preview = eksekusi.
           take_profits: intent.take_profits,
           risk_pct: riskPct, leverage, tp_count: tpCount,
+          margin_usdt: marginUsd,
           testnet: activeTestnet,
         });
         if (cancelled) return;
@@ -241,7 +245,7 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
       cancelled = true;
       clearTimeout(t);
     };
-  }, [visible, intent, deviceId, exchange, riskPct, leverage, tpCount, activeCred, activeTestnet, previewAttempt]);
+  }, [visible, intent, deviceId, exchange, riskPct, leverage, tpCount, marginUsd, activeCred, activeTestnet, previewAttempt]);
 
   const execute = async () => {
     if (!intent || !preview?.ok) return;
@@ -283,6 +287,7 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
         risk_pct: riskPct, leverage, mode: "semi",
         tp_count: tpCount, trailing_callback_rate: trailingCbRate,
         auto_close_pct: autoClosePct,
+        margin_usdt: marginUsd,
         margin_mode: marginMode,
         testnet: activeTestnet,
         // v9.9.13 — label formula di kartu Recent Trades
@@ -503,9 +508,10 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
                 </View>
 
                 {/* Risk & Leverage */}
-                <StepperRow label={t("ats_risk_per_trade")} value={`${riskPct}%`} colors={colors}
-                  onDec={() => setRiskPct(Math.max(1, riskPct - 1))}
-                  onInc={() => setRiskPct(Math.min(30, riskPct + 1))} />
+                <View style={{ marginTop: 10 }}>
+                  <MarginInputRow label={t("asi_margin_per_trade")} value={marginUsd}
+                    onCommit={setMarginUsd} colors={colors} testID="ats-margin-usdt" />
+                </View>
                 <StepperRow label={t("ats_leverage")} value={`${leverage}x`} colors={colors}
                   onDec={() => setLeverage(Math.max(1, leverage - 1))}
                   onInc={() => setLeverage(Math.min(125, leverage + 1))} />
@@ -620,13 +626,9 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
                     );
                   })}
                 </View>
-                <StepperRow
-                  label={t("ats_trailing_cb")}
-                  value={trailingCbRate === 0 ? "OFF" : `${trailingCbRate.toFixed(1)}%`}
-                  colors={colors}
-                  onDec={() => setTrailingCbRate(Math.max(0, Math.round((trailingCbRate - 0.5) * 10) / 10))}
-                  onInc={() => setTrailingCbRate(Math.min(10, Math.round((trailingCbRate + 0.5) * 10) / 10))}
-                />
+                <Text style={{ color: colors.textMuted, fontSize: 10.5, marginTop: 8, lineHeight: 15 }}>
+                  {t("asi_slguard_hint")}
+                </Text>
 
                 {/* Preview */}
                 <View style={[s.preview, { backgroundColor: colors.background, borderColor: colors.border }]}>

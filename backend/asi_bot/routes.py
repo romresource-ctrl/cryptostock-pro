@@ -212,6 +212,8 @@ class TradePayload(BaseModel):
     tp_count: Literal[1, 2, 3] = 3
     # v10.2.36 — Auto-Close Profit ROI % dari margin (0 = off → pakai TP).
     auto_close_pct: Literal[0, 10, 15, 20, 25, 50, 100] = 0
+    # v10.2.37 — Margin per trade ($). 0 = fallback risk_pct.
+    margin_usdt: float = Field(0.0, ge=0.0, le=1_000_000.0)
     trailing_callback_rate: float = Field(2.0, ge=0.0, le=10.0)
     # v9.9.0 — Margin mode dipilih user sebelum eksekusi (wajib).
     # Default ISOLATED: kerugian terbatas pada margin posisi saja.
@@ -264,6 +266,8 @@ class BotConfigPayload(BaseModel):
     # v10.2.36 — Auto-Close Profit ROI % dari margin. 0 = off. Bila > 0,
     # tombol 1/2/3 TP dilepas: posisi ditutup 100% saat ROI tercapai.
     auto_close_pct: Literal[0, 10, 15, 20, 25, 50, 100] = 0
+    # v10.2.37 — Margin per trade ($) menggantikan Risk %. 0 = fallback risk_pct.
+    margin_usdt: float = Field(0.0, ge=0.0, le=1_000_000.0)
     # v9.6.0 — Trailing stop callback rate %. 0 = disabled. Active after TP1.
     trailing_callback_rate: float = Field(2.0, ge=0.0, le=10.0)
     # Set to null to CLEAR previous auto-disable (when user re-enables manually).
@@ -607,6 +611,7 @@ def _attach_trade_routes(db: Any) -> None:
             payload.entry, payload.stop_loss, payload.take_profits,
             payload.risk_pct, payload.leverage,
             tp_count=payload.tp_count,
+            margin_usdt=payload.margin_usdt,
         )
 
     @router.post("/trades/execute")
@@ -626,6 +631,7 @@ def _attach_trade_routes(db: Any) -> None:
             formula_tag=payload.formula_tag,
             entry_mode=payload.entry_mode,
             auto_close_pct=payload.auto_close_pct,
+            margin_usdt=payload.margin_usdt,
         )
         if not res.get("ok"):
             # v9.9.2 — Pass through structured reason & message so frontend
@@ -1066,6 +1072,7 @@ def _attach_trade_routes(db: Any) -> None:
                     formula_tag="Titan-Bot",
                     entry_mode=str(cfg.get("entry_mode") or "limit"),
                     auto_close_pct=int(cfg.get("auto_close_pct") or 0),
+                    margin_usdt=float(cfg.get("margin_usdt") or 0),
                 )
                 if not res.get("ok"):
                     fail_cnt += 1
