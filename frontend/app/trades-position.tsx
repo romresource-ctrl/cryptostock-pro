@@ -538,6 +538,15 @@ export default function TradesPositionScreen() {
               {String(tr.actual_margin_mode || tr.margin_mode || "ISOLATED").toUpperCase()}
             </Text>
           </View>
+          {/* v10.2.36 — Auto-Close Profit target badge */}
+          {Number(tr.auto_close_pct) > 0 ? (
+            <View testID={`ac-badge-${tr.id || tr._id || ""}`}
+                  style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, backgroundColor: YELLOW }}>
+              <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 9 }}>
+                AC {tr.auto_close_pct}%
+              </Text>
+            </View>
+          ) : null}
           {/* Formula tag */}
           <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
                          backgroundColor: colors.surfaceAlt || "#1F2937" }}>
