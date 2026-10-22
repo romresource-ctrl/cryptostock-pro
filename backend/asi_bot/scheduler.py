@@ -676,6 +676,9 @@ async def _enforce_daily_loss_limit(db: Any) -> None:
                     {"_id": cfg["_id"]},
                     {"$set": {
                         "enabled": False,
+                        # v10.3.1 — scanner Full-Auto membaca full_enabled;
+                        # tanpa ini bot tetap jalan walau limit rugi tercapai.
+                        "full_enabled": False,
                         "auto_disabled_reason": (
                             f"Daily loss limit reached: "
                             f"${realized:.2f} ≤ -${limit:.2f}"

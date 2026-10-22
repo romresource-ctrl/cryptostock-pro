@@ -2411,3 +2411,6 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 - Daily Profit Limit $ (daily_profit_limit_usdt): Full-Auto auto-stops (full_enabled=False) when realized today >= limit.
 - XRP early close root cause: Binance position (3189) larger than trade qty (1785.7) -> another bot instance (preview/production sharing same Binance keys) closed the shared one-way position. Not an AC ROI bug (TP 1.3617 = entry*(1+0.15/12)).
 - Note: existing Daily Loss Limit sets enabled=False only, which does not stop full_enabled bots (not changed).
+
+## v10.3.1
+- Daily Loss Limit now also sets full_enabled=False (Full-Auto really stops). Test: backend/tests/test_iter62_v1031_daily_loss_stop.py
