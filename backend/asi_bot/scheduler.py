@@ -617,6 +617,40 @@ async def _realized_pnl_today(db: Any, device_id: str) -> float:
     return float((agg[0] if agg else {}).get("pnl") or 0.0)
 
 
+async def _enforce_daily_profit_limit(db: Any) -> None:
+    """v10.3.0 — Hentikan Full-Auto bila realized profit hari ini ≥ target
+    user (daily_profit_limit_usdt). Posisi open tidak disentuh."""
+    cursor = db.asi_bot_config.find({
+        "full_enabled": True,
+        "daily_profit_limit_usdt": {"$gt": 0},
+    })
+    async for cfg in cursor:
+        try:
+            device_id = cfg.get("device_id") or cfg.get("_id")
+            limit = float(cfg.get("daily_profit_limit_usdt") or 0.0)
+            if not device_id or limit <= 0:
+                continue
+            realized = await _realized_pnl_today(db, device_id)
+            if realized >= limit:
+                now = datetime.now(timezone.utc).isoformat()
+                await db.asi_bot_config.update_one(
+                    {"_id": cfg["_id"]},
+                    {"$set": {
+                        "full_enabled": False,
+                        "auto_disabled_reason": (
+                            f"Daily profit target reached: "
+                            f"+${realized:.2f} ≥ ${limit:.2f}"
+                        ),
+                        "auto_disabled_at": now,
+                        "updated_at": now,
+                    }},
+                )
+                logger.warning("Full-Auto stopped (profit target) %s: %.2f ≥ %.2f",
+                               device_id, realized, limit)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("daily profit check %s: %s", cfg.get("_id"), e)
+
+
 async def _enforce_daily_loss_limit(db: Any) -> None:
     """v9.4.1 — Auto-disable any bot whose realized loss today ≤ -limit.
 
@@ -1981,6 +2015,7 @@ class ASIScheduler:
                 await _refresh_open_pnl(self.db)
                 # v9.4.1 — After refreshing PnL, enforce daily loss limits.
                 await _enforce_daily_loss_limit(self.db)
+                await _enforce_daily_profit_limit(self.db)  # v10.3.0
             except Exception as e:  # noqa: BLE001
                 logger.exception("pnl loop crash: %s", e)
             await asyncio.sleep(60)  # unrealized PnL every 60s

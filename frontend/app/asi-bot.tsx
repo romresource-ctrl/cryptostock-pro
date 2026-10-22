@@ -945,6 +945,14 @@ export default function ASIBotScreen() {
                     onInc={() => saveBot({ max_trades_per_day: Math.min(50, bot.max_trades_per_day + 1) })}
                     colors={colors} testID="asi-maxtrade" />
         ) : null}
+        <ParamRow label={t("asi_daily_profit_limit")}
+                  value={(bot.daily_profit_limit_usdt ?? 0) === 0 ? "OFF" : `$${bot.daily_profit_limit_usdt}`}
+                  onDec={() => saveBot({ daily_profit_limit_usdt: Math.max(0, (bot.daily_profit_limit_usdt ?? 0) - 10) })}
+                  onInc={() => saveBot({ daily_profit_limit_usdt: Math.min(100000, (bot.daily_profit_limit_usdt ?? 0) + 10) })}
+                  colors={colors} testID="asi-dailyprofit" />
+        <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: -4, marginBottom: 8, lineHeight: 16 }}>
+          {t("asi_daily_profit_hint")}
+        </Text>
         <ParamRow label={t("asi_daily_loss_limit")}
                   value={(bot.daily_loss_limit_usdt ?? 0) === 0 ? "OFF" : `$${bot.daily_loss_limit_usdt}`}
                   onDec={() => saveBot({ daily_loss_limit_usdt: Math.max(0, (bot.daily_loss_limit_usdt ?? 0) - 10) })}
@@ -1259,8 +1267,10 @@ export default function ASIBotScreen() {
                   </Text>
                   {!isOpen && !isPending ? (() => {
                     const rc = String((tr as any).close_reason || "");
+                    const acP = Number((tr as any).auto_close_pct) || 0;
                     let txt: string;
-                    if (/^TP\d?$/.test(rc)) txt = `Closed on ${rc}`;
+                    if (acP > 0 && rc === "TP1") txt = `Closed on AC ${acP}%`;
+                    else if (/^TP\d?$/.test(rc)) txt = `Closed on ${rc}`;
                     else if (rc === "SL") txt = "Closed on SL";
                     else if (rc === "cancelled_pending") txt = "Canceled by user";
                     else if (rc === "entry_expired") txt = "Canceled: expired";
@@ -1445,6 +1455,15 @@ export default function ASIBotScreen() {
                       {isOpen ? t("asi_status_active") : isPending ? t("asi_status_pending") : "CLOSED"}
                     </Text>
                   </View>
+                  {/* v10.3.0 — AC badge (sama dengan Running Positions) */}
+                  {Number((tr as any).auto_close_pct) > 0 ? (
+                    <View testID={`rt-ac-badge-${(tr as any).id || (tr as any)._id || ""}`}
+                      style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, backgroundColor: YELLOW }}>
+                      <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 9 }}>
+                        AC {(tr as any).auto_close_pct}%
+                      </Text>
+                    </View>
+                  ) : null}
                   {/* Formula tag */}
                   <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, backgroundColor: "#1F2937" }}>
                     <Text numberOfLines={1} style={{ color: colors.textMuted, fontSize: 9, fontWeight: "800" }}>
@@ -1515,7 +1534,7 @@ export default function ASIBotScreen() {
                     <View style={{ gap: 1 }}>
                       {tpOnly.map((f: any, i: number) => (
                         <Text key={i} style={{ fontSize: 10.5, fontWeight: "800", color: "#FFFFFF" }}>
-                          ✓ {String(f.level)} HIT · ${f.price != null ? formatPrice(Number(f.price), "crypto") : "—"}
+                          ✓ {Number((tr as any).auto_close_pct) > 0 && String(f.level) === "TP1" ? `AC ${(tr as any).auto_close_pct}%` : String(f.level)} HIT · ${f.price != null ? formatPrice(Number(f.price), "crypto") : "—"}
                           {f.pnl != null ? (
                             <Text style={{ color: Number(f.pnl) >= 0 ? GREEN : RED, fontWeight: "900" }}>
                               {"  "}{Number(f.pnl) >= 0 ? "+" : "-"}${Math.abs(Number(f.pnl)).toFixed(2)}

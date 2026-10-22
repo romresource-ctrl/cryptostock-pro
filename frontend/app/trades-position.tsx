@@ -342,8 +342,9 @@ export default function TradesPositionScreen() {
     return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} · ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
 
-  const closedReason = (r?: string | null): string => {
+  const closedReason = (r?: string | null, ac?: number): string => {
     const x = String(r || "");
+    if (ac && ac > 0 && x === "TP1") return `Closed on AC ${ac}%`;
     if (/^TP\d?$/.test(x)) return `Closed on ${x}`;
     if (x === "SL") return "Closed on SL";
     if (x === "cancelled_pending") return "Canceled by user";
@@ -409,7 +410,7 @@ export default function TradesPositionScreen() {
             <>
               <Text style={{ color: "#FFFFFF", fontSize: 11 }}>·</Text>
               <Text numberOfLines={1} style={{ fontSize: 11, fontWeight: "800", color: "#FFFFFF", flexShrink: 1 }}>
-                {closedReason(tr.close_reason)}
+                {closedReason(tr.close_reason, Number(tr.auto_close_pct) || 0)}
                 {tr.closed_at ? ` · ${fmtDateTime(tr.closed_at)}` : ""}
               </Text>
             </>
@@ -628,7 +629,7 @@ export default function TradesPositionScreen() {
             <View style={{ marginTop: 2 }}>
               {tpOnly.map((f: any, i: number) => (
                 <Text key={i} style={{ fontSize: 10.5, fontWeight: "800", color: "#FFFFFF" }}>
-                  ✓ {String(f.level)} hit · ${fp(Number(f.price))}
+                  ✓ {Number(tr.auto_close_pct) > 0 && String(f.level) === "TP1" ? `AC ${tr.auto_close_pct}%` : String(f.level)} hit · ${fp(Number(f.price))}
                   {f.pnl != null ? (
                     <Text style={{ color: Number(f.pnl) >= 0 ? GREEN : RED, fontWeight: "900" }}>
                       {"  "}{Number(f.pnl) >= 0 ? "+" : "-"}${Math.abs(Number(f.pnl)).toFixed(2)}
@@ -685,6 +686,71 @@ export default function TradesPositionScreen() {
   const histList = useMemo(() => trades.filter((x) =>
     x.status !== "open" && x.status !== "pending_entry"), [trades]);
 
+  // v10.3.0 — helper statistik harian (dipakai ringkasan atas & header harian History).
+  const pad2 = (n: number) => String(n).padStart(2, "0");
+  const dayKey = (d: Date) =>
+    `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  const today = dayKey(new Date());
+  const agg = (isDemo: boolean, dk: string = today) => {
+    let w = 0, l = 0, pU = 0, lU = 0, pP = 0, lP = 0;
+    histList.forEach((t2: any) => {
+      if (Boolean(t2.testnet) !== isDemo) return;
+      const iso = t2.closed_at || t2.updated_at;
+      if (!iso) return;
+      const d = new Date(iso);
+      if (isNaN(d.getTime()) || dayKey(d) !== dk) return;
+      const pnl2 = Number(t2.pnl_usdt || 0);
+      const marg = Math.max(1, Number(t2.margin_usdt || 1));
+      if (pnl2 > 0) { w++; pU += pnl2; pP += (pnl2 / marg) * 100; }
+      else if (pnl2 < 0) { l++; lU += pnl2; lP += (pnl2 / marg) * 100; }
+    });
+    return { w, l, pU, lU, pP, lP };
+  };
+  const demoBal = balance.demo?.available_usdt;
+  const realBal = balance.real?.available_usdt;
+  const col = (
+    title: string, titleColor: string, data: ReturnType<typeof agg>,
+    bal: number | null | undefined,
+  ) => (
+    <View style={{ flex: 1, gap: 2 }}>
+      <Text style={{ color: titleColor, fontWeight: "900", fontSize: 13, letterSpacing: 0.6 }}>
+        {title}
+      </Text>
+      <Text style={{ fontSize: 11.5, fontWeight: "800" }}>
+        <Text style={{ color: GREEN }}>P :</Text>
+        <Text style={{ color: colors.textPrimary }}>{` ${data.w}`}</Text>
+        <Text style={{ color: colors.textMuted }}>x </Text>
+        <Text style={{ color: RED }}>L :</Text>
+        <Text style={{ color: colors.textPrimary }}>{` ${data.l}`}</Text>
+        <Text style={{ color: colors.textMuted }}>x</Text>
+      </Text>
+      <Text style={{ color: GREEN, fontSize: 11.5, fontWeight: "800", fontVariant: ["tabular-nums"] }}>
+        P: +${data.pU.toFixed(2)} (+{data.pP.toFixed(1)}%)
+      </Text>
+      <Text style={{ color: RED, fontSize: 11.5, fontWeight: "800", fontVariant: ["tabular-nums"] }}>
+        L: -${Math.abs(data.lU).toFixed(2)} ({data.lP.toFixed(1)}%)
+      </Text>
+      <Text style={{ fontSize: 11.5, fontWeight: "800" }}>
+        <Text style={{ color: titleColor }}>Balance:</Text>
+        <Text style={{ color: colors.textPrimary, fontVariant: ["tabular-nums"] }}>
+          {" "}${bal != null ? Number(bal).toFixed(2) : "—"}
+        </Text>
+      </Text>
+    </View>
+  );
+  // v10.3.0 — History dikelompokkan per tanggal close (terbaru → terlama).
+  const histGroups = (() => {
+    const map = new Map<string, AnyTrade[]>();
+    histList.forEach((t2: any) => {
+      const d = new Date(t2.closed_at || t2.updated_at || t2.created_at || "");
+      const k = isNaN(d.getTime()) ? "0000-00-00" : dayKey(d);
+      if (!map.has(k)) map.set(k, []);
+      map.get(k)!.push(t2);
+    });
+    return Array.from(map.entries()).sort((a, b) => (a[0] < b[0] ? 1 : -1));
+  })();
+  const dayLabel = (k: string) => (k === "0000-00-00" ? "—" : `${k.slice(8, 10)}/${k.slice(5, 7)}`);
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
       <View style={[s.header, { borderColor: colors.border, backgroundColor: colors.surface }]}>
@@ -717,59 +783,8 @@ export default function TradesPositionScreen() {
                 nominal + %), L (merah nominal + %), Balance USDT available
                 di baris paling bawah. Reset tiap 00:00 jam DEVICE user. */}
             {(() => {
-              const pad2 = (n: number) => String(n).padStart(2, "0");
-              const dayKey = (d: Date) =>
-                `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-              const today = dayKey(new Date());
-              const agg = (isDemo: boolean) => {
-                let w = 0, l = 0, pU = 0, lU = 0, pP = 0, lP = 0;
-                histList.forEach((t2: any) => {
-                  if (Boolean(t2.testnet) !== isDemo) return;
-                  const iso = t2.closed_at || t2.updated_at;
-                  if (!iso) return;
-                  const d = new Date(iso);
-                  if (isNaN(d.getTime()) || dayKey(d) !== today) return;
-                  const pnl2 = Number(t2.pnl_usdt || 0);
-                  const marg = Math.max(1, Number(t2.margin_usdt || 1));
-                  if (pnl2 > 0) { w++; pU += pnl2; pP += (pnl2 / marg) * 100; }
-                  else if (pnl2 < 0) { l++; lU += pnl2; lP += (pnl2 / marg) * 100; }
-                });
-                return { w, l, pU, lU, pP, lP };
-              };
               const demo = agg(true);
               const real = agg(false);
-              const demoBal = balance.demo?.available_usdt;
-              const realBal = balance.real?.available_usdt;
-              const col = (
-                title: string, titleColor: string, data: ReturnType<typeof agg>,
-                bal: number | null | undefined,
-              ) => (
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={{ color: titleColor, fontWeight: "900", fontSize: 13, letterSpacing: 0.6 }}>
-                    {title}
-                  </Text>
-                  <Text style={{ fontSize: 11.5, fontWeight: "800" }}>
-                    <Text style={{ color: GREEN }}>P :</Text>
-                    <Text style={{ color: colors.textPrimary }}>{` ${data.w}`}</Text>
-                    <Text style={{ color: colors.textMuted }}>x </Text>
-                    <Text style={{ color: RED }}>L :</Text>
-                    <Text style={{ color: colors.textPrimary }}>{` ${data.l}`}</Text>
-                    <Text style={{ color: colors.textMuted }}>x</Text>
-                  </Text>
-                  <Text style={{ color: GREEN, fontSize: 11.5, fontWeight: "800", fontVariant: ["tabular-nums"] }}>
-                    P: +${data.pU.toFixed(2)} (+{data.pP.toFixed(1)}%)
-                  </Text>
-                  <Text style={{ color: RED, fontSize: 11.5, fontWeight: "800", fontVariant: ["tabular-nums"] }}>
-                    L: -${Math.abs(data.lU).toFixed(2)} ({data.lP.toFixed(1)}%)
-                  </Text>
-                  <Text style={{ fontSize: 11.5, fontWeight: "800" }}>
-                    <Text style={{ color: titleColor }}>Balance:</Text>
-                    <Text style={{ color: colors.textPrimary, fontVariant: ["tabular-nums"] }}>
-                      {" "}${bal != null ? Number(bal).toFixed(2) : "—"}
-                    </Text>
-                  </Text>
-                </View>
-              );
               return (
                 <View style={{
                   paddingHorizontal: 4, paddingVertical: 6, gap: 4,
@@ -832,7 +847,21 @@ export default function TradesPositionScreen() {
                 <Text style={[s.section, { color: colors.textMuted }]}>
                   HISTORY · {histList.length}
                 </Text>
-                {histList.map(renderCard)}
+                {histGroups.map(([dk, list]) => (
+                  <View key={`day-${dk}`} style={{ gap: 8 }} testID={`hist-day-${dk}`}>
+                    <View style={{ height: 2, backgroundColor: YELLOW, borderRadius: 1, marginTop: 10 }} />
+                    <View style={{ paddingHorizontal: 4, gap: 4 }}>
+                      <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 12.5 }}>
+                        {dayLabel(dk)} - Daily Closed Positions History
+                      </Text>
+                      <View style={{ flexDirection: "row", gap: 14 }}>
+                        {col("DEMO", BLUE, agg(true, dk), balance.demo?.available_usdt)}
+                        {col("REAL", ORANGE, agg(false, dk), balance.real?.available_usdt)}
+                      </View>
+                    </View>
+                    {list.map(renderCard)}
+                  </View>
+                ))}
               </>
             )}
           </>

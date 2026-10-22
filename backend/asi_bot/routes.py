@@ -257,6 +257,8 @@ class BotConfigPayload(BaseModel):
     min_confidence: int = Field(75, ge=50, le=100)
     # v9.4.1 — Daily loss limit (USDT, absolute). 0 = disabled.
     daily_loss_limit_usdt: float = Field(0.0, ge=0.0, le=100_000.0)
+    # v10.3.0 — Target profit harian ($): Full-Auto berhenti bila tercapai. 0 = OFF.
+    daily_profit_limit_usdt: float = Field(0.0, ge=0.0, le=100_000.0)
     # v9.7.5 — Semi & Full are independent on/off states. The scheduler only
     # cares about full_enabled. Semi-Auto is a user-trigger flag.
     semi_enabled: bool = False

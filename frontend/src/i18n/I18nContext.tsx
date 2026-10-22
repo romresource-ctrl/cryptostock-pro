@@ -665,6 +665,8 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     cn: "止损自动设为入场价 1–2%。TP1 达成后，止损移至 TP1 价格以锁定利润。",
   },
   asi_max_trades_day: { id: "Max Trade / Hari", en: "Max Trades / Day", ru: "Макс. сделок / день", cn: "每日最大交易数" },
+  asi_daily_profit_limit: { id: "Limit Profit Harian (USDT)", en: "Daily Profit Limit (USDT)", ru: "Дневная цель прибыли (USDT)", cn: "每日盈利目标 (USDT)" },
+  asi_daily_profit_hint: { id: "Full-Auto otomatis berhenti bila profit realized hari ini mencapai target. Posisi open tidak ditutup. Set OFF untuk nonaktifkan.", en: "Full-Auto auto-stops when today's realized profit hits the target. Open positions are not closed. Set OFF to disable.", ru: "Full-Auto остановится при достижении дневной цели прибыли. Открытые позиции не закрываются. OFF — отключить.", cn: "当日已实现盈利达到目标时 Full-Auto 自动停止。不平掉持仓。设为 OFF 关闭。" },
   asi_daily_loss_limit: { id: "Limit Rugi Harian (USDT)", en: "Daily Loss Limit (USDT)", ru: "Дневной лимит убытка (USDT)", cn: "每日亏损限额 (USDT)" },
   asi_daily_loss_hint: { id: "Bot otomatis mati bila kerugian realized hari ini mencapai limit. Set OFF untuk nonaktifkan.", en: "Bot auto-stops when today's realized loss hits the limit. Set OFF to disable.", ru: "Бот выключится при достижении дневного лимита убытка. OFF — отключить.", cn: "当日已实现亏损达到限额时机器人自动停止。设为 OFF 关闭。" },
   asi_auto_disabled: { id: "Bot auto-mati:", en: "Bot auto-disabled:", ru: "Бот авто-отключён:", cn: "机器人自动停用：" },
