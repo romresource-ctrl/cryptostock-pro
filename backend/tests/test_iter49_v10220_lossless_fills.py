@@ -187,8 +187,8 @@ async def test_scenario4_sl_slippage(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "sl_fill" in upd
     assert upd["sl_fill"]["level"] == "SL"
     assert upd["sl_fill"]["price"] == pytest.approx(103.5)
-    # Status still open in this scenario (positionAmt > 0)
-    assert upd["status"] == "open"
+    # v10.3.4 — full own qty reduced by SL fill → record closed (ghost fix)
+    assert upd["status"] == "closed"
 
 
 # Scenario 5 — Fetch failed (HTTP 500) → check-point must NOT advance

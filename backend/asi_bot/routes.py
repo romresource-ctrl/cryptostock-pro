@@ -907,6 +907,26 @@ def _attach_trade_routes(db: Any) -> None:
             rows.append(d)
         return {"items": rows}
 
+    @router.post("/trades/sync")
+    async def sync_trades(device_id: str = Query(..., min_length=4)):
+        """v10.3.4 — Tombol refresh Running Positions: rekonsiliasi SEMUA
+        posisi open device ini dengan Binance SEKARANG (tidak menunggu
+        loop 60 detik)."""
+        n = 0
+        async for t in db.asi_trades.find({"device_id": device_id, "status": "open"}):
+            try:
+                cred = await resolve_credential(
+                    db, device_id, t["exchange"], bool(t.get("testnet", True)))
+                if not cred:
+                    continue
+                update = await refresh_trade_pnl(cred, t)
+                update["updated_at"] = _now_iso()
+                await db.asi_trades.update_one({"_id": t["_id"]}, {"$set": update})
+                n += 1
+            except Exception as e:  # noqa: BLE001
+                logger.warning("sync %s gagal: %s", t.get("_id"), e)
+        return {"ok": True, "synced": n}
+
     @router.post("/trades/{trade_id}/refresh")
     async def refresh_trade(trade_id: str, device_id: str = Query(..., min_length=4)):
         doc = await db.asi_trades.find_one({"_id": f"{device_id}:{trade_id}"})

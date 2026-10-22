@@ -47,6 +47,8 @@ export default function TradesPositionScreen() {
   const [trades, setTrades] = useState<AnyTrade[]>([]);
   const [prices, setPrices] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+  // v10.3.4 — tombol refresh: sinkron posisi dgn Binance lalu reload.
+  const [refreshing, setRefreshing] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [closingAll, setClosingAll] = useState(false);
   // v10.1.5 — Saldo DEMO/REAL untuk ringkasan dua kolom di atas list.
@@ -120,6 +122,13 @@ export default function TradesPositionScreen() {
     } catch { /* keep previous */ }
     finally { setLoading(false); }
   }, [deviceId, apiProfile]);
+
+  const onRefresh = useCallback(async () => {
+    if (!deviceId) return;
+    setRefreshing(true);
+    try { await api.asi.syncTrades(deviceId); } catch { /* tetap reload */ }
+    try { await load(); } finally { setRefreshing(false); }
+  }, [deviceId, load]);
 
   // v10.2.9 — INSTANT OPEN: render cache terakhir seketika saat halaman
   // dibuka (keluhan user: "buka Running Positions sangat lambat"),
@@ -760,8 +769,10 @@ export default function TradesPositionScreen() {
         <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 16 }}>
           Running Positions · {openList.length + pendList.length}
         </Text>
-        <TouchableOpacity onPress={load} style={s.backBtn}>
+        <TouchableOpacity onPress={onRefresh} disabled={refreshing} style={s.backBtn} testID="tp-refresh">
+          {refreshing ? <ActivityIndicator size="small" color={colors.textPrimary} /> : (
           <Ionicons name="refresh" size={20} color={colors.textPrimary} />
+          )}
         </TouchableOpacity>
       </View>
 

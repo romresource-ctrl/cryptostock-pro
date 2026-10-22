@@ -1995,6 +1995,11 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
         # Fetch failed → keep status open, PnL unchanged
         return {"status": "open", "pnl_usdt": float(trade.get("pnl_usdt") or 0.0)}
     amt = float((pos or {}).get("positionAmt") or 0)
+    _ghost_extra: dict[str, Any] = {}
+    # v10.3.4 — GHOST FIX: posisi di Binance berlawanan arah dgn trade ini
+    # (one-way mode) → posisi milik trade ini sudah tidak ada.
+    if abs(amt) > 0 and ((amt > 0) != (str(trade.get("side") or "BUY") == "BUY")):
+        amt = 0.0
     if abs(amt) > 0:
         unrealized = float(pos.get("unRealizedProfit") or 0)
         actual_mm = str(pos.get("marginType") or "").lower()
@@ -2270,6 +2275,7 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
         except Exception:
             openalgos = None
         bracket_live = None
+        sl_live = None
         if isinstance(openalgos, list):
             live_ids = {str(a.get("algoId")) for a in openalgos}
             sl_id = trade.get("sl_order_id")
@@ -2330,7 +2336,46 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
                 upd["bracket_type"] = "hard"
                 upd["soft_bracket"] = False
                 upd["soft_bracket_reason"] = None
-        return upd
+        # v10.3.4 — GHOST FIX: qty milik trade ini sudah habis ter-reduce
+        # (SL/TP fill tercatat) walau Binance masih punya posisi simbol ini
+        # (milik trade/bot lain di akun yg sama) → tutup record ini.
+        _merged = {**trade, **_native_partial_upd}
+        _own_qty = float(trade.get("qty") or 0)
+        _reduced = sum(float(x.get("qty") or 0) for x in (_merged.get("tp_fills") or [])) \
+            + float((_merged.get("sl_fill") or {}).get("qty") or 0)
+        if _own_qty > 0 and _reduced >= _own_qty * 0.98:
+            trade = _merged
+            _ghost_extra = {k: v for k, v in _native_partial_upd.items()
+                            if k in ("sl_fill", "tp_fills", "tp_filled", "last_fill_check_ms")}
+        else:
+            # v10.3.4 — SL HILANG: order SL tidak ada di Binance & harga
+            # sudah melewati SL → tutup qty trade ini di market (darurat).
+            _sl = float(trade.get("stop_loss") or 0)
+            _mk = float(mark or 0)
+            _crossed = bool(_sl and _mk) and (
+                _mk <= _sl if trade.get("side") == "BUY" else _mk >= _sl)
+            if sl_live is False and _crossed:
+                _q = min(float(trade.get("qty_remaining") or _own_qty or abs(amt)), abs(amt))
+                try:
+                    _er = await close_position(doc, symbol, trade.get("side") or "BUY", _q)
+                except Exception as _e:  # noqa: BLE001
+                    _er = {"ok": False, "detail": str(_e)[:200]}
+                if _er.get("ok"):
+                    _now_e = datetime.now(timezone.utc).isoformat()
+                    _px = float(_er.get("avg") or _mk)
+                    _ent = float(trade.get("entry_price") or 0)
+                    _sg = 1.0 if trade.get("side") == "BUY" else -1.0
+                    _pnl = round((_px - _ent) * _q * _sg, 2) if _ent else round(unrealized, 2)
+                    return {
+                        "status": "closed", "close_reason": "SL",
+                        "close_reason_detail": "sl_missing_emergency_close (v10.3.4)",
+                        "closed_price": _px, "closed_at": _now_e, "updated_at": _now_e,
+                        "pnl_usdt": _pnl,
+                        "sl_fill": {"level": "SL", "price": _px, "qty": _q,
+                                    "pnl": _pnl, "at": _now_e},
+                    }
+                upd["emergency_close_error"] = str(_er)[:200]
+            return upd
     # Position closed.
     # v10.1.1 — PnL & harga close diambil dari FILLS AKTUAL exchange
     # (sum realizedPnl fills penutup sejak trade dibuka). Sebelumnya
@@ -2449,4 +2494,4 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
         except Exception:
             pass
         upd_closed["tp_filled"] = tp_filled_arr
-    return upd_closed
+    return {**_ghost_extra, **upd_closed}

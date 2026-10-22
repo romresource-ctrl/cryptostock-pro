@@ -2421,3 +2421,8 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 ## v10.3.3 — Auto-resume 00:00
 - Daily profit/loss limit now counts realized PnL since 00:00 LOCAL (tz_offset_min from device, default WIB 420) on the ACTIVE network (demo counts when active_testnet).
 - On stop: auto_disabled_kind=daily_limit + auto_disabled_day. _auto_resume_daily_limits re-enables Full-Auto when local day changes. Any manual config save clears the marker (no resume).
+
+## v10.3.4 — Ghost open positions + refresh
+- _refresh_binance: (a) Binance position opposite side → record closed; (b) own qty fully reduced by recorded SL/TP fills → closed even if another position on same symbol exists; (c) SL order missing + mark crossed SL → emergency market close of own qty (reason SL, detail sl_missing_emergency_close).
+- POST /api/asi/trades/sync?device_id → reconcile all open trades now; Running Positions refresh button calls it with spinner (testID tp-refresh).
+- Tests: backend/tests/test_iter63_v1034_ghost_open.py

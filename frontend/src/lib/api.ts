@@ -440,6 +440,10 @@ export const api = {
       get<{ items: AsiTradeResp[] }>(
         `/asi/trades?device_id=${encodeURIComponent(deviceId)}&limit=${limit}`,
       ),
+    syncTrades: (deviceId: string) =>
+      send<{ ok: boolean; synced: number }>(
+        `/asi/trades/sync?device_id=${encodeURIComponent(deviceId)}`, "POST", {},
+      ),
     closeAllTrades: (deviceId: string) =>
       send<{ ok: boolean; closed: number; errors: { symbol: string; error: string }[] }>(
         `/asi/trades/close-all?device_id=${encodeURIComponent(deviceId)}`, "POST",
