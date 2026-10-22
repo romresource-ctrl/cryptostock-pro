@@ -2414,3 +2414,6 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 
 ## v10.3.1
 - Daily Loss Limit now also sets full_enabled=False (Full-Auto really stops). Test: backend/tests/test_iter62_v1031_daily_loss_stop.py
+
+## v10.3.2
+- Daily Profit Limit also covers legacy full configs and sets enabled+full_enabled False. Tests in test_iter62.

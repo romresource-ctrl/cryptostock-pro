@@ -621,7 +621,9 @@ async def _enforce_daily_profit_limit(db: Any) -> None:
     """v10.3.0 — Hentikan Full-Auto bila realized profit hari ini ≥ target
     user (daily_profit_limit_usdt). Posisi open tidak disentuh."""
     cursor = db.asi_bot_config.find({
-        "full_enabled": True,
+        # v10.3.2 — cakup juga config lama (enabled+mode full tanpa field
+        # full_enabled) yang tetap di-scan scheduler.
+        "$or": [{"enabled": True}, {"full_enabled": True}],
         "daily_profit_limit_usdt": {"$gt": 0},
     })
     async for cfg in cursor:
@@ -636,6 +638,7 @@ async def _enforce_daily_profit_limit(db: Any) -> None:
                 await db.asi_bot_config.update_one(
                     {"_id": cfg["_id"]},
                     {"$set": {
+                        "enabled": False,
                         "full_enabled": False,
                         "auto_disabled_reason": (
                             f"Daily profit target reached: "
