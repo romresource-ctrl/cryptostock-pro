@@ -2404,3 +2404,10 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 
 ## v10.2.38 — Sizing selector
 - SizingSelector: user ticks Risk per Trade (%) OR Margin per Trade ($). Risk mode saves margin_usdt=0 (backend falls back to risk_pct). Used on ASI-Bot page + AsiTradeSheet (risk_pct now loaded from config).
+
+## v10.3.0
+- History grouped by close date with yellow daily headers (DEMO/REAL daily stats).
+- AC trades closed on TP1 labelled "Closed on AC x%" / "AC x% hit" (Running Positions + Recent Trades); AC badge in Recent Trades.
+- Daily Profit Limit $ (daily_profit_limit_usdt): Full-Auto auto-stops (full_enabled=False) when realized today >= limit.
+- XRP early close root cause: Binance position (3189) larger than trade qty (1785.7) -> another bot instance (preview/production sharing same Binance keys) closed the shared one-way position. Not an AC ROI bug (TP 1.3617 = entry*(1+0.15/12)).
+- Note: existing Daily Loss Limit sets enabled=False only, which does not stop full_enabled bots (not changed).
