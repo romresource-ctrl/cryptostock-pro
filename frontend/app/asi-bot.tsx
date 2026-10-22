@@ -419,6 +419,8 @@ export default function ASIBotScreen() {
     let merged: AsiBotConfig = { ...bot, ...next };
     setBot((prev) => { merged = { ...prev, ...next }; return merged; });
     try {
+      // v10.3.3 — kirim offset zona waktu device (reset/resume 00:00 lokal).
+      merged = { ...merged, tz_offset_min: -new Date().getTimezoneOffset() };
       await api.asi.saveBot(deviceId, merged);
       // v10.2.16 — Persist SEMUA pengaturan (mode Full/Semi, parameter,
       // disclaimer) ke local storage supaya tidak hilang saat user

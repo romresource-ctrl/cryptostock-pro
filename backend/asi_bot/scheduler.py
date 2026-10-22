@@ -600,21 +600,76 @@ async def _trades_today_count(db: Any, device_id: str,
     return await db.asi_trades.count_documents(q)
 
 
-async def _realized_pnl_today(db: Any, device_id: str) -> float:
-    """Sum of pnl_usdt for CLOSED trades in the last 24h (realized loss/gain)."""
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+DEFAULT_TZ_OFFSET_MIN = 420  # WIB (UTC+7) bila device belum mengirim offset
+
+
+def _local_day(tz_offset_min: int, now: datetime | None = None) -> str:
+    """v10.3.3 — Tanggal kalender lokal user (YYYY-MM-DD)."""
+    now = now or datetime.now(timezone.utc)
+    return (now + timedelta(minutes=tz_offset_min)).strftime("%Y-%m-%d")
+
+
+def _local_day_start_utc(tz_offset_min: int, now: datetime | None = None) -> datetime:
+    """v10.3.3 — Jam 00:00 lokal user hari ini, dalam UTC."""
+    now = now or datetime.now(timezone.utc)
+    loc = now + timedelta(minutes=tz_offset_min)
+    loc0 = loc.replace(hour=0, minute=0, second=0, microsecond=0)
+    return loc0 - timedelta(minutes=tz_offset_min)
+
+
+def _cfg_tz(cfg: dict[str, Any]) -> int:
+    try:
+        return int(cfg.get("tz_offset_min", DEFAULT_TZ_OFFSET_MIN))
+    except Exception:
+        return DEFAULT_TZ_OFFSET_MIN
+
+
+async def _realized_pnl_today(db: Any, device_id: str,
+                              testnet: bool | None = None,
+                              tz_offset_min: int | None = None) -> float:
+    """Sum pnl_usdt CLOSED trades hari ini.
+
+    v10.3.3 — Bila tz_offset_min diberikan: sejak 00:00 lokal user (hari
+    kalender, sinkron dengan auto-resume tengah malam). Bila testnet
+    diberikan: hanya jaringan aktif user (DEMO dihitung saat user trading
+    demo). Default lama: 24 jam terakhir, hanya REAL."""
+    if tz_offset_min is None:
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    else:
+        cutoff = _local_day_start_utc(tz_offset_min).isoformat()
+    match: dict[str, Any] = {
+        "device_id": device_id, "status": "closed",
+        "closed_at": {"$gte": cutoff},
+    }
+    match["testnet"] = {"$ne": True} if testnet is None else (
+        True if testnet else {"$ne": True})
     pipeline = [
-        # v9.9.5 — daily loss limit hanya menghitung trade REAL (demo
-        # testnet tidak boleh memicu auto-disable bot real).
-        {"$match": {
-            "device_id": device_id, "status": "closed",
-            "closed_at": {"$gte": cutoff},
-            "testnet": {"$ne": True},
-        }},
+        {"$match": match},
         {"$group": {"_id": None, "pnl": {"$sum": "$pnl_usdt"}}},
     ]
     agg = await db.asi_trades.aggregate(pipeline).to_list(1)
     return float((agg[0] if agg else {}).get("pnl") or 0.0)
+
+
+async def _auto_resume_daily_limits(db: Any) -> None:
+    """v10.3.3 — Nyalakan lagi Full-Auto otomatis setelah 00:00 lokal user
+    bila bot berhenti karena Daily Profit/Loss Limit. Jika user mengubah
+    pengaturan sesudahnya (save config), penanda dihapus → tidak resume."""
+    async for cfg in db.asi_bot_config.find({"auto_disabled_kind": "daily_limit"}):
+        try:
+            if _local_day(_cfg_tz(cfg)) == str(cfg.get("auto_disabled_day") or ""):
+                continue
+            now = datetime.now(timezone.utc).isoformat()
+            await db.asi_bot_config.update_one(
+                {"_id": cfg["_id"], "auto_disabled_kind": "daily_limit"},
+                {"$set": {"enabled": True, "full_enabled": True,
+                          "auto_resumed_at": now, "updated_at": now},
+                 "$unset": {"auto_disabled_kind": "", "auto_disabled_day": "",
+                            "auto_disabled_reason": "", "auto_disabled_at": ""}},
+            )
+            logger.warning("Full-Auto auto-resumed (new day) %s", cfg.get("_id"))
+        except Exception as e:  # noqa: BLE001
+            logger.debug("auto-resume %s: %s", cfg.get("_id"), e)
 
 
 async def _enforce_daily_profit_limit(db: Any) -> None:
@@ -632,7 +687,8 @@ async def _enforce_daily_profit_limit(db: Any) -> None:
             limit = float(cfg.get("daily_profit_limit_usdt") or 0.0)
             if not device_id or limit <= 0:
                 continue
-            realized = await _realized_pnl_today(db, device_id)
+            realized = await _realized_pnl_today(
+                db, device_id, bool(cfg.get("active_testnet", True)), _cfg_tz(cfg))
             if realized >= limit:
                 now = datetime.now(timezone.utc).isoformat()
                 await db.asi_bot_config.update_one(
@@ -640,6 +696,8 @@ async def _enforce_daily_profit_limit(db: Any) -> None:
                     {"$set": {
                         "enabled": False,
                         "full_enabled": False,
+                        "auto_disabled_kind": "daily_limit",
+                        "auto_disabled_day": _local_day(_cfg_tz(cfg)),
                         "auto_disabled_reason": (
                             f"Daily profit target reached: "
                             f"+${realized:.2f} ≥ ${limit:.2f}"
@@ -672,7 +730,8 @@ async def _enforce_daily_loss_limit(db: Any) -> None:
             limit = float(cfg.get("daily_loss_limit_usdt") or 0.0)
             if limit <= 0:
                 continue
-            realized = await _realized_pnl_today(db, device_id)
+            realized = await _realized_pnl_today(
+                db, device_id, bool(cfg.get("active_testnet", True)), _cfg_tz(cfg))
             if realized <= -limit:
                 now = datetime.now(timezone.utc).isoformat()
                 await db.asi_bot_config.update_one(
@@ -682,6 +741,8 @@ async def _enforce_daily_loss_limit(db: Any) -> None:
                         # v10.3.1 — scanner Full-Auto membaca full_enabled;
                         # tanpa ini bot tetap jalan walau limit rugi tercapai.
                         "full_enabled": False,
+                        "auto_disabled_kind": "daily_limit",
+                        "auto_disabled_day": _local_day(_cfg_tz(cfg)),
                         "auto_disabled_reason": (
                             f"Daily loss limit reached: "
                             f"${realized:.2f} ≤ -${limit:.2f}"
@@ -2022,6 +2083,7 @@ class ASIScheduler:
                 # v9.4.1 — After refreshing PnL, enforce daily loss limits.
                 await _enforce_daily_loss_limit(self.db)
                 await _enforce_daily_profit_limit(self.db)  # v10.3.0
+                await _auto_resume_daily_limits(self.db)  # v10.3.3
             except Exception as e:  # noqa: BLE001
                 logger.exception("pnl loop crash: %s", e)
             await asyncio.sleep(60)  # unrealized PnL every 60s

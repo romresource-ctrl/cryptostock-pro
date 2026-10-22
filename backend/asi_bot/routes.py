@@ -259,6 +259,8 @@ class BotConfigPayload(BaseModel):
     daily_loss_limit_usdt: float = Field(0.0, ge=0.0, le=100_000.0)
     # v10.3.0 — Target profit harian ($): Full-Auto berhenti bila tercapai. 0 = OFF.
     daily_profit_limit_usdt: float = Field(0.0, ge=0.0, le=100_000.0)
+    # v10.3.3 — offset zona waktu device (menit, WIB=420) utk reset/resume 00:00 lokal.
+    tz_offset_min: int = Field(420, ge=-840, le=840)
     # v9.7.5 — Semi & Full are independent on/off states. The scheduler only
     # cares about full_enabled. Semi-Auto is a user-trigger flag.
     semi_enabled: bool = False

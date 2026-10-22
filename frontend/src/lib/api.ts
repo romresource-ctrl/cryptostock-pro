@@ -664,6 +664,7 @@ export type AsiBotConfig = {
   min_confidence?: number;
   daily_loss_limit_usdt?: number;
   daily_profit_limit_usdt?: number;
+  tz_offset_min?: number;
   // v9.6.0 — TP flexibility & trailing stop
   tp_count?: 1 | 2 | 3;
   auto_close_pct?: 0 | 10 | 15 | 20 | 25 | 50 | 100;

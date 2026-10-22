@@ -2417,3 +2417,7 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 
 ## v10.3.2
 - Daily Profit Limit also covers legacy full configs and sets enabled+full_enabled False. Tests in test_iter62.
+
+## v10.3.3 — Auto-resume 00:00
+- Daily profit/loss limit now counts realized PnL since 00:00 LOCAL (tz_offset_min from device, default WIB 420) on the ACTIVE network (demo counts when active_testnet).
+- On stop: auto_disabled_kind=daily_limit + auto_disabled_day. _auto_resume_daily_limits re-enables Full-Auto when local day changes. Any manual config save clears the marker (no resume).
