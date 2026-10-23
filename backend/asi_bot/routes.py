@@ -602,6 +602,17 @@ async def _resolve_trade_cred(db: Any, device_id: str, exchange: str,
     return await resolve_credential(db, device_id, exchange, net)
 
 
+async def br_position_risk(cred: dict[str, Any], symbol: str) -> float | None:
+    """v10.3.6 — positionAmt live Binance (None bila bukan Binance)."""
+    if (cred.get("exchange") or "").lower() != "binance":
+        return None
+    from .engine import decrypt as _dec
+    base = symbol.upper().split("/")[0].split("USDT")[0].split("-")[0]
+    pos = await br.position_risk(_dec(cred["api_key_enc"]), _dec(cred["api_secret_enc"]),
+                                  bool(cred.get("testnet", True)), base + "USDT")
+    return float((pos or {}).get("positionAmt") or 0)
+
+
 def _attach_trade_routes(db: Any) -> None:
     @router.post("/trades/preview")
     async def preview(payload: TradePayload, device_id: str = Query(..., min_length=4)):
@@ -765,24 +776,51 @@ def _attach_trade_routes(db: Any) -> None:
         ]
         if not open_trades:
             return {"ok": True, "closed": 0, "errors": []}
-        closed_ok = 0
-        errors: list[dict[str, str]] = []
+        # v10.3.6 — CLOSE ALL andal: (1) satu close per simbol+jaringan
+        # (trade layered/duplikat simbol tidak saling ganggu), (2) semua
+        # simbol diproses PARALEL (dulu berurutan → request > batas waktu
+        # ingress 60 dtk saat banyak posisi, sisa posisi tak tertutup),
+        # (3) retry s/d 3× bila order gagal / posisi masih tersisa.
+        groups: dict[tuple, list[dict[str, Any]]] = {}
         for t in open_trades:
-            try:
-                cred = await resolve_credential(
-                    db, device_id, t["exchange"], bool(t.get("testnet", True)))
-                if not cred:
-                    errors.append({"symbol": t.get("symbol", "?"), "error": "credential missing"})
-                    continue
-                await close_position(cred, t["symbol"], t["side"], float(t.get("qty") or 0))
-                # v10.2.26 — refresh PnL kosmetik: kegagalannya tidak
-                # boleh membatalkan status closed (posisi sudah tertutup
-                # di exchange).
+            key = (t.get("exchange"), bool(t.get("testnet", True)),
+                   str(t.get("symbol") or "").upper())
+            groups.setdefault(key, []).append(t)
+
+        async def _close_group(key: tuple, rows: list[dict[str, Any]]) -> tuple[int, str | None]:
+            exch, testnet, sym = key
+            cred = await resolve_credential(db, device_id, exch, testnet)
+            if not cred:
+                return 0, "credential missing"
+            last_err = None
+            for attempt in range(3):
+                try:
+                    r = await close_position(cred, sym, rows[0]["side"],
+                                             float(rows[0].get("qty") or 0))
+                    if r.get("ok"):
+                        # verifikasi: posisi live harus 0
+                        try:
+                            pos = await br_position_risk(cred, sym)
+                            if pos is not None and abs(pos) > 0:
+                                last_err = f"position still open ({pos})"
+                                await asyncio.sleep(0.7)
+                                continue
+                        except Exception:
+                            pass
+                        last_err = None
+                        break
+                except Exception as e:  # noqa: BLE001
+                    last_err = str(e)[:200]
+                    await asyncio.sleep(0.7)
+            if last_err:
+                return 0, last_err
+            now = datetime.now(timezone.utc).isoformat()
+            n = 0
+            for t in rows:
                 try:
                     upd = await refresh_trade_pnl(cred, t)
                 except Exception:
                     upd = {}
-                now = datetime.now(timezone.utc).isoformat()
                 await db.asi_trades.update_one(
                     {"_id": t["_id"]},
                     {"$set": {
@@ -793,9 +831,21 @@ def _attach_trade_routes(db: Any) -> None:
                         **{k: v for k, v in upd.items() if k in ("pnl_usdt", "mark_price", "closed_price")},
                     }},
                 )
-                closed_ok += 1
-            except Exception as e:  # noqa: BLE001
-                errors.append({"symbol": t.get("symbol", "?"), "error": str(e)[:200]})
+                n += 1
+            return n, None
+
+        results = await asyncio.gather(
+            *[_close_group(k, v) for k, v in groups.items()], return_exceptions=True)
+        closed_ok = 0
+        errors: list[dict[str, str]] = []
+        for (key, _rows), res in zip(groups.items(), results):
+            if isinstance(res, Exception):
+                errors.append({"symbol": key[2], "error": str(res)[:200]})
+                continue
+            n, err = res
+            closed_ok += n
+            if err:
+                errors.append({"symbol": key[2], "error": err})
         return {"ok": not errors, "closed": closed_ok, "errors": errors}
 
     @router.post("/trades/close-by-symbol")

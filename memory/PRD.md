@@ -2429,3 +2429,7 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 
 ## v10.3.5
 - Auto-Close options extended: 10/15/20/25/50/75/100/150/200 (no suggestion/warning per user).
+
+## v10.3.6 — Close All reliability
+- close-all groups open trades per (exchange,testnet,symbol), closes groups in PARALLEL (was sequential → ingress 60s timeout left positions open), retries up to 3x, verifies live positionAmt==0 before marking closed; failures reported per symbol and those rows stay open.
+- Tests: backend/tests/test_iter64_v1036_close_all.py
