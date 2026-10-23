@@ -211,7 +211,7 @@ class TradePayload(BaseModel):
     # v9.6.0 — TP strategy & trailing stop
     tp_count: Literal[1, 2, 3] = 3
     # v10.2.36 — Auto-Close Profit ROI % dari margin (0 = off → pakai TP).
-    auto_close_pct: Literal[0, 10, 15, 20, 25, 50, 100] = 0
+    auto_close_pct: Literal[0, 10, 15, 20, 25, 50, 75, 100, 150, 200] = 0
     # v10.2.37 — Margin per trade ($). 0 = fallback risk_pct.
     margin_usdt: float = Field(0.0, ge=0.0, le=1_000_000.0)
     trailing_callback_rate: float = Field(2.0, ge=0.0, le=10.0)
@@ -269,7 +269,7 @@ class BotConfigPayload(BaseModel):
     tp_count: Literal[1, 2, 3] = 3
     # v10.2.36 — Auto-Close Profit ROI % dari margin. 0 = off. Bila > 0,
     # tombol 1/2/3 TP dilepas: posisi ditutup 100% saat ROI tercapai.
-    auto_close_pct: Literal[0, 10, 15, 20, 25, 50, 100] = 0
+    auto_close_pct: Literal[0, 10, 15, 20, 25, 50, 75, 100, 150, 200] = 0
     # v10.2.37 — Margin per trade ($) menggantikan Risk %. 0 = fallback risk_pct.
     margin_usdt: float = Field(0.0, ge=0.0, le=1_000_000.0)
     # v9.6.0 — Trailing stop callback rate %. 0 = disabled. Active after TP1.

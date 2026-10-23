@@ -2426,3 +2426,6 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 - _refresh_binance: (a) Binance position opposite side → record closed; (b) own qty fully reduced by recorded SL/TP fills → closed even if another position on same symbol exists; (c) SL order missing + mark crossed SL → emergency market close of own qty (reason SL, detail sl_missing_emergency_close).
 - POST /api/asi/trades/sync?device_id → reconcile all open trades now; Running Positions refresh button calls it with spinner (testID tp-refresh).
 - Tests: backend/tests/test_iter63_v1034_ghost_open.py
+
+## v10.3.5
+- Auto-Close options extended: 10/15/20/25/50/75/100/150/200 (no suggestion/warning per user).

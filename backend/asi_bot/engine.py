@@ -56,7 +56,7 @@ ENTRY_LIMIT_TTL_SEC = 7200
 # v10.0.16 — Komposisi split baru (keputusan user): TP1 menutup 50%,
 # TP2 25%, TP3 25% (bukan lagi 33/33/34). Untuk 2 TP tetap 50/50.
 # v10.2.36 — Pilihan target Auto-Close Profit (ROI % dari margin). 0 = off.
-AUTO_CLOSE_PCTS = (0, 10, 15, 20, 25, 50, 100)
+AUTO_CLOSE_PCTS = (0, 10, 15, 20, 25, 50, 75, 100, 150, 200)
 # v10.2.37 — Jarak SL wajib 1–2% dari entry (keputusan user).
 SL_MIN_PCT = 0.01
 SL_MAX_PCT = 0.02

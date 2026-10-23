@@ -918,7 +918,7 @@ export default function ASIBotScreen() {
           {t("asi_autoclose_title")}
         </Text>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
-          {([10, 15, 20, 25, 50, 100] as const).map((p) => {
+          {([10, 15, 20, 25, 50, 75, 100, 150, 200] as const).map((p) => {
             const active = bot.auto_close_pct === p;
             const accent = bot.mode === "full" ? ORANGE : GOLD;
             return (

@@ -64,7 +64,7 @@ async def test_invalid_pct_ignored(monkeypatch):
 
 
 def test_payloads_accept_values():
-    for p in (0, 10, 15, 20, 25, 50, 100):
+    for p in (0, 10, 15, 20, 25, 50, 75, 100, 150, 200):
         assert BotConfigPayload(exchange="binance", auto_close_pct=p).auto_close_pct == p
     with pytest.raises(Exception):
         BotConfigPayload(exchange="binance", auto_close_pct=30)
@@ -94,3 +94,11 @@ def test_whipsaw_needs_same_side_losses():
     assert _whipsaw_block_side([_t("SELL", -52, 5, now), _t("BUY", -33, 9, now)], now) is None
     assert _whipsaw_block_side([_t("SELL", -52, 5, now), _t("SELL", 18, 9, now)], now) is None
     assert _whipsaw_block_side([_t("SELL", -52, 5, now)], now) is None
+
+
+@pytest.mark.asyncio
+async def test_new_targets_75_150_200(monkeypatch):
+    for pct in (75, 150, 200):
+        s = await _capture(monkeypatch, "BUY", pct, lev=25)
+        assert s["tp_count"] == 1
+        assert s["tps"] == [pytest.approx(100 * (1 + pct / 100 / 25))]
