@@ -70,7 +70,23 @@ _DB: Any = None
 # per simbol (dibagi semua user), jadi beban upstream tetap terkontrol:
 # maksimal 4 fetch/detik/simbol berapapun jumlah subscriber.
 _PX_CACHE: dict[str, tuple[float, float]] = {}
-_PX_TTL = 0.25
+_PX_TTL = 1.0  # v10.3.8 — 0.25s → 1s: kurangi beban upstream (frontend WS = sumber utama)
+_PX_CLIENTS: dict[str, Any] = {}
+_PX_LOCK = asyncio.Lock()
+
+
+def _px_client(kind: str):
+    """v10.3.8 — httpx client PERSISTEN (keep-alive). Dulu tiap request
+    /prices membuat client + handshake TLS baru via proxy (~1.6 dtk)."""
+    import httpx as _hx
+    c = _PX_CLIENTS.get(kind)
+    if c is None or c.is_closed:
+        if kind == "futures":
+            c = _hx.AsyncClient(proxy=os.environ.get("ASI_PROXY_URL"), timeout=8.0)
+        else:
+            c = _hx.AsyncClient(timeout=6.0)
+        _PX_CLIENTS[kind] = c
+    return c
 
 
 @router.get("/prices")
@@ -100,13 +116,22 @@ async def get_prices(symbols: str = Query(..., min_length=2, max_length=2000)):
         else:
             missing.append(s)
     if missing:
+      # v10.3.8 — single-flight: request paralel menunggu satu fetch upstream
+      async with _PX_LOCK:
+        now = _time.time()
+        for s in list(missing):
+            hit = _PX_CACHE.get(s)
+            if hit and now - hit[0] < _PX_TTL:
+                out[s] = hit[1]
+        missing = [s for s in missing if s not in out]
         # v10.2.4 — Fallback berlapis + never-500. Sebelumnya: satu-satunya
         # sumber adalah fapi.binance.com via proxy TANPA try/except — satu
         # kegagalan sesaat (proxy timeout/geo-block) membuat endpoint 500
         # atau mengembalikan {} → kartu menampilkan "—" (keluhan user).
         # Sekarang: futures → spot vision → Bitget, semua dibungkus aman.
         async def _try_futures() -> None:
-            async with _hx.AsyncClient(proxy=os.environ.get("ASI_PROXY_URL"), timeout=8.0) as c:
+            c = _px_client("futures")
+            if True:
                 if len(missing) == 1:
                     r = await c.get(
                         f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={missing[0]}")
@@ -128,7 +153,8 @@ async def get_prices(symbols: str = Query(..., min_length=2, max_length=2000)):
         async def _try_spot() -> None:
             # Harga spot ≈ futures (selisih bps) — cukup untuk tampilan
             # mark price saat futures API sedang tidak bisa dijangkau.
-            async with _hx.AsyncClient(timeout=6.0) as c:
+            c = _px_client("plain")
+            if True:
                 r = await c.get("https://data-api.binance.vision/api/v3/ticker/price")
                 if r.status_code == 200:
                     want = {s for s in missing if s not in out}
@@ -140,7 +166,8 @@ async def get_prices(symbols: str = Query(..., min_length=2, max_length=2000)):
                             out[s] = p
 
         async def _try_bitget() -> None:
-            async with _hx.AsyncClient(timeout=6.0) as c:
+            c = _px_client("plain")
+            if True:
                 for s in [x for x in missing if x not in out]:
                     try:
                         r = await c.get(
@@ -962,20 +989,24 @@ def _attach_trade_routes(db: Any) -> None:
         """v10.3.4 — Tombol refresh Running Positions: rekonsiliasi SEMUA
         posisi open device ini dengan Binance SEKARANG (tidak menunggu
         loop 60 detik)."""
-        n = 0
-        async for t in db.asi_trades.find({"device_id": device_id, "status": "open"}):
+        async def _one(t: dict[str, Any]) -> int:
             try:
                 cred = await resolve_credential(
                     db, device_id, t["exchange"], bool(t.get("testnet", True)))
                 if not cred:
-                    continue
+                    return 0
                 update = await refresh_trade_pnl(cred, t)
                 update["updated_at"] = _now_iso()
                 await db.asi_trades.update_one({"_id": t["_id"]}, {"$set": update})
-                n += 1
+                return 1
             except Exception as e:  # noqa: BLE001
                 logger.warning("sync %s gagal: %s", t.get("_id"), e)
-        return {"ok": True, "synced": n}
+                return 0
+        rows = await db.asi_trades.find(
+            {"device_id": device_id, "status": "open"}).to_list(200)
+        # v10.3.8 — paralel (dulu berurutan ~1 dtk/posisi)
+        res = await asyncio.gather(*[_one(t) for t in rows])
+        return {"ok": True, "synced": sum(res)}
 
     @router.post("/trades/{trade_id}/refresh")
     async def refresh_trade(trade_id: str, device_id: str = Query(..., min_length=4)):

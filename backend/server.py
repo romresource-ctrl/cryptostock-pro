@@ -1863,7 +1863,7 @@ async def search_assets(
 # v8.12.69 — Latest published Android build. The /app-version endpoint
 # serves this so outdated installs get an update prompt. Bump together
 # with frontend APP_VERSION / app.json version on every release.
-APP_LATEST_VERSION = "10.3.7"
+APP_LATEST_VERSION = "10.3.8"
 
 # v10.1.1 — User minta popup update HANYA kotak kecil tanpa daftar
 # perubahan (list panjang bikin tombol OK tidak tersentuh di layar
@@ -3058,6 +3058,11 @@ async def _bootstrap_indexes() -> None:
         # aggregation stays fast even after thousands of writes.
         await db.signals.create_index([("market", 1), ("symbol", 1), ("created_at", -1)])
         await db.signals.create_index("created_at")
+        # v10.3.8 — asi_trades tanpa index (hanya _id): monitor 60 dtk,
+        # list Running Positions & limit harian scan penuh koleksi.
+        await db.asi_trades.create_index([("device_id", 1), ("created_at", -1)])
+        await db.asi_trades.create_index([("status", 1), ("device_id", 1)])
+        await db.asi_trades.create_index([("device_id", 1), ("status", 1), ("closed_at", -1)])
         # v8.12.19 — Chatroom presence collection. Unique per device_id
         # (upserts on heartbeat), with a TTL that auto-purges rows once
         # their `last_seen` is older than PRESENCE_WINDOW_SEC * 2 seconds

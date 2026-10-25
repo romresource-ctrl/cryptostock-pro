@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable
 
@@ -1854,16 +1855,24 @@ async def _run_full_auto_scanner(
 #  • Master CLOSED → TIDAK force-close user; bracket SL/TP native masing-masing
 #    user yang bekerja (sesuai pilihan aman default).
 # ─────────────────────────────────────────────────────────────────────────────
+_TITAN_BACKOFF_UNTIL = 0.0
+
+
 async def _run_titan_relay(db: Any) -> None:
     cfg = await db.asi_titan_config.find_one({"_id": "titan_master", "enabled": True})
     if not cfg:
         return  # relay belum dikonfigurasi
+    global _TITAN_BACKOFF_UNTIL
+    if time.time() < _TITAN_BACKOFF_UNTIL:
+        return  # v10.3.8 — key master invalid → jeda, jangan spam Binance
     api_key = decrypt(cfg["api_key_enc"])
     api_secret = decrypt(cfg["api_secret_enc"])
     testnet = bool(cfg.get("testnet", False))
     try:
         positions = await br.all_position_risks(api_key, api_secret, testnet)
     except Exception as e:
+        if "-2015" in str(e) or "-2014" in str(e):
+            _TITAN_BACKOFF_UNTIL = time.time() + 600
         logger.warning("titan relay: master positionRisk gagal: %s", e)
         return
     if not positions:

@@ -2437,3 +2437,12 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 ## v10.3.7 — Price feed WS fix
 - Root cause: Binance retired legacy USD-M futures WS URLs (fstream.binance.com/ws & /stream) on 23 Apr 2026; connections open but send no data. Now use wss://fstream.binance.com/market/ws/... and /market/stream?streams=... in useBinanceMultiTicker, useBinanceRealtime, useBinanceKline.
 - Multi-ticker & realtime: rolling 30s watchdog, attempt reset on data (prefer futures), AppState foreground forced reconnect.
+
+## v10.3.8 — Preview perf
+- "0 open positions" in agent screenshots = fresh browser device_id (no DB isolation; engine updates the 3 open trades of web:qmeqflw0e2d-mui5ar38 every cycle).
+- binance_rest._request: persistent keep-alive httpx client per loop (was new client + TLS via proxy per signed call ~1.5s).
+- /asi/prices: persistent clients, single-flight lock, TTL 1s (1.67s → ~0.6s).
+- /asi/trades/sync parallel.
+- Titan relay: 10-min backoff on -2015/-2014 (was spamming Binance every cycle).
+- asi_trades indexes (device_id+created_at, status+device_id, device_id+status+closed_at).
+- close-all v10.3.6 leaves no resources open (gather over awaited tasks; no background tasks).

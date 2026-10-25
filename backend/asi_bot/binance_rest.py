@@ -36,6 +36,23 @@ def _sign_qs(secret: str, params: dict[str, Any]) -> str:
     return qs + "&signature=" + sig
 
 
+_CLIENTS: dict[tuple, httpx.AsyncClient] = {}
+
+
+def _client() -> httpx.AsyncClient:
+    """v10.3.8 — httpx client PERSISTEN (keep-alive) per event-loop+proxy.
+    Dulu setiap panggilan signed membuat client + handshake TLS baru via
+    proxy (~1.5 dtk/panggilan) → monitor posisi, balance, close lambat."""
+    import asyncio as _aio
+    key = (id(_aio.get_running_loop()), _proxy())
+    c = _CLIENTS.get(key)
+    if c is None or c.is_closed:
+        c = httpx.AsyncClient(proxy=key[1], timeout=20.0,
+                              limits=httpx.Limits(max_connections=50, max_keepalive_connections=20))
+        _CLIENTS[key] = c
+    return c
+
+
 async def _request(
     method: str, path: str, api_key: str, api_secret: str,
     testnet: bool, params: dict[str, Any] | None = None,
@@ -46,8 +63,8 @@ async def _request(
     params["recvWindow"] = params.get("recvWindow", 10000)
     qs = _sign_qs(api_secret, params)
     url = f"{_base(testnet)}{path}?{qs}"
-    async with httpx.AsyncClient(proxy=_proxy(), timeout=timeout) as c:
-        r = await c.request(method, url, headers={"X-MBX-APIKEY": api_key})
+    r = await _client().request(method, url, headers={"X-MBX-APIKEY": api_key},
+                                timeout=timeout)
     try:
         data = r.json()
     except Exception:
