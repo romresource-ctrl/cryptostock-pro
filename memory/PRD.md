@@ -2449,3 +2449,7 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 
 ## v10.3.9
 - Titan Relay temporarily disabled: scheduler.TITAN_RELAY_ENABLED=False (loop exits after startup). Set True after master key renewed.
+
+## v10.4.0 — BTC 15m direction filter
+- scheduler._btc_15m_direction (pure) + _get_btc_15m_direction (BTC 1m x15 Binance spot klines, once per cycle). rebound (last > 15m low +1%) → reject SELL; dump (last < 15m high -1%) → reject BUY; both → latest extreme wins; sideways/unknown → free. All coins, REAL & DEMO, all profiles; new entries only. Reject reason btc15m_rebound/btc15m_dump in scan-debug.
+- Tests: backend/tests/test_iter65_v1040_btc15m.py

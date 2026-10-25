@@ -880,6 +880,47 @@ def _buy_confirm_eval(doc: dict[str, Any] | None, *, fingerprint: str,
     return False, 1
 
 
+BTC15_MOVE_PCT = 1.0  # v10.4.0 — ambang filter arah BTC 15 menit (keputusan user)
+
+
+def _btc_15m_direction(candles: list[dict[str, float]]) -> dict[str, Any]:
+    """v10.4.0 — Filter arah BTC 15 menit (fungsi murni).
+    rebound: harga terakhir > low lokal 15m + 1%  → blok SHORT
+    dump:    harga terakhir < high lokal 15m − 1% → blok LONG
+    Bila keduanya terpenuhi (swing besar), ekstrem TERBARU menentukan.
+    Selain itu sideways → bebas."""
+    out = {"state": "sideways", "up_pct": 0.0, "down_pct": 0.0}
+    c = [x for x in (candles or []) if x.get("close")][-15:]
+    if len(c) < 5:
+        out["state"] = "unknown"
+        return out
+    last = float(c[-1]["close"])
+    lows = [float(x.get("low") or x["close"]) for x in c]
+    highs = [float(x.get("high") or x["close"]) for x in c]
+    lo, hi = min(lows), max(highs)
+    up = (last - lo) / lo * 100.0 if lo else 0.0
+    dn = (hi - last) / hi * 100.0 if hi else 0.0
+    out.update(up_pct=round(up, 3), down_pct=round(dn, 3))
+    reb, dump = up > BTC15_MOVE_PCT, dn > BTC15_MOVE_PCT
+    if reb and dump:
+        i_lo = max(i for i, v in enumerate(lows) if v == lo)
+        i_hi = max(i for i, v in enumerate(highs) if v == hi)
+        reb, dump = i_lo > i_hi, i_hi > i_lo
+    out["state"] = "rebound" if reb else "dump" if dump else "sideways"
+    return out
+
+
+async def _get_btc_15m_direction() -> dict[str, Any]:
+    try:
+        from market_data import _http, _fetch_binance_klines
+        client = await _http()
+        candles = await _fetch_binance_klines(client, "BTC", "1m", 15)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("btc 15m fetch gagal: %s", e)
+        candles = []
+    return _btc_15m_direction(candles)
+
+
 async def _compute_btc_regime() -> dict[str, Any]:
     out: dict[str, Any] = {"regime": "neutral", "rsi": None, "chg_last": 0.0,
                            "chg_prev": 0.0, "slope_up": False, "slope_dn": False,
@@ -1109,6 +1150,12 @@ async def _run_full_auto_scanner(
     # v10.2.32 — Momentum BTC untuk anti-chase adaptif (tanpa threshold
     # % tetap). Dihitung SEKALI per siklus dari regime BTC.
     btc_mom = _btc_momentum(btc_regime)
+    # v10.4.0 — Filter arah BTC 15 menit (sekali per siklus, semua device).
+    btc15 = await _get_btc_15m_direction()
+    if btc15["state"] in ("rebound", "dump"):
+        logger.info("btc-15m filter: %s (up %.2f%% / down %.2f%%) → blokir %s",
+                    btc15["state"], btc15["up_pct"], btc15["down_pct"],
+                    "SELL" if btc15["state"] == "rebound" else "BUY")
     if btc_regime["regime"] != "neutral":
         logger.info("btc-regime gate: %s (%s) → blokir %s | streak_up=%d base4H=%s",
                     btc_regime["regime"], btc_regime.get("detail"),
@@ -1361,6 +1408,14 @@ async def _run_full_auto_scanner(
                             continue
                     except Exception as _bu_err:
                         logger.debug("side-burst check gagal: %s", _bu_err)
+                    # v10.4.0 — FILTER ARAH BTC 15M (semua koin, REAL & DEMO,
+                    # semua profil). Hanya entry baru; posisi OPEN tak disentuh.
+                    if btc15["state"] == "rebound" and sig["side"] == "SELL":
+                        _dev_reject(rep, f"btc15m_rebound +{btc15['up_pct']}%: tolak SELL")
+                        continue
+                    if btc15["state"] == "dump" and sig["side"] == "BUY":
+                        _dev_reject(rep, f"btc15m_dump -{btc15['down_pct']}%: tolak BUY")
+                        continue
                     # v10.2.12 — BTC REGIME GATE: rezim BTC menentukan arah
                     # yang boleh dieksekusi untuk ALTCOIN (BTC sendiri
                     # dikecualikan — ia referensi, bukan ikutan). Rezim
