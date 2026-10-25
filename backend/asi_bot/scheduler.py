@@ -49,6 +49,9 @@ WATCHER_INTERVAL = 20
 # 5 menit terlalu lama). 90s cukup untuk tetap aman rate-limit API.
 SCANNER_INTERVAL = 90
 TITAN_RELAY_INTERVAL = 25  # v10.0.15 — polling posisi master Titan-Bot
+# v10.3.9 — Titan Relay DINONAKTIFKAN SEMENTARA (permintaan user): API key
+# master invalid (-2015). Ubah ke True setelah key master diperbarui.
+TITAN_RELAY_ENABLED = False
 # Minimum confidence required for full-auto execution.
 MIN_FULL_AUTO_CONFIDENCE = 90
 # v10.2.17 — Anti-loss BUY gates (keputusan user, analisis loss LONG
@@ -2115,6 +2118,9 @@ class ASIScheduler:
         bracket master. Kalau master tidak punya SL/TP, relay di-skip
         demi keamanan (tidak open posisi telanjang di akun user)."""
         await asyncio.sleep(20)  # startup delay
+        if not TITAN_RELAY_ENABLED:
+            logger.info("titan relay dinonaktifkan sementara (TITAN_RELAY_ENABLED=False)")
+            return
         while self._running:
             try:
                 await _run_titan_relay(self.db)

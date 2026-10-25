@@ -2446,3 +2446,6 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 - Titan relay: 10-min backoff on -2015/-2014 (was spamming Binance every cycle).
 - asi_trades indexes (device_id+created_at, status+device_id, device_id+status+closed_at).
 - close-all v10.3.6 leaves no resources open (gather over awaited tasks; no background tasks).
+
+## v10.3.9
+- Titan Relay temporarily disabled: scheduler.TITAN_RELAY_ENABLED=False (loop exits after startup). Set True after master key renewed.
