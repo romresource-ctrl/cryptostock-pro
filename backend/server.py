@@ -1863,7 +1863,7 @@ async def search_assets(
 # v8.12.69 — Latest published Android build. The /app-version endpoint
 # serves this so outdated installs get an update prompt. Bump together
 # with frontend APP_VERSION / app.json version on every release.
-APP_LATEST_VERSION = "10.4.1"
+APP_LATEST_VERSION = "10.5.0"
 
 # v10.1.1 — User minta popup update HANYA kotak kecil tanpa daftar
 # perubahan (list panjang bikin tombol OK tidak tersentuh di layar
@@ -3311,6 +3311,8 @@ def _asi_formula_tag(ind: dict | None, reasons: list[str] | None,
     (label kartu Recent Trades). Prioritas pola spesifik; fallback ke
     formula dasar profil."""
     ind = ind or {}
+    if ind.get("early_reversal"):
+        return "Early Reversal"  # v10.5.0
     if ind.get("vwap_engine") == "SCALP-15M":
         return "Open-Scalp Modules"
     tags: list[str] = []
@@ -3401,6 +3403,8 @@ async def _asi_signal_fetcher(market: str, symbol: str, profile: str | None = No
                 "profile": profile,
                 "formula_tag": _asi_formula_tag(
                     d.get("indicators"), d.get("reasons"), profile),
+                # v10.5.0 — reversal dini: scanner lewati konfirmasi 2 siklus
+                "early_reversal": bool((d.get("indicators") or {}).get("early_reversal")),
             }
         return None
     except Exception as e:  # noqa: BLE001

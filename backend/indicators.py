@@ -1210,6 +1210,59 @@ def _drop_forming_candle(candles: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return candles[:-1]
     return candles
 
+def _early_reversal_signal(candles: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """v10.5.0 — DETEKSI REVERSAL DINI (keputusan user). Ketiga kondisi
+    pada candle TUTUP terakhir harus terpenuhi BERSAMAAN:
+      LONG : RSI14 candle sebelumnya < 35 dan RSI14 sekarang naik;
+             candle lower-low (low < low sebelumnya) dan close > open;
+             MACD histogram sebelumnya < 0 dan sekarang > 0.
+      SHORT: RSI14 sebelumnya > 65 dan sekarang turun; candle higher-high
+             dan close < open; MACD histogram sebelumnya > 0, sekarang < 0.
+    SL di luar ekstrem candle pembalikan (+0.2×ATR); TP 1R/1.5R/2R.
+    Engine eksekusi tetap menerapkan clamp SL 1–2% & aturan risiko lain."""
+    if not candles or len(candles) < 40:
+        return None
+    closes = [float(c["close"]) for c in candles]
+    highs = [float(c["high"]) for c in candles]
+    lows = [float(c["low"]) for c in candles]
+    last, prev = candles[-1], candles[-2]
+    rsi_now, rsi_prev = _rsi(closes, 14), _rsi(closes[:-1], 14)
+    hist = _macd_hist_recent(closes, 2)
+    atr = _atr14(highs, lows, closes)
+    if rsi_now is None or rsi_prev is None or not hist or len(hist) < 2 or not atr:
+        return None
+    h_prev, h_now = hist[0], hist[1]
+    o, c_, h, l_ = float(last["open"]), float(last["close"]), float(last["high"]), float(last["low"])
+    long_ok = (rsi_prev < 35 and rsi_now > rsi_prev
+               and l_ < float(prev["low"]) and c_ > o
+               and h_prev < 0 < h_now)
+    short_ok = (rsi_prev > 65 and rsi_now < rsi_prev
+                and h > float(prev["high"]) and c_ < o
+                and h_prev > 0 > h_now)
+    if not (long_ok or short_ok):
+        return None
+    side = "BUY" if long_ok else "SELL"
+    sg = 1.0 if long_ok else -1.0
+    entry = c_
+    sl = (l_ - 0.2 * atr) if long_ok else (h + 0.2 * atr)
+    r = abs(entry - sl)
+    if r <= 0:
+        return None
+    tps = [entry + sg * r * m for m in (1.0, 1.5, 2.0)]
+    reason = (f"Early Reversal {'LONG' if long_ok else 'SHORT'}: RSI {rsi_prev:.1f}→{rsi_now:.1f}, "
+              f"candle pembalikan, MACD hist {h_prev:.6g}→{h_now:.6g}")
+    return {
+        "action": side, "label": "LONG" if long_ok else "SHORT", "confidence": 80,
+        "indicators": {"rsi": round(rsi_now, 2), "macd_hist": round(h_now, 10),
+                       "atr": round(atr, 10), "early_reversal": True},
+        "reasons": [reason],
+        "entry": round(entry, 8), "stop_loss": round(sl, 8),
+        "take_profit": round(tps[0], 8), "take_profit_2": round(tps[1], 8),
+        "take_profit_3": round(tps[2], 8),
+        "early_reversal": True,
+    }
+
+
 def compute_signal(
     candles: list[dict[str, Any]],
     market: str,
@@ -1272,6 +1325,12 @@ def compute_signal(
 
     # v9.1.3 — Sinyal hanya dari candle TUTUP (anti-kedip HOLD↔SHORT).
     candles = _drop_forming_candle(candles)
+
+    # v10.5.0 — Reversal dini (RSI + candle pembalikan + MACD hist flip)
+    # diprioritaskan; bila tidak terpenuhi, alur formula lama tidak berubah.
+    _er = _early_reversal_signal(candles)
+    if _er is not None:
+        return _er
 
     # v9.3.0 — Mesin VWAP Session HANYA aktif jika user EKSPLISIT memilih
     # profile scalper/day/swing di app (toggle di Trader Profile modal).

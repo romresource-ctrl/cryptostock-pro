@@ -1699,7 +1699,7 @@ async def _run_full_auto_scanner(
                 # kandidat; eksekusi terjadi di siklus kedua. State di
                 # Mongo (tahan restart). Fail-CLOSED bila DB state error.
                 _confirm_key: str | None = None
-                if sig["side"] in ("BUY", "SELL"):
+                if sig["side"] in ("BUY", "SELL") and not sig.get("early_reversal"):
                     _confirm_key = f"{device_id}:{sym}:{sig['side']}"
                     _fprint = (f"{sig.get('profile') or ''}|"
                                f"{sig.get('formula_tag') or ''}")

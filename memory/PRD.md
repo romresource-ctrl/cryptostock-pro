@@ -2460,3 +2460,8 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 - History: no daily header for today.
 - Thumbnail: DisclaimerModal skipped on web; HTML splash removed on markAppReady (fallback fade 9s).
 - Tests: test_iter66_v1041_ac_monitor.py
+
+## v10.5.0 — Early Reversal
+- indicators._early_reversal_signal: LONG = RSI14 prev<35 & rising + lower-low bullish candle (close>open) + MACD hist prev<0→now>0; SHORT symmetric (RSI>65 falling, higher-high bearish candle, hist >0→<0). Checked first in compute_signal (all profiles); SL beyond reversal candle extreme +0.2 ATR, TP 1R/1.5R/2R; formula_tag "Early Reversal"; confidence 80.
+- Scanner skips 2-cycle confirmation for early_reversal signals; all other gates (BTC regime/15m, trend, caps, SL clamp) unchanged.
+- Tests: test_iter67_v1050_early_reversal.py
