@@ -75,7 +75,7 @@ export function useBinanceKline(
     const urls = [
       // v10.0.13 — Futures kline (fstream) didahulukan sehingga grafik
       // live mengikuti harga perp. Jatuh ke spot bila futures tak tersedia.
-      `wss://fstream.binance.com/ws/${streamPath}`,
+      `wss://fstream.binance.com/market/ws/${streamPath}`,
       `wss://data-stream.binance.vision/ws/${streamPath}`,
       `wss://stream.binance.com:9443/ws/${streamPath}`,
       `wss://stream.binance.us:9443/ws/${streamPath}`,

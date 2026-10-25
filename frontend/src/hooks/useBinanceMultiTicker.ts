@@ -10,12 +10,13 @@
  * sama ke kartu posisi. Polling backend TETAP jalan sebagai pelengkap
  * (merge), jadi simbol non-Binance tetap ter-update.
  *
- * Stream: wss://fstream.binance.com/stream?streams=btcusdt@aggTrade/...
+ * Stream: wss://fstream.binance.com/market/stream?streams=btcusdt@aggTrade/...
  * Fallback host sama seperti useBinanceRealtime, plus watchdog 8 detik
  * untuk koneksi silent-dead, reconnect otomatis, dan throttle 150ms per
  * simbol (hemat re-render).
  */
 import { useEffect, useRef, useState } from "react";
+import { AppState } from "react-native";
 
 /** Normalisasi "BTC/USDT" / "BTCUSDT" / "btc" → "BTC" (kunci map harga). */
 function norm(sym: string): string {
@@ -38,7 +39,7 @@ export function useBinanceMultiTicker(symbols: string[]): Record<string, number>
       .join("/");
     // Futures dulu (mark price perp = acuan kartu), lalu spot fallback.
     const urls = [
-      `wss://fstream.binance.com/stream?streams=${streams}`,
+      `wss://fstream.binance.com/market/stream?streams=${streams}`,
       `wss://data-stream.binance.vision/stream?streams=${streams}`,
       `wss://stream.binance.com:9443/stream?streams=${streams}`,
     ];
@@ -85,6 +86,7 @@ export function useBinanceMultiTicker(symbols: string[]): Record<string, number>
         // pernah terdeteksi. Kini tiap pesan memperbarui timer 30 detik;
         // 30 detik tanpa pesan → socket ditutup → reconnect/host lain.
         armWatchdog(30_000);
+        attempt = 0; // v10.3.7 — koneksi sehat → reconnect berikutnya mulai dari futures lagi
         try {
           const msg = JSON.parse(event.data as string);
           // combined-stream membungkus payload: {stream, data}
@@ -109,8 +111,17 @@ export function useBinanceMultiTicker(symbols: string[]): Record<string, number>
     };
     tryConnect();
 
+    // v10.3.7 — kembali dari background: OS sering membunuh socket diam-diam
+    // → paksa reconnect agar harga kartu OPEN langsung jalan lagi.
+    const sub = AppState.addEventListener("change", (st) => {
+      if (st !== "active" || cancelled) return;
+      attempt = 0;
+      try { ws?.close(); } catch { /* ignore */ }
+    });
+
     return () => {
       cancelled = true;
+      sub.remove();
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (dataWatchdog) clearTimeout(dataWatchdog);
       try { ws?.close(); } catch { /* ignore */ }

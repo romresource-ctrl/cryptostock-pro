@@ -2433,3 +2433,7 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 ## v10.3.6 — Close All reliability
 - close-all groups open trades per (exchange,testnet,symbol), closes groups in PARALLEL (was sequential → ingress 60s timeout left positions open), retries up to 3x, verifies live positionAmt==0 before marking closed; failures reported per symbol and those rows stay open.
 - Tests: backend/tests/test_iter64_v1036_close_all.py
+
+## v10.3.7 — Price feed WS fix
+- Root cause: Binance retired legacy USD-M futures WS URLs (fstream.binance.com/ws & /stream) on 23 Apr 2026; connections open but send no data. Now use wss://fstream.binance.com/market/ws/... and /market/stream?streams=... in useBinanceMultiTicker, useBinanceRealtime, useBinanceKline.
+- Multi-ticker & realtime: rolling 30s watchdog, attempt reset on data (prefer futures), AppState foreground forced reconnect.

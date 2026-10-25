@@ -12,6 +12,7 @@
  * Reference: https://binance-docs.github.io/apidocs/spot/en/#individual-symbol-ticker-streams
  *   Stream: <symbol>usdt@ticker → payload includes `c` (close), `P` (24h %).
  */
+import { AppState } from "react-native";
 import { useEffect, useRef, useState } from "react";
 
 // Some tickers on Binance use USDC or BUSD quote instead of USDT — most
@@ -79,7 +80,7 @@ export function useBinanceRealtime(
     // perpetual futures, sehingga WS spot gagal konek dan dip/top tidak
     // pernah menerima tick. Spot tetap sebagai fallback terakhir.
     const urls = [
-      `wss://fstream.binance.com/ws/${streamPath}`,
+      `wss://fstream.binance.com/market/ws/${streamPath}`,
       `wss://data-stream.binance.vision/ws/${streamPath}`,
       `wss://stream.binance.com:9443/ws/${streamPath}`,
       `wss://stream.binance.us:9443/ws/${streamPath}`,
@@ -132,8 +133,12 @@ export function useBinanceRealtime(
       };
       ws.onmessage = (event) => {
         if (cancelled) return;
-        // Pesan pertama tiba → koneksi sehat, matikan watchdog.
-        if (dataWatchdog) { clearTimeout(dataWatchdog); dataWatchdog = null; }
+        // v10.3.7 — ROLLING watchdog: 30 dtk tanpa pesan → reconnect
+        // (dulu hanya menjaga pesan pertama → socket mati-menggantung
+        // tidak pernah terdeteksi).
+        if (dataWatchdog) clearTimeout(dataWatchdog);
+        dataWatchdog = setTimeout(() => { try { ws?.close(); } catch { /* ignore */ } }, 30_000);
+        attempt = 0;
         try {
           const data = JSON.parse(event.data as string);
           // v10.1.7 — aggTrade payload: {e,s,p,q}. Dulu @ticker pakai
@@ -171,8 +176,16 @@ export function useBinanceRealtime(
     };
     tryConnect();
 
+    // v10.3.7 — kembali dari background → paksa reconnect.
+    const sub = AppState.addEventListener("change", (st) => {
+      if (st !== "active" || cancelled) return;
+      attempt = 0;
+      try { ws?.close(); } catch { /* ignore */ }
+    });
+
     return () => {
       cancelled = true;
+      sub.remove();
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (dataWatchdog) clearTimeout(dataWatchdog);
       try {
