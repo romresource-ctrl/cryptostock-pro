@@ -2453,3 +2453,10 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 ## v10.4.0 — BTC 15m direction filter
 - scheduler._btc_15m_direction (pure) + _get_btc_15m_direction (BTC 1m x15 Binance spot klines, once per cycle). rebound (last > 15m low +1%) → reject SELL; dump (last < 15m high -1%) → reject BUY; both → latest extreme wins; sideways/unknown → free. All coins, REAL & DEMO, all profiles; new entries only. Reject reason btc15m_rebound/btc15m_dump in scan-debug.
 - Tests: backend/tests/test_iter65_v1040_btc15m.py
+
+## v10.4.1
+- AC mode = SL-only on exchange (execute + attach_brackets skip TP orders; bracket hard with SL only). AC monitor: _refresh_binance closes own qty via market when margin ROI >= AC% (reason AC); fast watcher _run_ac_watcher every 5s (positionRisk mark). Card TP = entry*(1±AC/lev).
+- Semi preview passes auto_close_pct (calculator updates on TP/AC change).
+- History: no daily header for today.
+- Thumbnail: DisclaimerModal skipped on web; HTML splash removed on markAppReady (fallback fade 9s).
+- Tests: test_iter66_v1041_ac_monitor.py

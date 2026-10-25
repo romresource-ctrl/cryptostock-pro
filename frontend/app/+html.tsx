@@ -60,7 +60,7 @@ export default function Root({ children }: PropsWithChildren) {
                 padding: 24px;
                 text-align: center;
                 pointer-events: none;
-                animation: aiSplashFade 0.35s ease-out 3.5s forwards;
+                animation: aiSplashFade 0.35s ease-out 9s forwards;
               }
               @keyframes aiSplashFade {
                 to { opacity: 0; visibility: hidden; }

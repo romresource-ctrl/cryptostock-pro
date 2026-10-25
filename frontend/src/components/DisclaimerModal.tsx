@@ -62,6 +62,9 @@ export default function DisclaimerModal() {
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
         const acceptedVersion = raw ? parseInt(raw, 10) : 0;
         if (acceptedVersion < DISCLAIMER_VERSION) {
+          // v10.4.1 — Web preview/gallery snapshot: jangan tutup dashboard
+          // dengan modal legal (compliance flow tetap aktif di native).
+          if (Platform.OS === "web") return;
           // Wait for the dashboard to publish its first data batch (or
           // give up after 8s), then hold for another SNAPSHOT_GRACE_MS
           // so any first-frame snapshot service still captures the

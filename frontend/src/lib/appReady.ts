@@ -22,6 +22,14 @@ const _waiters: (() => void)[] = [];
 export function markAppReady(): void {
   if (_ready) return;
   _ready = true;
+  // v10.4.1 — web: splash HTML tetap tampil sampai dashboard benar-benar
+  // terisi data (snapshot/thumbnail tidak menangkap skeleton "Syncing").
+  try {
+    const el = (globalThis as any).document?.getElementById?.("ai-splash");
+    if (el) setTimeout(() => el.remove(), 400);
+  } catch {
+    /* ignore */
+  }
   const w = _waiters.splice(0);
   w.forEach((fn) => {
     try {

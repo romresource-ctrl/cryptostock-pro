@@ -654,6 +654,7 @@ def _attach_trade_routes(db: Any) -> None:
             payload.risk_pct, payload.leverage,
             tp_count=payload.tp_count,
             margin_usdt=payload.margin_usdt,
+            auto_close_pct=payload.auto_close_pct,
         )
 
     @router.post("/trades/execute")

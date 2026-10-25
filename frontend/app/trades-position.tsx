@@ -858,7 +858,12 @@ export default function TradesPositionScreen() {
                 <Text style={[s.section, { color: colors.textMuted }]}>
                   HISTORY · {histList.length}
                 </Text>
-                {histGroups.map(([dk, list]) => (
+                {histGroups.map(([dk, list]) => dk === today ? (
+                  // v10.4.1 — hari ini sudah diwakili statistik di atas halaman
+                  <View key={`day-${dk}`} style={{ gap: 8 }} testID={`hist-day-${dk}`}>
+                    {list.map(renderCard)}
+                  </View>
+                ) : (
                   <View key={`day-${dk}`} style={{ gap: 8 }} testID={`hist-day-${dk}`}>
                     <View style={{ height: 2, backgroundColor: YELLOW, borderRadius: 1, marginTop: 10 }} />
                     <View style={{ paddingHorizontal: 4, gap: 4 }}>

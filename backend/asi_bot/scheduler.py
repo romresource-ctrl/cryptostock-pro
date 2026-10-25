@@ -550,6 +550,41 @@ async def _consolidate_duplicate_open(db: Any) -> None:
             logger.warning("consolidate failed %s: %s", key, e)
 
 
+AC_WATCH_INTERVAL = 5  # v10.4.1 — AC monitor cepat (detik)
+
+
+async def _run_ac_watcher(db: Any) -> None:
+    """v10.4.1 — Pantau posisi mode Auto-Close tiap 5 dtk (monitor umum
+    hanya 60 dtk). Ambil mark via positionRisk; bila ROI margin ≥ AC%
+    panggil refresh_trade_pnl yang menutup posisi via market order."""
+    async for t in db.asi_trades.find({"status": "open", "auto_close_pct": {"$gt": 0}}):
+        try:
+            ent = float(t.get("entry_price") or 0)
+            lev = float(t.get("actual_leverage") or t.get("leverage") or 0)
+            ac = float(t.get("auto_close_pct") or 0)
+            if ent <= 0 or lev <= 0 or (t.get("exchange") or "").lower() != "binance":
+                continue
+            cred = await resolve_credential(
+                db, t["device_id"], t["exchange"], bool(t.get("testnet", True)))
+            if not cred:
+                continue
+            base = str(t.get("symbol") or "").upper().split("/")[0].split("USDT")[0]
+            pos = await br.position_risk(decrypt(cred["api_key_enc"]), decrypt(cred["api_secret_enc"]),
+                                         bool(cred.get("testnet", True)), base + "USDT")
+            mark = float((pos or {}).get("markPrice") or 0)
+            if mark <= 0:
+                continue
+            sg = 1.0 if t.get("side") == "BUY" else -1.0
+            if (mark - ent) / ent * lev * sg * 100.0 < ac:
+                continue
+            upd = await refresh_trade_pnl(cred, t)
+            upd["updated_at"] = datetime.now(timezone.utc).isoformat()
+            await db.asi_trades.update_one({"_id": t["_id"]}, {"$set": upd})
+            logger.info("AC close %s %s → %s", t.get("symbol"), t.get("_id"), upd.get("status"))
+        except Exception as e:  # noqa: BLE001
+            logger.debug("ac watcher %s: %s", t.get("_id"), e)
+
+
 async def _refresh_open_pnl(db: Any) -> None:
     """Keep unrealized PnL fresh for all open trades (hard & soft)."""
     await _consolidate_duplicate_open(db)
@@ -2114,6 +2149,7 @@ class ASIScheduler:
         self._tasks = [
             asyncio.create_task(self._loop_watcher()),
             asyncio.create_task(self._loop_pnl()),
+            asyncio.create_task(self._loop_ac()),
             asyncio.create_task(self._loop_scanner()),
             asyncio.create_task(self._loop_titan_relay()),
         ]
@@ -2140,6 +2176,15 @@ class ASIScheduler:
             except Exception as e:  # noqa: BLE001
                 logger.exception("watcher loop crash: %s", e)
             await asyncio.sleep(WATCHER_INTERVAL)
+
+    async def _loop_ac(self) -> None:
+        await asyncio.sleep(15)
+        while self._running:
+            try:
+                await _run_ac_watcher(self.db)
+            except Exception as e:  # noqa: BLE001
+                logger.debug("ac loop: %s", e)
+            await asyncio.sleep(AC_WATCH_INTERVAL)
 
     async def _loop_pnl(self) -> None:
         # Space out from watcher by a few seconds.

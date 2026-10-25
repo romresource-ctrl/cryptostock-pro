@@ -325,11 +325,17 @@ async def preview_trade(
     risk_pct: float, leverage: int,
     tp_count: int = 3,
     margin_usdt: float = 0.0,
+    auto_close_pct: int = 0,
 ) -> dict[str, Any]:
     """Hitung besaran margin & qty TANPA eksekusi — untuk Semi-Auto preview."""
     risk_pct = max(1.0, min(30.0, float(risk_pct)))
     leverage = max(1, min(125, int(leverage)))
     tp_count = max(1, min(3, int(tp_count)))
+    # v10.4.1 — preview mengikuti AC: 1 target = entry × (1 ± AC%/leverage)
+    if int(auto_close_pct or 0) in AUTO_CLOSE_PCTS and int(auto_close_pct or 0) > 0 and entry > 0:
+        _sg = 1.0 if side == "BUY" else -1.0
+        tps = [entry * (1 + _sg * int(auto_close_pct) / 100.0 / leverage)]
+        tp_count = 1
     client = await _get_client(doc)
     exch_sym = _ccxt_symbol(doc["exchange"], symbol)
     try:
@@ -934,7 +940,9 @@ async def execute_trade(
     tp_parts = _split_tp_qty(actual_qty, step, tp_count)
     tp_algo_ids: list[str | None] = []
     tp_errors: list[str] = []
-    for i, tp in enumerate(tps_rounded[:tp_count]):
+    # v10.4.1 — AC aktif: HANYA SL di exchange. TP order tidak dikirim;
+    # AC monitor backend menutup posisi via market order saat ROI tercapai.
+    for i, tp in enumerate(tps_rounded[:(0 if auto_close_pct else tp_count)]):
         tp_qty = tp_parts[i] if i < len(tp_parts) else 0.0
         if tp_qty <= 0:
             tp_algo_ids.append(None)
@@ -990,7 +998,7 @@ async def execute_trade(
 
     sl_verified = sl_algo_id in live_ids
     tp_verified_count = sum(1 for tid in tp_algo_ids if tid and tid in live_ids)
-    expected_tp_count = sum(1 for p in tp_parts if p > 0)
+    expected_tp_count = 0 if auto_close_pct else sum(1 for p in tp_parts if p > 0)
 
     # SL must be verified. If TP partial failure → still rollback (user
     # requirement: tidak boleh ada tanda unprotected sama sekali).
@@ -1325,6 +1333,7 @@ async def attach_brackets(
     )
     legacy_sl = existing_sl
     legacy_tp_close = existing_tp
+    _ac_trade = int(trade.get("auto_close_pct") or 0) > 0  # v10.4.1 — SL-only
 
     errors: list[str] = []
     notes: list[str] = []
@@ -1406,7 +1415,10 @@ async def attach_brackets(
     tp_parts = _split_tp_qty(qty, step or None, tp_count)
     tp_algo_ids: list[str | None] = []
     tp_failed = 0
-    if legacy_tp_close:
+    if _ac_trade:
+        tp_parts = []
+        notes.append("AC mode — SL only (no TP orders)")
+    elif legacy_tp_close:
         # v9.9.10 — TP closePosition legacy sudah menutupi SELURUH posisi.
         notes.append("TP sudah terpasang (existing closePosition di Binance)")
     else:
@@ -2319,7 +2331,7 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
                         str(o.get("type", "")).startswith("TAKE_PROFIT")
                         and o.get("side") == close_side
                         for o in legacy)
-            bracket_live = sl_live and tp_live
+            bracket_live = sl_live and (tp_live or int(trade.get("auto_close_pct") or 0) > 0)
         upd: dict[str, Any] = {
             "status": "open",
             "pnl_usdt": round(unrealized, 2),
@@ -2336,6 +2348,33 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
                 upd["bracket_type"] = "hard"
                 upd["soft_bracket"] = False
                 upd["soft_bracket_reason"] = None
+        # v10.4.1 — AC MONITOR: ROI margin (mark vs entry × leverage) ≥ AC%
+        # → tutup qty trade ini via market order (reduce-only, chunked).
+        _ac = int(trade.get("auto_close_pct") or 0)
+        _ent_ac = float(trade.get("entry_price") or 0)
+        _lev_ac = float(trade.get("actual_leverage") or trade.get("leverage") or 0)
+        if _ac > 0 and _ent_ac > 0 and _lev_ac > 0 and mark:
+            _sg_ac = 1.0 if trade.get("side") == "BUY" else -1.0
+            _roi = (float(mark) - _ent_ac) / _ent_ac * _lev_ac * _sg_ac * 100.0
+            if _roi >= _ac:
+                _q_ac = min(float(trade.get("qty_remaining") or trade.get("qty") or abs(amt)), abs(amt))
+                try:
+                    _r_ac = await close_position(doc, symbol, trade.get("side") or "BUY", _q_ac)
+                except Exception as _e:  # noqa: BLE001
+                    _r_ac = {"ok": False, "detail": str(_e)[:200]}
+                if _r_ac.get("ok"):
+                    _now_ac = datetime.now(timezone.utc).isoformat()
+                    _px_ac = float(_r_ac.get("avg") or mark)
+                    _pnl_ac = round((_px_ac - _ent_ac) * _q_ac * _sg_ac, 2)
+                    return {
+                        "status": "closed", "close_reason": "AC",
+                        "close_reason_detail": f"auto_close {_ac}% ROI reached ({_roi:.1f}%)",
+                        "closed_price": _px_ac, "closed_at": _now_ac, "updated_at": _now_ac,
+                        "pnl_usdt": _pnl_ac,
+                        "tp_fills": [{"level": "TP1", "price": _px_ac, "qty": _q_ac,
+                                      "pnl": _pnl_ac, "at": _now_ac}],
+                    }
+                upd["ac_close_error"] = str(_r_ac)[:200]
         # v10.3.4 — GHOST FIX: qty milik trade ini sudah habis ter-reduce
         # (SL/TP fill tercatat) walau Binance masih punya posisi simbol ini
         # (milik trade/bot lain di akun yg sama) → tutup record ini.

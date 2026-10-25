@@ -216,6 +216,7 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
           take_profits: intent.take_profits,
           risk_pct: riskPct, leverage, tp_count: tpCount,
           margin_usdt: marginUsd,
+          auto_close_pct: autoClosePct,
           testnet: activeTestnet,
         });
         if (cancelled) return;
@@ -246,7 +247,7 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
       cancelled = true;
       clearTimeout(t);
     };
-  }, [visible, intent, deviceId, exchange, riskPct, leverage, tpCount, marginUsd, activeCred, activeTestnet, previewAttempt]);
+  }, [visible, intent, deviceId, exchange, riskPct, leverage, tpCount, marginUsd, autoClosePct, activeCred, activeTestnet, previewAttempt]);
 
   const execute = async () => {
     if (!intent || !preview?.ok) return;
