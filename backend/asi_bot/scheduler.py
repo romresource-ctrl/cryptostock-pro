@@ -1192,8 +1192,11 @@ async def _run_full_auto_scanner(
                     btc15["state"], btc15["up_pct"], btc15["down_pct"],
                     "SELL" if btc15["state"] == "rebound" else "BUY")
     if btc_regime["regime"] != "neutral":
+        _byp = (btc15["state"] == "sideways"
+                and btc_regime["regime"] != "bear_capitulation")
         logger.info("btc-regime gate: %s (%s) → blokir %s | streak_up=%d base4H=%s",
                     btc_regime["regime"], btc_regime.get("detail"),
+                    "- (dilewati: BTC 15m sideways)" if _byp else
                     "SELL" if gate_block_sell else "BUY" if gate_block_buy else "-",
                     trend_up_streak, btc_regime.get("base_regime"))
     cursor = db.asi_bot_config.find({
@@ -1456,7 +1459,13 @@ async def _run_full_auto_scanner(
                     # dikecualikan — ia referensi, bukan ikutan). Rezim
                     # bullish_reversal/trending_up → blokir SELL;
                     # bearish_reversal/trending_down → blokir BUY.
-                    if sym != "BTC":
+                    # v10.5.1 — keputusan user: saat BTC 15m SIDEWAYS (<±1%),
+                    # gate rezim 1H/4H lama DILEWATI (kecuali kapitulasi);
+                    # arah ikut sinyal. Bonus conf BEAR4H tetap berlaku.
+                    # Bila data 15m gagal (unknown) → gate lama tetap aktif.
+                    _gate_bypass = (btc15["state"] == "sideways"
+                                    and btc_regime["regime"] != "bear_capitulation")
+                    if sym != "BTC" and not _gate_bypass:
                         if sig["side"] == "SELL" and gate_block_sell:
                             _dev_reject(rep, f"btc_regime {btc_regime['regime']}: tolak SELL")
                             continue
