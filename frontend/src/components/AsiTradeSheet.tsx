@@ -105,7 +105,7 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
   const [riskPct, setRiskPct] = useState(5);
   const [leverage, setLeverage] = useState(10);
   const [tpCount, setTpCount] = useState<1 | 2 | 3>(3);
-  const [autoClosePct, setAutoClosePct] = useState<0 | 10 | 15 | 20 | 25 | 50 | 75 | 100 | 150 | 200>(0);
+  const [autoClosePct, setAutoClosePct] = useState<0 | 10 | 15 | 20 | 25 | 30 | 35 | 40 | 45 | 50 | 60 | 65 | 75 | 100 | 150 | 200>(0);
   const [marginUsd, setMarginUsd] = useState<number>(0);
   const [trailingCbRate] = useState<number>(0);
   const [preview, setPreview] = useState<AsiPreview | null>(null);
@@ -619,7 +619,7 @@ export default function AsiTradeSheet({ visible, onClose, onCloseAll, intent }: 
                   {t("asi_autoclose_title")}
                 </Text>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
-                  {([10, 15, 20, 25, 50, 75, 100, 150, 200] as const).map((p) => {
+                  {([10, 15, 20, 25, 30, 35, 40, 45, 50, 60, 65, 75, 100, 150, 200] as const).map((p) => {
                     const act = autoClosePct === p;
                     return (
                       <TouchableOpacity key={p} onPress={() => setAutoClosePct(act ? 0 : p)}

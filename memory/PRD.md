@@ -2497,3 +2497,6 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 ## v10.6.5
 - Reverse dibalik di HULU loop sinyal: semua filter menilai arah yang dieksekusi (keputusan user).
 - APP_LATEST_VERSION (server.py) = versi LIVE di Google Play (10.5.0), TIDAK ikut bump saat uji coba. Ubah hanya bila user konfirmasi rilis Play.
+
+## v10.6.6
+- Auto-Close tambah 30/35/40/45/60/65% (engine, routes, ASI-Bot, Semi-Auto sheet).
