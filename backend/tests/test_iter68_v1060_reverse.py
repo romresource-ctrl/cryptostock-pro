@@ -7,10 +7,21 @@ from asi_bot import scheduler  # noqa: E402
 from asi_bot.routes import BotConfigPayload  # noqa: E402
 
 
-def test_bypass_reverted():
+def test_bypass_only_when_reverse_on():
     src = inspect.getsource(scheduler._run_full_auto_scanner)
-    assert "_gate_bypass" not in src
-    assert 'if sym != "BTC":' in src
+    assert '_gate_bypass = (bool(cfg.get("reverse_signal"))' in src
+    assert 'if sym != "BTC" and not _gate_bypass:' in src
+    assert 'if sig["side"] == "SELL" and gate_block_sell:' in src
+
+
+def test_circuit_breaker_counts_any_loss():
+    src = inspect.getsource(scheduler._run_full_auto_scanner)
+    assert 'float(t.get("pnl_usdt") or 0) < 0\n' in src
+
+
+def test_close_all_sweep_exists():
+    from asi_bot import routes
+    assert inspect.iscoroutinefunction(routes._sweep_binance_positions)
 
 
 def test_reverse_long_to_short_mirrors_levels():

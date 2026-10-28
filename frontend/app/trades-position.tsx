@@ -424,6 +424,13 @@ export default function TradesPositionScreen() {
               </Text>
             </>
           ) : null}
+          {/* v10.6.1 — Status badge kanan atas, tepat di atas PnL */}
+          <View style={{ marginLeft: "auto", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
+                         backgroundColor: isOpen ? GREEN : isPending ? YELLOW : colors.border }}>
+            <Text style={{ color: isOpen ? "#0B0E11" : isPending ? "#0B0E11" : colors.textMuted, fontWeight: "900", fontSize: 9 }}>
+              {isOpen ? "OPEN" : isPending ? "LIMIT" : "CLOSED"}
+            </Text>
+          </View>
         </View>
 
         {/* ───────────── BARIS 2 : Symbol | Mark | PnL ───────────── */}
@@ -566,13 +573,7 @@ export default function TradesPositionScreen() {
                 || "Confluence v9")}
             </Text>
           </View>
-          {/* Status badge */}
-          <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
-                         backgroundColor: isOpen ? GREEN : isPending ? YELLOW : colors.border }}>
-            <Text style={{ color: isOpen ? "#0B0E11" : isPending ? "#0B0E11" : colors.textMuted, fontWeight: "900", fontSize: 9 }}>
-              {isOpen ? "OPEN" : isPending ? "LIMIT" : "CLOSED"}
-            </Text>
-          </View>
+          {/* Status badge dipindah ke baris tanggal (v10.6.1) */}
         </View>
 
         {/* v10.1.8 — Tombol aksi di BARIS SENDIRI, SELALU rata kanan.

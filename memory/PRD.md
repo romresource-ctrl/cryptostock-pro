@@ -2475,3 +2475,12 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 - v10.5.1 bypass filter BTC dibatalkan (filter 1H/4H lama aktif lagi).
 - Tombol Reverse Sinyal (Full-Auto, DEMO & REAL): config `reverse_signal`; filter menilai sinyal asli, eksekusi dibalik, SL/TP dicerminkan dari entry; formula_tag diberi " · REVERSE".
 - Test: tests/test_iter68_v1060_reverse.py
+
+## v10.6.1
+- Bypass filter BTC lama (v10.5.1) aktif HANYA saat Reverse ON + BTC 15m sideways.
+- Circuit breaker: 3 loss beruntun (pnl<0, dulu <-$1) → pause 2 jam.
+- Close All Binance: sapu semua posisi live via REST (positionRisk all → market reduceOnly paralel, ulang 3x).
+- Badge OPEN/CLOSED pindah ke kanan atas (atas PnL) di Running Positions & Recent Trades.
+- Leaderboard: badge Margin/AC/TP/Isolated/formula + tombol REVERSE 1-tap; EXECUTE kini ikut AC & margin user.
+- Detail aset: tombol REVERSE: Long/Short with ASI-Bot (1-tap) menggantikan tombol kuning.
+- src/lib/quickExecute.ts (quickExecute, reverseLevels).

@@ -1,0 +1,42 @@
+{
+  "summary": "v10.6.1 frontend verification at 390x844 plus a backend GET check. Everything requested is implemented and working: dashboard header shows 'Ver 10.6.1'. On /trades-position and on the /asi-bot Recent Trades list, the status badge sits at the top-right of row 1, directly above PnL (checked by measuring element positions on real data: badge y=226, PnL y=246, same right edge). /copy-trade cards show ISOLATED, AC x%, Margin $x and the formula tag. REVERSE buttons were not shown because all 25 leaderboard rows are closed, which is correct. /asset/crypto/AVAX (AI=LONG) shows a red 'REVERSE: Short with ASI-Bot' button and SAND (AI=SHORT) shows a green 'REVERSE: Long with ASI-Bot' button (testID asset-asi-reverse). The old yellow 'Trade with ASI-Bot' button is gone. The asi-reverse-toggle exists. No red screen and no app page errors. GET /api/asi/leaderboard/live returns 200, and every one of the 25 items has auto_close_pct, margin_mode, formula_tag and tp_count, with no _id. No pending_entry trades exist in the DB, so the yellow LIMIT border could only be checked in code (YELLOW #F0B90B border plus LIMIT badge). No execute, reverse or close buttons were tapped.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/asi/leaderboard/live", "issue": "The ranking is all-time and only includes positions with pnl_usdt > 0 (pnl.py:99-109). The 25th place currently needs about $61.64, so an OPEN position almost never makes the list and the new REVERSE button on /copy-trade is practically never visible. The user's current open XTZ position (+$24.78) is not listed. The route docstring says 'only traders CURRENTLY in open positions', which is out of date."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "copy-trade closedReasonText", "issue": "Raw internal codes are shown in the card header: 'Closed on position_closed_externally' and 'Closed on manual_close_all'. The mapping in copy-trade.tsx:256-267 is missing position_closed_externally, manual_close_all, TRAILING and BREAK_EVEN, which trades-position.tsx and asi-bot.tsx already handle.", "testID": "copy-pos-1", "priority": "low"},
+      {"component": "copy-trade SL/TP precision", "issue": "For low-priced coins, toLocaleString() rounds prices to 3 decimals (ROSE shows Entry $0.007 · SL 0.007 · TP 0.007), so SL and TP look identical. Use the existing fp() formatter.", "testID": "copy-pos-1", "priority": "low"},
+      {"component": "asi-bot Recent Trades status chip", "issue": "The chip says 'ACTIVE' (i18n asi_status_active) while /trades-position says 'OPEN'. The user asked for OPEN/CLOSED/LIMIT, so the two screens disagree.", "testID": "n/a (no testID on chip)", "priority": "low"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/trades-position, /asi-bot", "issues": ["The status badge's right edge (x=367/363) is about 7px further right than the PnL text (x=360/357) because of the PnL container's paddingHorizontal 7. This is cosmetic and could be aligned.", "The status badge/chip has no testID."]},
+      {"screen": "/copy-trade", "issues": ["The subtitle says 'Top 25 positions by 24h profit' but the backend ranks all-time."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_iter55_v1061_leaderboard_badges.py", "/app/test_reports/pytest/pytest_iter55.xml"],
+  "action_items": [
+    "Decide how OPEN positions get onto the leaderboard (e.g. always include open positions, or a separate open section). Otherwise the REVERSE: SHORT/LONG button on /copy-trade is effectively unreachable.",
+    "Add position_closed_externally ('Closed on exchange'), manual_close_all, TRAILING and BREAK_EVEN to closedReasonText in copy-trade.tsx.",
+    "Format leaderboard SL/TP/Entry with fp() instead of toLocaleString() for sub-$1 coins.",
+    "Align the asi-bot chip label (ACTIVE) with OPEN, or confirm that ACTIVE is intended.",
+    "Add testIDs to the status badges (e.g. tp-status-badge-{id}, asi-status-chip-{id}).",
+    "Asset REVERSE (symbol.tsx:1514-1522) builds TP2/TP3 as entry ± spread*2/3, which differs from the Target 2/3 the UI displays (AVAX shows 9.0119 but REVERSE uses ~9.0178). Unlike copy-trade it also has no duplicate-position check before a 1-tap real order. Consider using the displayed targets and adding the dup check."
+  ],
+  "critical_code_review_comments": [
+    "quickExecute.reverseLevels: if origEntry is 0 or the SL is null (Number(null)=0, so pct=100%), SL becomes 0 or 2x entry. Add a guard for missing levels.",
+    "reverseLevels mirrors the original SL/TP distances, so a reversed trade inherits the original R:R (e.g. 1:0.31 on AVAX). This is a business-logic choice to confirm.",
+    "trades-position.tsx is 901 lines, asi-bot.tsx 1982 and symbol.tsx 1887. All are over 700 lines and should be split."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter55_v1061_leaderboard_badges.py"],
+  "success_rate": {"backend": "100% (2/2)", "frontend": "100% of requested checks (REVERSE on copy-trade and the yellow pending border were checked in code only; no open or pending data was available)"},
+  "seed_data_creation": "None. For read-only UI checks the browser localStorage key cryptostock.device_fingerprint was set to the existing device 'web:qmeqflw0e2d-mui5ar38' (2 open + 193 closed trades). Nothing was modified.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "To see real trade cards in the web preview, set localStorage 'cryptostock.device_fingerprint' = 'web:qmeqflw0e2d-mui5ar38' (REAL user device: never tap CLOSE/CLOSE ALL/EXECUTE/REVERSE). The asset REVERSE button only appears after tapping run-ai-analysis-button (takes ~20-40s). Writing to /app via bash is blocked by the harness; create_file works."
+}

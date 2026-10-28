@@ -3,8 +3,10 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   Linking,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -20,6 +22,7 @@ import PriceChart from "@/src/components/PriceChart";
 import PositionSizeCalculator from "@/src/components/PositionSizeCalculator";
 import TargetProfit from "@/src/components/TargetProfit";
 import AsiTradeSheet, { type AsiTradeIntent, formulaTagFromSignal } from "@/src/components/AsiTradeSheet";
+import { quickExecute, reverseLevels } from "@/src/lib/quickExecute";
 import WrHistoryModal, { type WrPeriod } from "@/src/components/WrHistoryModal";
 import LadderAlertBadge from "@/src/components/LadderAlertBadge";
 import DipTopPopup from "@/src/components/DipTopPopup";
@@ -156,6 +159,7 @@ export default function AssetDetail() {
   // v8.7.0 — WR history modal state (period tab: 7d / 30d / all)
   const [wrModalPeriod, setWrModalPeriod] = useState<WrPeriod | null>(null);
   const [asiIntent, setAsiIntent] = useState<AsiTradeIntent | null>(null);
+  const [reverseBusy, setReverseBusy] = useState(false);
   // Live-fetched AI model labels from backend. If backend swaps models
   // (e.g. Sonnet 4.6 → Sonnet 5), the hint text updates without a
   // mobile rebuild. Falls back to a generic label if endpoint is down.
@@ -1503,31 +1507,45 @@ export default function AssetDetail() {
                 && analysis.consensus.stop_loss != null
                 && analysis.consensus.take_profit != null ? (
                 <TouchableOpacity
-                  onPress={() => {
+                  disabled={reverseBusy}
+                  onPress={async () => {
+                    // v10.6.1 — REVERSE 1-tap: eksekusi arah KEBALIKAN
+                    // sinyal (menggantikan tombol kuning Trade with ASI-Bot).
                     const tp = analysis.consensus.take_profit as number;
-                    const entry = analysis.consensus.entry as number;
-                    const spread = Math.abs(tp - entry);
+                    const entry0 = analysis.consensus.entry as number;
+                    const spread = Math.abs(tp - entry0);
                     const dir = analysis.consensus.action === "BUY" ? 1 : -1;
-                    setAsiIntent({
-                      symbol: symbol.replace(/[-/].*$/, ""),
-                      side: analysis.consensus.action as "BUY" | "SELL",
-                      entry,
-                      stop_loss: analysis.consensus.stop_loss as number,
-                      take_profits: [tp, entry + dir * spread * 2, entry + dir * spread * 3],
-                      source: "asset-detail",
-                      formula_tag: formulaTagFromSignal(
-                        chart?.signal?.indicators, (chart?.signal as any)?.reasons, apiProfile),
-                    });
+                    const live = Number(chart?.candles?.[chart.candles.length - 1]?.close ?? 0) || entry0;
+                    setReverseBusy(true);
+                    try {
+                      const lv = reverseLevels(
+                        analysis.consensus.action as "BUY" | "SELL", entry0,
+                        analysis.consensus.stop_loss as number,
+                        [tp, entry0 + dir * spread * 2, entry0 + dir * spread * 3], live);
+                      const tag = formulaTagFromSignal(
+                        chart?.signal?.indicators, (chart?.signal as any)?.reasons, apiProfile);
+                      await quickExecute({
+                        symbol: symbol.replace(/[-/].*$/, ""), side: lv.side, entry: live,
+                        stop_loss: lv.stop_loss, take_profits: lv.take_profits,
+                        profile: apiProfile ?? null,
+                        formula_tag: `${tag || "Signal"} · REVERSE`,
+                      });
+                      router.push("/trades-position" as never);
+                    } catch (e: any) {
+                      const msg = e?.detail?.message || e?.message || String(e);
+                      if (Platform.OS === "web") window.alert(msg); else Alert.alert("REVERSE", msg);
+                    } finally { setReverseBusy(false); }
                   }}
-                  testID="asset-asi-trade"
+                  testID="asset-asi-reverse"
                   style={{
-                    marginTop: 14, backgroundColor: "#F0B90B",
+                    marginTop: 14,
+                    backgroundColor: analysis.consensus.action === "BUY" ? "#EF4444" : "#22C55E",
                     paddingVertical: 14, borderRadius: 12, alignItems: "center",
                     flexDirection: "row", justifyContent: "center", gap: 8,
                   }}>
-                  <Text style={{ fontSize: 18 }}>🤖</Text>
-                  <Text style={{ color: "#0B0E11", fontWeight: "900", letterSpacing: 0.6 }}>
-                    {t("asi_trade_cta").replace("{side}", analysis.consensus.action === "BUY" ? "LONG" : "SHORT")}
+                  {reverseBusy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={{ fontSize: 18 }}>🤖</Text>}
+                  <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.6 }}>
+                    REVERSE: {analysis.consensus.action === "BUY" ? "Short" : "Long"} with ASI-Bot
                   </Text>
                 </TouchableOpacity>
               ) : null}

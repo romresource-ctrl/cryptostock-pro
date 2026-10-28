@@ -113,6 +113,9 @@ async def live_leaderboard(db: Any, limit: int = 25) -> list[dict[str, Any]]:
             "take_profits": 1, "leverage": 1, "exchange": 1, "qty": 1,
             "margin_usdt": 1, "pnl_usdt": 1,
             "mode": 1, "entry_mode": 1,
+            # v10.6.1 — badge parameter lengkap di kartu leaderboard
+            "auto_close_pct": 1, "margin_mode": 1, "formula_tag": 1,
+            "tp_count": 1,
             "created_at": 1, "closed_at": 1, "closed_price": 1,
             "close_reason": 1,
             # v10.0.13 — ikut dibawa supaya UI leaderboard bisa:
@@ -200,6 +203,10 @@ async def live_leaderboard(db: Any, limit: int = 25) -> list[dict[str, Any]]:
             "exchange": tr.get("exchange"),
             "mode": tr.get("mode"),
             "entry_mode": tr.get("entry_mode"),
+            "auto_close_pct": int(tr.get("auto_close_pct") or 0),
+            "margin_mode": tr.get("margin_mode"),
+            "formula_tag": tr.get("formula_tag"),
+            "tp_count": tr.get("tp_count"),
             "created_at": tr.get("created_at"),
             "closed_at": tr.get("closed_at"),
             "closed_price": tr.get("closed_price"),

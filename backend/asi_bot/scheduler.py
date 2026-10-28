@@ -1258,8 +1258,10 @@ async def _run_full_auto_scanner(
                 _now_cb = datetime.now(timezone.utc)
                 _cutoff_cb = (_now_cb - timedelta(
                     hours=CIRCUIT_BREAKER_PAUSE_HOURS)).isoformat()
+                # v10.6.1 — loss apa pun (pnl < 0) dihitung; dulu < -$1
+                # sehingga akun REAL margin kecil tak pernah kena breaker.
                 if (len(_recent_closed) >= CIRCUIT_BREAKER_LOSSES
-                        and all(float(t.get("pnl_usdt") or 0) < -1.0
+                        and all(float(t.get("pnl_usdt") or 0) < 0
                                 for t in _recent_closed[:CIRCUIT_BREAKER_LOSSES])
                         and str(_recent_closed[0].get("closed_at") or "") > _cutoff_cb):
                     logger.warning(
@@ -1464,7 +1466,13 @@ async def _run_full_auto_scanner(
                     # dikecualikan — ia referensi, bukan ikutan). Rezim
                     # bullish_reversal/trending_up → blokir SELL;
                     # bearish_reversal/trending_down → blokir BUY.
-                    if sym != "BTC":
+                    # v10.6.1 — keputusan user: bypass gate rezim 1H/4H lama
+                    # (perilaku v10.5.1) HANYA saat Reverse ON dan BTC 15m
+                    # sideways (<±1%); kapitulasi tetap diblokir.
+                    _gate_bypass = (bool(cfg.get("reverse_signal"))
+                                    and btc15["state"] == "sideways"
+                                    and btc_regime["regime"] != "bear_capitulation")
+                    if sym != "BTC" and not _gate_bypass:
                         if sig["side"] == "SELL" and gate_block_sell:
                             _dev_reject(rep, f"btc_regime {btc_regime['regime']}: tolak SELL")
                             continue

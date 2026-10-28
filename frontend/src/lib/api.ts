@@ -642,6 +642,11 @@ export type AsiLiveRow = {
   // v10.0.5 — badge seperti Recent Trades: mode bot & cara entry
   mode?: "semi" | "full" | string | null;
   entry_mode?: "market" | "limit" | string | null;
+  // v10.6.1 — badge parameter lengkap
+  auto_close_pct?: number | null;
+  margin_mode?: string | null;
+  formula_tag?: string | null;
+  tp_count?: number | null;
   created_at: string | null;
   closed_at?: string | null;
   closed_price?: number | null;

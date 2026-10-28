@@ -1316,6 +1316,15 @@ export default function ASIBotScreen() {
                       </>
                     );
                   })() : null}
+                  {/* v10.6.1 — Status chip kanan atas, tepat di atas PnL */}
+                  <View style={{
+                    marginLeft: "auto", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
+                    backgroundColor: isOpen ? GREEN : isPending ? YELLOW : colors.border,
+                  }}>
+                    <Text testID="rt-status-badge" style={{ color: isOpen ? ACCENT_TEXT : isPending ? "#0B0E11" : colors.textMuted, fontWeight: "900", fontSize: 9 }}>
+                      {isOpen ? "OPEN" : isPending ? "LIMIT" : "CLOSED"}
+                    </Text>
+                  </View>
                 </View>
 
                 {/* ───── BARIS 2 : Symbol | Mark Price | PnL ───── */}
@@ -1471,15 +1480,6 @@ export default function ASIBotScreen() {
                       </Text>
                     </View>
                   ) : null}
-                  {/* Status chip */}
-                  <View style={{
-                    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
-                    backgroundColor: isOpen ? GREEN : isPending ? YELLOW : colors.border,
-                  }}>
-                    <Text style={{ color: isOpen ? ACCENT_TEXT : isPending ? "#0B0E11" : colors.textMuted, fontWeight: "900", fontSize: 9 }}>
-                      {isOpen ? t("asi_status_active") : isPending ? t("asi_status_pending") : "CLOSED"}
-                    </Text>
-                  </View>
                   {/* v10.3.0 — AC badge (sama dengan Running Positions) */}
                   {Number((tr as any).auto_close_pct) > 0 ? (
                     <View testID={`rt-ac-badge-${(tr as any).id || (tr as any)._id || ""}`}

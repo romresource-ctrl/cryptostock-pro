@@ -13,6 +13,7 @@ import { api, type AsiLiveRow } from "@/src/lib/api";
 import { getDeviceId } from "@/src/lib/deviceId";
 import { readPageCache, writePageCache } from "@/src/lib/pageCache";
 import { formulaTagFromSignal } from "@/src/components/AsiTradeSheet";
+import { quickExecute, reverseLevels } from "@/src/lib/quickExecute";
 
 const GOLD = "#F0B90B";
 const GREEN = "#22C55E";
@@ -39,10 +40,10 @@ export default function CopyTradeScreen() {
   // lalu navigasi ke Running Positions.
   const [preparingRank, setPreparingRank] = useState<string | null>(null);
 
-  const onExecuteCopy = useCallback(async (row: AsiLiveRow) => {
+  const onExecuteCopy = useCallback(async (row: AsiLiveRow, reverse: boolean = false) => {
     if (!row.symbol || !row.side) return;
     const base = String(row.symbol).replace("/USDT", "").replace("USDT", "");
-    const busyKey = String(row.rank);
+    const busyKey = `${row.rank}${reverse ? "r" : ""}`;
     setPreparingRank(busyKey);
     try {
       const did = await getDeviceId();
@@ -105,24 +106,20 @@ export default function CopyTradeScreen() {
         }
       } catch { /* best effort dup check */ }
       try {
-        await api.asi.executeTrade(did, {
-          exchange,
-          symbol: base,
-          side: row.side === "BUY" ? "BUY" : "SELL",
-          entry,
-          stop_loss: Number(row.stop_loss),
-          take_profits: (row.take_profits || []).map((v) => Number(v)),
-          risk_pct: Number(bot.risk_pct ?? 5),
-          leverage: Number(bot.leverage ?? 10),
-          mode: "semi",
-          tp_count: (Number(bot.tp_count ?? 3) as 1 | 2 | 3),
-          trailing_callback_rate: Number(bot.trailing_callback_rate ?? 2),
-          margin_mode: (bot.margin_mode || "isolated") as "isolated" | "cross",
-          testnet: bot.active_testnet ?? true,
+        const origSide: "BUY" | "SELL" = row.side === "BUY" ? "BUY" : "SELL";
+        const tps0 = (row.take_profits || []).map((v) => Number(v));
+        // v10.6.1 — REVERSE: arah dibalik, jarak SL/TP % dicerminkan dari
+        // harga sekarang (Long the Dip / Short the Top).
+        const lv = reverse
+          ? reverseLevels(origSide, Number(row.entry_price || entry), Number(row.stop_loss), tps0, entry)
+          : { side: origSide, stop_loss: Number(row.stop_loss), take_profits: tps0 };
+        const baseTag = formulaTagFromSignal(null, null, apiProfile);
+        await quickExecute({
+          symbol: base, side: lv.side, entry,
+          stop_loss: lv.stop_loss, take_profits: lv.take_profits,
           profile: apiProfile ?? null,
-          formula_tag: formulaTagFromSignal(null, null, apiProfile),
-          entry_mode: (bot.entry_mode || "limit") as "limit" | "market",
-        } as any);
+          formula_tag: reverse ? `${baseTag || "Leaderboard"} · REVERSE` : baseTag,
+        });
         // Sukses → langsung buka Running Positions.
         router.push("/trades-position" as never);
       } catch (e: any) {
@@ -265,7 +262,12 @@ export default function CopyTradeScreen() {
     if (r === "manual_cleanup") return "Closed on cleanup";
     if (r === "merged_into_layer") return "Merged into layer";
     if (r === "bracket_failed_after_fill") return "Closed upon bracket failure";
-    if (r === "MANUAL") return "Closed Manually";
+    if (r === "MANUAL" || r === "manual") return "Closed Manually";
+    if (r === "manual_close_all") return "Closed by Close All";
+    if (r === "position_closed_externally") return "Closed on exchange";
+    if (r === "TRAILING") return "Closed on Trailing Stop";
+    if (r === "BREAK_EVEN") return "Closed on Break-Even";
+    if (r === "AC") return "Closed on Auto-Close";
     return r ? `Closed on ${r}` : "Closed";
   };
 
@@ -456,21 +458,50 @@ export default function CopyTradeScreen() {
                     </View>
                     <Text style={{ color: colors.textMuted, fontSize: 11 }}>
                       {t("copy_entry_line")
-                        .replace("{price}", (row.entry_price || 0).toLocaleString())
+                        .replace("{price}", fp(row.entry_price || 0))
                         .replace("{ago}", timeAgo(row.created_at))}
                     </Text>
                     <Text style={{ color: colors.textMuted, fontSize: 10.5, lineHeight: 15 }} numberOfLines={2}>
                       <Text style={{ color: RED, fontWeight: "800" }}>
-                        SL {row.stop_loss ? row.stop_loss.toLocaleString() : "—"}
+                        SL {row.stop_loss ? fp(row.stop_loss) : "—"}
                       </Text>
                       {"  ·  "}
                       <Text style={{ color: GREEN, fontWeight: "800" }}>
-                        TP {(row.take_profits || []).map((x) => x.toLocaleString()).join(" / ") || "—"}
+                        TP {(row.take_profits || []).map((x) => fp(x)).join(" / ") || "—"}
                       </Text>
                     </Text>
+                    {/* v10.6.1 — Badge parameter lengkap seperti Recent Trades */}
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 3 }}>
+                      {row.margin_mode ? (
+                        <View style={[s.pBadge, { backgroundColor: "#14B8A6" }]}>
+                          <Text style={s.pBadgeTxt}>{String(row.margin_mode).toUpperCase()}</Text>
+                        </View>
+                      ) : null}
+                      {Number(row.auto_close_pct) > 0 ? (
+                        <View style={[s.pBadge, { backgroundColor: GOLD }]}>
+                          <Text style={s.pBadgeTxt}>AC {row.auto_close_pct}%</Text>
+                        </View>
+                      ) : row.tp_count ? (
+                        <View style={[s.pBadge, { backgroundColor: GOLD }]}>
+                          <Text style={s.pBadgeTxt}>{row.tp_count} TP</Text>
+                        </View>
+                      ) : null}
+                      {Number(row.margin_usdt) > 0 ? (
+                        <View style={[s.pBadge, { backgroundColor: "#FB923C" }]}>
+                          <Text style={s.pBadgeTxt}>Margin ${Number(row.margin_usdt).toFixed(2)}</Text>
+                        </View>
+                      ) : null}
+                      {row.formula_tag ? (
+                        <View style={[s.pBadge, { backgroundColor: colors.border }]}>
+                          <Text style={[s.pBadgeTxt, { color: colors.textPrimary }]} numberOfLines={1}>
+                            ⚙️ {row.formula_tag}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
                     {!isOpen ? (
                       <Text style={{ color: colors.textMuted, fontSize: 10.5 }}>
-                        Closed @ {row.closed_price ? row.closed_price.toLocaleString() : "—"}
+                        Closed @ {row.closed_price ? fp(row.closed_price) : "—"}
                         {row.closed_at ? ` · ${fmtDateTime(row.closed_at)}` : ""}
                       </Text>
                     ) : null}
@@ -494,6 +525,22 @@ export default function CopyTradeScreen() {
                   </View>
                   {/* v10.0.5 — PnL paling kanan, di atas tombol EXECUTE */}
                   <View style={{ alignItems: "flex-end", gap: 6 }}>
+                    {/* v10.6.1 — REVERSE: eksekusi arah KEBALIKAN posisi
+                        trader (Long the Dip / Short the Top), 1 tap. */}
+                    {isOpen ? (
+                      <TouchableOpacity
+                        style={[s.copyBtn, { backgroundColor: isLong ? RED : GREEN }]}
+                        onPress={() => onExecuteCopy(row, true)}
+                        disabled={preparingRank === `${busyKey}r`}
+                        testID={`copy-reverse-${row.rank}`}
+                      >
+                        {preparingRank === `${busyKey}r`
+                          ? <ActivityIndicator size="small" color="#FFFFFF" />
+                          : <Text style={{ color: "#FFFFFF", fontWeight: "900", fontSize: 11 }}>
+                              REVERSE: {isLong ? "SHORT" : "LONG"}
+                            </Text>}
+                      </TouchableOpacity>
+                    ) : null}
                     <View style={{ alignItems: "flex-end" }}>
                       {/* v10.0.13 — PnL juga dapat flash background sesuai arah tick */}
                       <View style={{
@@ -567,6 +614,8 @@ const s = StyleSheet.create({
     padding: 10, borderRadius: 10, borderWidth: 1,
   },
   copyBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 },
+  pBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, maxWidth: 220 },
+  pBadgeTxt: { color: "#0B0E11", fontWeight: "900", fontSize: 9.5 },
   empty: {
     padding: 32, borderRadius: 14, borderWidth: 1,
     alignItems: "center", gap: 2,

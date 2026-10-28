@@ -631,6 +631,56 @@ async def _resolve_trade_cred(db: Any, device_id: str, exchange: str,
     return await resolve_credential(db, device_id, exchange, net)
 
 
+async def _sweep_binance_positions(cred: dict[str, Any]) -> list[str]:
+    """v10.6.1 — Tutup SEMUA posisi live akun Binance (REST langsung).
+    Return daftar simbol (mis. "XRPUSDT") yang MASIH terbuka setelah 3×."""
+    from .algo import cancel_all_conditional
+    from .whitelist import binance_symbol_filters, round_to_step
+    k, s = decrypt(cred["api_key_enc"]), decrypt(cred["api_secret_enc"])
+    tn = bool(cred.get("testnet", True))
+    try:
+        filt = await binance_symbol_filters(tn) or {}
+    except Exception:
+        filt = {}
+
+    async def _one(p: dict[str, Any]) -> None:
+        sym = str(p["symbol"]).upper()
+        amt = float(p.get("positionAmt") or 0)
+        base = sym[:-4] if sym.endswith("USDT") else sym
+        for fn in (cancel_all_conditional, br.cancel_all_legacy):
+            try:
+                await fn(k, s, tn, sym)
+            except Exception:
+                pass
+        f = filt.get(base) or {}
+        step = float(f.get("step") or 0.0)
+        mx = float(f.get("max_qty") or 0.0)
+        rem = round_to_step(abs(amt), step) if step else abs(amt)
+        cap = (round_to_step(mx, step) if step else mx) if mx > 0 else 0.0
+        while rem > 1e-12:
+            ch = min(rem, cap) if cap > 0 else rem
+            try:
+                await br.market_order(k, s, tn, symbol=sym,
+                                      side="SELL" if amt > 0 else "BUY",
+                                      quantity=ch, reduce_only=True)
+            except Exception as e:  # noqa: BLE001
+                if "-2022" in str(e) or "reduceonly" in str(e).lower():
+                    return
+                raise
+            rem = round(rem - ch, 10)
+
+    for _ in range(3):
+        poss = await br.all_position_risks(k, s, tn)
+        if not poss:
+            return []
+        res = await asyncio.gather(*[_one(p) for p in poss], return_exceptions=True)
+        for p, r in zip(poss, res):
+            if isinstance(r, Exception):
+                logger.warning("close-all sweep %s gagal: %s", p.get("symbol"), r)
+        await asyncio.sleep(0.6)
+    return [str(p["symbol"]).upper() for p in await br.all_position_risks(k, s, tn)]
+
+
 async def br_position_risk(cred: dict[str, Any], symbol: str) -> float | None:
     """v10.3.6 — positionAmt live Binance (None bila bukan Binance)."""
     if (cred.get("exchange") or "").lower() != "binance":
@@ -806,6 +856,51 @@ def _attach_trade_routes(db: Any) -> None:
         ]
         if not open_trades:
             return {"ok": True, "closed": 0, "errors": []}
+        # v10.6.1 — BINANCE: sapu SEMUA posisi live per akun via REST
+        # (positionRisk semua simbol → market reduceOnly paralel, ulang
+        # s/d 3×). Dulu per-simbol via ccxt (load markets tiap call) →
+        # lambat/timeout → sebagian posisi tersisa.
+        bin_closed = 0
+        bin_errors: list[dict[str, str]] = []
+        bin_groups: dict[bool, list[dict[str, Any]]] = {}
+        others: list[dict[str, Any]] = []
+        for t in open_trades:
+            if str(t.get("exchange") or "").lower() == "binance":
+                bin_groups.setdefault(bool(t.get("testnet", True)), []).append(t)
+            else:
+                others.append(t)
+        for tn, rows in bin_groups.items():
+            cred = await resolve_credential(db, device_id, "binance", tn)
+            if not cred:
+                bin_errors.append({"symbol": "ALL", "error": "credential missing"})
+                continue
+            try:
+                remaining = await _sweep_binance_positions(cred)
+            except Exception as e:  # noqa: BLE001
+                bin_errors.append({"symbol": "ALL", "error": str(e)[:200]})
+                continue
+            now = datetime.now(timezone.utc).isoformat()
+
+            async def _mark(t: dict[str, Any]) -> bool:
+                if f"{str(t.get('symbol') or '').upper()}USDT" in remaining:
+                    return False
+                try:
+                    upd = await refresh_trade_pnl(cred, t)
+                except Exception:
+                    upd = {}
+                await db.asi_trades.update_one({"_id": t["_id"]}, {"$set": {
+                    "status": "closed", "close_reason": "manual_close_all",
+                    "closed_at": now, "updated_at": now,
+                    **{k: v for k, v in upd.items() if k in ("pnl_usdt", "mark_price", "closed_price")},
+                }})
+                return True
+            marks = await asyncio.gather(*[_mark(t) for t in rows], return_exceptions=True)
+            bin_closed += sum(1 for m in marks if m is True)
+            for s_ in remaining:
+                bin_errors.append({"symbol": s_, "error": "position still open"})
+        open_trades = others
+        if not open_trades:
+            return {"ok": not bin_errors, "closed": bin_closed, "errors": bin_errors}
         # v10.3.6 — CLOSE ALL andal: (1) satu close per simbol+jaringan
         # (trade layered/duplikat simbol tidak saling ganggu), (2) semua
         # simbol diproses PARALEL (dulu berurutan → request > batas waktu
@@ -866,8 +961,8 @@ def _attach_trade_routes(db: Any) -> None:
 
         results = await asyncio.gather(
             *[_close_group(k, v) for k, v in groups.items()], return_exceptions=True)
-        closed_ok = 0
-        errors: list[dict[str, str]] = []
+        closed_ok = bin_closed
+        errors: list[dict[str, str]] = list(bin_errors)
         for (key, _rows), res in zip(groups.items(), results):
             if isinstance(res, Exception):
                 errors.append({"symbol": key[2], "error": str(res)[:200]})
