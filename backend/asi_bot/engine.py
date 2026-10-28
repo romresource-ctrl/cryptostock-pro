@@ -786,7 +786,13 @@ async def execute_trade(
     # v9.9.3 — Baca leverage AKTUAL dari Binance. Jika set_leverage gagal
     # diam-diam (mis. request 50x tapi tier notional hanya izinkan 20x),
     # simpan yang benar supaya UI tidak menampilkan angka request palsu.
-    actual_leverage = int(float(pos_final.get("leverage") or leverage))
+    # v10.6.8 — positionRisk v3 bisa mengembalikan leverage "0"/kosong →
+    # pakai leverage request bila nilai Binance tidak valid (≤0).
+    try:
+        _lv_ex = int(float(pos_final.get("leverage") or 0))
+    except (TypeError, ValueError):
+        _lv_ex = 0
+    actual_leverage = _lv_ex if _lv_ex > 0 else int(leverage)
 
     # v9.9.12 — ANCHOR-TO-FILL: sinyal memakai entry DEEP (limit di bawah/
     # atas harga), tetapi bot SELALU eksekusi MARKET. Geser SL/TP sebesar

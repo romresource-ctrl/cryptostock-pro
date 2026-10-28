@@ -29,13 +29,14 @@ def test_reverse_auto_off_on_btc15_breakout():
     assert '{"reverse_signal": True}' in src and '"reverse_signal": False' in src
     assert '"formula_tag": {"$regex": "REVERSE"}' in src
     assert "_cancel_pending_limit" in src and "close_position" in src
-    assert '{"full_enabled": True, "reverse_signal": {"$ne": True}}' in src
+    assert "reverse auto-ON" not in src
 
 
 def test_rev_active_by_btc15_state():
     assert scheduler._rev_active({"reverse_signal": True}, "rebound") is False
     assert scheduler._rev_active({"reverse_signal": True}, "dump") is False
-    assert scheduler._rev_active({"reverse_signal": False}, "sideways") is True
+    assert scheduler._rev_active({"reverse_signal": False}, "sideways") is False
+    assert scheduler._rev_active({"reverse_signal": True}, "sideways") is True
     assert scheduler._rev_active({"reverse_signal": True}, "unknown") is True
     assert scheduler._rev_active({}, "unknown") is False
 

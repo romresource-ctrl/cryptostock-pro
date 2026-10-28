@@ -921,19 +921,12 @@ BTC15_MOVE_PCT = 1.0  # v10.4.0 — ambang filter arah BTC 15 menit (keputusan u
 
 
 async def _reverse_regime_switch(db: Any, state: str) -> None:
-    """v10.6.4 — keputusan user (semua akun Full-Auto, DEMO & REAL):
-    • BTC 15m sideways      → reverse_signal ON otomatis.
-    • BTC 15m rebound/dump  → reverse_signal OFF + tutup posisi OPEN &
-      batalkan LIMIT hasil REVERSE Full-Auto seketika."""
+    """v10.6.9 — keputusan user: BTC 15m rebound/dump (>1%) →
+    reverse_signal OFF (user menyalakan lagi manual) + tutup posisi OPEN &
+    batalkan LIMIT hasil REVERSE Full-Auto seketika. Tidak ada auto-ON."""
     now = datetime.now(timezone.utc).isoformat()
     try:
-        if state == "sideways":
-            r = await db.asi_bot_config.update_many(
-                {"full_enabled": True, "reverse_signal": {"$ne": True}},
-                {"$set": {"reverse_signal": True, "reverse_auto_on_at": now,
-                          "reverse_auto_off_at": None}})
-            if r.modified_count:
-                logger.info("reverse auto-ON: %d device (BTC 15m sideways)", r.modified_count)
+        if state not in ("rebound", "dump"):
             return
         r = await db.asi_bot_config.update_many(
             {"reverse_signal": True},
@@ -979,11 +972,9 @@ async def _reverse_regime_switch(db: Any, state: str) -> None:
 
 def _rev_active(cfg: dict[str, Any], btc15_state: str) -> bool:
     """v10.6.4 — Reverse efektif siklus INI (config di memori bisa basi):
-    rebound/dump → OFF, sideways → ON (auto semua akun), lainnya → config."""
+    rebound/dump → OFF; selain itu HANYA bila user menyalakan tombol (v10.6.9)."""
     if btc15_state in ("rebound", "dump"):
         return False
-    if btc15_state == "sideways":
-        return True
     return bool(cfg.get("reverse_signal"))
 
 
@@ -1272,10 +1263,8 @@ async def _run_full_auto_scanner(
         # dalam 15m) → REVERSE OFF otomatis (semua device) + tutup posisi
         # & batalkan Limit hasil REVERSE Full-Auto.
         await _reverse_regime_switch(db, btc15["state"])
-    elif btc15["state"] == "sideways":
-        # v10.6.4 — keputusan user: BTC sideways → REVERSE ON otomatis
-        # untuk SEMUA akun Full-Auto yang sedang berjalan.
-        await _reverse_regime_switch(db, "sideways")
+    # v10.6.9 — keputusan user: TIDAK ada lagi Reverse ON otomatis saat
+    # sideways. Reverse hanya jalan bila user sendiri menyalakan tombolnya.
     if btc_regime["regime"] != "neutral":
         logger.info("btc-regime gate: %s (%s) → blokir %s | streak_up=%d base4H=%s",
                     btc_regime["regime"], btc_regime.get("detail"),

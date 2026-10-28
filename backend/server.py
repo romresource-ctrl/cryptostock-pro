@@ -3209,8 +3209,16 @@ async def _startup_bootstrap() -> None:
     # v9.4.0 — ASI-Bot scheduler: soft-bracket watcher, open-PnL refresh,
     # and Full-Auto scanner. Safe to start even if no users have keys yet.
     _start_asi_scheduler()
-
-
+    # v10.6.9 — Reverse hanya bila user menyalakan sendiri: matikan
+    # Reverse yang dulu dinyalakan OTOMATIS (reverse_auto_on_at terisi).
+    try:
+        _r = await db.asi_bot_config.update_many(
+            {"reverse_signal": True, "reverse_auto_on_at": {"$nin": [None, ""]}},
+            {"$set": {"reverse_signal": False, "reverse_auto_on_at": None}})
+        if _r.modified_count:
+            logger.info("v10.6.9: %d reverse auto-ON dimatikan", _r.modified_count)
+    except Exception as _e:  # noqa: BLE001
+        logger.warning("v10.6.9 reverse migrate gagal: %s", _e)
 # --------------- Push scheduler wiring (v8.3.0) ---------------
 # Kept as module-level state so `_shutdown` can stop it cleanly.
 

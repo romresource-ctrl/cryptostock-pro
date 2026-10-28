@@ -2504,3 +2504,7 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 ## v10.6.7
 - -2027 → Full-Auto ulang otomatis leverage ½ lalu ¼ (min 1x), baru cooldown 30 menit.
 - GET /api/asi/stats/breakdown (per AC & Reverse vs Normal, DEMO/REAL) + kartu TradeStatsCard di Running Positions.
+
+## v10.6.9
+- Reverse HANYA bila user menyalakan tombol (auto-ON dihapus; migrasi startup mematikan Reverse yg dulu auto-ON).
+- BTC 15m >1% → tombol Reverse OFF + tutup posisi/batalkan Limit REVERSE Full-Auto; user nyalakan lagi manual.

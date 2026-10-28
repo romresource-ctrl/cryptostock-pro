@@ -1224,6 +1224,7 @@ def _attach_trade_routes(db: Any) -> None:
         if _toggle:
             doc["reverse_auto_off_at"] = None
             doc["reverse_auto_off_reason"] = None
+            doc["reverse_auto_on_at"] = None
         else:
             doc["reverse_signal"] = bool(_prev.get("reverse_signal", False))
             doc["reverse_auto_off_at"] = _prev.get("reverse_auto_off_at")

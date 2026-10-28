@@ -1448,7 +1448,7 @@ export default function ASIBotScreen() {
                     <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
                                    backgroundColor: "#1F2937" }}>
                       <Text style={{ color: GREEN, fontWeight: "900", fontSize: 10 }}>
-                        {`${(tr as any).actual_leverage ?? tr.leverage}x`}
+                        {`${Number((tr as any).actual_leverage) > 0 ? (tr as any).actual_leverage : tr.leverage}x`}
                       </Text>
                     </View>
                   ) : null}
