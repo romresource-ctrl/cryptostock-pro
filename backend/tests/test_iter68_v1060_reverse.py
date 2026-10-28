@@ -72,3 +72,9 @@ def test_flip_happens_before_filters():
     i_trend = src.index('trend_filter_4h_blokir_SHORT')
     assert i_flip < i_btc15 < i_trend
     assert "_reverse_signal(sig[\"side\"], _entry" not in src
+
+
+def test_2027_retries_lower_leverage():
+    src = inspect.getsource(scheduler._run_full_auto_scanner)
+    assert "for _lv in _lev_try:" in src
+    assert '"-2027" not in str(res.get("message") or "")' in src

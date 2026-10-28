@@ -1063,6 +1063,32 @@ def _attach_trade_routes(db: Any) -> None:
         return {"ok": True, "repaired": sum(1 for r in results if r.get("ok")),
                 "total": len(results), "results": results}
 
+    @router.get("/stats/breakdown")
+    async def stats_breakdown(device_id: str = Query(..., min_length=4)):
+        """v10.6.7 — Statistik menang/kalah & PnL per Auto-Close % dan
+        REVERSE vs Normal, dipisah DEMO / REAL (trade closed saja)."""
+        out: dict[str, Any] = {}
+        for net, tn in (("demo", True), ("real", False)):
+            by_ac: dict[int, dict[str, Any]] = {}
+            by_rev: dict[str, dict[str, Any]] = {}
+            async for d in db.asi_trades.find(
+                {"device_id": device_id, "status": "closed", "deleted": {"$ne": True},
+                 "testnet": tn},
+                {"_id": 0, "pnl_usdt": 1, "auto_close_pct": 1, "formula_tag": 1},
+            ):
+                p = float(d.get("pnl_usdt") or 0)
+                ac = int(d.get("auto_close_pct") or 0)
+                rk = "reverse" if "REVERSE" in str(d.get("formula_tag") or "") else "normal"
+                for bucket, key in ((by_ac, ac), (by_rev, rk)):
+                    b = bucket.setdefault(key, {"wins": 0, "losses": 0, "pnl": 0.0})
+                    b["wins" if p > 0 else "losses"] += 1
+                    b["pnl"] = round(b["pnl"] + p, 4)
+            out[net] = {
+                "by_ac": [{"ac": k, **v} for k, v in sorted(by_ac.items())],
+                "by_reverse": [{"kind": k, **by_rev[k]} for k in ("normal", "reverse") if k in by_rev],
+            }
+        return out
+
     @router.get("/trades")
     async def list_trades(device_id: str = Query(..., min_length=4), limit: int = 100):
         # v10.1.2 — Kecualikan slot "placing" (klaim anti-duplikat scanner)

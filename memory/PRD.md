@@ -2500,3 +2500,7 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 
 ## v10.6.6
 - Auto-Close tambah 30/35/40/45/60/65% (engine, routes, ASI-Bot, Semi-Auto sheet).
+
+## v10.6.7
+- -2027 → Full-Auto ulang otomatis leverage ½ lalu ¼ (min 1x), baru cooldown 30 menit.
+- GET /api/asi/stats/breakdown (per AC & Reverse vs Normal, DEMO/REAL) + kartu TradeStatsCard di Running Positions.

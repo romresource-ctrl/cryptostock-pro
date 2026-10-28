@@ -436,6 +436,8 @@ export const api = {
       send<AsiTradeResp>(
         `/asi/trades/execute?device_id=${encodeURIComponent(deviceId)}`, "POST", body,
       ),
+    statsBreakdown: (deviceId: string) =>
+      get<AsiStatsBreakdown>(`/asi/stats/breakdown?device_id=${encodeURIComponent(deviceId)}`),
     listTrades: (deviceId: string, limit: number = 20) =>
       get<{ items: AsiTradeResp[] }>(
         `/asi/trades?device_id=${encodeURIComponent(deviceId)}&limit=${limit}`,
@@ -575,6 +577,15 @@ export type AsiPreview = {
   // v9.8.8 — detail utk reason=min_notional
   min_notional?: number;
 };
+// v10.6.7 — statistik per AC & Reverse vs Normal
+export type AsiStatsRow = { wins: number; losses: number; pnl: number };
+export type AsiStatsNet = {
+  by_ac: (AsiStatsRow & { ac: number })[];
+  by_reverse: (AsiStatsRow & { kind: "normal" | "reverse" })[];
+};
+export type AsiStatsBreakdown = { demo: AsiStatsNet; real: AsiStatsNet };
+
+
 export type AsiTradeResp = {
   ok?: boolean; exchange: string; testnet: boolean; symbol: string;
   side: "BUY" | "SELL"; entry_price: number; stop_loss: number;

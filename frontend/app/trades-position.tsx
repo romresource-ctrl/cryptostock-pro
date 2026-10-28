@@ -26,6 +26,7 @@ import { useBinanceMultiTicker } from "@/src/hooks/useBinanceMultiTicker";
 import { markTradeDeleted, filterDeletedTrades } from "@/src/lib/deletedTrades";
 import { getDeviceId } from "@/src/lib/deviceId";
 import { api, type AsiTradeResp } from "@/src/lib/api";
+import TradeStatsCard from "@/src/components/TradeStatsCard";
 
 const GOLD = "#4ADE80";
 const YELLOW = "#F0B90B";
@@ -785,6 +786,7 @@ export default function TradesPositionScreen() {
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 40, gap: 8 }}>
+        <TradeStatsCard />
         {loading ? (
           <View style={{ padding: 24, alignItems: "center" }}>
             <ActivityIndicator color={GOLD} />

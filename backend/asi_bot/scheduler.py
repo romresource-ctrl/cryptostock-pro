@@ -1914,22 +1914,34 @@ async def _run_full_auto_scanner(
                     logger.info("full-auto REVERSE %s/%s: %s → %s", device_id, sym,
                                 sig["reversed_from"], _x_side)
                 try:
-                    res = await execute_trade(
-                        cred, sym, _x_side,
-                        _entry, _x_sl, _x_tps,
-                        risk, lev, mode="full",
-                        tp_count=int(cfg.get("tp_count") or 3),
-                        trailing_callback_rate=float(cfg.get("trailing_callback_rate") or 0.0),
-                        margin_mode=str(cfg.get("margin_mode") or "isolated"),
-                        # v10.1.2 — Rekam ENGINE yang menghasilkan sinyal
-                        # (bukan profile config user) agar statistik WR
-                        # per profile & label kartu akurat.
-                        profile=sig.get("profile") or bot_profile,
-                        formula_tag=_x_tag,
-                        entry_mode=str(cfg.get("entry_mode") or "limit"),
-                        auto_close_pct=int(cfg.get("auto_close_pct") or 0),
-                        margin_usdt=float(cfg.get("margin_usdt") or 0),
-                    )
+                    # v10.6.7 — -2027 (posisi > batas leverage) → ulang
+                    # otomatis dengan leverage ½ lalu ¼ (min 1x).
+                    _lev_try = [lev]
+                    for _d in (2, 4):
+                        _l2 = max(1, int(lev) // _d)
+                        if _l2 < _lev_try[-1]:
+                            _lev_try.append(_l2)
+                    for _lv in _lev_try:
+                        res = await execute_trade(
+                            cred, sym, _x_side,
+                            _entry, _x_sl, _x_tps,
+                            risk, _lv, mode="full",
+                            tp_count=int(cfg.get("tp_count") or 3),
+                            trailing_callback_rate=float(cfg.get("trailing_callback_rate") or 0.0),
+                            margin_mode=str(cfg.get("margin_mode") or "isolated"),
+                            # v10.1.2 — Rekam ENGINE yang menghasilkan sinyal
+                            # (bukan profile config user) agar statistik WR
+                            # per profile & label kartu akurat.
+                            profile=sig.get("profile") or bot_profile,
+                            formula_tag=_x_tag,
+                            entry_mode=str(cfg.get("entry_mode") or "limit"),
+                            auto_close_pct=int(cfg.get("auto_close_pct") or 0),
+                            margin_usdt=float(cfg.get("margin_usdt") or 0),
+                        )
+                        if res.get("ok") or "-2027" not in str(res.get("message") or ""):
+                            break
+                        logger.info("full-auto -2027 %s/%s: leverage %sx ditolak → coba lebih kecil",
+                                    device_id, sym, _lv)
                 except Exception as e:
                     logger.warning("full-auto execute failed %s/%s: %s", device_id, sym, e)
                     _dev_reject(rep, f"execute_error: {str(e)[:60]}")
