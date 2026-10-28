@@ -2523,3 +2523,7 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 
 ## v10.7.5
 - Full-Auto AC floor: AC% ≥ ceil((jarak SL + 0.1% fee) × leverage). Disimpan auto_close_pct (efektif) & auto_close_pct_user.
+
+## v10.7.6
+- Filter BTC 15m aktif lagi di Full-Auto (Reverse ON/OFF) + gate 1H/4H.
+- Full-Auto AC: SL otomatis = AC%/leverage - 0.1% (dibatasi 1-2%); floor AC v10.7.5 tetap.

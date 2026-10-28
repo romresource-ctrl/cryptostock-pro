@@ -1549,14 +1549,13 @@ async def _run_full_auto_scanner(
                             continue
                     except Exception as _bu_err:
                         logger.debug("side-burst check gagal: %s", _bu_err)
-                    # v10.4.0 — FILTER ARAH BTC 15M. v10.7.0 — keputusan user:
-                    # HANYA aktif saat tombol Reverse ON (bersama gate 1H/4H).
-                    # Reverse OFF → hanya gate BTC 1H/4H lama.
-                    _rev_on = bool(cfg.get("reverse_signal"))
-                    if _rev_on and btc15["state"] == "rebound" and sig["side"] == "SELL":
+                    # v10.4.0 — FILTER ARAH BTC 15M. v10.7.6 — keputusan user:
+                    # aktif LAGI di Full-Auto (Reverse ON maupun OFF), bersama
+                    # gate BTC 1H/4H lama.
+                    if btc15["state"] == "rebound" and sig["side"] == "SELL":
                         _dev_reject(rep, f"btc15m_rebound +{btc15['up_pct']}%: tolak SELL")
                         continue
-                    if _rev_on and btc15["state"] == "dump" and sig["side"] == "BUY":
+                    if btc15["state"] == "dump" and sig["side"] == "BUY":
                         _dev_reject(rep, f"btc15m_dump -{btc15['down_pct']}%: tolak BUY")
                         continue
                     # v10.2.12 — BTC REGIME GATE: rezim BTC menentukan arah

@@ -502,6 +502,15 @@ async def execute_trade(
     if auto_close_pct not in AUTO_CLOSE_PCTS:
         auto_close_pct = 0
     auto_close_pct_user = auto_close_pct
+    # v10.7.6 — keputusan user (Full-Auto): SL OTOMATIS menyesuaikan AC.
+    # Jarak SL = AC% ÷ leverage − 0.1% (buffer fee) → rugi saat SL ≈ untung
+    # saat AC. Tetap dijaga di rentang SL 1–2%; bila terpotong batas 1%,
+    # floor di bawah menaikkan AC agar untung tetap ≥ rugi.
+    if auto_close_pct and mode == "full" and entry > 0 and leverage > 0:
+        _sgn_sl = 1.0 if side == "BUY" else -1.0
+        _d_sl = auto_close_pct / 100.0 / leverage - 0.001
+        _d_sl = min(SL_MAX_PCT, max(SL_MIN_PCT, _d_sl))
+        stop_loss = entry * (1 - _sgn_sl * _d_sl)
     # v10.7.5 — keputusan user (Full-Auto): UNTUNG ≥ RUGI. Target AC (ROI
     # margin) minimal = jarak SL × leverage + buffer fee 0.1% harga, dibulatkan
     # ke atas. Contoh SL 1.5% × 35x → AC minimal 56% (bukan 50%).
