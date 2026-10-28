@@ -2514,3 +2514,6 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 
 ## v10.7.1
 - Scanner skip reason kini punya skip_code+skip_params; app menerjemahkan (asi_skip_* di i18n).
+
+## v10.7.2
+- Circuit-breaker: skip_params.resume_at (closed_at loss terakhir + 2 jam); ASI-Bot menampilkan hitung mundur hh:mm:ss (tick 1 detik hanya saat breaker aktif).

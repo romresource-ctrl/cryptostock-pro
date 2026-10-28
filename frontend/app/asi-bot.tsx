@@ -117,6 +117,15 @@ export default function ASIBotScreen() {
     } | null;
   };
   const [scanDebug, setScanDebug] = useState<ScanDebug | null>(null);
+  // v10.7.2 — detak 1 detik hanya saat circuit-breaker aktif (hitung mundur)
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  const cbActive = scanDebug?.report?.skip_code === "circuit_breaker";
+  useEffect(() => {
+    if (!cbActive) return;
+    const id = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [cbActive]);
+
 
   useEffect(() => {
     (async () => {
@@ -617,6 +626,17 @@ export default function ASIBotScreen() {
                 skipTxt = Object.entries(r.skip_params || {}).reduce(
                   (acc, [k, v]) => acc.replace(`{${k}}`, String(v)), tpl);
               }
+            }
+            // v10.7.2 — hitung mundur circuit-breaker
+            const resumeAt = r.skip_code === "circuit_breaker"
+              ? Date.parse(String(r.skip_params?.resume_at || "")) : NaN;
+            if (Number.isFinite(resumeAt)) {
+              const left = Math.max(0, Math.floor((resumeAt - nowTick) / 1000));
+              const hh = Math.floor(left / 3600);
+              const mm = Math.floor((left % 3600) / 60);
+              const ss = left % 60;
+              const pad = (n: number) => String(n).padStart(2, "0");
+              skipTxt += ` · ${t("asi_cb_resume").replace("{t}", `${hh}:${pad(mm)}:${pad(ss)}`)}`;
             }
             line = `${t("asi_scan_skip")}: ${skipTxt}`;
           } else if (r) {

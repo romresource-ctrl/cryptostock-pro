@@ -1343,7 +1343,11 @@ async def _run_full_auto_scanner(
                         f"circuit-breaker: {CIRCUIT_BREAKER_LOSSES} loss "
                         f"beruntun <{CIRCUIT_BREAKER_PAUSE_HOURS} jam",
                         "circuit_breaker",
-                        {"n": CIRCUIT_BREAKER_LOSSES, "h": CIRCUIT_BREAKER_PAUSE_HOURS})
+                        {"n": CIRCUIT_BREAKER_LOSSES, "h": CIRCUIT_BREAKER_PAUSE_HOURS,
+                         # v10.7.2 — kapan bot jalan lagi (hitung mundur di app)
+                         "resume_at": (datetime.fromisoformat(
+                             str(_recent_closed[0].get("closed_at")).replace("Z", "+00:00"))
+                             + timedelta(hours=CIRCUIT_BREAKER_PAUSE_HOURS)).isoformat()})
                     continue
                 _cd_cut = (_now_cb - timedelta(
                     hours=SYMBOL_LOSS_COOLDOWN_HOURS)).isoformat()

@@ -699,6 +699,7 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   stats_by_reverse: { id: "REVERSE vs NORMAL", en: "REVERSE vs NORMAL", ru: "REVERSE vs NORMAL", cn: "反向 vs 普通" },
   stats_by_ac: { id: "PER AUTO-CLOSE", en: "PER AUTO-CLOSE", ru: "ПО AUTO-CLOSE", cn: "按自动平仓" },
   stats_empty: { id: "Belum ada trade closed.", en: "No closed trades yet.", ru: "Закрытых сделок пока нет.", cn: "暂无已平仓交易。" },
+  asi_cb_resume: { id: "jalan lagi dalam {t}", en: "resumes in {t}", ru: "возобновится через {t}", cn: "{t} 后恢复" },
   asi_skip_circuit_breaker: { id: "circuit-breaker: {n} loss beruntun, istirahat <{h} jam", en: "circuit-breaker: {n} losses in a row, pausing <{h}h", ru: "circuit-breaker: {n} убытка подряд, пауза <{h} ч", cn: "熔断：连续 {n} 次亏损，暂停 <{h} 小时" },
   asi_skip_daily_limit: { id: "batas harian tercapai ({placed}/{max} trade hari ini)", en: "daily limit reached ({placed}/{max} trades today)", ru: "дневной лимит достигнут ({placed}/{max} сделок)", cn: "已达每日上限（今日 {placed}/{max} 笔）" },
   asi_skip_no_credential: { id: "{exchange} belum terhubung — hubungkan exchange dulu", en: "{exchange} not connected — connect the exchange first", ru: "{exchange} не подключена — сначала подключите биржу", cn: "{exchange} 未连接 — 请先连接交易所" },
