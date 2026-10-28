@@ -9,8 +9,10 @@ from asi_bot.routes import BotConfigPayload  # noqa: E402
 
 def test_bypass_only_when_reverse_on():
     src = inspect.getsource(scheduler._run_full_auto_scanner)
-    assert '_gate_bypass = (_rev_active(cfg, btc15["state"])' in src
-    assert 'if sym != "BTC" and not _gate_bypass:' in src
+    assert "_gate_bypass" not in src
+    assert 'if sym != "BTC":' in src
+    assert 'if _rev_on and btc15["state"] == "rebound" and sig["side"] == "SELL":' in src
+    assert 'if _rev_on and btc15["state"] == "dump" and sig["side"] == "BUY":' in src
     assert 'if sig["side"] == "SELL" and gate_block_sell:' in src
 
 
@@ -69,7 +71,7 @@ def test_reverse_wired_and_default_off():
 def test_flip_happens_before_filters():
     src = inspect.getsource(scheduler._run_full_auto_scanner)
     i_flip = src.index('"reversed_from": sig["side"]')
-    i_btc15 = src.index('if btc15["state"] == "rebound" and sig["side"] == "SELL":')
+    i_btc15 = src.index('if _rev_on and btc15["state"] == "rebound" and sig["side"] == "SELL":')
     i_trend = src.index('trend_filter_4h_blokir_SHORT')
     assert i_flip < i_btc15 < i_trend
     assert "_reverse_signal(sig[\"side\"], _entry" not in src

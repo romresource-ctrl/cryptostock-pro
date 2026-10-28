@@ -2508,3 +2508,6 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 ## v10.6.9
 - Reverse HANYA bila user menyalakan tombol (auto-ON dihapus; migrasi startup mematikan Reverse yg dulu auto-ON).
 - BTC 15m >1% → tombol Reverse OFF + tutup posisi/batalkan Limit REVERSE Full-Auto; user nyalakan lagi manual.
+
+## v10.7.0
+- Reverse OFF → hanya gate BTC 1H/4H lama (filter 15m tidak aktif). Reverse ON → gate 1H/4H + filter 15m. Bypass v10.5.1 dihapus. Auto-OFF Reverse saat BTC >1% tetap.

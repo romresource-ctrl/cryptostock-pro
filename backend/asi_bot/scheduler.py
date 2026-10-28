@@ -1538,12 +1538,14 @@ async def _run_full_auto_scanner(
                             continue
                     except Exception as _bu_err:
                         logger.debug("side-burst check gagal: %s", _bu_err)
-                    # v10.4.0 — FILTER ARAH BTC 15M (semua koin, REAL & DEMO,
-                    # semua profil). Hanya entry baru; posisi OPEN tak disentuh.
-                    if btc15["state"] == "rebound" and sig["side"] == "SELL":
+                    # v10.4.0 — FILTER ARAH BTC 15M. v10.7.0 — keputusan user:
+                    # HANYA aktif saat tombol Reverse ON (bersama gate 1H/4H).
+                    # Reverse OFF → hanya gate BTC 1H/4H lama.
+                    _rev_on = bool(cfg.get("reverse_signal"))
+                    if _rev_on and btc15["state"] == "rebound" and sig["side"] == "SELL":
                         _dev_reject(rep, f"btc15m_rebound +{btc15['up_pct']}%: tolak SELL")
                         continue
-                    if btc15["state"] == "dump" and sig["side"] == "BUY":
+                    if _rev_on and btc15["state"] == "dump" and sig["side"] == "BUY":
                         _dev_reject(rep, f"btc15m_dump -{btc15['down_pct']}%: tolak BUY")
                         continue
                     # v10.2.12 — BTC REGIME GATE: rezim BTC menentukan arah
@@ -1551,13 +1553,9 @@ async def _run_full_auto_scanner(
                     # dikecualikan — ia referensi, bukan ikutan). Rezim
                     # bullish_reversal/trending_up → blokir SELL;
                     # bearish_reversal/trending_down → blokir BUY.
-                    # v10.6.1 — keputusan user: bypass gate rezim 1H/4H lama
-                    # (perilaku v10.5.1) HANYA saat Reverse ON dan BTC 15m
-                    # sideways (<±1%); kapitulasi tetap diblokir.
-                    _gate_bypass = (_rev_active(cfg, btc15["state"])
-                                    and btc15["state"] == "sideways"
-                                    and btc_regime["regime"] != "bear_capitulation")
-                    if sym != "BTC" and not _gate_bypass:
+                    # v10.7.0 — keputusan user: gate 1H/4H SELALU aktif
+                    # (Reverse ON maupun OFF); bypass v10.5.1 dihapus.
+                    if sym != "BTC":
                         if sig["side"] == "SELL" and gate_block_sell:
                             _dev_reject(rep, f"btc_regime {btc_regime['regime']}: tolak SELL")
                             continue
