@@ -30,6 +30,7 @@ Non-Binance exchanges tetap memakai CCXT path lama (akan diaudit terpisah).
 from __future__ import annotations
 
 import asyncio
+import math
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
@@ -500,6 +501,17 @@ async def execute_trade(
     auto_close_pct = int(auto_close_pct or 0)
     if auto_close_pct not in AUTO_CLOSE_PCTS:
         auto_close_pct = 0
+    auto_close_pct_user = auto_close_pct
+    # v10.7.5 — keputusan user (Full-Auto): UNTUNG ≥ RUGI. Target AC (ROI
+    # margin) minimal = jarak SL × leverage + buffer fee 0.1% harga, dibulatkan
+    # ke atas. Contoh SL 1.5% × 35x → AC minimal 56% (bukan 50%).
+    if auto_close_pct and mode == "full" and entry > 0 and stop_loss and leverage > 0:
+        _sl_pct = abs(entry - float(stop_loss)) / entry
+        _min_ac = int(math.ceil(round((_sl_pct + 0.001) * leverage * 100.0, 6)))
+        if _min_ac > auto_close_pct:
+            logger.info("AC dinaikkan %s%% → %s%% (SL %.2f%% × %sx) %s",
+                        auto_close_pct, _min_ac, _sl_pct * 100, leverage, symbol)
+            auto_close_pct = _min_ac
     if auto_close_pct and entry > 0:
         _ac_sgn = 1.0 if side == "BUY" else -1.0
         tps = [entry * (1 + _ac_sgn * auto_close_pct / 100.0 / leverage)]
@@ -744,6 +756,7 @@ async def execute_trade(
             "hit_and_run": hit_and_run,
             "horizon_exit": horizon_exit,
         "auto_close_pct": auto_close_pct,
+        "auto_close_pct_user": auto_close_pct_user,
             "trailing_order_id": None,
             "trailing_activated": False,
             "qty": qty, "leverage": leverage, "risk_pct": risk_pct,
@@ -1034,6 +1047,7 @@ async def execute_trade(
         "hit_and_run": hit_and_run,
         "horizon_exit": horizon_exit,
         "auto_close_pct": auto_close_pct,
+        "auto_close_pct_user": auto_close_pct_user,
         "trailing_order_id": None,
         "trailing_activated": False,
         "qty": actual_qty, "leverage": leverage, "risk_pct": risk_pct,

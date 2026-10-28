@@ -2520,3 +2520,6 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 
 ## v10.7.4
 - CbCountdown (src/components) di tengah baris HISTORY di Running Positions.
+
+## v10.7.5
+- Full-Auto AC floor: AC% ≥ ceil((jarak SL + 0.1% fee) × leverage). Disimpan auto_close_pct (efektif) & auto_close_pct_user.
