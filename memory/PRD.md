@@ -2517,3 +2517,6 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 
 ## v10.7.2
 - Circuit-breaker: skip_params.resume_at (closed_at loss terakhir + 2 jam); ASI-Bot menampilkan hitung mundur hh:mm:ss (tick 1 detik hanya saat breaker aktif).
+
+## v10.7.4
+- CbCountdown (src/components) di tengah baris HISTORY di Running Positions.

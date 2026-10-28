@@ -27,6 +27,7 @@ import { markTradeDeleted, filterDeletedTrades } from "@/src/lib/deletedTrades";
 import { getDeviceId } from "@/src/lib/deviceId";
 import { api, type AsiTradeResp } from "@/src/lib/api";
 import TradeStatsCard from "@/src/components/TradeStatsCard";
+import CbCountdown from "@/src/components/CbCountdown";
 
 const GOLD = "#4ADE80";
 const YELLOW = "#F0B90B";
@@ -865,9 +866,14 @@ export default function TradesPositionScreen() {
             )}
             {histList.length > 0 && (
               <>
-                <Text style={[s.section, { color: colors.textMuted }]}>
-                  HISTORY · {histList.length}
-                </Text>
+                {/* v10.7.4 — hitung mundur circuit-breaker di tengah baris HISTORY */}
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <Text style={[s.section, { color: colors.textMuted, flex: 1 }]}>
+                    HISTORY · {histList.length}
+                  </Text>
+                  <CbCountdown compact />
+                  <View style={{ flex: 1 }} />
+                </View>
                 {histGroups.map(([dk, list]) => dk === today ? (
                   // v10.4.1 — hari ini sudah diwakili statistik di atas halaman
                   <View key={`day-${dk}`} style={{ gap: 8 }} testID={`hist-day-${dk}`}>
