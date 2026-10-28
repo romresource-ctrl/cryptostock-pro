@@ -579,9 +579,16 @@ export default function ASIBotScreen() {
           running={bot.mode === "full" ? !!bot.full_enabled : !!bot.semi_enabled}
           onPrimary={() => (bot.mode === "full" ? toggleFull(true) : openSignalPicker())}
           onStop={() => toggleFull(false)}
+          reverseOn={!!bot.reverse_signal}
+          onToggleReverse={() => saveBot({ reverse_signal: !bot.reverse_signal })}
           colors={colors}
           t={t}
         />
+        {bot.mode === "full" ? (
+          <Text style={{ color: colors.textMuted, fontSize: 10.5, marginTop: 6, lineHeight: 15, textAlign: "center" }}>
+            {t(bot.reverse_signal ? "asi_reverse_on" : "asi_reverse_hint")}
+          </Text>
+        ) : null}
         {(bot.full_enabled) ? (
           <Text style={{ color: colors.textMuted, fontSize: 10.5, marginTop: 6,
                          lineHeight: 15, textAlign: "center" }}>
@@ -941,29 +948,6 @@ export default function ASIBotScreen() {
         <Text style={{ color: colors.textMuted, fontSize: 11, marginBottom: 10, lineHeight: 16 }}>
           {bot.auto_close_pct ? t("asi_autoclose_on").replace("{p}", String(bot.auto_close_pct)) : t("asi_autoclose_hint")}
         </Text>
-        {bot.mode === "full" ? (
-          <>
-            <TouchableOpacity
-              onPress={() => saveBot({ reverse_signal: !bot.reverse_signal })}
-              style={[s.reverseRow, {
-                borderColor: bot.reverse_signal ? ORANGE : colors.border,
-                backgroundColor: bot.reverse_signal ? ORANGE : colors.surface,
-              }]}
-              testID="asi-reverse-toggle"
-            >
-              <Ionicons name="swap-vertical" size={18} color={bot.reverse_signal ? ACCENT_TEXT : colors.textPrimary} />
-              <Text style={{ flex: 1, color: bot.reverse_signal ? ACCENT_TEXT : colors.textPrimary, fontWeight: "900", fontSize: 13 }}>
-                {t("asi_reverse_title")}
-              </Text>
-              <Text style={{ color: bot.reverse_signal ? ACCENT_TEXT : colors.textMuted, fontWeight: "900", fontSize: 13 }}>
-                {bot.reverse_signal ? "ON" : "OFF"}
-              </Text>
-            </TouchableOpacity>
-            <Text style={{ color: colors.textMuted, fontSize: 11, marginBottom: 10, lineHeight: 16 }}>
-              {t(bot.reverse_signal ? "asi_reverse_on" : "asi_reverse_hint")}
-            </Text>
-          </>
-        ) : null}
         {bot.mode === "full" ? (
           <ParamRow label={t("asi_max_trades_day")} value={`${bot.max_trades_per_day}`}
                     onDec={() => saveBot({ max_trades_per_day: Math.max(1, bot.max_trades_per_day - 1) })}
@@ -1652,11 +1636,13 @@ function SectionHeader({ title }: { title: string }) {
 //     Tidak ada STOP (eksekusi 1-tap, bukan proses kontinu).
 //   • full: START (pink) → scan 24/7. STOP (light blue) → henti scan baru,
 //     posisi lama tetap aman via native SL/TP.
-function StatusCard({ kind, running, onPrimary, onStop, colors, t }: {
+function StatusCard({ kind, running, onPrimary, onStop, reverseOn, onToggleReverse, colors, t }: {
   kind: "semi" | "full";
   running: boolean;
   onPrimary: () => void;
   onStop: () => void;
+  reverseOn: boolean;
+  onToggleReverse: () => void;
   colors: any;
   t: (k: string) => string;
 }) {
@@ -1698,21 +1684,24 @@ function StatusCard({ kind, running, onPrimary, onStop, colors, t }: {
       <Text style={[s.cardSub, { color: colors.textMuted }]}>{sub}</Text>
       {isFull ? (
         <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
+          {/* v10.6.2 — SATU tombol bergantian Start/Stop + Reverse di kanan */}
           <TouchableOpacity
-            onPress={onPrimary}
-            disabled={running}
-            style={[s.bigBtn, { backgroundColor: running ? colors.border : PINK }]}
-            testID="asi-start-full"
+            onPress={running ? onStop : onPrimary}
+            style={[s.bigBtn, { backgroundColor: running ? LIGHT_BLUE : PINK }]}
+            testID="asi-toggle-full"
           >
-            <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.5 }}>{t("asi_run_bot")}</Text>
+            <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.5 }}>
+              {running ? t("asi_stop_bot") : t("asi_run_bot")}
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            onPress={onStop}
-            disabled={!running}
-            style={[s.bigBtn, { backgroundColor: !running ? colors.border : LIGHT_BLUE }]}
-            testID="asi-stop-full"
+            onPress={onToggleReverse}
+            style={[s.bigBtn, { backgroundColor: reverseOn ? ORANGE : colors.border }]}
+            testID="asi-reverse-toggle"
           >
-            <Text style={{ color: "#FFFFFF", fontWeight: "900", letterSpacing: 0.5 }}>{t("asi_stop_bot")}</Text>
+            <Text style={{ color: reverseOn ? ACCENT_TEXT : colors.textPrimary, fontWeight: "900", letterSpacing: 0.5 }}>
+              ⇅ REVERSE {reverseOn ? "ON" : "OFF"}
+            </Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -1949,7 +1938,6 @@ const s = StyleSheet.create({
   modeChip: { flex: 1, borderWidth: 1.5, borderRadius: 14, padding: 12, alignItems: "flex-start", gap: 6 },
   tpChip: { flex: 1, borderWidth: 1.5, borderRadius: 10, paddingVertical: 10, alignItems: "center" },
   acChip: { width: "30.5%", minHeight: 44, borderWidth: 1.5, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  reverseRow: { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 48, paddingHorizontal: 14, borderWidth: 1.5, borderRadius: 12, marginBottom: 6 },
   modeTitle: { fontWeight: "900", fontSize: 13 },
   modeSub: { fontSize: 10.5, lineHeight: 15 },
   paramRow: { flexDirection: "row", alignItems: "center", padding: 10, borderWidth: 1, borderRadius: 10, marginBottom: 8, gap: 10 },

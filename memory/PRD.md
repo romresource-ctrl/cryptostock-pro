@@ -2484,3 +2484,6 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 - Leaderboard: badge Margin/AC/TP/Isolated/formula + tombol REVERSE 1-tap; EXECUTE kini ikut AC & margin user.
 - Detail aset: tombol REVERSE: Long/Short with ASI-Bot (1-tap) menggantikan tombol kuning.
 - src/lib/quickExecute.ts (quickExecute, reverseLevels).
+
+## v10.6.2
+- ASI-Bot: Start/Stop jadi 1 tombol toggle (asi-toggle-full); tombol REVERSE ON/OFF di kanannya (asi-reverse-toggle), dipindah dari bagian setting.
