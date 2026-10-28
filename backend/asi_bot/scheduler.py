@@ -918,6 +918,14 @@ def _buy_confirm_eval(doc: dict[str, Any] | None, *, fingerprint: str,
 BTC15_MOVE_PCT = 1.0  # v10.4.0 — ambang filter arah BTC 15 menit (keputusan user)
 
 
+def _reverse_signal(side: str, entry: float, sl: float,
+                    tps: list[float]) -> tuple[str, float, list[float]]:
+    """v10.6.0 — Cermin sinyal terhadap entry: arah dibalik, jarak SL & TP
+    tetap sama (SL baru = 2·entry − SL lama, TP baru = 2·entry − TP lama)."""
+    new_side = "SELL" if side == "BUY" else "BUY"
+    return new_side, 2 * entry - sl, [2 * entry - tp for tp in tps]
+
+
 def _btc_15m_direction(candles: list[dict[str, float]]) -> dict[str, Any]:
     """v10.4.0 — Filter arah BTC 15 menit (fungsi murni).
     rebound: harga terakhir > low lokal 15m + 1%  → blok SHORT
@@ -1192,11 +1200,8 @@ async def _run_full_auto_scanner(
                     btc15["state"], btc15["up_pct"], btc15["down_pct"],
                     "SELL" if btc15["state"] == "rebound" else "BUY")
     if btc_regime["regime"] != "neutral":
-        _byp = (btc15["state"] == "sideways"
-                and btc_regime["regime"] != "bear_capitulation")
         logger.info("btc-regime gate: %s (%s) → blokir %s | streak_up=%d base4H=%s",
                     btc_regime["regime"], btc_regime.get("detail"),
-                    "- (dilewati: BTC 15m sideways)" if _byp else
                     "SELL" if gate_block_sell else "BUY" if gate_block_buy else "-",
                     trend_up_streak, btc_regime.get("base_regime"))
     cursor = db.asi_bot_config.find({
@@ -1459,13 +1464,7 @@ async def _run_full_auto_scanner(
                     # dikecualikan — ia referensi, bukan ikutan). Rezim
                     # bullish_reversal/trending_up → blokir SELL;
                     # bearish_reversal/trending_down → blokir BUY.
-                    # v10.5.1 — keputusan user: saat BTC 15m SIDEWAYS (<±1%),
-                    # gate rezim 1H/4H lama DILEWATI (kecuali kapitulasi);
-                    # arah ikut sinyal. Bonus conf BEAR4H tetap berlaku.
-                    # Bila data 15m gagal (unknown) → gate lama tetap aktif.
-                    _gate_bypass = (btc15["state"] == "sideways"
-                                    and btc_regime["regime"] != "bear_capitulation")
-                    if sym != "BTC" and not _gate_bypass:
+                    if sym != "BTC":
                         if sig["side"] == "SELL" and gate_block_sell:
                             _dev_reject(rep, f"btc_regime {btc_regime['regime']}: tolak SELL")
                             continue
@@ -1802,10 +1801,19 @@ async def _run_full_auto_scanner(
                         claimed = r.matched_count > 0
                 if not claimed:
                     continue
+                # v10.6.0 — REVERSE (keputusan user, DEMO & REAL): semua
+                # filter menilai sinyal ASLI; hanya eksekusi yang dibalik.
+                _x_side, _x_sl, _x_tps = sig["side"], _sl, _tps
+                _x_tag = sig.get("formula_tag")
+                if cfg.get("reverse_signal"):
+                    _x_side, _x_sl, _x_tps = _reverse_signal(sig["side"], _entry, _sl, _tps)
+                    _x_tag = f"{_x_tag or 'Signal'} · REVERSE"
+                    logger.info("full-auto REVERSE %s/%s: %s → %s", device_id, sym,
+                                sig["side"], _x_side)
                 try:
                     res = await execute_trade(
-                        cred, sym, sig["side"],
-                        _entry, _sl, _tps,
+                        cred, sym, _x_side,
+                        _entry, _x_sl, _x_tps,
                         risk, lev, mode="full",
                         tp_count=int(cfg.get("tp_count") or 3),
                         trailing_callback_rate=float(cfg.get("trailing_callback_rate") or 0.0),
@@ -1814,7 +1822,7 @@ async def _run_full_auto_scanner(
                         # (bukan profile config user) agar statistik WR
                         # per profile & label kartu akurat.
                         profile=sig.get("profile") or bot_profile,
-                        formula_tag=sig.get("formula_tag"),
+                        formula_tag=_x_tag,
                         entry_mode=str(cfg.get("entry_mode") or "limit"),
                         auto_close_pct=int(cfg.get("auto_close_pct") or 0),
                         margin_usdt=float(cfg.get("margin_usdt") or 0),

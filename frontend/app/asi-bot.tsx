@@ -942,6 +942,29 @@ export default function ASIBotScreen() {
           {bot.auto_close_pct ? t("asi_autoclose_on").replace("{p}", String(bot.auto_close_pct)) : t("asi_autoclose_hint")}
         </Text>
         {bot.mode === "full" ? (
+          <>
+            <TouchableOpacity
+              onPress={() => saveBot({ reverse_signal: !bot.reverse_signal })}
+              style={[s.reverseRow, {
+                borderColor: bot.reverse_signal ? ORANGE : colors.border,
+                backgroundColor: bot.reverse_signal ? ORANGE : colors.surface,
+              }]}
+              testID="asi-reverse-toggle"
+            >
+              <Ionicons name="swap-vertical" size={18} color={bot.reverse_signal ? ACCENT_TEXT : colors.textPrimary} />
+              <Text style={{ flex: 1, color: bot.reverse_signal ? ACCENT_TEXT : colors.textPrimary, fontWeight: "900", fontSize: 13 }}>
+                {t("asi_reverse_title")}
+              </Text>
+              <Text style={{ color: bot.reverse_signal ? ACCENT_TEXT : colors.textMuted, fontWeight: "900", fontSize: 13 }}>
+                {bot.reverse_signal ? "ON" : "OFF"}
+              </Text>
+            </TouchableOpacity>
+            <Text style={{ color: colors.textMuted, fontSize: 11, marginBottom: 10, lineHeight: 16 }}>
+              {t(bot.reverse_signal ? "asi_reverse_on" : "asi_reverse_hint")}
+            </Text>
+          </>
+        ) : null}
+        {bot.mode === "full" ? (
           <ParamRow label={t("asi_max_trades_day")} value={`${bot.max_trades_per_day}`}
                     onDec={() => saveBot({ max_trades_per_day: Math.max(1, bot.max_trades_per_day - 1) })}
                     onInc={() => saveBot({ max_trades_per_day: Math.min(50, bot.max_trades_per_day + 1) })}
@@ -1926,6 +1949,7 @@ const s = StyleSheet.create({
   modeChip: { flex: 1, borderWidth: 1.5, borderRadius: 14, padding: 12, alignItems: "flex-start", gap: 6 },
   tpChip: { flex: 1, borderWidth: 1.5, borderRadius: 10, paddingVertical: 10, alignItems: "center" },
   acChip: { width: "30.5%", minHeight: 44, borderWidth: 1.5, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  reverseRow: { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 48, paddingHorizontal: 14, borderWidth: 1.5, borderRadius: 12, marginBottom: 6 },
   modeTitle: { fontWeight: "900", fontSize: 13 },
   modeSub: { fontSize: 10.5, lineHeight: 15 },
   paramRow: { flexDirection: "row", alignItems: "center", padding: 10, borderWidth: 1, borderRadius: 10, marginBottom: 8, gap: 10 },

@@ -46,7 +46,7 @@ class TestAppVersion:
             or data.get("android_latest")
             or data.get("latest")
         )
-        assert version_val == "10.5.1", f"Expected 10.3.0, got {version_val} | body={data}"
+        assert version_val == "10.6.0", f"Expected 10.3.0, got {version_val} | body={data}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -2470,3 +2470,8 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 - Full-Auto: saat BTC 15m sideways (<±1%), gate rezim BTC 1H/4H lama dilewati (kecuali bear_capitulation); bonus conf BEAR4H tetap. Data 15m gagal → gate lama aktif.
 - Temuan: early-reversal tidak memblokir sinyal; preview tidur 25/10 20:00–26/10 16:00 UTC (scanner tidak jalan).
 - Test: tests/test_iter68_v1051_btc_gate_bypass.py
+
+## v10.6.0
+- v10.5.1 bypass filter BTC dibatalkan (filter 1H/4H lama aktif lagi).
+- Tombol Reverse Sinyal (Full-Auto, DEMO & REAL): config `reverse_signal`; filter menilai sinyal asli, eksekusi dibalik, SL/TP dicerminkan dari entry; formula_tag diberi " · REVERSE".
+- Test: tests/test_iter68_v1060_reverse.py

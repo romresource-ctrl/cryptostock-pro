@@ -669,6 +669,8 @@ export type AsiBotConfig = {
   daily_loss_limit_usdt?: number;
   daily_profit_limit_usdt?: number;
   tz_offset_min?: number;
+  // v10.6.0 — Full-Auto eksekusi arah kebalikan sinyal
+  reverse_signal?: boolean;
   // v9.6.0 — TP flexibility & trailing stop
   tp_count?: 1 | 2 | 3;
   auto_close_pct?: 0 | 10 | 15 | 20 | 25 | 50 | 75 | 100 | 150 | 200;

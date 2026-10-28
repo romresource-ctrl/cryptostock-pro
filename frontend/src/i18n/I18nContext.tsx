@@ -688,6 +688,19 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
   },
   asi_tp_1_label: { id: "1 TP · 100%", en: "1 TP · 100%", ru: "1 TP · 100%", cn: "1 TP · 100%" },
   asi_autoclose_title: { id: "Auto-Close Profit (ROI margin)", en: "Auto-Close Profit (margin ROI)", ru: "Авто-закрытие прибыли (ROI маржи)", cn: "自动止盈平仓（保证金ROI）" },
+  asi_reverse_title: { id: "Reverse Sinyal (LONG ↔ SHORT)", en: "Reverse Signal (LONG ↔ SHORT)", ru: "Реверс сигнала (LONG ↔ SHORT)", cn: "反向信号（多 ↔ 空）" },
+  asi_reverse_hint: {
+    id: "OFF: Full-Auto mengeksekusi sesuai arah sinyal. Berlaku DEMO & REAL, hanya trade baru.",
+    en: "OFF: Full-Auto executes in the signal direction. Applies to DEMO & REAL, new trades only.",
+    ru: "OFF: Full-Auto исполняет по направлению сигнала. DEMO и REAL, только новые сделки.",
+    cn: "关闭：全自动按信号方向执行。适用于 DEMO 和 REAL，仅限新交易。",
+  },
+  asi_reverse_on: {
+    id: "ON: sinyal LONG dieksekusi SHORT dan sebaliknya. Jarak SL/TP sama, dicerminkan dari entry. Hanya trade baru.",
+    en: "ON: LONG signals execute as SHORT and vice versa. Same SL/TP distance, mirrored from entry. New trades only.",
+    ru: "ON: сигналы LONG исполняются как SHORT и наоборот. Те же расстояния SL/TP. Только новые сделки.",
+    cn: "开启：多头信号按空头执行，反之亦然。SL/TP 距离相同，以入场价镜像。仅限新交易。",
+  },
   asi_autoclose_hint: {
     id: "Opsional. Pilih target untuk menutup 100% posisi saat profit mencapai % margin. Memilih target akan melepas 1/2/3 TP. Hanya untuk trade baru.",
     en: "Optional. Pick a target to close 100% of the position when profit reaches that % of margin. Picking a target releases 1/2/3 TP. New trades only.",

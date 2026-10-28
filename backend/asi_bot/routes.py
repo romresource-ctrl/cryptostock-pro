@@ -299,6 +299,8 @@ class BotConfigPayload(BaseModel):
     auto_close_pct: Literal[0, 10, 15, 20, 25, 50, 75, 100, 150, 200] = 0
     # v10.2.37 — Margin per trade ($) menggantikan Risk %. 0 = fallback risk_pct.
     margin_usdt: float = Field(0.0, ge=0.0, le=1_000_000.0)
+    # v10.6.0 — Full-Auto mengeksekusi arah KEBALIKAN sinyal (LONG↔SHORT).
+    reverse_signal: bool = False
     # v9.6.0 — Trailing stop callback rate %. 0 = disabled. Active after TP1.
     trailing_callback_rate: float = Field(2.0, ge=0.0, le=10.0)
     # Set to null to CLEAR previous auto-disable (when user re-enables manually).
