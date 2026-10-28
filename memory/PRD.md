@@ -2511,3 +2511,6 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 
 ## v10.7.0
 - Reverse OFF → hanya gate BTC 1H/4H lama (filter 15m tidak aktif). Reverse ON → gate 1H/4H + filter 15m. Bypass v10.5.1 dihapus. Auto-OFF Reverse saat BTC >1% tetap.
+
+## v10.7.1
+- Scanner skip reason kini punya skip_code+skip_params; app menerjemahkan (asi_skip_* di i18n).

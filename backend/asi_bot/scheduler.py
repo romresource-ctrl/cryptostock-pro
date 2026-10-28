@@ -1222,8 +1222,11 @@ async def _run_full_auto_scanner(
     # asi_scan_status.devices → endpoint GET /asi/scan-debug.
     device_reports: dict[str, dict[str, Any]] = {}
 
-    def _dev_skip(did: str, reason: str) -> None:
+    def _dev_skip(did: str, reason: str, code: str | None = None,
+                  params: dict[str, Any] | None = None) -> None:
+        # v10.7.1 — skip_code + skip_params agar app menerjemahkan (i18n).
         device_reports[did] = {"scanned": False, "skip_reason": reason,
+                               "skip_code": code, "skip_params": params or {},
                                "signals": 0, "placed": 0, "rejects": {}}
 
     def _dev_reject(rep: dict[str, Any] | None, reason: str) -> None:
@@ -1287,7 +1290,7 @@ async def _run_full_auto_scanner(
             # di-skip. "hybrid" menerima dari KEDUA sumber (scanner tetap
             # jalan). "asi_bot" (default) → scanner internal saja.
             if (cfg.get("signal_source") or "asi_bot") == "cloud_pro":
-                _dev_skip(device_id, "signal_source=cloud_pro (menunggu Titan relay)")
+                _dev_skip(device_id, "signal_source=cloud_pro (menunggu Titan relay)", "titan")
                 continue
             scanned += 1
             rep: dict[str, Any] = {"scanned": True, "skip_reason": None,
@@ -1299,7 +1302,8 @@ async def _run_full_auto_scanner(
             net = bool(cfg["active_testnet"]) if "active_testnet" in cfg else None
             placed = await _trades_today_count(db, device_id, net)
             if placed >= max_tr:
-                _dev_skip(device_id, f"daily limit tercapai ({placed}/{max_tr} trades hari ini)")
+                _dev_skip(device_id, f"daily limit tercapai ({placed}/{max_tr} trades hari ini)",
+                          "daily_limit", {"placed": placed, "max": max_tr})
                 continue
             # v10.2.23 — CIRCUIT BREAKER berbasis PnL + COOLDOWN per-
             # simbol (menggantikan loss-streak breaker v10.2.5 yang hanya
@@ -1337,7 +1341,9 @@ async def _run_full_auto_scanner(
                     _dev_skip(
                         device_id,
                         f"circuit-breaker: {CIRCUIT_BREAKER_LOSSES} loss "
-                        f"beruntun <{CIRCUIT_BREAKER_PAUSE_HOURS} jam")
+                        f"beruntun <{CIRCUIT_BREAKER_PAUSE_HOURS} jam",
+                        "circuit_breaker",
+                        {"n": CIRCUIT_BREAKER_LOSSES, "h": CIRCUIT_BREAKER_PAUSE_HOURS})
                     continue
                 _cd_cut = (_now_cb - timedelta(
                     hours=SYMBOL_LOSS_COOLDOWN_HOURS)).isoformat()
@@ -1361,7 +1367,7 @@ async def _run_full_auto_scanner(
             whitelist = cfg.get("whitelist") or list(TOP_100_FUTURES)
             whitelist = [s for s in whitelist if s in TOP_100_FUTURES]
             if not whitelist:
-                _dev_skip(device_id, "whitelist kosong (tidak ada simbol untuk discan)")
+                _dev_skip(device_id, "whitelist kosong (tidak ada simbol untuk discan)", "whitelist_empty")
                 continue
             exchange = cfg.get("exchange") or "binance"
             # v9.9.5 — Full-Auto memakai credential sesuai switch jaringan
@@ -1369,7 +1375,8 @@ async def _run_full_auto_scanner(
             # perilaku lama (credential apa pun yang tersedia).
             cred = await resolve_credential(db, device_id, exchange, net)
             if not cred:
-                _dev_skip(device_id, f"credential {exchange} tidak terhubung — Connect exchange dulu di app")
+                _dev_skip(device_id, f"credential {exchange} tidak terhubung — Connect exchange dulu di app",
+                          "no_credential", {"exchange": exchange})
                 continue
             risk = float(cfg.get("risk_pct") or 5.0)
             lev = int(cfg.get("leverage") or 10)

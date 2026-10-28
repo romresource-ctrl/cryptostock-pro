@@ -109,6 +109,8 @@ export default function ASIBotScreen() {
     report: {
       scanned: boolean;
       skip_reason?: string | null;
+      skip_code?: string | null;
+      skip_params?: Record<string, string | number>;
       signals: number;
       placed: number;
       rejects: Record<string, number>;
@@ -608,7 +610,15 @@ export default function ASIBotScreen() {
           if (!scanDebug.device_in_scanner) {
             line = t("asi_scan_unregistered");
           } else if (r && !r.scanned) {
-            line = `${t("asi_scan_skip")}: ${r.skip_reason || "unknown"}`;
+            let skipTxt = r.skip_reason || "unknown";
+            if (r.skip_code) {
+              const tpl = t(`asi_skip_${r.skip_code}`);
+              if (tpl && tpl !== `asi_skip_${r.skip_code}`) {
+                skipTxt = Object.entries(r.skip_params || {}).reduce(
+                  (acc, [k, v]) => acc.replace(`{${k}}`, String(v)), tpl);
+              }
+            }
+            line = `${t("asi_scan_skip")}: ${skipTxt}`;
           } else if (r) {
             const topReject = Object.entries(r.rejects || {})
               .sort((a, b) => b[1] - a[1])[0];
