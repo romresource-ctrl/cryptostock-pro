@@ -616,6 +616,7 @@ export default function ASIBotScreen() {
         {bot.full_enabled && scanDebug ? (() => {
           const r = scanDebug.report;
           let line: string;
+          let cdTxt = "";
           if (!scanDebug.device_in_scanner) {
             line = t("asi_scan_unregistered");
           } else if (r && !r.scanned) {
@@ -636,7 +637,7 @@ export default function ASIBotScreen() {
               const mm = Math.floor((left % 3600) / 60);
               const ss = left % 60;
               const pad = (n: number) => String(n).padStart(2, "0");
-              skipTxt += ` · ${t("asi_cb_resume").replace("{t}", `${hh}:${pad(mm)}:${pad(ss)}`)}`;
+              cdTxt = `⏳ ${t("asi_cb_resume").replace("{t}", `${hh}:${pad(mm)}:${pad(ss)}`)}`;
             }
             line = `${t("asi_scan_skip")}: ${skipTxt}`;
           } else if (r) {
@@ -657,11 +658,24 @@ export default function ASIBotScreen() {
             line = t("asi_scan_waiting");
           }
           return (
-            <Text testID="asi-scan-debug"
-                  style={{ color: colors.textMuted, fontSize: 10, marginTop: 4,
-                           lineHeight: 14, textAlign: "center" }}>
-              {line}
-            </Text>
+            <>
+              {cdTxt ? (
+                <View testID="asi-cb-countdown" style={{
+                  alignSelf: "center", marginTop: 8, paddingHorizontal: 14, paddingVertical: 8,
+                  borderRadius: 10, borderWidth: 1.5, borderColor: "#F0B90B",
+                  backgroundColor: "rgba(240,185,11,0.12)",
+                }}>
+                  <Text style={{ color: "#F0B90B", fontWeight: "900", fontSize: 15, letterSpacing: 0.5 }}>
+                    {cdTxt}
+                  </Text>
+                </View>
+              ) : null}
+              <Text testID="asi-scan-debug"
+                    style={{ color: colors.textMuted, fontSize: 10, marginTop: 4,
+                             lineHeight: 14, textAlign: "center" }}>
+                {line}
+              </Text>
+            </>
           );
         })() : null}
 
