@@ -2487,3 +2487,13 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 
 ## v10.6.2
 - ASI-Bot: Start/Stop jadi 1 tombol toggle (asi-toggle-full); tombol REVERSE ON/OFF di kanannya (asi-reverse-toggle), dipindah dari bagian setting.
+
+## v10.6.4
+- Reverse otomatis (semua akun Full-Auto): BTC 15m sideways → ON; rebound/dump >1% → OFF + tutup posisi OPEN & batalkan LIMIT REVERSE Full-Auto (close_reason reverse_auto_off). _rev_active() menentukan reverse per siklus.
+- -2027 → simbol cooldown 30 menit/device.
+- Badge ⇅ REVERSE di Running Positions & Recent Trades.
+- Baris diagnostik scanner pakai i18n.
+
+## v10.6.5
+- Reverse dibalik di HULU loop sinyal: semua filter menilai arah yang dieksekusi (keputusan user).
+- APP_LATEST_VERSION (server.py) = versi LIVE di Google Play (10.5.0), TIDAK ikut bump saat uji coba. Ubah hanya bila user konfirmasi rilis Play.

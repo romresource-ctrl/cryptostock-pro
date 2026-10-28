@@ -564,6 +564,13 @@ export default function TradesPositionScreen() {
               </Text>
             </View>
           ) : null}
+          {/* v10.6.4 — REVERSE badge */}
+          {String(tr.formula_tag || "").includes("REVERSE") ? (
+            <View testID={`reverse-badge-${tr.id || tr._id || ""}`}
+                  style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, backgroundColor: "#A78BFA" }}>
+              <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 9 }}>⇅ REVERSE</Text>
+            </View>
+          ) : null}
           {/* Formula tag */}
           <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
                          backgroundColor: colors.surfaceAlt || "#1F2937" }}>

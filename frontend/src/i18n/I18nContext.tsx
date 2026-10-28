@@ -695,6 +695,18 @@ const STRINGS: Record<string, { id: string; en: string; ru: string; cn: string }
     ru: "OFF: Full-Auto исполняет по направлению сигнала. DEMO и REAL, только новые сделки.",
     cn: "关闭：全自动按信号方向执行。适用于 DEMO 和 REAL，仅限新交易。",
   },
+  asi_scan_unregistered: { id: "⏸ Scanner: device belum terdaftar — pastikan START BOT aktif", en: "⏸ Scanner: device not registered — make sure START BOT is on", ru: "⏸ Сканер: устройство не зарегистрировано — включите START BOT", cn: "⏸ 扫描器：设备未注册 — 请确认已启动机器人" },
+  asi_scan_skip: { id: "⏸ Scanner dilewati", en: "⏸ Scanner skipped", ru: "⏸ Сканер пропущен", cn: "⏸ 扫描跳过" },
+  asi_scan_active: { id: "✓ Scanner aktif · sinyal {s} · posisi baru {p}", en: "✓ Scanner active · signals {s} · new positions {p}", ru: "✓ Сканер активен · сигналы {s} · новые позиции {p}", cn: "✓ 扫描运行中 · 信号 {s} · 新仓位 {p}" },
+  asi_scan_regime: { id: "rezim BTC", en: "BTC regime", ru: "режим BTC", cn: "BTC 状态" },
+  asi_scan_top_reject: { id: "penolakan terbanyak", en: "top reject", ru: "частый отказ", cn: "主要拒绝" },
+  asi_scan_waiting: { id: "… menunggu siklus scan pertama", en: "… waiting for the first scan cycle", ru: "… ожидание первого цикла", cn: "… 等待首次扫描" },
+  asi_reverse_auto_off: {
+    id: "⚠️ Reverse dimatikan otomatis: BTC bergerak >1% dalam 15 menit. Nyalakan lagi manual bila perlu.",
+    en: "⚠️ Reverse auto-disabled: BTC moved >1% within 15 minutes. Turn it on again manually if needed.",
+    ru: "⚠️ Реверс отключён автоматически: BTC сдвинулся >1% за 15 минут.",
+    cn: "⚠️ 反向已自动关闭：BTC 15 分钟内波动超过 1%。",
+  },
   asi_reverse_on: {
     id: "ON: sinyal LONG dieksekusi SHORT dan sebaliknya. Jarak SL/TP sama, dicerminkan dari entry. Hanya trade baru.",
     en: "ON: LONG signals execute as SHORT and vice versa. Same SL/TP distance, mirrored from entry. New trades only.",

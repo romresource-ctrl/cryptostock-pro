@@ -301,6 +301,9 @@ class BotConfigPayload(BaseModel):
     margin_usdt: float = Field(0.0, ge=0.0, le=1_000_000.0)
     # v10.6.0 — Full-Auto mengeksekusi arah KEBALIKAN sinyal (LONG↔SHORT).
     reverse_signal: bool = False
+    # v10.6.3 — True hanya saat user MENEKAN tombol Reverse. Simpan setting
+    # lain tidak boleh menimpa reverse_signal (bisa sudah di-OFF otomatis).
+    reverse_toggle: bool = False
     # v9.6.0 — Trailing stop callback rate %. 0 = disabled. Active after TP1.
     trailing_callback_rate: float = Field(2.0, ge=0.0, le=10.0)
     # Set to null to CLEAR previous auto-disable (when user re-enables manually).
@@ -1190,6 +1193,15 @@ def _attach_trade_routes(db: Any) -> None:
     @router.post("/bot")
     async def set_bot(payload: BotConfigPayload, device_id: str = Query(..., min_length=4)):
         doc = payload.model_dump()
+        _toggle = bool(doc.pop("reverse_toggle", False))
+        _prev = await db.asi_bot_config.find_one({"_id": device_id}) or {}
+        if _toggle:
+            doc["reverse_auto_off_at"] = None
+            doc["reverse_auto_off_reason"] = None
+        else:
+            doc["reverse_signal"] = bool(_prev.get("reverse_signal", False))
+            doc["reverse_auto_off_at"] = _prev.get("reverse_auto_off_at")
+            doc["reverse_auto_off_reason"] = _prev.get("reverse_auto_off_reason")
         doc["device_id"] = device_id
         doc["_id"] = device_id
         doc["updated_at"] = _now_iso()

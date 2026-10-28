@@ -149,6 +149,8 @@ def _whipsaw_block_side(recent_closed: list[dict[str, Any]],
     return "BUY" if side == "SELL" else "SELL" if side == "BUY" else None
 # Set simbol yang TIDAK terdaftar di jaringan aktif (ICP testnet).
 _UNAVAILABLE_SYMS: set[str] = set()
+# v10.6.4 — "device:SYM" → epoch s/d kapan simbol diistirahatkan (-2027)
+_SYM_COOLDOWN: dict[str, float] = {}
 
 
 async def _public_mark_price(exchange: str, ccxt_symbol: str, testnet: bool) -> float | None:
@@ -918,6 +920,73 @@ def _buy_confirm_eval(doc: dict[str, Any] | None, *, fingerprint: str,
 BTC15_MOVE_PCT = 1.0  # v10.4.0 — ambang filter arah BTC 15 menit (keputusan user)
 
 
+async def _reverse_regime_switch(db: Any, state: str) -> None:
+    """v10.6.4 — keputusan user (semua akun Full-Auto, DEMO & REAL):
+    • BTC 15m sideways      → reverse_signal ON otomatis.
+    • BTC 15m rebound/dump  → reverse_signal OFF + tutup posisi OPEN &
+      batalkan LIMIT hasil REVERSE Full-Auto seketika."""
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        if state == "sideways":
+            r = await db.asi_bot_config.update_many(
+                {"full_enabled": True, "reverse_signal": {"$ne": True}},
+                {"$set": {"reverse_signal": True, "reverse_auto_on_at": now,
+                          "reverse_auto_off_at": None}})
+            if r.modified_count:
+                logger.info("reverse auto-ON: %d device (BTC 15m sideways)", r.modified_count)
+            return
+        r = await db.asi_bot_config.update_many(
+            {"reverse_signal": True},
+            {"$set": {"reverse_signal": False, "reverse_auto_off_at": now,
+                      "reverse_auto_off_reason": f"btc15m_{state}"}})
+        if r.modified_count:
+            logger.info("reverse auto-OFF: %d device (BTC 15m %s)", r.modified_count, state)
+        from .routes import _cancel_pending_limit
+        rows = await db.asi_trades.find({
+            "mode": "full", "status": {"$in": ["open", "pending_entry"]},
+            "formula_tag": {"$regex": "REVERSE"},
+        }).to_list(500)
+
+        async def _one(t: dict[str, Any]) -> None:
+            if t.get("status") == "pending_entry":
+                await _cancel_pending_limit(db, t, "reverse_auto_off")
+                return
+            cred = await resolve_credential(db, t["device_id"], t["exchange"],
+                                            bool(t.get("testnet", True)))
+            if not cred:
+                return
+            res = await close_position(cred, t["symbol"], t["side"], float(t.get("qty") or 0))
+            if not res.get("ok", True):
+                logger.warning("reverse auto-close %s gagal: %s", t["symbol"], res.get("message"))
+                return
+            try:
+                upd = await refresh_trade_pnl(cred, t)
+            except Exception:
+                upd = {}
+            ts = datetime.now(timezone.utc).isoformat()
+            await db.asi_trades.update_one({"_id": t["_id"]}, {"$set": {
+                "status": "closed", "close_reason": "reverse_auto_off",
+                "closed_at": ts, "updated_at": ts,
+                **{k: v for k, v in upd.items() if k in ("pnl_usdt", "mark_price", "closed_price")},
+            }})
+        if rows:
+            res = await asyncio.gather(*[_one(t) for t in rows], return_exceptions=True)
+            logger.info("reverse auto-close: %d trade REVERSE diproses (err=%d)", len(rows),
+                        sum(1 for x in res if isinstance(x, Exception)))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("reverse regime switch gagal: %s", e)
+
+
+def _rev_active(cfg: dict[str, Any], btc15_state: str) -> bool:
+    """v10.6.4 — Reverse efektif siklus INI (config di memori bisa basi):
+    rebound/dump → OFF, sideways → ON (auto semua akun), lainnya → config."""
+    if btc15_state in ("rebound", "dump"):
+        return False
+    if btc15_state == "sideways":
+        return True
+    return bool(cfg.get("reverse_signal"))
+
+
 def _reverse_signal(side: str, entry: float, sl: float,
                     tps: list[float]) -> tuple[str, float, list[float]]:
     """v10.6.0 — Cermin sinyal terhadap entry: arah dibalik, jarak SL & TP
@@ -1199,6 +1268,14 @@ async def _run_full_auto_scanner(
         logger.info("btc-15m filter: %s (up %.2f%% / down %.2f%%) → blokir %s",
                     btc15["state"], btc15["up_pct"], btc15["down_pct"],
                     "SELL" if btc15["state"] == "rebound" else "BUY")
+        # v10.6.4 — keputusan user: BTC keluar dari sideways (gerak >1%
+        # dalam 15m) → REVERSE OFF otomatis (semua device) + tutup posisi
+        # & batalkan Limit hasil REVERSE Full-Auto.
+        await _reverse_regime_switch(db, btc15["state"])
+    elif btc15["state"] == "sideways":
+        # v10.6.4 — keputusan user: BTC sideways → REVERSE ON otomatis
+        # untuk SEMUA akun Full-Auto yang sedang berjalan.
+        await _reverse_regime_switch(db, "sideways")
     if btc_regime["regime"] != "neutral":
         logger.info("btc-regime gate: %s (%s) → blokir %s | streak_up=%d base4H=%s",
                     btc_regime["regime"], btc_regime.get("detail"),
@@ -1385,6 +1462,22 @@ async def _run_full_auto_scanner(
                 for sig in results:
                     if not isinstance(sig, dict) or not sig.get("side"):
                         continue
+                    # v10.6.5 — keputusan user: saat REVERSE aktif, sinyal
+                    # DIBALIK DI HULU sehingga SEMUA filter (BTC 15m, rezim,
+                    # RSI, trend 4H, dump/rebound, burst, dll.) menilai arah
+                    # yang BENAR-BENAR dieksekusi.
+                    if _rev_active(cfg, btc15["state"]):
+                        try:
+                            _e0 = float(sig.get("entry") or 0)
+                            _s0 = float(sig.get("stop_loss") or 0)
+                            _t0 = [float(x) for x in sig.get("take_profits") or [] if float(x) > 0]
+                        except Exception:
+                            _e0 = 0.0
+                        if _e0 > 0 and _s0 > 0 and _t0:
+                            _rs, _rsl, _rtp = _reverse_signal(sig["side"], _e0, _s0, _t0)
+                            sig = {**sig, "side": _rs, "stop_loss": _rsl,
+                                   "take_profits": _rtp, "reversed_from": sig["side"],
+                                   "formula_tag": f"{sig.get('formula_tag') or 'Signal'} · REVERSE"}
                     # v10.1.8 — Skip sinyal late-entry (lolos gate tampilan
                     # longgar tapi gagal gate eksekusi ketat 3-candle/1.5ATR).
                     if sig.get("late_entry"):
@@ -1407,6 +1500,9 @@ async def _run_full_auto_scanner(
                             rep,
                             f"symbol_{sym}_tidak_tersedia_di_"
                             f"{'testnet' if net else 'mainnet'}")
+                        continue
+                    if _SYM_COOLDOWN.get(f"{device_id}:{sym}", 0) > time.time():
+                        _dev_reject(rep, f"cooldown_2027_{sym}")
                         continue
                     # v10.2.25 — SIDE CONCURRENCY: batasi N posisi OPEN
                     # per arah (BUY/SELL) agar tidak terjadi correlated
@@ -1469,7 +1565,7 @@ async def _run_full_auto_scanner(
                     # v10.6.1 — keputusan user: bypass gate rezim 1H/4H lama
                     # (perilaku v10.5.1) HANYA saat Reverse ON dan BTC 15m
                     # sideways (<±1%); kapitulasi tetap diblokir.
-                    _gate_bypass = (bool(cfg.get("reverse_signal"))
+                    _gate_bypass = (_rev_active(cfg, btc15["state"])
                                     and btc15["state"] == "sideways"
                                     and btc_regime["regime"] != "bear_capitulation")
                     if sym != "BTC" and not _gate_bypass:
@@ -1811,13 +1907,12 @@ async def _run_full_auto_scanner(
                     continue
                 # v10.6.0 — REVERSE (keputusan user, DEMO & REAL): semua
                 # filter menilai sinyal ASLI; hanya eksekusi yang dibalik.
+                # v10.6.5 — sinyal sudah dibalik di hulu (lihat loop sinyal).
                 _x_side, _x_sl, _x_tps = sig["side"], _sl, _tps
                 _x_tag = sig.get("formula_tag")
-                if cfg.get("reverse_signal"):
-                    _x_side, _x_sl, _x_tps = _reverse_signal(sig["side"], _entry, _sl, _tps)
-                    _x_tag = f"{_x_tag or 'Signal'} · REVERSE"
+                if sig.get("reversed_from"):
                     logger.info("full-auto REVERSE %s/%s: %s → %s", device_id, sym,
-                                sig["side"], _x_side)
+                                sig["reversed_from"], _x_side)
                 try:
                     res = await execute_trade(
                         cred, sym, _x_side,
@@ -1852,6 +1947,10 @@ async def _run_full_auto_scanner(
                     # konfirmasi & spam log. Reset saat backend restart.
                     if res.get("reason") == "symbol_filters_missing":
                         _UNAVAILABLE_SYMS.add(f"{net}:{sym}")
+                    # v10.6.4 — -2027 (posisi > batas leverage): istirahatkan
+                    # simbol 30 menit/device supaya tidak spam order & -1003.
+                    if "-2027" in str(res.get("message") or ""):
+                        _SYM_COOLDOWN[f"{device_id}:{sym}"] = time.time() + 1800
                     _dev_reject(rep, f"execute_ditolak: {res.get('reason')}")
                     await _release_claim()
                     continue

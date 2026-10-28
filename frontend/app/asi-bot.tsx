@@ -580,13 +580,15 @@ export default function ASIBotScreen() {
           onPrimary={() => (bot.mode === "full" ? toggleFull(true) : openSignalPicker())}
           onStop={() => toggleFull(false)}
           reverseOn={!!bot.reverse_signal}
-          onToggleReverse={() => saveBot({ reverse_signal: !bot.reverse_signal })}
+          onToggleReverse={() => saveBot({ reverse_signal: !bot.reverse_signal, reverse_toggle: true } as any)}
           colors={colors}
           t={t}
         />
         {bot.mode === "full" ? (
           <Text style={{ color: colors.textMuted, fontSize: 10.5, marginTop: 6, lineHeight: 15, textAlign: "center" }}>
             {t(bot.reverse_signal ? "asi_reverse_on" : "asi_reverse_hint")}
+            {!bot.reverse_signal && (bot as any).reverse_auto_off_at
+              ? `\n${t("asi_reverse_auto_off")}` : ""}
           </Text>
         ) : null}
         {(bot.full_enabled) ? (
@@ -604,24 +606,25 @@ export default function ASIBotScreen() {
           const r = scanDebug.report;
           let line: string;
           if (!scanDebug.device_in_scanner) {
-            line = "⏸ Scanner: device belum terdaftar — pastikan START BOT aktif";
+            line = t("asi_scan_unregistered");
           } else if (r && !r.scanned) {
-            line = `⏸ Scanner skip: ${r.skip_reason || "unknown"}`;
+            line = `${t("asi_scan_skip")}: ${r.skip_reason || "unknown"}`;
           } else if (r) {
             const topReject = Object.entries(r.rejects || {})
               .sort((a, b) => b[1] - a[1])[0];
             // v10.2.12 — Tampilkan rezim BTC gate bila bukan neutral
             // supaya user paham kenapa satu arah sedang diblokir.
             const regimeLabel = scanDebug.btc_regime && scanDebug.btc_regime !== "neutral"
-              ? ` · rezim BTC: ${scanDebug.btc_regime.replace(/_/g, " ")}`
+              ? ` · ${t("asi_scan_regime")}: ${scanDebug.btc_regime.replace(/_/g, " ")}`
               : "";
-            line = `✓ Scanner aktif · sinyal ${r.signals} · posisi baru ${r.placed}` +
+            line = t("asi_scan_active")
+              .replace("{s}", String(r.signals)).replace("{p}", String(r.placed)) +
               regimeLabel +
               (topReject && r.placed === 0
-                ? ` · reject terbanyak: ${topReject[0]} (${topReject[1]}×)`
+                ? ` · ${t("asi_scan_top_reject")}: ${topReject[0]} (${topReject[1]}×)`
                 : "");
           } else {
-            line = "… menunggu siklus scan pertama";
+            line = t("asi_scan_waiting");
           }
           return (
             <Text testID="asi-scan-debug"
@@ -1471,6 +1474,13 @@ export default function ASIBotScreen() {
                       <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 9 }}>
                         AC {(tr as any).auto_close_pct}%
                       </Text>
+                    </View>
+                  ) : null}
+                  {/* v10.6.4 — REVERSE badge */}
+                  {String((tr as any).formula_tag || "").includes("REVERSE") ? (
+                    <View testID={`rt-reverse-badge-${(tr as any).id || (tr as any)._id || ""}`}
+                      style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, backgroundColor: "#A78BFA" }}>
+                      <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 9 }}>⇅ REVERSE</Text>
                     </View>
                   ) : null}
                   {/* Formula tag */}
