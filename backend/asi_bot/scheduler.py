@@ -978,6 +978,20 @@ def _rev_active(cfg: dict[str, Any], btc15_state: str) -> bool:
     return bool(cfg.get("reverse_signal"))
 
 
+DIPTOP_HOLD_HOURS = 4
+_DIPTOP_HOLD: dict[str, tuple[str, float]] = {}
+
+
+def _diptop_hold_blocks(sym: str, side: str) -> bool:
+    """v10.7.10 — Setelah simbol masuk zona LONG THE DIP, SELL diblokir
+    selama DIPTOP_HOLD_HOURS (cermin: zona SHORT THE TOP blokir BUY)."""
+    tag, exp = _DIPTOP_HOLD.get(sym, ("", 0.0))
+    if exp <= time.time():
+        _DIPTOP_HOLD.pop(sym, None)
+        return False
+    return (tag == "LONG THE DIP" and side == "SELL") or (tag == "SHORT THE TOP" and side == "BUY")
+
+
 def _wink(new_side: str, c15: list[dict[str, Any]] | None) -> bool:
     """v10.7.9 — Konfirmasi pembalikan ("wink") pada candle 15m TERTUTUP.
     BUY (dip): candle terakhir hijau DAN (close > high candle sebelumnya
@@ -1554,8 +1568,17 @@ async def _run_full_auto_scanner(
                         except Exception:
                             _c15 = []
                         _dip = _dip_top_flip(sig, _rsi1h, _hi24, _lo24, _c15)
+                    if _dip:
+                        # v10.7.10 — catat zona bottom/top per simbol (4 jam)
+                        _DIPTOP_HOLD[sym] = (_dip.get("wait") or _dip["formula_tag"].split(" · ")[-1],
+                                             time.time() + DIPTOP_HOLD_HOURS * 3600)
                     if _dip and _dip.get("wait"):
                         _dev_reject(rep, f"{_dip['wait'].lower().replace(' ', '_')}_wait_reversal")
+                        continue
+                    if not _dip and _diptop_hold_blocks(sym, sig["side"]):
+                        # v10.7.10 — keputusan user (opsi 1): harga sudah keluar
+                        # zona tanpa wink → arah telat tetap diblokir 4 jam.
+                        _dev_reject(rep, f"diptop_hold_block_{sig['side']}")
                         continue
                     if _dip:
                         logger.info("full-auto %s %s/%s: %s → %s (RSI1h %.0f)",
