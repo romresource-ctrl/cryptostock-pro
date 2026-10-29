@@ -2527,3 +2527,7 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 ## v10.7.6
 - Filter BTC 15m aktif lagi di Full-Auto (Reverse ON/OFF) + gate 1H/4H.
 - Full-Auto AC: SL otomatis = AC%/leverage - 0.1% (dibatasi 1-2%); floor AC v10.7.5 tetap.
+
+## Play live 10.7.6
+- APP_LATEST_VERSION = 10.7.6 (user konfirmasi kirim Play Console).
+- SL guard TP1→SL=TP1, TP2→SL=TP2 sudah ada sejak v10.0.16 (engine native partial + scheduler soft watcher); trailing dipaksa 0 untuk trade baru.
