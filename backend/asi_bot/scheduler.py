@@ -1343,7 +1343,7 @@ async def _run_full_auto_scanner(
             # di-skip. "hybrid" menerima dari KEDUA sumber (scanner tetap
             # jalan). "asi_bot" (default) → scanner internal saja.
             if (cfg.get("signal_source") or "asi_bot") == "cloud_pro":
-                _dev_skip(device_id, "signal_source=cloud_pro (menunggu Titan relay)", "titan")
+                _dev_skip(device_id, "signal_source=cloud_pro (waiting for Titan relay)", "titan")
                 continue
             scanned += 1
             rep: dict[str, Any] = {"scanned": True, "skip_reason": None,
@@ -1355,7 +1355,7 @@ async def _run_full_auto_scanner(
             net = bool(cfg["active_testnet"]) if "active_testnet" in cfg else None
             placed = await _trades_today_count(db, device_id, net)
             if placed >= max_tr:
-                _dev_skip(device_id, f"daily limit tercapai ({placed}/{max_tr} trades hari ini)",
+                _dev_skip(device_id, f"daily limit reached ({placed}/{max_tr} trades today)",
                           "daily_limit", {"placed": placed, "max": max_tr})
                 continue
             # v10.2.23 — CIRCUIT BREAKER berbasis PnL + COOLDOWN per-
@@ -1424,7 +1424,7 @@ async def _run_full_auto_scanner(
             whitelist = cfg.get("whitelist") or list(TOP_100_FUTURES)
             whitelist = [s for s in whitelist if s in TOP_100_FUTURES]
             if not whitelist:
-                _dev_skip(device_id, "whitelist kosong (tidak ada simbol untuk discan)", "whitelist_empty")
+                _dev_skip(device_id, "whitelist empty (no symbols to scan)", "whitelist_empty")
                 continue
             exchange = cfg.get("exchange") or "binance"
             # v9.9.5 — Full-Auto memakai credential sesuai switch jaringan
@@ -1432,7 +1432,7 @@ async def _run_full_auto_scanner(
             # perilaku lama (credential apa pun yang tersedia).
             cred = await resolve_credential(db, device_id, exchange, net)
             if not cred:
-                _dev_skip(device_id, f"credential {exchange} tidak terhubung — Connect exchange dulu di app",
+                _dev_skip(device_id, f"{exchange} credential not connected — connect your exchange in the app first",
                           "no_credential", {"exchange": exchange})
                 continue
             risk = float(cfg.get("risk_pct") or 5.0)
