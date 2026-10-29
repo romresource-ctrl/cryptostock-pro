@@ -101,7 +101,7 @@ LONGTERM_STALE_MIN_PROFIT_PCT = 0.5  # %
 #    dalam BUY_DUMP_GUARD_WINDOW_H jam terakhir (menangkap pisau jatuh,
 #    kasus SAND: -3,4%/2 jam saat entry).
 CIRCUIT_BREAKER_LOSSES = 3
-CIRCUIT_BREAKER_PAUSE_HOURS = 2
+CIRCUIT_BREAKER_PAUSE_HOURS = 1  # v10.7.11 — user: 2j → 1j
 SYMBOL_LOSS_COOLDOWN_HOURS = 4
 BUY_CHASE_PCT = 3.0
 BUY_CHASE_WINDOW_H = 6
@@ -978,7 +978,7 @@ def _rev_active(cfg: dict[str, Any], btc15_state: str) -> bool:
     return bool(cfg.get("reverse_signal"))
 
 
-DIPTOP_HOLD_HOURS = 4
+DIPTOP_HOLD_HOURS = 2  # v10.7.11 — user: 4j → 2j
 _DIPTOP_HOLD: dict[str, tuple[str, float]] = {}
 
 

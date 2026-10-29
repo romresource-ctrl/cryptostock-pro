@@ -76,13 +76,13 @@ def test_hold_blocks_late_side_for_4h():
     # v10.7.10 — opsi 1: zona dip → SELL diblokir 4 jam meski harga keluar zona
     import time as _t
     scheduler._DIPTOP_HOLD.clear()
-    scheduler._DIPTOP_HOLD["ICP"] = ("LONG THE DIP", _t.time() + 4 * 3600)
+    scheduler._DIPTOP_HOLD["ICP"] = ("LONG THE DIP", _t.time() + 2 * 3600)
     assert scheduler._diptop_hold_blocks("ICP", "SELL") is True
     assert scheduler._diptop_hold_blocks("ICP", "BUY") is False
     scheduler._DIPTOP_HOLD["GALA"] = ("SHORT THE TOP", _t.time() + 60)
     assert scheduler._diptop_hold_blocks("GALA", "BUY") is True
     scheduler._DIPTOP_HOLD["DYDX"] = ("LONG THE DIP", _t.time() - 1)
     assert scheduler._diptop_hold_blocks("DYDX", "SELL") is False and "DYDX" not in scheduler._DIPTOP_HOLD
-    assert scheduler.DIPTOP_HOLD_HOURS == 4
+    assert scheduler.DIPTOP_HOLD_HOURS == 2
     src = inspect.getsource(scheduler._run_full_auto_scanner)
     assert "diptop_hold_block_" in src

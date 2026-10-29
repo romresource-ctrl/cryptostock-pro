@@ -2541,3 +2541,4 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 - Scanner reject reasons translated to English (e.g. "btc_regime trending_down: block BUY").
 - Tests: test_iter70_v1077_dip_top.py 8 passed. 10 pre-existing failures in iter47/iter52 (unrelated, fail on old code too).
 - v10.7.10: Option 1 hold — once a symbol enters the LONG THE DIP zone, SELL is blocked for 4h (SHORT THE TOP zone blocks BUY), even after price leaves the zone without a wink. In-memory (resets on backend restart). Reject `diptop_hold_block_SELL/BUY`. Tests 20 passed.
+- v10.7.11: DIPTOP_HOLD_HOURS 4→2, CIRCUIT_BREAKER_PAUSE_HOURS 2→1 (user).

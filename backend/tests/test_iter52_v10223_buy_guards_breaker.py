@@ -350,7 +350,7 @@ def rejects_of(db) -> dict:
 class TestConstants:
     def test_v10223_constants(self):
         assert sched.CIRCUIT_BREAKER_LOSSES == 3
-        assert sched.CIRCUIT_BREAKER_PAUSE_HOURS == 2
+        assert sched.CIRCUIT_BREAKER_PAUSE_HOURS == 1
         assert sched.SYMBOL_LOSS_COOLDOWN_HOURS == 4
         assert sched.BUY_CHASE_PCT == 3.0
         assert sched.BUY_CHASE_WINDOW_H == 6
@@ -685,7 +685,7 @@ class TestScannerIntegration:
         assert gates.get("buy_dump_guard_pct") == 2.5, gates
         assert gates.get("buy_dump_guard_window_h") == 2, gates
         assert gates.get("circuit_breaker_losses") == 3, gates
-        assert gates.get("circuit_breaker_pause_hours") == 2, gates
+        assert gates.get("circuit_breaker_pause_hours") == 1, gates
         assert gates.get("symbol_loss_cooldown_hours") == 4, gates
 
 
