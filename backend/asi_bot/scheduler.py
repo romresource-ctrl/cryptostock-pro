@@ -978,6 +978,59 @@ def _rev_active(cfg: dict[str, Any], btc15_state: str) -> bool:
     return bool(cfg.get("reverse_signal"))
 
 
+def _wink(new_side: str, c15: list[dict[str, Any]] | None) -> bool:
+    """v10.7.9 — Konfirmasi pembalikan ("wink") pada candle 15m TERTUTUP.
+    BUY (dip): candle terakhir hijau DAN (close > high candle sebelumnya
+    ATAU hammer: ekor bawah ≥2× body & ≥50% range), harga belum lari
+    >1.5% dari low 4 candle terakhir. SELL (top): cermin."""
+    c = [x for x in (c15 or []) if x.get("close") and x.get("open")][-5:]
+    if len(c) < 4:
+        return False
+    try:
+        p, k = c[-2], c[-1]
+        o, h, l, cl = (float(k[x]) for x in ("open", "high", "low", "close"))
+        ph, pl = float(p["high"]), float(p["low"])
+        rng, body = max(h - l, 1e-12), abs(cl - o)
+        lo4 = min(float(x["low"]) for x in c[-4:])
+        hi4 = max(float(x["high"]) for x in c[-4:])
+    except Exception:
+        return False
+    if new_side == "BUY":
+        hammer = (min(o, cl) - l) >= max(2 * body, 0.5 * rng)
+        return cl > o and (cl > ph or hammer) and (cl - lo4) / lo4 <= 0.015
+    star = (h - max(o, cl)) >= max(2 * body, 0.5 * rng)
+    return cl < o and (cl < pl or star) and (hi4 - cl) / hi4 <= 0.015
+
+
+def _dip_top_flip(sig: dict[str, Any], rsi1h: float | None,
+                  hi24: float, lo24: float,
+                  c15: list[dict[str, Any]] | None = None) -> dict[str, Any] | None:
+    """v10.7.7 — Long the Dip / Short the Top (keputusan user).
+    v10.7.9 — sinyal telat di zona bottom/top TIDAK dieksekusi; tunggu
+    "wink" 15m dulu. Return None (bukan zona), {"wait": tag} (zona, belum
+    ada wink → skip), atau sinyal baru (arah dibalik, level dicerminkan)."""
+    try:
+        e = float(sig.get("entry") or 0)
+        sl = float(sig.get("stop_loss") or 0)
+        tps = [float(x) for x in sig.get("take_profits") or [] if float(x) > 0]
+    except Exception:
+        return None
+    if rsi1h is None or e <= 0 or sl <= 0 or not tps or hi24 <= 0 or lo24 <= 0:
+        return None
+    if sig.get("side") == "SELL" and rsi1h < 45 and (e - lo24) / lo24 < 0.01:
+        tag = "LONG THE DIP"
+    elif sig.get("side") == "BUY" and rsi1h > 55 and (hi24 - e) / hi24 < 0.01:
+        tag = "SHORT THE TOP"
+    else:
+        return None
+    ns, nsl, ntp = _reverse_signal(sig["side"], e, sl, tps)
+    if not _wink(ns, c15):
+        return {"wait": tag}
+    return {**sig, "side": ns, "stop_loss": nsl, "take_profits": ntp,
+            "flipped_from": sig["side"],
+            "formula_tag": f"{sig.get('formula_tag') or 'Signal'} · {tag}"}
+
+
 def _reverse_signal(side: str, entry: float, sl: float,
                     tps: list[float]) -> tuple[str, float, list[float]]:
     """v10.6.0 — Cermin sinyal terhadap entry: arah dibalik, jarak SL & TP
@@ -1445,6 +1498,8 @@ async def _run_full_auto_scanner(
                 # & cooling v10.2.8 dicabut — digantikan BTC Regime Gate.
                 # Fail-open bila data 1h tidak tersedia.
                 _rsi1h: float | None = None
+                _hi24: float = 0.0
+                _lo24: float = 0.0
                 _timing_ready = False
                 if any(isinstance(s, dict) and s.get("side") for s in results):
                     try:
@@ -1456,6 +1511,12 @@ async def _run_full_auto_scanner(
                         if len(_c1) >= 16:
                             _rsi1h = _rsi_fn(_c1[:-1], 14)
                             _timing_ready = True
+                        # v10.7.7 — high/low 24 jam dari 24 candle 1h terakhir
+                        _cc = ((_snap or {}).get("candles") or [])[-24:]
+                        _hs = [float(c["high"]) for c in _cc if c.get("high")]
+                        _ls = [float(c["low"]) for c in _cc if c.get("low")]
+                        if len(_hs) >= 12 and len(_ls) >= 12:
+                            _hi24, _lo24 = max(_hs), min(_ls)
                     except Exception as _te:
                         logger.debug("rsi filter fetch %s gagal (fail-open): %s", sym, _te)
                 best = None
@@ -1478,6 +1539,29 @@ async def _run_full_auto_scanner(
                             sig = {**sig, "side": _rs, "stop_loss": _rsl,
                                    "take_profits": _rtp, "reversed_from": sig["side"],
                                    "formula_tag": f"{sig.get('formula_tag') or 'Signal'} · REVERSE"}
+                    # v10.7.7 — keputusan user: LONG THE DIP / SHORT THE TOP.
+                    # SELL dekat low 24h (<1%) + RSI1h <45 → BUY; BUY dekat
+                    # high 24h (<1%) + RSI1h >55 → SELL (v10.7.8: dilonggarkan dari 30/70). Level dicerminkan
+                    # dari entry; semua filter berikutnya menilai arah baru.
+                    _dip = _dip_top_flip(sig, _rsi1h, _hi24, _lo24, [])
+                    if _dip and _dip.get("wait"):
+                        # v10.7.9 — zona bottom/top: ambil candle 15m (lazy)
+                        # lalu cek "wink" sebelum membalik arah.
+                        try:
+                            from market_data import get_crypto_snapshot as _g15
+                            _s15 = await _g15(sym, "15m")
+                            _c15 = ((_s15 or {}).get("candles") or [])[:-1]
+                        except Exception:
+                            _c15 = []
+                        _dip = _dip_top_flip(sig, _rsi1h, _hi24, _lo24, _c15)
+                    if _dip and _dip.get("wait"):
+                        _dev_reject(rep, f"{_dip['wait'].lower().replace(' ', '_')}_wait_reversal")
+                        continue
+                    if _dip:
+                        logger.info("full-auto %s %s/%s: %s → %s (RSI1h %.0f)",
+                                    _dip["formula_tag"].split(" · ")[-1], device_id, sym,
+                                    sig["side"], _dip["side"], _rsi1h or 0)
+                        sig = _dip
                     # v10.1.8 — Skip sinyal late-entry (lolos gate tampilan
                     # longgar tapi gagal gate eksekusi ketat 3-candle/1.5ATR).
                     if sig.get("late_entry"):
@@ -1498,7 +1582,7 @@ async def _run_full_auto_scanner(
                     if f"{net}:{sym}" in _UNAVAILABLE_SYMS:
                         _dev_reject(
                             rep,
-                            f"symbol_{sym}_tidak_tersedia_di_"
+                            f"symbol_{sym}_unavailable_on_"
                             f"{'testnet' if net else 'mainnet'}")
                         continue
                     if _SYM_COOLDOWN.get(f"{device_id}:{sym}", 0) > time.time():
@@ -1553,10 +1637,10 @@ async def _run_full_auto_scanner(
                     # aktif LAGI di Full-Auto (Reverse ON maupun OFF), bersama
                     # gate BTC 1H/4H lama.
                     if btc15["state"] == "rebound" and sig["side"] == "SELL":
-                        _dev_reject(rep, f"btc15m_rebound +{btc15['up_pct']}%: tolak SELL")
+                        _dev_reject(rep, f"btc15m_rebound +{btc15['up_pct']}%: block SELL")
                         continue
                     if btc15["state"] == "dump" and sig["side"] == "BUY":
-                        _dev_reject(rep, f"btc15m_dump -{btc15['down_pct']}%: tolak BUY")
+                        _dev_reject(rep, f"btc15m_dump -{btc15['down_pct']}%: block BUY")
                         continue
                     # v10.2.12 — BTC REGIME GATE: rezim BTC menentukan arah
                     # yang boleh dieksekusi untuk ALTCOIN (BTC sendiri
@@ -1567,10 +1651,10 @@ async def _run_full_auto_scanner(
                     # (Reverse ON maupun OFF); bypass v10.5.1 dihapus.
                     if sym != "BTC":
                         if sig["side"] == "SELL" and gate_block_sell:
-                            _dev_reject(rep, f"btc_regime {btc_regime['regime']}: tolak SELL")
+                            _dev_reject(rep, f"btc_regime {btc_regime['regime']}: block SELL")
                             continue
                         if sig["side"] == "BUY" and gate_block_buy:
-                            _dev_reject(rep, f"btc_regime {btc_regime['regime']}: tolak BUY")
+                            _dev_reject(rep, f"btc_regime {btc_regime['regime']}: block BUY")
                             continue
                         # v10.2.29 — ANTI-FLAP DICABUT (keputusan user):
                         # menahan BUY 3 siklus setelah BTC flip
@@ -1604,10 +1688,10 @@ async def _run_full_auto_scanner(
                             # terlalu ketat sehingga alt di rally awal
                             # pun langsung terblokir — kasus ARB 69).
                             if not _wl and _rsi1h < 28:
-                                _dev_reject(rep, f"RSI1h {_rsi1h:.0f}<28 oversold: tolak SELL")
+                                _dev_reject(rep, f"RSI1h {_rsi1h:.0f}<28 oversold: block SELL")
                                 continue
                             if _wl and _rsi1h > 72:
-                                _dev_reject(rep, f"RSI1h {_rsi1h:.0f}>72 overbought: tolak BUY")
+                                _dev_reject(rep, f"RSI1h {_rsi1h:.0f}>72 overbought: block BUY")
                                 continue
                     sigs_found += 1
                     rep["signals"] = int(rep.get("signals") or 0) + 1
@@ -1629,7 +1713,7 @@ async def _run_full_auto_scanner(
                     logger.info("full-auto skip %s/%s: level tidak valid (entry=%s sl=%s tps=%s)",
                                 device_id, sym, sig.get("entry"), sig.get("stop_loss"),
                                 sig.get("take_profits"))
-                    _dev_reject(rep, "level_tidak_valid")
+                    _dev_reject(rep, "invalid_levels")
                     continue
                 # Guard: skip if an OPEN/pending trade on same symbol exists.
                 dup = await db.asi_trades.find_one(
@@ -1637,7 +1721,7 @@ async def _run_full_auto_scanner(
                      "status": {"$in": ["open", "pending_entry"]}}
                 )
                 if dup:
-                    _dev_reject(rep, "sudah_ada_posisi")
+                    _dev_reject(rep, "position_exists")
                     continue
                 # v10.1.7 — COOLDOWN 15 MENIT per-symbol (anti-flood):
                 # Setelah close/cancel, symbol yang sama TIDAK boleh
@@ -1656,7 +1740,7 @@ async def _run_full_auto_scanner(
                 if recent:
                     logger.info("full-auto cooldown skip %s/%s: ditutup "
                                 "dalam 15 menit terakhir", device_id, sym)
-                    _dev_reject(rep, "cooldown_15menit")
+                    _dev_reject(rep, "cooldown_15min")
                     continue
                 # v10.2.5 — TREND FILTER 4H DIPERTAJAM (permintaan user):
                 # bukan lagi sekadar posisi harga vs EMA50, tapi juga ARAH/
@@ -1702,7 +1786,7 @@ async def _run_full_auto_scanner(
                                         ">" if bias_up else "<", ema50_4h,
                                         "turun" if slope_dn else "naik/datar",
                                         trend_up_streak)
-                            _dev_reject(rep, "trend_filter_4h_blokir_LONG")
+                            _dev_reject(rep, "trend_filter_4h_block_LONG")
                             continue
                         if not want_long and (bias_up
                                               or (slope_up and not _short_relaxed)):
@@ -1712,7 +1796,7 @@ async def _run_full_auto_scanner(
                                         ">" if bias_up else "<", ema50_4h,
                                         "naik" if slope_up else "turun/datar",
                                         trend_down_streak)
-                            _dev_reject(rep, "trend_filter_4h_blokir_SHORT")
+                            _dev_reject(rep, "trend_filter_4h_block_SHORT")
                             continue
                 except Exception as _tf_err:
                     logger.debug("trend-filter error %s: %s", sym, _tf_err)
@@ -1749,7 +1833,7 @@ async def _run_full_auto_scanner(
                                 device_id, sym, btc_mom["chg_3h"],
                                 float(btc_regime.get("chg_last") or 0),
                                 btc_regime.get("rsi"))
-                            _dev_reject(rep, "anti_chase_buy_btc_momentum_padam")
+                            _dev_reject(rep, "anti_chase_buy_btc_momentum_exhausted")
                             continue
                         if sig["side"] == "SELL" and btc_mom["exhausted_down"]:
                             logger.info(
@@ -1759,7 +1843,7 @@ async def _run_full_auto_scanner(
                                 device_id, sym, btc_mom["chg_3h"],
                                 float(btc_regime.get("chg_last") or 0),
                                 btc_regime.get("rsi"))
-                            _dev_reject(rep, "anti_chase_sell_btc_momentum_padam")
+                            _dev_reject(rep, "anti_chase_sell_btc_momentum_exhausted")
                             continue
                         if sig["side"] == "SELL":
                             # v10.2.25 — SELL short-window dump guard
@@ -1844,7 +1928,7 @@ async def _run_full_auto_scanner(
                         _dev_reject(
                             rep,
                             ("buy" if sig["side"] == "BUY" else "sell")
-                            + f"_menunggu_konfirmasi_siklus_{_req_cycles}")
+                            + f"_awaiting_confirm_cycle_{_req_cycles}")
                         continue
                 # v10.1.2 — ANTI-DUPLIKAT ATOMIK (root cause "2 trade TRX
                 # identik"): dua proses scanner (multi-replica / restart)
@@ -1960,7 +2044,7 @@ async def _run_full_auto_scanner(
                     # simbol 30 menit/device supaya tidak spam order & -1003.
                     if "-2027" in str(res.get("message") or ""):
                         _SYM_COOLDOWN[f"{device_id}:{sym}"] = time.time() + 1800
-                    _dev_reject(rep, f"execute_ditolak: {res.get('reason')}")
+                    _dev_reject(rep, f"execute_rejected: {res.get('reason')}")
                     await _release_claim()
                     continue
                 # v10.1.2 — GUARD: jangan simpan record tanpa fill nyata

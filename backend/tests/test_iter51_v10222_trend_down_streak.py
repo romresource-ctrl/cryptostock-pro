@@ -432,8 +432,8 @@ class TestLongSlopeRelaxation:
             base="BULL", streak=3, closes_4h=closes_long_relax())
         run_scan(db, fetcher)  # siklus 1 → lolos filter, menunggu konfirmasi
         rej = rejects_of(db)
-        assert "trend_filter_4h_blokir_LONG" not in rej, rej
-        assert "buy_menunggu_konfirmasi_siklus_1" in rej, rej
+        assert "trend_filter_4h_block_LONG" not in rej, rej
+        assert "buy_awaiting_confirm_cycle_1" in rej, rej
         assert len(exec_stub.calls) == 0
         run_scan(db, fetcher)  # siklus 2 → tereksekusi
         assert len(exec_stub.calls) == 1
@@ -441,13 +441,13 @@ class TestLongSlopeRelaxation:
 
     def test_long_rejected_when_slope_dn_and_streak_0(self, monkeypatch):
         """BTC tidak terkonfirmasi (netral, streak 0) → proteksi slope
-        penuh AKTIF: reject 'trend_filter_4h_blokir_LONG'."""
+        penuh AKTIF: reject 'trend_filter_4h_block_LONG'."""
         db, exec_stub, fetcher = make_harness(
             monkeypatch, side="BUY", conf=95, regime="neutral",
             base="BULL", streak=0, closes_4h=closes_long_relax())
         run_scan(db, fetcher)
         rej = rejects_of(db)
-        assert "trend_filter_4h_blokir_LONG" in rej, rej
+        assert "trend_filter_4h_block_LONG" in rej, rej
         assert len(exec_stub.calls) == 0
 
     def test_long_rejected_when_price_below_ema_regardless_of_streak(
@@ -459,7 +459,7 @@ class TestLongSlopeRelaxation:
             base="BULL", streak=20, closes_4h=closes_downtrend())
         run_scan(db, fetcher)
         rej = rejects_of(db)
-        assert "trend_filter_4h_blokir_LONG" in rej, rej
+        assert "trend_filter_4h_block_LONG" in rej, rej
         assert len(exec_stub.calls) == 0
 
     def test_long_slope_relaxed_immediately_on_trending_up_v10229(
@@ -472,9 +472,9 @@ class TestLongSlopeRelaxation:
             base="BULL", streak=1, closes_4h=closes_long_relax())
         run_scan(db, fetcher)
         rej = rejects_of(db)
-        assert "trend_filter_4h_blokir_LONG" not in rej, rej
+        assert "trend_filter_4h_block_LONG" not in rej, rej
         assert not any(r.startswith("anti-flap") for r in rej), rej
-        assert "buy_menunggu_konfirmasi_siklus_1" in rej, rej
+        assert "buy_awaiting_confirm_cycle_1" in rej, rej
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
         assert exec_stub.calls[0]["side"] == "BUY"
@@ -494,8 +494,8 @@ class TestShortSlopeRelaxation:
             closes_4h=closes_short_relax())
         run_scan(db, fetcher)
         rej = rejects_of(db)
-        assert "trend_filter_4h_blokir_SHORT" not in rej, rej
-        assert "sell_menunggu_konfirmasi_siklus_2" in rej, rej
+        assert "trend_filter_4h_block_SHORT" not in rej, rej
+        assert "sell_awaiting_confirm_cycle_2" in rej, rej
         assert len(exec_stub.calls) == 0
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
@@ -503,14 +503,14 @@ class TestShortSlopeRelaxation:
 
     def test_short_rejected_when_slope_up_and_dn_streak_0(self, monkeypatch):
         """trending_down tapi streak baru 0 → proteksi slope penuh AKTIF:
-        reject 'trend_filter_4h_blokir_SHORT'."""
+        reject 'trend_filter_4h_block_SHORT'."""
         db, exec_stub, fetcher = make_harness(
             monkeypatch, side="SELL", conf=95, regime="trending_down",
             base="BEAR", streak=0, streak_dn=0,
             closes_4h=closes_short_relax())
         run_scan(db, fetcher)
         rej = rejects_of(db)
-        assert "trend_filter_4h_blokir_SHORT" in rej, rej
+        assert "trend_filter_4h_block_SHORT" in rej, rej
         assert len(exec_stub.calls) == 0
 
     def test_short_rejected_when_price_above_ema_regardless_of_streak(
@@ -523,7 +523,7 @@ class TestShortSlopeRelaxation:
             closes_4h=closes_uptrend())
         run_scan(db, fetcher)
         rej = rejects_of(db)
-        assert "trend_filter_4h_blokir_SHORT" in rej, rej
+        assert "trend_filter_4h_block_SHORT" in rej, rej
         assert len(exec_stub.calls) == 0
 
 
@@ -541,7 +541,7 @@ class TestGateRegressions:
         assert len(exec_stub.calls) == 0
         rej = rejects_of(db)
         assert not any(r.startswith("anti-flap") for r in rej), rej
-        assert "buy_menunggu_konfirmasi_siklus_1" in rej, rej
+        assert "buy_awaiting_confirm_cycle_1" in rej, rej
 
     def test_buy_bear4h_conf_bonus(self, monkeypatch):
         """v10.2.17: base4H BEAR → min conf +5 (92 < 95 → reject)."""
@@ -559,7 +559,7 @@ class TestGateRegressions:
             base="BULL", streak=0, closes_4h=closes_uptrend())
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 0
-        assert "buy_menunggu_konfirmasi_siklus_1" in rejects_of(db)
+        assert "buy_awaiting_confirm_cycle_1" in rejects_of(db)
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
 
@@ -570,7 +570,7 @@ class TestGateRegressions:
             base="BEAR", streak=0, closes_4h=closes_downtrend())
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 0
-        assert "sell_menunggu_konfirmasi_siklus_2" in rejects_of(db)
+        assert "sell_awaiting_confirm_cycle_2" in rejects_of(db)
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
 

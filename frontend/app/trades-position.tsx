@@ -573,6 +573,16 @@ export default function TradesPositionScreen() {
               <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 9 }}>⇅ REVERSE</Text>
             </View>
           ) : null}
+          {/* v10.7.9 — LONG THE DIP / SHORT THE TOP badge */}
+          {/(LONG THE DIP|SHORT THE TOP)/.test(String(tr.formula_tag || "")) ? (
+            <View testID={`diptop-badge-${tr.id || tr._id || ""}`}
+                  style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
+                           backgroundColor: String(tr.formula_tag).includes("LONG THE DIP") ? GREEN : RED }}>
+              <Text style={{ color: "#FFFFFF", fontWeight: "900", fontSize: 9 }}>
+                {String(tr.formula_tag).includes("LONG THE DIP") ? "↗ LONG THE DIP" : "↘ SHORT THE TOP"}
+              </Text>
+            </View>
+          ) : null}
           {/* Formula tag */}
           <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
                          backgroundColor: colors.surfaceAlt || "#1F2937" }}>

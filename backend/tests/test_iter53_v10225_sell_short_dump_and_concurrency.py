@@ -369,7 +369,7 @@ class TestSideConcurrencyCap:
         rej = rejects_of(db)
         assert not any(r.startswith("max_open_sell") for r in rej), rej
         # Should reach confirmation
-        assert "sell_menunggu_konfirmasi_siklus_2" in rej, rej
+        assert "sell_awaiting_confirm_cycle_2" in rej, rej
         assert len(exec_stub.calls) == 0
 
     def test_a2_three_open_sell_new_sell_rejected(self, monkeypatch):
@@ -404,7 +404,7 @@ class TestSideConcurrencyCap:
         assert not any(r.startswith("max_open_buy") for r in rej), rej
         assert not any(r.startswith("max_open_sell") for r in rej), rej
         # BUY falls to confirmation
-        assert "buy_menunggu_konfirmasi_siklus_1" in rej, rej
+        assert "buy_awaiting_confirm_cycle_1" in rej, rej
 
     def test_a4_soft_deleted_trades_not_counted(self, monkeypatch):
         """5 docs status=open, side=SELL; 3 have deleted=True → only 2
@@ -423,7 +423,7 @@ class TestSideConcurrencyCap:
         run_scan(db, fetcher)
         rej = rejects_of(db)
         assert not any(r.startswith("max_open_sell") for r in rej), rej
-        assert "sell_menunggu_konfirmasi_siklus_2" in rej, rej
+        assert "sell_awaiting_confirm_cycle_2" in rej, rej
 
     def test_a5_per_device_scope(self, monkeypatch):
         """3 open SELL under device_id OTHER → cap for device TEST = 0 →
@@ -439,7 +439,7 @@ class TestSideConcurrencyCap:
         run_scan(db, fetcher)
         rej = rejects_of(db)
         assert not any(r.startswith("max_open_sell") for r in rej), rej
-        assert "sell_menunggu_konfirmasi_siklus_2" in rej, rej
+        assert "sell_awaiting_confirm_cycle_2" in rej, rej
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -471,7 +471,7 @@ class TestSellShortDumpGuard:
         rej = rejects_of(db)
         assert not any(r.startswith("sell_short_dump_") for r in rej), rej
         assert not any(r.startswith("anti_chase_sell_") for r in rej), rej
-        assert "sell_menunggu_konfirmasi_siklus_2" in rej, rej
+        assert "sell_awaiting_confirm_cycle_2" in rej, rej
 
     def test_b3_sell_6h_drop_only_btc_flat_goes_to_confirmation(
             self, monkeypatch):
@@ -485,7 +485,7 @@ class TestSellShortDumpGuard:
         rej = rejects_of(db)
         assert not any(r.startswith("anti_chase_sell_") for r in rej), rej
         assert not any(r.startswith("sell_short_dump_") for r in rej), rej
-        assert "sell_menunggu_konfirmasi_siklus_2" in rej, rej
+        assert "sell_awaiting_confirm_cycle_2" in rej, rej
         assert len(exec_stub.calls) == 0
 
     def test_b4_btc_excluded_from_short_dump(self, monkeypatch):
@@ -515,7 +515,7 @@ class TestRegression:
         rej = rejects_of(db)
         assert not any(r.startswith("anti-flap") for r in rej), rej
         # BUY tetap melewati konfirmasi 2 siklus (bukan eksekusi instan)
-        assert "buy_menunggu_konfirmasi_siklus_1" in rej, rej
+        assert "buy_awaiting_confirm_cycle_1" in rej, rej
         assert len(exec_stub.calls) == 0
 
     def test_c2_buy_two_cycle_confirmation(self, monkeypatch):
@@ -523,7 +523,7 @@ class TestRegression:
             monkeypatch, side="BUY", base="BULL",
             closes_4h=closes_uptrend())
         run_scan(db, fetcher)
-        assert "buy_menunggu_konfirmasi_siklus_1" in rejects_of(db)
+        assert "buy_awaiting_confirm_cycle_1" in rejects_of(db)
         assert len(exec_stub.calls) == 0
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
@@ -533,7 +533,7 @@ class TestRegression:
             monkeypatch, side="SELL", base="BEAR",
             closes_4h=closes_downtrend())
         run_scan(db, fetcher)
-        assert "sell_menunggu_konfirmasi_siklus_2" in rejects_of(db)
+        assert "sell_awaiting_confirm_cycle_2" in rejects_of(db)
         assert len(exec_stub.calls) == 0
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
@@ -560,7 +560,7 @@ class TestRegression:
             regime="trending_up", streak=5, whitelist=["FET"])
         run_scan(db, fetcher)
         rej = rejects_of(db)
-        assert any("tolak SELL" in r for r in rej), rej
+        assert any("block SELL" in r for r in rej), rej
 
     def test_c6_btc_regime_blocks_buy_in_trending_down(self, monkeypatch):
         db, exec_stub, fetcher = make_harness(
@@ -570,7 +570,7 @@ class TestRegression:
             whitelist=["FET"])
         run_scan(db, fetcher)
         rej = rejects_of(db)
-        assert any("tolak BUY" in r for r in rej), rej
+        assert any("block BUY" in r for r in rej), rej
 
 
 # ════════════════════════════════════════════════════════════════════════

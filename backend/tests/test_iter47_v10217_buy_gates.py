@@ -12,7 +12,7 @@ Coverage:
   stub + monkeypatch scheduler.execute_trade / resolve_credential /
   _get_btc_regime + market_data.get_crypto_snapshot — TANPA order exchange
   nyata):
-    (a) BUY siklus1 -> reject buy_menunggu_konfirmasi_siklus_2 (no exec);
+    (a) BUY siklus1 -> reject buy_awaiting_confirm_cycle_2 (no exec);
         siklus2 identik -> execute_trade terpanggil; siklus3 -> tidak
         eksekusi lagi.
     (b) BUY saat trending_up streak<3 -> reject anti-flap; streak>=3 ->
@@ -372,7 +372,7 @@ class TestScannerBuyConfirmFlow:
         # Siklus 1: tidak eksekusi, reject konfirmasi, count=1 tercatat.
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 0
-        assert "buy_menunggu_konfirmasi_siklus_2" in rejects_of(db)
+        assert "buy_awaiting_confirm_cycle_2" in rejects_of(db)
         doc = db.asi_buy_confirm.docs.get(cf_key)
         assert doc and doc["count"] == 1
         assert doc["fingerprint"] == "longterm|TESTFORM"
@@ -392,7 +392,7 @@ class TestScannerBuyConfirmFlow:
         # Siklus 3: TIDAK eksekusi lagi (posisi open -> dup guard).
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
-        assert "sudah_ada_posisi" in rejects_of(db)
+        assert "position_exists" in rejects_of(db)
 
     def test_buy_reexecutes_if_position_row_gone_within_window(
             self, monkeypatch):
@@ -435,7 +435,7 @@ class TestScannerAntiFlap:
         run_scan(db, fetcher)  # siklus 1: lolos anti-flap -> konfirmasi
         rej = rejects_of(db)
         assert not any(r.startswith("anti-flap") for r in rej), rej
-        assert "buy_menunggu_konfirmasi_siklus_2" in rej
+        assert "buy_awaiting_confirm_cycle_2" in rej
         assert len(exec_stub.calls) == 0
         run_scan(db, fetcher)  # siklus 2: terkonfirmasi -> eksekusi
         assert len(exec_stub.calls) == 1
@@ -459,7 +459,7 @@ class TestScannerBear4hConfBonus:
         run_scan(db, fetcher)  # siklus 1: lolos conf -> konfirmasi
         rej = rejects_of(db)
         assert "conf<95_bear4h" not in rej, rej
-        assert "buy_menunggu_konfirmasi_siklus_2" in rej
+        assert "buy_awaiting_confirm_cycle_2" in rej
         run_scan(db, fetcher)  # siklus 2 -> eksekusi
         assert len(exec_stub.calls) == 1
 

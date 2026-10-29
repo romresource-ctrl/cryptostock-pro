@@ -1527,6 +1527,16 @@ export default function ASIBotScreen() {
                       <Text style={{ color: "#0B0E11", fontWeight: "900", fontSize: 9 }}>⇅ REVERSE</Text>
                     </View>
                   ) : null}
+                  {/* v10.7.9 — LONG THE DIP / SHORT THE TOP badge */}
+                  {/(LONG THE DIP|SHORT THE TOP)/.test(String((tr as any).formula_tag || "")) ? (
+                    <View testID={`rt-diptop-badge-${(tr as any).id || (tr as any)._id || ""}`}
+                      style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
+                               backgroundColor: String((tr as any).formula_tag).includes("LONG THE DIP") ? "#22C55E" : "#EF4444" }}>
+                      <Text style={{ color: "#FFFFFF", fontWeight: "900", fontSize: 9 }}>
+                        {String((tr as any).formula_tag).includes("LONG THE DIP") ? "↗ LONG THE DIP" : "↘ SHORT THE TOP"}
+                      </Text>
+                    </View>
+                  ) : null}
                   {/* Formula tag */}
                   <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, backgroundColor: "#1F2937" }}>
                     <Text numberOfLines={1} style={{ color: colors.textMuted, fontSize: 9, fontWeight: "800" }}>

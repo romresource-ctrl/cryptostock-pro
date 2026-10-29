@@ -2531,3 +2531,12 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 ## Play live 10.7.6
 - APP_LATEST_VERSION = 10.7.6 (user konfirmasi kirim Play Console).
 - SL guard TP1→SL=TP1, TP2→SL=TP2 sudah ada sejak v10.0.16 (engine native partial + scheduler soft watcher); trailing dipaksa 0 untuk trade baru.
+
+## v10.7.7/10.7.8
+- Full-Auto Long the Dip / Short the Top (_dip_top_flip): SELL <1% di atas low24h & RSI1h<45 → BUY; BUY <1% di bawah high24h & RSI1h>55 → SELL. Tag "· LONG THE DIP"/"· SHORT THE TOP". Dibalik sebelum filter.
+
+## v10.7.9 (Jun 2026)
+- Long the Dip / Short the Top now WAITS for a 15m reversal "wink" (closed green candle breaking prior high or hammer for dip; mirror for top, max 1.5% from 4-candle extreme) before flipping. Zone without wink → signal skipped (reject `long_the_dip_wait_reversal` / `short_the_top_wait_reversal`), late signal NOT executed.
+- Cards (Running Positions + Recent Trades) show green "↗ LONG THE DIP" / red "↘ SHORT THE TOP" badge (from formula_tag).
+- Scanner reject reasons translated to English (e.g. "btc_regime trending_down: block BUY").
+- Tests: test_iter70_v1077_dip_top.py 8 passed. 10 pre-existing failures in iter47/iter52 (unrelated, fail on old code too).

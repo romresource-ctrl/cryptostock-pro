@@ -371,8 +371,8 @@ class TestAntiChaseSell:
         # v10.2.25 short-dump guard also must NOT fire (<1.2%/2h)
         assert not any(r.startswith("sell_short_dump_") for r in rej), rej
         # SELL now goes through confirmation (2 cycles) — expect
-        # sell_menunggu_konfirmasi_siklus_2 on first scan
-        assert "sell_menunggu_konfirmasi_siklus_2" in rej, rej
+        # sell_awaiting_confirm_cycle_2 on first scan
+        assert "sell_awaiting_confirm_cycle_2" in rej, rej
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -388,7 +388,7 @@ class TestSellConfirmationTwoCycles:
         # Cycle 1 — no execute, rejects records sell_menunggu_konfirmasi
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 0
-        assert "sell_menunggu_konfirmasi_siklus_2" in rejects_of(db)
+        assert "sell_awaiting_confirm_cycle_2" in rejects_of(db)
         doc = db.asi_buy_confirm.docs.get(cf_key)
         assert doc and doc["count"] == 1
         assert doc["side"] == "SELL"
@@ -428,7 +428,7 @@ class TestBuyRegressionGates:
             base="BULL", streak=0)
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 0
-        assert "buy_menunggu_konfirmasi_siklus_1" in rejects_of(db)
+        assert "buy_awaiting_confirm_cycle_1" in rejects_of(db)
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
 
@@ -442,7 +442,7 @@ class TestBuyRegressionGates:
         assert len(exec_stub.calls) == 0
         rej = rejects_of(db)
         assert not any(r.startswith("anti-flap") for r in rej), rej
-        assert "buy_menunggu_konfirmasi_siklus_1" in rej, rej
+        assert "buy_awaiting_confirm_cycle_1" in rej, rej
 
     def test_buy_bear4h_conf_bonus(self, monkeypatch):
         db, exec_stub, fetcher = make_harness(

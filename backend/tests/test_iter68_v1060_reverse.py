@@ -73,7 +73,7 @@ def test_flip_happens_before_filters():
     src = inspect.getsource(scheduler._run_full_auto_scanner)
     i_flip = src.index('"reversed_from": sig["side"]')
     i_btc15 = src.index('if btc15["state"] == "rebound" and sig["side"] == "SELL":')
-    i_trend = src.index('trend_filter_4h_blokir_SHORT')
+    i_trend = src.index('trend_filter_4h_block_SHORT')
     assert i_flip < i_btc15 < i_trend
     assert "_reverse_signal(sig[\"side\"], _entry" not in src
 
