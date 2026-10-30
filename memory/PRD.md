@@ -2544,3 +2544,4 @@ Logika sinyal/engine trading TIDAK diubah oleh perbaikan ini.
 - v10.7.11: DIPTOP_HOLD_HOURS 4→2, CIRCUIT_BREAKER_PAUSE_HOURS 2→1 (user).
 - v10.7.12: BUY confirm now truly 1 cycle (_buy_confirm_eval required_cycles<=1 → confirmed; per v10.2.31). Outdated tests iter47/50/51/52/53 updated (BUY 1 cycle, CB 1h, any pnl<0 = loss, anti-flap removed).
 - v10.7.12: v10.5.0 Early Reversal REMOVED (indicators._early_reversal_signal + compute_signal hook, server formula_tag/flag, scheduler confirm bypass, test_iter67). BTC Regime Gate untouched. "Auto-Close on Reversal" not found in code — asked user.
+- v10.7.13: Horizon exit (scalper 15m/day 4h/swing 24h) no longer market-closes a slightly-profitable position near entry (false 'Break-Even'); instead moves SL to entry once (horizon_be_at) and lets it run to TP. Profit-cap close unchanged.

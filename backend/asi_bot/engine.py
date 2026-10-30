@@ -2247,8 +2247,19 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
                                 str(_hx_entry_at).replace("Z", "+00:00"))
                         ).total_seconds() / 60
                     if (_hx_age_min is not None
-                            and _hx_age_min >= _hx_max_min):
-                        _hx_close_why = f"horizon_exit_{_hp}"
+                            and _hx_age_min >= _hx_max_min
+                            and not trade.get("horizon_be_at")):
+                        # v10.7.13 — keputusan user: posisi profit saat
+                        # horizon habis TIDAK lagi di-market-close di dekat
+                        # entry (label "Break-Even" palsu). SL dipindah ke
+                        # entry (break-even) SEKALI, posisi lanjut ke TP.
+                        _be = await move_sl_to_breakeven(doc, trade, target_price=None)
+                        _native_partial_upd["horizon_be_at"] = datetime.now(
+                            timezone.utc).isoformat()
+                        _native_partial_upd["horizon_be_detail"] = _be.get("detail")
+                        if _be.get("ok") and _be.get("new_sl"):
+                            _native_partial_upd["stop_loss"] = float(_be["new_sl"])
+                            _native_partial_upd["be_moved"] = True
                 if _hx_close_why:
                     _cr = await close_position(
                         doc, symbol, trade.get("side") or "BUY", abs(amt))

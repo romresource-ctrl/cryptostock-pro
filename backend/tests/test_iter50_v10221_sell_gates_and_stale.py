@@ -627,16 +627,15 @@ class TestLongtermStaleExit:
             hit_and_run=True,
             filled_at=(datetime.now(timezone.utc)
                        - timedelta(hours=25)).isoformat(),  # > 24h horizon
-            max_floating_pct=0.0,            # stale conditions also hold
+            max_floating_pct=1.0,            # pernah profit → stale tidak berlaku
         )
-        # mark slightly above entry → horizon_exit profit path triggers
+        # v10.7.13 — horizon habis & profit → SL ke entry (BE), TIDAK close
         pos = _pos_open(10.0, mark=100.2, side="BUY")
         captured, upd = self._run(trade, pos, monkeypatch)
-        # Exactly ONE close_position call (horizon_exit), not two
-        assert len(captured["close_calls"]) == 1, (
-            f"expected single close (horizon_exit) only, got "
-            f"{captured['close_calls']}, upd={upd}")
-        assert upd.get("horizon_exit_at", "").startswith("horizon_exit_swing")
+        assert captured["move_sl_calls"] == [None]  # None = entry (BE)
+        assert upd.get("horizon_be_at")
+        assert captured["close_calls"] == []  # v10.7.13 — tidak di-close
+        assert "horizon_exit_at" not in upd
         # stale_exit_at must NOT be set
         assert "stale_exit_at" not in upd
         # close_reason stale_exit must NOT be set
