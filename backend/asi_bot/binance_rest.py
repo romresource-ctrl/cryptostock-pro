@@ -352,6 +352,7 @@ async def realized_close_info(
         return None
     realized = 0.0
     close_px: float | None = None
+    close_oid = None
     for f in data:
         try:
             rp = float(f.get("realizedPnl") or 0)
@@ -359,13 +360,42 @@ async def realized_close_info(
             rp = 0.0
         if abs(rp) > 1e-12:
             realized += rp
+            close_oid = f.get("orderId") or close_oid
             try:
                 close_px = float(f.get("price") or 0) or close_px
             except Exception:
                 pass
     if close_px is None:
         return None
-    return {"pnl": realized, "price": close_px}
+    return {"pnl": realized, "price": close_px, "order_id": close_oid}
+
+
+async def order_origin(
+    api_key: str, api_secret: str, testnet: bool, symbol: str, order_id: Any,
+) -> dict[str, Any] | None:
+    """v10.7.14 — Siapa yang menutup posisi: tipe order + clientOrderId."""
+    code, data = await _request(
+        "GET", "/fapi/v1/order", api_key, api_secret, testnet,
+        {"symbol": symbol.upper(), "orderId": str(order_id)})
+    if code != 200 or not isinstance(data, dict):
+        return None
+    return {"type": data.get("origType") or data.get("type"),
+            "client_id": str(data.get("clientOrderId") or "")}
+
+
+def classify_close_origin(origin: dict[str, Any] | None) -> str | None:
+    """v10.7.14 — clientOrderId Binance: web_/android_/ios_/electron_ =
+    ditutup manual dari app/web Binance; autoclose-/adl_ = likuidasi/ADL."""
+    if not origin:
+        return None
+    cid = origin.get("client_id", "").lower()
+    if cid.startswith(("web_", "android_", "ios_", "electron_", "app_")):
+        return "Manual on Binance app"
+    if cid.startswith("autoclose-"):
+        return "Liquidation"
+    if cid.startswith("adl_autoclose"):
+        return "ADL"
+    return None
 
 
 

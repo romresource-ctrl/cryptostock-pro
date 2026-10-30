@@ -2463,6 +2463,7 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
     # = fill terakhir simbol (bisa milik trade/layer lain).
     realized = float(trade.get("pnl_usdt") or 0.0)
     closed_px = None
+    _close_origin = None
     try:
         _since = None
         _ca = trade.get("filled_at") or trade.get("created_at")
@@ -2474,6 +2475,9 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
         if info:
             realized = info["pnl"]
             closed_px = info["price"]
+            if info.get("order_id"):
+                _close_origin = await br.order_origin(
+                    api_key, api_secret, is_testnet, bin_sym, info["order_id"])
     except Exception:
         pass
     if closed_px is None:
@@ -2517,6 +2521,11 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
         # v10.1.1 — BREAK-EVEN (keputusan user): harga tutup ≈ harga entry
         # (±0.2%) dan tidak menyentuh SL/TP → label jujur "BREAK_EVEN",
         # bukan "position_closed_externally" yang membingungkan.
+        # v10.7.14 — penutup dari luar bot (app/web Binance, likuidasi)
+        # dilabeli jujur, bukan "Break-Even" palsu.
+        _ext = br.classify_close_origin(_close_origin)
+        if reason is None and _ext:
+            reason = _ext
         if reason is None and entry_px \
                 and abs(closed_px - entry_px) / entry_px <= 0.002:
             reason = "BREAK_EVEN"
@@ -2533,6 +2542,9 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
     }
     if closed_px:
         upd_closed["closed_price"] = closed_px
+    if _close_origin:
+        upd_closed["close_order_type"] = _close_origin.get("type")
+        upd_closed["close_order_client_id"] = _close_origin.get("client_id")
     # v10.2.20 — Catat sl_fill saat close full = SL hit, agar UI dapat
     # menampilkan baris "SL hit · $xxx · −$yyy" (konsisten dengan
     # tp_fills). Hanya diisi bila belum ada dan reason terdeteksi SL.
