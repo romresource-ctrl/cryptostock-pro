@@ -426,9 +426,8 @@ class TestBuyRegressionGates:
         db, exec_stub, fetcher = make_harness(
             monkeypatch, side="BUY", conf=95, regime="neutral",
             base="BULL", streak=0)
-        run_scan(db, fetcher)
-        assert len(exec_stub.calls) == 0
-        assert "buy_awaiting_confirm_cycle_1" in rejects_of(db)
+        run_scan(db, fetcher)  # v10.7.12 — BUY 1 siklus langsung eksekusi
+        assert len(exec_stub.calls) == 1
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
 
@@ -439,10 +438,9 @@ class TestBuyRegressionGates:
             monkeypatch, side="BUY", conf=95, regime="trending_up",
             base="BULL", streak=1)
         run_scan(db, fetcher)
-        assert len(exec_stub.calls) == 0
         rej = rejects_of(db)
         assert not any(r.startswith("anti-flap") for r in rej), rej
-        assert "buy_awaiting_confirm_cycle_1" in rej, rej
+        assert len(exec_stub.calls) == 1, rej
 
     def test_buy_bear4h_conf_bonus(self, monkeypatch):
         db, exec_stub, fetcher = make_harness(

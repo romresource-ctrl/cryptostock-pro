@@ -437,11 +437,11 @@ class TestCircuitBreakerPnL:
         assert rep.get("scanned") is True, rep
 
     def test_breaker_loss_threshold_boundary(self, monkeypatch):
-        """pnl tepat -1.00 TIDAK dihitung rugi (aturan pnl < -$1) →
-        breaker TIDAK aktif."""
+        """v10.6.1 — semua pnl < 0 dihitung rugi; pnl tepat 0 (impas)
+        TIDAK dihitung → breaker TIDAK aktif."""
         trades = [
             _closed_trade("SAND", -60.0, _ago(minutes=30)),
-            _closed_trade("SAND", -1.0, _ago(hours=1)),
+            _closed_trade("SAND", 0.0, _ago(minutes=40)),
             _closed_trade("SAND", -42.0, _ago(minutes=90)),
         ]
         db, exec_stub, fetcher = make_harness(monkeypatch, trades=trades)
@@ -464,8 +464,8 @@ class TestSymbolLossCooldown:
         run_scan(db, fetcher)
         rej = rejects_of(db)
         assert "cooldown_loss_SAND_<4h" in rej, rej
-        assert "buy_awaiting_confirm_cycle_1" in rej, rej  # ETH lolos
-        assert len(exec_stub.calls) == 0
+        assert len(exec_stub.calls) == 1  # ETH lolos & tereksekusi (BUY 1 siklus)
+        assert exec_stub.calls[0]["symbol"] == "ETH"
 
     def test_symbol_profit_within_4h_passes(self, monkeypatch):
         """Simbol yang closed PROFIT <4 jam lalu → TIDAK kena cooldown."""
@@ -476,7 +476,7 @@ class TestSymbolLossCooldown:
         run_scan(db, fetcher)
         rej = rejects_of(db)
         assert not any(r.startswith("cooldown_loss_") for r in rej), rej
-        assert "buy_awaiting_confirm_cycle_1" in rej, rej
+        assert len(exec_stub.calls) == 1, rej  # lolos → eksekusi (BUY 1 siklus)
 
     def test_symbol_loss_older_than_4h_passes(self, monkeypatch):
         """Simbol yang loss >4 jam lalu → cooldown sudah lewat → lolos."""
@@ -486,7 +486,7 @@ class TestSymbolLossCooldown:
         run_scan(db, fetcher)
         rej = rejects_of(db)
         assert not any(r.startswith("cooldown_loss_") for r in rej), rej
-        assert "buy_awaiting_confirm_cycle_1" in rej, rej
+        assert len(exec_stub.calls) == 1, rej  # lolos → eksekusi (BUY 1 siklus)
 
     def test_small_loss_within_threshold_no_cooldown(self, monkeypatch):
         """Loss kecil (-0.50, di dalam ambang -$1) TIDAK memicu cooldown."""
@@ -496,7 +496,7 @@ class TestSymbolLossCooldown:
         run_scan(db, fetcher)
         rej = rejects_of(db)
         assert not any(r.startswith("cooldown_loss_") for r in rej), rej
-        assert "buy_awaiting_confirm_cycle_1" in rej, rej
+        assert len(exec_stub.calls) == 1, rej  # lolos → eksekusi (BUY 1 siklus)
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -516,7 +516,7 @@ class TestAntiChaseBuy:
         run_scan(db, fetcher)
         rej = rejects_of(db)
         assert not any(r.startswith("anti_chase_buy_") for r in rej), rej
-        assert "buy_awaiting_confirm_cycle_1" in rej, rej
+        assert len(exec_stub.calls) == 1, rej  # lolos → eksekusi (BUY 1 siklus)
 
     def test_btc_up_momentum_alive_not_rejected(self, monkeypatch):
         """BTC rally +4%/6h, momentum masih hidup (3h +0.5%, candle
@@ -527,7 +527,7 @@ class TestAntiChaseBuy:
         run_scan(db, fetcher)
         rej = rejects_of(db)
         assert not any(r.startswith("anti_chase_buy_") for r in rej), rej
-        assert "buy_awaiting_confirm_cycle_1" in rej, rej
+        assert len(exec_stub.calls) == 1, rej  # lolos → eksekusi (BUY 1 siklus)
 
     def test_btc_up_momentum_reversed_rejected(self, monkeypatch):
         """BTC rally +4%/6h TAPI candle terakhir berlawanan (-0.2%) dan
@@ -570,7 +570,7 @@ class TestAntiChaseBuy:
         run_scan(db, fetcher)
         rej = rejects_of(db)
         assert not any(r.startswith("anti_chase_buy_") for r in rej), rej
-        assert "buy_awaiting_confirm_cycle_1" in rej, rej
+        assert len(exec_stub.calls) == 1, rej  # lolos → eksekusi (BUY 1 siklus)
 
     def test_btc_not_subject_to_buy_guards(self, monkeypatch):
         """BTC dikecualikan dari momentum guards (referensi regime): BUY
@@ -582,7 +582,7 @@ class TestAntiChaseBuy:
         rej = rejects_of(db)
         assert not any(r.startswith("anti_chase_buy_") for r in rej), rej
         assert not any(r.startswith("buy_dump_guard_") for r in rej), rej
-        assert "buy_awaiting_confirm_cycle_1" in rej, rej
+        assert len(exec_stub.calls) == 1, rej  # lolos → eksekusi (BUY 1 siklus)
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -662,8 +662,7 @@ class TestScannerIntegration:
         run_scan(db, fetcher)
         rej1 = rejects_of(db)
         assert "cooldown_loss_SAND_<4h" in rej1, rej1
-        assert rej1.get("buy_awaiting_confirm_cycle_1") == 1, rej1
-        assert len(exec_stub.calls) == 0
+        assert len(exec_stub.calls) == 1, rej1  # v10.7.12 — BUY 1 siklus
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
         assert exec_stub.calls[0]["symbol"] == "ETH"
@@ -699,10 +698,9 @@ class TestGateRegressions:
         db, exec_stub, fetcher = make_harness(
             monkeypatch, side="BUY", regime="trending_up", streak=1)
         run_scan(db, fetcher)
-        assert len(exec_stub.calls) == 0
         rej = rejects_of(db)
         assert not any(r.startswith("anti-flap") for r in rej), rej
-        assert "buy_awaiting_confirm_cycle_1" in rej, rej
+        assert len(exec_stub.calls) == 1, rej
 
     def test_buy_bear4h_conf_bonus(self, monkeypatch):
         """v10.2.17: base4H BEAR → min conf +5 (92 < 95 → reject)."""
@@ -712,12 +710,11 @@ class TestGateRegressions:
         assert len(exec_stub.calls) == 0
         assert "conf<95_bear4h" in rejects_of(db)
 
-    def test_buy_two_cycle_confirmation(self, monkeypatch):
-        """v10.2.17/21: konfirmasi 2 siklus BUY tetap berlaku."""
+    def test_buy_one_cycle_confirmation(self, monkeypatch):
+        """v10.2.31/v10.7.12: BUY cukup 1 siklus; siklus 2 tidak dobel."""
         db, exec_stub, fetcher = make_harness(monkeypatch, side="BUY")
         run_scan(db, fetcher)
-        assert len(exec_stub.calls) == 0
-        assert "buy_awaiting_confirm_cycle_1" in rejects_of(db)
+        assert len(exec_stub.calls) == 1
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
 
@@ -742,9 +739,7 @@ class TestGateRegressions:
         run_scan(db, fetcher)
         rej = rejects_of(db)
         assert "trend_filter_4h_block_LONG" not in rej, rej
-        assert "buy_awaiting_confirm_cycle_1" in rej, rej
-        run_scan(db, fetcher)
-        assert len(exec_stub.calls) == 1
+        assert len(exec_stub.calls) == 1, rej
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -761,7 +756,7 @@ class TestScanDebugHTTP:
             "buy_dump_guard_pct": 2.5,
             "buy_dump_guard_window_h": 2,
             "circuit_breaker_losses": 3,
-            "circuit_breaker_pause_hours": 2,
+            "circuit_breaker_pause_hours": 1,
             "symbol_loss_cooldown_hours": 4,
         }
         for k, v in expected.items():

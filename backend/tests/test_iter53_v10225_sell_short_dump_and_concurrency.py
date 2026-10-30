@@ -404,7 +404,7 @@ class TestSideConcurrencyCap:
         assert not any(r.startswith("max_open_buy") for r in rej), rej
         assert not any(r.startswith("max_open_sell") for r in rej), rej
         # BUY falls to confirmation
-        assert "buy_awaiting_confirm_cycle_1" in rej, rej
+        assert len(exec_stub.calls) == 1, rej  # v10.7.12 BUY 1 siklus
 
     def test_a4_soft_deleted_trades_not_counted(self, monkeypatch):
         """5 docs status=open, side=SELL; 3 have deleted=True → only 2
@@ -515,16 +515,14 @@ class TestRegression:
         rej = rejects_of(db)
         assert not any(r.startswith("anti-flap") for r in rej), rej
         # BUY tetap melewati konfirmasi 2 siklus (bukan eksekusi instan)
-        assert "buy_awaiting_confirm_cycle_1" in rej, rej
-        assert len(exec_stub.calls) == 0
+        assert len(exec_stub.calls) == 1, rej  # v10.7.12 BUY 1 siklus
 
     def test_c2_buy_two_cycle_confirmation(self, monkeypatch):
         db, exec_stub, fetcher = make_harness(
             monkeypatch, side="BUY", base="BULL",
             closes_4h=closes_uptrend())
         run_scan(db, fetcher)
-        assert "buy_awaiting_confirm_cycle_1" in rejects_of(db)
-        assert len(exec_stub.calls) == 0
+        assert len(exec_stub.calls) == 1  # v10.7.12 BUY 1 siklus
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
 

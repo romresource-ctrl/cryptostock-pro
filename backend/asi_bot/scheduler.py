@@ -905,6 +905,10 @@ def _buy_confirm_eval(doc: dict[str, Any] | None, *, fingerprint: str,
     dalam window_s detik). Jendela 2× interval scanner menoleransi
     jitter; siklus yang terlewat (sinyal absen) mereset hitungan.
     Fungsi murni (mudah di-unit-test)."""
+    # v10.7.12 — required_cycles=1 (BUY, keputusan v10.2.31) → langsung
+    # terkonfirmasi di siklus pertama (dulu tetap menunggu 2 siklus).
+    if required_cycles <= 1:
+        return True, 1
     if doc and doc.get("fingerprint") == fingerprint \
             and int(doc.get("count") or 0) >= 1:
         try:
@@ -1915,7 +1919,7 @@ async def _run_full_auto_scanner(
                 # kandidat; eksekusi terjadi di siklus kedua. State di
                 # Mongo (tahan restart). Fail-CLOSED bila DB state error.
                 _confirm_key: str | None = None
-                if sig["side"] in ("BUY", "SELL") and not sig.get("early_reversal"):
+                if sig["side"] in ("BUY", "SELL"):
                     _confirm_key = f"{device_id}:{sym}:{sig['side']}"
                     _fprint = (f"{sig.get('profile') or ''}|"
                                f"{sig.get('formula_tag') or ''}")

@@ -433,8 +433,7 @@ class TestLongSlopeRelaxation:
         run_scan(db, fetcher)  # siklus 1 → lolos filter, menunggu konfirmasi
         rej = rejects_of(db)
         assert "trend_filter_4h_block_LONG" not in rej, rej
-        assert "buy_awaiting_confirm_cycle_1" in rej, rej
-        assert len(exec_stub.calls) == 0
+        assert len(exec_stub.calls) == 1, rej  # v10.7.12 BUY 1 siklus
         run_scan(db, fetcher)  # siklus 2 → tereksekusi
         assert len(exec_stub.calls) == 1
         assert exec_stub.calls[0]["side"] == "BUY"
@@ -474,7 +473,7 @@ class TestLongSlopeRelaxation:
         rej = rejects_of(db)
         assert "trend_filter_4h_block_LONG" not in rej, rej
         assert not any(r.startswith("anti-flap") for r in rej), rej
-        assert "buy_awaiting_confirm_cycle_1" in rej, rej
+        assert len(exec_stub.calls) == 1, rej  # v10.7.12 BUY 1 siklus
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
         assert exec_stub.calls[0]["side"] == "BUY"
@@ -538,10 +537,9 @@ class TestGateRegressions:
             monkeypatch, side="BUY", conf=95, regime="trending_up",
             base="BULL", streak=1, closes_4h=closes_uptrend())
         run_scan(db, fetcher)
-        assert len(exec_stub.calls) == 0
         rej = rejects_of(db)
         assert not any(r.startswith("anti-flap") for r in rej), rej
-        assert "buy_awaiting_confirm_cycle_1" in rej, rej
+        assert len(exec_stub.calls) == 1, rej  # v10.7.12 BUY 1 siklus
 
     def test_buy_bear4h_conf_bonus(self, monkeypatch):
         """v10.2.17: base4H BEAR → min conf +5 (92 < 95 → reject)."""
@@ -558,8 +556,7 @@ class TestGateRegressions:
             monkeypatch, side="BUY", conf=95, regime="neutral",
             base="BULL", streak=0, closes_4h=closes_uptrend())
         run_scan(db, fetcher)
-        assert len(exec_stub.calls) == 0
-        assert "buy_awaiting_confirm_cycle_1" in rejects_of(db)
+        assert len(exec_stub.calls) == 1  # v10.7.12 BUY 1 siklus
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
 

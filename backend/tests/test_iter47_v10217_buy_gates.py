@@ -312,40 +312,40 @@ class TestBuyConfirmEval:
 
     def test_no_doc_unconfirmed_count1(self):
         assert sched._buy_confirm_eval(None, fingerprint=self.FP, now=NOW,
-                                       window_s=self.WIN) == (False, 1)
+                                       window_s=self.WIN, required_cycles=2) == (False, 1)
 
     def test_same_fingerprint_within_window_confirms(self):
         ok, cnt = sched._buy_confirm_eval(self._doc(age_s=90),
                                           fingerprint=self.FP, now=NOW,
-                                          window_s=self.WIN)
-        assert ok is True and cnt == sched.BUY_CONFIRM_CYCLES == 2
+                                          window_s=self.WIN, required_cycles=2)
+        assert ok is True and cnt == 2
 
     def test_same_fingerprint_at_window_edge_confirms(self):
         ok, _ = sched._buy_confirm_eval(self._doc(age_s=180),
                                         fingerprint=self.FP, now=NOW,
-                                        window_s=self.WIN)
+                                        window_s=self.WIN, required_cycles=2)
         assert ok is True
 
     def test_same_fingerprint_outside_window_resets(self):
         ok, cnt = sched._buy_confirm_eval(self._doc(age_s=181),
                                           fingerprint=self.FP, now=NOW,
-                                          window_s=self.WIN)
+                                          window_s=self.WIN, required_cycles=2)
         assert (ok, cnt) == (False, 1)
 
     def test_different_fingerprint_resets(self):
         ok, cnt = sched._buy_confirm_eval(self._doc(fp="scalper|OTHER"),
                                           fingerprint=self.FP, now=NOW,
-                                          window_s=self.WIN)
+                                          window_s=self.WIN, required_cycles=2)
         assert (ok, cnt) == (False, 1)
 
     def test_malformed_and_future_timestamps_reset(self):
         bad = self._doc()
         bad["last_seen_at"] = "garbage"
         assert sched._buy_confirm_eval(bad, fingerprint=self.FP, now=NOW,
-                                       window_s=self.WIN) == (False, 1)
+                                       window_s=self.WIN, required_cycles=2) == (False, 1)
         future = self._doc(age_s=-10)  # last_seen di masa depan
         assert sched._buy_confirm_eval(future, fingerprint=self.FP, now=NOW,
-                                       window_s=self.WIN) == (False, 1)
+                                       window_s=self.WIN, required_cycles=2) == (False, 1)
 
     def test_consumed_doc_still_confirms_within_window(self):
         """DOKUMENTASI PERILAKU AKTUAL: helper tidak membaca `count` /
@@ -355,90 +355,61 @@ class TestBuyConfirmEval:
         (15 mnt > window 180s), jadi dampak praktis rendah."""
         consumed = self._doc(age_s=60, count=0, consumed_at=NOW.isoformat())
         ok, cnt = sched._buy_confirm_eval(consumed, fingerprint=self.FP,
-                                          now=NOW, window_s=self.WIN)
-        assert (ok, cnt) == (True, 2)  # actual behavior (lihat laporan)
+                                          now=NOW, window_s=self.WIN, required_cycles=2)
+        assert (ok, cnt) == (False, 1)  # count=0 (consumed) → tunggu lagi
+
+
+    def test_buy_default_one_cycle_confirms_immediately(self):
+        # v10.7.12 — BUY_CONFIRM_CYCLES=1 (v10.2.31): siklus pertama langsung lolos
+        assert sched.BUY_CONFIRM_CYCLES == 1
+        assert sched._buy_confirm_eval(None, fingerprint=self.FP, now=NOW,
+                                       window_s=self.WIN) == (True, 1)
 
 
 # ═════════════════ INTEGRASI: _run_full_auto_scanner ════════════════════════
 class TestScannerBuyConfirmFlow:
-    """(a) BUY butuh 2 siklus berturut; siklus3 tidak eksekusi lagi."""
+    """v10.7.12 — BUY dieksekusi di siklus pertama (BUY_CONFIRM_CYCLES=1);
+    siklus berikutnya tidak eksekusi lagi (dup guard)."""
 
-    def test_buy_two_cycle_confirmation_then_no_reexecute(self, monkeypatch):
+    def test_buy_executes_first_cycle_then_no_reexecute(self, monkeypatch):
         db, exec_stub, fetcher = make_harness(
             monkeypatch, side="BUY", conf=95, regime="neutral",
             base="BULL", streak=0)
-        cf_key = f"{DEV}:ETH:BUY"
-
-        # Siklus 1: tidak eksekusi, reject konfirmasi, count=1 tercatat.
-        run_scan(db, fetcher)
-        assert len(exec_stub.calls) == 0
-        assert "buy_awaiting_confirm_cycle_2" in rejects_of(db)
-        doc = db.asi_buy_confirm.docs.get(cf_key)
-        assert doc and doc["count"] == 1
-        assert doc["fingerprint"] == "longterm|TESTFORM"
-
-        # Siklus 2 (identik, dalam window): execute_trade terpanggil 1×,
-        # trade tersimpan open, count konfirmasi direset ke 0 (consumed).
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
         assert exec_stub.calls[0]["side"] == "BUY"
         assert exec_stub.calls[0]["symbol"] == "ETH"
-        doc = db.asi_buy_confirm.docs[cf_key]
-        assert doc["count"] == 0 and doc.get("consumed_at")
         assert scanner_doc(db)["devices"][DEV]["placed"] == 1
         trade = db.asi_trades.docs.get(f"{DEV}:TESTORD-1")
         assert trade and trade["status"] == "open"
-
-        # Siklus 3: TIDAK eksekusi lagi (posisi open -> dup guard).
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
         assert "position_exists" in rejects_of(db)
 
-    def test_buy_reexecutes_if_position_row_gone_within_window(
-            self, monkeypatch):
-        """PROBE: bila row trade open hilang (mis. user hapus via UI) dan
-        sinyal identik masih muncul <180s, scanner EKSEKUSI LAGI karena
-        _buy_confirm_eval mengabaikan count=0/consumed_at. Dicatat sebagai
-        temuan (termaskir di produksi oleh dup guard + cooldown 15 mnt)."""
+    def test_buy_reexecutes_if_position_row_gone(self, monkeypatch):
         db, exec_stub, fetcher = make_harness(
             monkeypatch, side="BUY", conf=95, regime="neutral",
             base="BULL", streak=0)
-        run_scan(db, fetcher)  # siklus 1: catat
-        run_scan(db, fetcher)  # siklus 2: eksekusi
+        run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
-        db.asi_trades.docs.clear()  # simulasi row posisi hilang
-        db.asi_scan_claims.docs.clear()  # klaim lama dilepas
-        run_scan(db, fetcher)  # siklus 3: actual behavior -> eksekusi lagi
-        assert len(exec_stub.calls) == 2  # documented actual behavior
+        db.asi_trades.docs.clear()
+        db.asi_scan_claims.docs.clear()
+        run_scan(db, fetcher)
+        assert len(exec_stub.calls) == 2
 
 
-class TestScannerAntiFlap:
-    """(b) BUY saat trending_up butuh streak >= TREND_UP_MIN_CYCLES."""
+class TestScannerTrendingUpBuy:
+    """v10.2.12+ — anti-flap streak lama digantikan BTC Regime Gate:
+    BUY saat BTC trending_up tidak lagi ditahan streak."""
 
-    def test_buy_rejected_when_trending_up_streak_below_3(self, monkeypatch):
+    def test_buy_trending_up_not_blocked_by_streak(self, monkeypatch):
         db, exec_stub, fetcher = make_harness(
             monkeypatch, side="BUY", conf=95, regime="trending_up",
             base="BULL", streak=1)
         run_scan(db, fetcher)
-        assert len(exec_stub.calls) == 0
-        rej = rejects_of(db)
-        assert any(r.startswith("anti-flap: trending_up baru 1/3")
-                   for r in rej), rej
-        # gate anti-flap terjadi SEBELUM konfirmasi -> state konfirmasi
-        # tidak boleh tercatat
-        assert db.asi_buy_confirm.docs.get(f"{DEV}:ETH:BUY") is None
-
-    def test_buy_passes_anti_flap_when_streak_3(self, monkeypatch):
-        db, exec_stub, fetcher = make_harness(
-            monkeypatch, side="BUY", conf=95, regime="trending_up",
-            base="BULL", streak=3)
-        run_scan(db, fetcher)  # siklus 1: lolos anti-flap -> konfirmasi
         rej = rejects_of(db)
         assert not any(r.startswith("anti-flap") for r in rej), rej
-        assert "buy_awaiting_confirm_cycle_2" in rej
-        assert len(exec_stub.calls) == 0
-        run_scan(db, fetcher)  # siklus 2: terkonfirmasi -> eksekusi
-        assert len(exec_stub.calls) == 1
+        assert len(exec_stub.calls) == 1, rej
 
 
 class TestScannerBear4hConfBonus:
@@ -459,18 +430,19 @@ class TestScannerBear4hConfBonus:
         run_scan(db, fetcher)  # siklus 1: lolos conf -> konfirmasi
         rej = rejects_of(db)
         assert "conf<95_bear4h" not in rej, rej
-        assert "buy_awaiting_confirm_cycle_2" in rej
-        run_scan(db, fetcher)  # siklus 2 -> eksekusi
-        assert len(exec_stub.calls) == 1
+        assert len(exec_stub.calls) == 1  # v10.7.12 — BUY 1 siklus
 
 
 class TestScannerSellRegression:
-    """(d) SELL tidak berubah: dieksekusi siklus pertama tanpa konfirmasi."""
+    """(d) SELL butuh konfirmasi 2 siklus (SELL_CONFIRM_CYCLES=2, v10.2.21)."""
 
-    def test_sell_executes_first_cycle_no_confirmation(self, monkeypatch):
+    def test_sell_executes_second_cycle(self, monkeypatch):
         db, exec_stub, fetcher = make_harness(
             monkeypatch, side="SELL", conf=92, regime="neutral",
             base="BEAR", streak=0)  # bonus BEAR TIDAK berlaku utk SELL
+        run_scan(db, fetcher)
+        assert len(exec_stub.calls) == 0
+        assert "sell_awaiting_confirm_cycle_2" in rejects_of(db)
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
         assert exec_stub.calls[0]["side"] == "SELL"
@@ -501,7 +473,7 @@ class TestScanDebugHTTP:
         gates = body.get("buy_gates") or {}
         assert gates.get("trend_up_min_cycles") == 3
         assert gates.get("bear4h_conf_bonus") == 5
-        assert gates.get("buy_confirm_cycles") == 2
+        assert gates.get("buy_confirm_cycles") == 1
 
 
 class TestRegression:
