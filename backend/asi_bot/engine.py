@@ -1754,7 +1754,11 @@ async def move_sl_to_breakeven(
     side = trade.get("side")
     if not entry or side not in ("BUY", "SELL"):
         return {"ok": False, "detail": "no entry/side"}
-    raw_target = float(target_price) if target_price else entry
+    # v10.7.15 — keputusan user: TIDAK ada break-even ke harga entry.
+    # Hanya SL guard ke level TP (TP1→SL=TP1, TP2→SL=TP2) yang dilayani.
+    if not target_price:
+        return {"ok": False, "detail": "break-even disabled (v10.7.15)"}
+    raw_target = float(target_price)
     # Buffer 0.1% ke sisi aman (di bawah target utk LONG, di atas utk SHORT).
     guard_px = raw_target * (0.999 if side == "BUY" else 1.001)
     api_key = decrypt(doc["api_key_enc"])
@@ -2235,31 +2239,9 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
                                / _hx_entry_px * _hx_lev * 100)
                     if _hx_roe >= _hx_cap:
                         _hx_close_why = f"profit_cap_{_hx_cap:g}pct"
-                if not _hx_close_why and _hx_profit:
-                    _hx_max_min = HAR_MAX_HOLD_MIN.get(_hp, 240)
-                    _hx_entry_at = (trade.get("filled_at")
-                                    or trade.get("created_at"))
-                    _hx_age_min = None
-                    if _hx_entry_at:
-                        _hx_age_min = (
-                            datetime.now(timezone.utc)
-                            - datetime.fromisoformat(
-                                str(_hx_entry_at).replace("Z", "+00:00"))
-                        ).total_seconds() / 60
-                    if (_hx_age_min is not None
-                            and _hx_age_min >= _hx_max_min
-                            and not trade.get("horizon_be_at")):
-                        # v10.7.13 — keputusan user: posisi profit saat
-                        # horizon habis TIDAK lagi di-market-close di dekat
-                        # entry (label "Break-Even" palsu). SL dipindah ke
-                        # entry (break-even) SEKALI, posisi lanjut ke TP.
-                        _be = await move_sl_to_breakeven(doc, trade, target_price=None)
-                        _native_partial_upd["horizon_be_at"] = datetime.now(
-                            timezone.utc).isoformat()
-                        _native_partial_upd["horizon_be_detail"] = _be.get("detail")
-                        if _be.get("ok") and _be.get("new_sl"):
-                            _native_partial_upd["stop_loss"] = float(_be["new_sl"])
-                            _native_partial_upd["be_moved"] = True
+                # v10.7.15 — keputusan user: horizon (batas waktu profil)
+                # DIHAPUS sepenuhnya — tidak close, tidak geser SL ke entry.
+                # Posisi berjalan sampai TP/SL asli saat entry.
                 if _hx_close_why:
                     _cr = await close_position(
                         doc, symbol, trade.get("side") or "BUY", abs(amt))

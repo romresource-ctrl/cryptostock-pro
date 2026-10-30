@@ -632,8 +632,8 @@ class TestLongtermStaleExit:
         # v10.7.13 — horizon habis & profit → SL ke entry (BE), TIDAK close
         pos = _pos_open(10.0, mark=100.2, side="BUY")
         captured, upd = self._run(trade, pos, monkeypatch)
-        assert captured["move_sl_calls"] == [None]  # None = entry (BE)
-        assert upd.get("horizon_be_at")
+        assert captured["move_sl_calls"] == []  # v10.7.15 — tanpa BE
+        assert "horizon_be_at" not in upd
         assert captured["close_calls"] == []  # v10.7.13 — tidak di-close
         assert "horizon_exit_at" not in upd
         # stale_exit_at must NOT be set
