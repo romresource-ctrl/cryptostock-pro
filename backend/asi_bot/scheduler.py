@@ -1095,6 +1095,27 @@ async def _get_btc_15m_direction() -> dict[str, Any]:
     return _btc_15m_direction(candles)
 
 
+async def _btc_15m_candle_up() -> bool:
+    """v10.7.17 — candle BTC 15m TERTUTUP terakhir close > close candle
+    15m sebelumnya (index -1 = candle berjalan)."""
+    try:
+        from market_data import _http, _fetch_binance_klines
+        client = await _http()
+        c = await _fetch_binance_klines(client, "BTC", "15m", 4)
+        closes = [float(x["close"]) for x in (c or []) if x.get("close")]
+        return len(closes) >= 3 and closes[-2] > closes[-3]
+    except Exception as e:  # noqa: BLE001
+        logger.debug("btc 15m candle fetch gagal: %s", e)
+        return False
+
+
+def _btc15m_short_block(candle_up: bool, btc15_state: str,
+                        exhausted_down: bool) -> bool:
+    """v10.7.17 — keputusan user: blokir SHORT baru saat BTC 15m naik dari
+    candle sebelumnya DAN (momentum exhausted_down ATAU state rebound)."""
+    return bool(candle_up and (exhausted_down or btc15_state == "rebound"))
+
+
 async def _compute_btc_regime() -> dict[str, Any]:
     out: dict[str, Any] = {"regime": "neutral", "rsi": None, "chg_last": 0.0,
                            "chg_prev": 0.0, "slope_up": False, "slope_dn": False,
@@ -1329,6 +1350,7 @@ async def _run_full_auto_scanner(
     btc_mom = _btc_momentum(btc_regime)
     # v10.4.0 — Filter arah BTC 15 menit (sekali per siklus, semua device).
     btc15 = await _get_btc_15m_direction()
+    btc15_up = await _btc_15m_candle_up()  # v10.7.17
     if btc15["state"] in ("rebound", "dump"):
         logger.info("btc-15m filter: %s (up %.2f%% / down %.2f%%) → blokir %s",
                     btc15["state"], btc15["up_pct"], btc15["down_pct"],
@@ -1668,6 +1690,12 @@ async def _run_full_auto_scanner(
                         continue
                     if btc15["state"] == "dump" and sig["side"] == "BUY":
                         _dev_reject(rep, f"btc15m_dump -{btc15['down_pct']}%: block BUY")
+                        continue
+                    # v10.7.17 — BTC 15m rebound (candle naik + exhausted_down
+                    # /rebound) → blokir SHORT baru. Posisi open tidak disentuh.
+                    if sig["side"] == "SELL" and _btc15m_short_block(
+                            btc15_up, btc15["state"], btc_mom["exhausted_down"]):
+                        _dev_reject(rep, "btc15m_rebound_candle_up: block SELL")
                         continue
                     # v10.2.12 — BTC REGIME GATE: rezim BTC menentukan arah
                     # yang boleh dieksekusi untuk ALTCOIN (BTC sendiri
