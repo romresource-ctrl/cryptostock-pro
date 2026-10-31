@@ -891,10 +891,6 @@ export default function TradesPositionScreen() {
                       <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 12.5 }}>
                         {dayLabel(dk)} - Daily Closed Positions History
                       </Text>
-                      <View style={{ flexDirection: "row", gap: 14 }}>
-                        {col("DEMO", BLUE, agg(true, dk), balance.demo?.available_usdt)}
-                        {col("REAL", ORANGE, agg(false, dk), balance.real?.available_usdt)}
-                      </View>
                     </View>
                     {list.map(renderCard)}
                   </View>
