@@ -1112,6 +1112,71 @@ async def _btc_15m_candle_dir() -> str:
         return "flat"
 
 
+def _two_closed_5m_confirm(side: str, c5: list[dict[str, Any]] | None) -> bool:
+    """v10.7.20 — 2 candle 5m TERAKHIR YANG SUDAH TUTUP (c5 tanpa candle
+    berjalan) searah: SELL = close<open dua-duanya, BUY = close>open."""
+    c = [x for x in (c5 or []) if x.get("open") is not None and x.get("close") is not None]
+    if len(c) < 2:
+        return False
+    try:
+        a, b = c[-2], c[-1]
+        if side == "SELL":
+            return float(a["close"]) < float(a["open"]) and float(b["close"]) < float(b["open"])
+        if side == "BUY":
+            return float(a["close"]) > float(a["open"]) and float(b["close"]) > float(b["open"])
+    except Exception:
+        return False
+    return False
+
+
+# v10.7.21 — status sinyal menunggu konfirmasi 5m per device:simbol:arah.
+# Sinyal yang hilang > C5_SIG_GAP_S dianggap selesai; muncul lagi = baru.
+_C5_SIG: dict[str, dict[str, Any]] = {}
+C5_SIG_GAP_S = 2 * SCANNER_INTERVAL + 30
+
+
+def _c5_gate(key: str, side: str, closed: list[dict[str, Any]],
+             now_s: float) -> str:
+    """v10.7.21 — keputusan user. "ok" (2 candle 5m tertutup searah),
+    "wait", atau "cancel": setelah sinyal terbentuk ada candle 5m yang
+    TUTUP berlawanan (hijau utk SHORT / merah utk LONG) → sinyal batal,
+    tunggu sinyal baru (sinyal harus hilang dulu lalu muncul lagi)."""
+    st = _C5_SIG.get(key)
+    if not st or now_s - st["last"] > C5_SIG_GAP_S:
+        st = {"t0_ms": now_s * 1000, "cancelled": False}
+    st["last"] = now_s
+    _C5_SIG[key] = st
+    if st["cancelled"]:
+        return "cancel"
+    for c in closed:
+        try:
+            if int(c["t"]) + 300_000 <= st["t0_ms"]:
+                continue  # candle sudah tutup sebelum sinyal terbentuk
+            o, cl = float(c["open"]), float(c["close"])
+        except Exception:
+            continue
+        if (side == "SELL" and cl > o) or (side == "BUY" and cl < o):
+            st["cancelled"] = True
+            return "cancel"
+    if _two_closed_5m_confirm(side, closed):
+        _C5_SIG.pop(key, None)
+        return "ok"
+    return "wait"
+
+
+async def _c5_check(device_id: str, sym: str, side: str) -> str:
+    """v10.7.21 — ambil candle 5m (buang candle berjalan) lalu _c5_gate."""
+    try:
+        from market_data import _http, _fetch_binance_klines
+        client = await _http()
+        c = await _fetch_binance_klines(client, sym, "5m", 6)
+        closed = (c or [])[:-1]
+    except Exception as e:  # noqa: BLE001
+        logger.debug("5m confirm fetch gagal %s: %s", sym, e)
+        return "wait"
+    return _c5_gate(f"{device_id}:{sym}:{side}", side, closed, time.time())
+
+
 def _btc15m_short_block(candle_up: bool, btc15_state: str,
                         exhausted_down: bool) -> bool:
     """v10.7.17 — keputusan user: blokir SHORT baru saat BTC 15m naik dari
@@ -2015,6 +2080,18 @@ async def _run_full_auto_scanner(
                 # alur scheduler startup. Record klaim dipertahankan sebagai
                 # audit; satu doc per (device,symbol) di-reuse (tidak
                 # menumpuk).
+                # v10.7.20 — keputusan user: konfirmasi 2 candle 5m TERTUTUP
+                # searah sinyal (merah-merah utk SHORT, hijau-hijau utk LONG).
+                # Candle berjalan diabaikan. Berlaku pada arah yang dieksekusi.
+                # v10.7.21 — sinyal batal bila candle 5m tutup berlawanan
+                # setelah sinyal terbentuk; tunggu sinyal baru.
+                _c5 = await _c5_check(device_id, sym, sig["side"])
+                if _c5 == "cancel":
+                    _dev_reject(rep, f"signal_cancelled_5m_against_{sig['side']}")
+                    continue
+                if _c5 != "ok":
+                    _dev_reject(rep, f"await_2x5m_confirm_{sig['side']}")
+                    continue
                 slot_id = f"{device_id}:{sym}"
                 now_dt = datetime.now(timezone.utc)
                 now_claim = now_dt.isoformat()

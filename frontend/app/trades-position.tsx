@@ -767,11 +767,11 @@ export default function TradesPositionScreen() {
       </Text>
     </View>
   );
-  // v10.3.0 — History dikelompokkan per tanggal close (terbaru → terlama).
+  // v10.7.20 — History dikelompokkan per tanggal trade DIBUKA (terbaru → terlama).
   const histGroups = (() => {
     const map = new Map<string, AnyTrade[]>();
     histList.forEach((t2: any) => {
-      const d = new Date(t2.closed_at || t2.updated_at || t2.created_at || "");
+      const d = new Date(t2.created_at || t2.opened_at || t2.closed_at || t2.updated_at || "");
       const k = isNaN(d.getTime()) ? "0000-00-00" : dayKey(d);
       if (!map.has(k)) map.set(k, []);
       map.get(k)!.push(t2);
