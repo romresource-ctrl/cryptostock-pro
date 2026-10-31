@@ -2207,49 +2207,9 @@ async def _refresh_binance(doc: dict[str, Any], trade: dict[str, Any]) -> dict[s
             # Error tak terduga: tidak boleh menelan event (biarkan tick
             # berikutnya mengulang window yang sama).
             _native_partial_upd = {}
-        # v10.2.16 — PROFILE HORIZON EXIT (keputusan user): "bot masuk
-        # dan keluar sesuai waktu profil". Berlaku untuk SEMUA formula
-        # pada trade BARU (flag horizon_exit) di profil Scalper/Intraday/
-        # Swing — posisi existing & Confluence v9 tidak terdampak.
-        #   1) Profit ROE ≥ cap (Scalper 10% · Intraday 15% · Swing 25%)
-        #      → market-close SEKARANG ("jika sudah profit diatas X% -
-        #      close").
-        #   2) Umur ≥ horizon maks (15m / 4h / 24h dari entry) & posisi
-        #      masih profit → market-close (keluar sesuai waktu profil).
-        #   3) Posisi loss saat horizon habis → dibiarkan ke SL.
-        #   Confluence v9 (longterm): TIDAK ada cap & tidak ada batas
-        #   waktu — holding mengikuti SL/TP1-3.
-        if ((trade.get("horizon_exit") or trade.get("hit_and_run"))
-                and not trade.get("trailing_activated")
-                and not _native_partial_upd.get("trailing_activated")):
-            try:
-                _hp = str(trade.get("profile") or "day").lower()
-                _hx_entry_px = float(trade.get("entry_price") or 0)
-                _hx_mark = float(mark or 0)
-                _hx_sign = 1.0 if trade.get("side") == "BUY" else -1.0
-                _hx_profit = bool(
-                    _hx_mark and _hx_entry_px
-                    and (_hx_mark - _hx_entry_px) * _hx_sign > 0)
-                _hx_close_why = None
-                _hx_cap = PROFILE_PROFIT_CAP_ROE.get(_hp)
-                if _hx_cap and _hx_mark and _hx_entry_px:
-                    _hx_lev = float(trade.get("actual_leverage")
-                                    or trade.get("leverage") or 1)
-                    _hx_roe = ((_hx_mark - _hx_entry_px) * _hx_sign
-                               / _hx_entry_px * _hx_lev * 100)
-                    if _hx_roe >= _hx_cap:
-                        _hx_close_why = f"profit_cap_{_hx_cap:g}pct"
-                # v10.7.15 — keputusan user: horizon (batas waktu profil)
-                # DIHAPUS sepenuhnya — tidak close, tidak geser SL ke entry.
-                # Posisi berjalan sampai TP/SL asli saat entry.
-                if _hx_close_why:
-                    _cr = await close_position(
-                        doc, symbol, trade.get("side") or "BUY", abs(amt))
-                    _native_partial_upd["horizon_exit_at"] = (
-                        _hx_close_why if _cr.get("ok")
-                        else f"close_failed: {str(_cr)[:120]}")
-            except Exception as _e:  # noqa: BLE001
-                _native_partial_upd["horizon_exit_error"] = str(_e)[:200]
+        # v10.7.16 — keputusan user: PROFILE HORIZON EXIT dihapus sepenuhnya
+        # (batas waktu v10.7.15 + batas profit Scalper 10%/Intraday 15%/
+        # Swing 25%). Posisi berjalan sampai TP/SL asli saat entry.
         # v10.2.21 — EARLY-EXIT STALE LONGTERM (Confluence v9): posisi
         # longterm yg berjalan >LONGTERM_STALE_HOURS jam TAPI tidak
         # pernah mencapai profit floating > LONGTERM_STALE_MIN_PROFIT_PCT
