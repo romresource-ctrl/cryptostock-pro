@@ -542,12 +542,10 @@ class TestLongtermStaleExit:
                                max_floating_pct=0.1)
         pos = _pos_open(10.0, mark=100.2, side="BUY")  # +0.2% floating
         captured, upd = self._run(trade, pos, monkeypatch)
-        assert len(captured["close_calls"]) == 1, (
-            f"expected close_position call, got {captured}")
-        assert upd.get("close_reason") == "stale_exit"
-        se = str(upd.get("stale_exit_at") or "")
-        assert se.startswith("longterm_stale_"), se
-        assert "max" in se
+        # v10.7.22 — stale-exit dinonaktifkan: tidak ada close paksa
+        assert captured["close_calls"] == [], captured
+        assert upd.get("close_reason") != "stale_exit"
+        assert "stale_exit_at" not in upd
 
     # ─── positive: confluence tag + swing (not in longterm set but tag matches)
     def test_stale_exit_fires_for_confluence_v9_tag(self, monkeypatch):
@@ -555,17 +553,17 @@ class TestLongtermStaleExit:
                                formula_tag="Confluence v9")
         pos = _pos_open(10.0, mark=100.3, side="BUY")
         captured, upd = self._run(trade, pos, monkeypatch)
-        assert len(captured["close_calls"]) == 1
-        assert upd.get("close_reason") == "stale_exit"
+        assert captured["close_calls"] == []  # v10.7.22
+        assert upd.get("close_reason") != "stale_exit"
 
     # ─── max_floating_pct persisted on update
     def test_max_floating_pct_persisted_when_higher(self, monkeypatch):
         trade = _mk_long_trade(profile="longterm", max_floating_pct=0.05)
         pos = _pos_open(10.0, mark=100.3, side="BUY")  # +0.3% floating
-        _, upd = self._run(trade, pos, monkeypatch)
-        # new max 0.3 > 0.05 → persisted
-        assert "max_floating_pct" in upd
-        assert abs(upd["max_floating_pct"] - 0.3) < 1e-6
+        captured, upd = self._run(trade, pos, monkeypatch)
+        # v10.7.22 — stale-exit dinonaktifkan: tracking max tidak lagi dipakai
+        assert captured["close_calls"] == []
+        assert upd.get("close_reason") != "stale_exit"
 
     # ─── negative controls
     def test_no_close_when_age_below_3h(self, monkeypatch):
@@ -594,8 +592,7 @@ class TestLongtermStaleExit:
         pos = _pos_open(10.0, mark=101.0, side="BUY")  # +1% floating
         captured, upd = self._run(trade, pos, monkeypatch)
         assert captured["close_calls"] == []
-        # max_floating_pct now bumped to ~1.0
-        assert upd.get("max_floating_pct", 0) >= 0.99
+        assert upd.get("close_reason") != "stale_exit"  # v10.7.22
 
     def test_no_close_for_scalper_profile_and_no_confluence_tag(
             self, monkeypatch):

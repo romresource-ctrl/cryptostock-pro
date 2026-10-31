@@ -15,3 +15,12 @@ def test_bot_orders_not_relabeled():
     assert br.classify_close_origin({"client_id": "x-Cb7ytekJ123"}) is None
     assert br.classify_close_origin({"client_id": ""}) is None
     assert br.classify_close_origin(None) is None
+
+
+def test_stale_exit_label_kept_over_break_even():
+    import inspect
+    from asi_bot import engine
+    src = inspect.getsource(engine)
+    i = src.index('if reason is None and trade.get("stale_exit_at"):')
+    assert i < src.index('reason = "BREAK_EVEN"')
+    assert "await close_position(\n                        doc, symbol, trade.get(\"side\") or \"BUY\", abs(amt))\n                    _native_partial_upd[\"stale_exit_at\"]" not in src
