@@ -398,6 +398,12 @@ def register(app_api: APIRouter, db: Any) -> None:
     @router.post("/credentials")
     async def save_credential(payload: SaveCredentialPayload,
                               device_id: str = Query(..., min_length=4)):
+        # v10.7.24 — OKX & Bitget wajib Passphrase (CCXT "password").
+        if payload.exchange in ("okx", "bitget") and not (payload.password or "").strip():
+            raise HTTPException(400, detail={
+                "code": "passphrase_required",
+                "message": f"Passphrase is required for {payload.exchange.upper()}.",
+            })
         res = await validate_credentials(
             payload.exchange, payload.api_key, payload.api_secret,
             payload.password, payload.testnet,

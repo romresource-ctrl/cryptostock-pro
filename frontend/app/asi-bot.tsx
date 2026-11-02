@@ -49,6 +49,31 @@ const EXCHANGES: { id: ExchangeId; label: string; needsPass: boolean }[] = [
   { id: "okx",     label: "OKX Swap",         needsPass: true  },
   { id: "bitget",  label: "Bitget Futures",   needsPass: true  },
 ];
+// v10.7.24 — panduan API key per exchange (Binance memakai kartu lama).
+const EX_GUIDE: Partial<Record<ExchangeId, string[]>> = {
+  bybit: [
+    "1️⃣ Bybit → Profile → API → Create New Key → System-generated API Keys",
+    "2️⃣ Permissions: \"Read-Write\", tick Contract / Derivatives → Orders & Positions (USDT Perpetual)",
+    "3️⃣ DO NOT tick Withdrawal / Transfer",
+    "4️⃣ Choose \"Only IPs with permissions granted…\" and paste the server IP above",
+    "5️⃣ Copy the API Key & API Secret into the fields below",
+  ],
+  okx: [
+    "1️⃣ OKX → Profile → API → Create API key (V5)",
+    "2️⃣ Set a Passphrase — you MUST enter it below (OKX requires it)",
+    "3️⃣ Permissions: tick \"Read\" + \"Trade\" — DO NOT tick \"Withdraw\"",
+    "4️⃣ IP address: paste the server IP above (link to IP)",
+    "5️⃣ Copy the API Key, Secret Key and Passphrase into the fields below",
+  ],
+  bitget: [
+    "1️⃣ Bitget → Profile → API Management → Create API → System-generated",
+    "2️⃣ Set a Passphrase — enter it below",
+    "3️⃣ Permissions: Read-Write, tick Futures (Orders + Holdings) — DO NOT tick Withdraw / Transfer",
+    "4️⃣ Bind IP address: paste the server IP above",
+    "5️⃣ Copy the API Key, Secret Key and Passphrase into the fields below",
+  ],
+};
+
 
 export default function ASIBotScreen() {
   const router = useRouter();
@@ -91,6 +116,9 @@ export default function ASIBotScreen() {
     real: { connected: boolean; available_usdt: number | null };
   }>({ demo: { connected: false, available_usdt: null }, real: { connected: false, available_usdt: null } });
   const [connectOpen, setConnectOpen] = useState(false);
+  // v10.7.24 — exchange modal terpisah dari bot.exchange (refresh berkala
+  // menimpa bot.exchange dgn nilai server → modal selalu "Binance").
+  const [connectEx, setConnectEx] = useState<ExchangeId>("binance");
   // v9.7.6 — track in-flight close requests per trade id
   const [closingIds, setClosingIds] = useState<Record<string, boolean>>({});
   const [closingAll, setClosingAll] = useState(false);
@@ -719,7 +747,7 @@ export default function ASIBotScreen() {
             return (
               <TouchableOpacity
                 key={ex.id}
-                onPress={() => { setBot({ ...bot, exchange: ex.id }); setConnectOpen(true); }}
+                onPress={() => { setConnectEx(ex.id); setConnectOpen(true); }}
                 style={[s.row, { backgroundColor: colors.surface, borderColor: bot.exchange === ex.id ? GOLD : colors.border }]}
                 testID={`asi-ex-${ex.id}`}
               >
@@ -1659,14 +1687,15 @@ export default function ASIBotScreen() {
       <ConnectExchangeModal
         visible={connectOpen}
         onClose={() => setConnectOpen(false)}
-        exchange={bot.exchange as ExchangeId}
+        exchange={connectEx}
         colors={colors}
         onSaved={async (savedTestnet) => {
           setConnectOpen(false);
           // v9.9.5 — Setelah menyimpan key untuk suatu jaringan, langsung
           // jadikan jaringan itu aktif (niat user jelas ingin memakainya).
+          // v10.7.24 — bot juga memakai exchange yang baru dihubungkan.
           if (typeof savedTestnet === "boolean") {
-            await saveBot({ active_testnet: savedTestnet });
+            await saveBot({ active_testnet: savedTestnet, exchange: connectEx });
           }
           await refresh();
         }}
@@ -1913,6 +1942,7 @@ function ConnectExchangeModal({ visible, onClose, exchange, colors, onSaved, dev
             </View>
 
             {/* IP Whitelist guidance card (crucial for Binance & security) */}
+            {exchange === "binance" ? (
             <View style={[m.ipCard, { borderColor: colors.border, backgroundColor: colors.background }]}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                 <Ionicons name="shield-checkmark" size={16} color={GOLD} />
@@ -1947,13 +1977,44 @@ function ConnectExchangeModal({ visible, onClose, exchange, colors, onSaved, dev
                 <Text style={{ color: colors.textMuted, fontSize: 10.5, lineHeight: 15 }}>{t("asi_ip_step4")}</Text>
               </View>
             </View>
+            ) : (
+            <View style={[m.ipCard, { borderColor: colors.border, backgroundColor: colors.background }]} testID={`asi-guide-${exchange}`}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Ionicons name="shield-checkmark" size={16} color={GOLD} />
+                <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 12 }}>
+                  {`How to create a ${ex.label} API key`}
+                </Text>
+              </View>
+              {/* Server IP sama untuk semua exchange */}
+              <View style={[m.ipRow, { backgroundColor: colors.surface, borderColor: GOLD }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: colors.textMuted, fontSize: 9.5, fontWeight: "700" }}>{t("asi_ip_label")}</Text>
+                  <Text style={{ color: colors.textPrimary, fontWeight: "900", fontSize: 13, fontFamily: Platform.OS === "ios" ? "Courier" : "monospace", letterSpacing: 0.5 }}>
+                    {serverIp}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={copyIp} style={[m.copyBtn, { backgroundColor: copied ? GREEN : GOLD }]}>
+                  <Ionicons name={copied ? "checkmark" : "copy-outline"} size={14} color={ACCENT_TEXT} />
+                  <Text style={{ color: ACCENT_TEXT, fontWeight: "900", fontSize: 11 }}>
+                    {copied ? t("asi_ip_copied") : t("asi_ip_copy")}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              <View style={{ gap: 3, marginTop: 4 }}>
+                {(EX_GUIDE[exchange] || []).map((line) => (
+                  <Text key={line} style={{ color: colors.textMuted, fontSize: 10.5, lineHeight: 15 }}>{line}</Text>
+                ))}
+              </View>
+            </View>
+            )}
 
             <TextInput value={k} onChangeText={setK} placeholder="API Key" placeholderTextColor={colors.textMuted}
                        style={[m.input, { color: colors.textPrimary, borderColor: colors.border }]} autoCapitalize="none" />
             <TextInput value={s2} onChangeText={setS2} placeholder="API Secret" placeholderTextColor={colors.textMuted}
                        style={[m.input, { color: colors.textPrimary, borderColor: colors.border }]} secureTextEntry autoCapitalize="none" />
             {ex.needsPass ? (
-              <TextInput value={p} onChangeText={setP} placeholder="Passphrase" placeholderTextColor={colors.textMuted}
+              <TextInput value={p} onChangeText={setP} placeholder={exchange === "okx" ? "Passphrase (required by OKX)" : "Passphrase"} placeholderTextColor={colors.textMuted}
+                         testID="asi-passphrase-input"
                          style={[m.input, { color: colors.textPrimary, borderColor: colors.border }]} secureTextEntry autoCapitalize="none" />
             ) : null}
 
