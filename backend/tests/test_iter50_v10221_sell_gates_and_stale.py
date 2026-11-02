@@ -426,7 +426,9 @@ class TestBuyRegressionGates:
         db, exec_stub, fetcher = make_harness(
             monkeypatch, side="BUY", conf=95, regime="neutral",
             base="BULL", streak=0)
-        run_scan(db, fetcher)  # v10.7.12 — BUY 1 siklus langsung eksekusi
+        run_scan(db, fetcher)  # v10.7.23 — BUY 2 siklus
+        assert len(exec_stub.calls) == 0
+        run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
@@ -440,6 +442,7 @@ class TestBuyRegressionGates:
         run_scan(db, fetcher)
         rej = rejects_of(db)
         assert not any(r.startswith("anti-flap") for r in rej), rej
+        run_scan(db, fetcher)  # v10.7.23 — BUY 2 siklus
         assert len(exec_stub.calls) == 1, rej
 
     def test_buy_bear4h_conf_bonus(self, monkeypatch):
@@ -653,7 +656,7 @@ class TestScanDebugHTTP:
                   "anti_chase_mode",
                   "longterm_stale_hours", "longterm_stale_min_profit_pct"):
             assert f in gates, f"missing field {f} in buy_gates={gates}"
-        assert gates["buy_confirm_cycles"] == 1  # v10.2.31
+        assert gates["buy_confirm_cycles"] == 2  # v10.7.23
         assert gates["sell_confirm_cycles"] == 2
         assert gates["anti_chase_mode"] == "btc_momentum"  # v10.2.32
         assert gates["longterm_stale_hours"] == 3.0

@@ -430,13 +430,13 @@ class TestLongSlopeRelaxation:
         db, exec_stub, fetcher = make_harness(
             monkeypatch, side="BUY", conf=95, regime="trending_up",
             base="BULL", streak=3, closes_4h=closes_long_relax())
-        run_scan(db, fetcher)  # siklus 1 → lolos filter, menunggu konfirmasi
+        run_scan(db, fetcher)
         rej = rejects_of(db)
-        assert "trend_filter_4h_block_LONG" not in rej, rej
-        assert len(exec_stub.calls) == 1, rej  # v10.7.12 BUY 1 siklus
-        run_scan(db, fetcher)  # siklus 2 → tereksekusi
-        assert len(exec_stub.calls) == 1
-        assert exec_stub.calls[0]["side"] == "BUY"
+        # v10.7.23 — bypass _long_relaxed dinonaktifkan: slope turun 4H
+        # tetap memblokir LONG meski BTC trending_up.
+        assert "trend_filter_4h_block_LONG" in rej, rej
+        run_scan(db, fetcher)
+        assert len(exec_stub.calls) == 0
 
     def test_long_rejected_when_slope_dn_and_streak_0(self, monkeypatch):
         """BTC tidak terkonfirmasi (netral, streak 0) → proteksi slope
@@ -471,12 +471,12 @@ class TestLongSlopeRelaxation:
             base="BULL", streak=1, closes_4h=closes_long_relax())
         run_scan(db, fetcher)
         rej = rejects_of(db)
-        assert "trend_filter_4h_block_LONG" not in rej, rej
-        assert not any(r.startswith("anti-flap") for r in rej), rej
-        assert len(exec_stub.calls) == 1, rej  # v10.7.12 BUY 1 siklus
+        # v10.7.23 — bypass _long_relaxed dinonaktifkan: slope turun 4H
+        # tetap memblokir LONG meski BTC trending_up.
+        assert "trend_filter_4h_block_LONG" in rej, rej
         run_scan(db, fetcher)
-        assert len(exec_stub.calls) == 1
-        assert exec_stub.calls[0]["side"] == "BUY"
+        assert len(exec_stub.calls) == 0
+
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -539,7 +539,8 @@ class TestGateRegressions:
         run_scan(db, fetcher)
         rej = rejects_of(db)
         assert not any(r.startswith("anti-flap") for r in rej), rej
-        assert len(exec_stub.calls) == 1, rej  # v10.7.12 BUY 1 siklus
+        run_scan(db, fetcher)  # v10.7.23 — BUY 2 siklus
+        assert len(exec_stub.calls) == 1, rej  # v10.7.12 BUY 2 siklus
 
     def test_buy_bear4h_conf_bonus(self, monkeypatch):
         """v10.2.17: base4H BEAR → min conf +5 (92 < 95 → reject)."""
@@ -556,7 +557,8 @@ class TestGateRegressions:
             monkeypatch, side="BUY", conf=95, regime="neutral",
             base="BULL", streak=0, closes_4h=closes_uptrend())
         run_scan(db, fetcher)
-        assert len(exec_stub.calls) == 1  # v10.7.12 BUY 1 siklus
+        run_scan(db, fetcher)  # v10.7.23 — BUY 2 siklus
+        assert len(exec_stub.calls) == 1  # v10.7.12 BUY 2 siklus
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
 

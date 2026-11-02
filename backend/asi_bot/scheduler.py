@@ -66,7 +66,7 @@ MIN_FULL_AUTO_CONFIDENCE = 90
 #    sebelum Full-Auto mengeksekusi.
 TREND_UP_MIN_CYCLES = 3
 BEAR4H_CONF_BONUS = 5
-BUY_CONFIRM_CYCLES = 1
+BUY_CONFIRM_CYCLES = 2  # v10.7.23 — user: 1 → 2 (setara SELL)
 # v10.2.31 — Keputusan user (eksekusi lebih sering, "jangan sampai
 # seharian tidak eksekusi"): BUY tidak lagi butuh 2 siklus konfirmasi;
 # satu siklus cukup. Risiko flap kecil karena proteksi lain tetap:
@@ -1177,6 +1177,20 @@ async def _c5_check(device_id: str, sym: str, side: str) -> str:
     return _c5_gate(f"{device_id}:{sym}:{side}", side, closed, time.time())
 
 
+def _trend1h_gate(side: str, px: float | None, ema: float | None,
+                  ema_prev: float | None) -> str | None:
+    """v10.7.23 — keputusan user: LONG ditolak bila harga < EMA50 1H atau
+    slope EMA50 1H turun; SHORT ditolak bila harga > EMA50 1H atau slope
+    naik. Data tidak tersedia → tolak (hard gate, fail-closed)."""
+    if px is None or ema is None or ema_prev is None:
+        return "trend_1h_data_unavailable"
+    if side == "BUY" and (px < ema or ema < ema_prev):
+        return "trend_1h_ema50_block_LONG"
+    if side == "SELL" and (px > ema or ema > ema_prev):
+        return "trend_1h_ema50_block_SHORT"
+    return None
+
+
 def _btc15m_short_block(candle_up: bool, btc15_state: str,
                         exhausted_down: bool) -> bool:
     """v10.7.17 — keputusan user: blokir SHORT baru saat BTC 15m naik dari
@@ -1618,6 +1632,9 @@ async def _run_full_auto_scanner(
                 _hi24: float = 0.0
                 _lo24: float = 0.0
                 _timing_ready = False
+                _ema1h: float | None = None
+                _ema1h_prev: float | None = None
+                _px1h: float | None = None
                 if any(isinstance(s, dict) and s.get("side") for s in results):
                     try:
                         from market_data import get_crypto_snapshot as _g1h
@@ -1628,6 +1645,11 @@ async def _run_full_auto_scanner(
                         if len(_c1) >= 16:
                             _rsi1h = _rsi_fn(_c1[:-1], 14)
                             _timing_ready = True
+                        # v10.7.23 — EMA50 1H simbol (hard gate tren)
+                        if len(_c1) >= 54:
+                            from indicators import _ema as _ema_fn
+                            _es = _ema_fn(_c1, 50)
+                            _ema1h, _ema1h_prev, _px1h = _es[-1], _es[-4], _c1[-1]
                         # v10.7.7 — high/low 24 jam dari 24 candle 1h terakhir
                         _cc = ((_snap or {}).get("candles") or [])[-24:]
                         _hs = [float(c["high"]) for c in _cc if c.get("high")]
@@ -1914,7 +1936,9 @@ async def _run_full_auto_scanner(
                         # menunggu streak 3) — LONG cukup butuh harga >
                         # EMA50. SHORT tetap menunggu streak 3 (sisi SELL
                         # tidak diubah).
-                        _long_relaxed = btc_regime["regime"] == "trending_up"
+                        # v10.7.23 — keputusan user: bypass dinonaktifkan;
+                        # slope-turun 4H simbol tidak lagi di-relax oleh BTC.
+                        _long_relaxed = False
                         _short_relaxed = trend_down_streak >= TREND_UP_MIN_CYCLES
                         if want_long and (not bias_up
                                           or (slope_dn and not _long_relaxed)):
@@ -2085,6 +2109,12 @@ async def _run_full_auto_scanner(
                 # Candle berjalan diabaikan. Berlaku pada arah yang dieksekusi.
                 # v10.7.21 — sinyal batal bila candle 5m tutup berlawanan
                 # setelah sinyal terbentuk; tunggu sinyal baru.
+                # v10.7.23 — HARD GATE tren 1H simbol (tidak di-relax BTC
+                # apa pun). Dinilai pada arah yang akan dieksekusi.
+                _tg = _trend1h_gate(sig["side"], _px1h, _ema1h, _ema1h_prev)
+                if _tg:
+                    _dev_reject(rep, _tg)
+                    continue
                 _c5 = await _c5_check(device_id, sym, sig["side"])
                 if _c5 == "cancel":
                     _dev_reject(rep, f"signal_cancelled_5m_against_{sig['side']}")

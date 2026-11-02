@@ -359,22 +359,25 @@ class TestBuyConfirmEval:
         assert (ok, cnt) == (False, 1)  # count=0 (consumed) → tunggu lagi
 
 
-    def test_buy_default_one_cycle_confirms_immediately(self):
-        # v10.7.12 — BUY_CONFIRM_CYCLES=1 (v10.2.31): siklus pertama langsung lolos
-        assert sched.BUY_CONFIRM_CYCLES == 1
+    def test_buy_default_two_cycles(self):
+        # v10.7.23 — BUY_CONFIRM_CYCLES=2 (setara SELL): siklus 1 menunggu
+        assert sched.BUY_CONFIRM_CYCLES == 2
         assert sched._buy_confirm_eval(None, fingerprint=self.FP, now=NOW,
-                                       window_s=self.WIN) == (True, 1)
+                                       window_s=self.WIN) == (False, 1)
 
 
 # ═════════════════ INTEGRASI: _run_full_auto_scanner ════════════════════════
 class TestScannerBuyConfirmFlow:
-    """v10.7.12 — BUY dieksekusi di siklus pertama (BUY_CONFIRM_CYCLES=1);
+    """v10.7.23 — BUY dieksekusi di siklus kedua (BUY_CONFIRM_CYCLES=2);
     siklus berikutnya tidak eksekusi lagi (dup guard)."""
 
     def test_buy_executes_first_cycle_then_no_reexecute(self, monkeypatch):
         db, exec_stub, fetcher = make_harness(
             monkeypatch, side="BUY", conf=95, regime="neutral",
             base="BULL", streak=0)
+        run_scan(db, fetcher)
+        assert len(exec_stub.calls) == 0
+        assert "buy_awaiting_confirm_cycle_2" in rejects_of(db)
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
         assert exec_stub.calls[0]["side"] == "BUY"
@@ -391,10 +394,12 @@ class TestScannerBuyConfirmFlow:
             monkeypatch, side="BUY", conf=95, regime="neutral",
             base="BULL", streak=0)
         run_scan(db, fetcher)
+        run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
         db.asi_trades.docs.clear()
         db.asi_scan_claims.docs.clear()
         run_scan(db, fetcher)
+        run_scan(db, fetcher)  # v10.7.23 — BUY 2 siklus
         assert len(exec_stub.calls) == 2
 
 
@@ -409,6 +414,7 @@ class TestScannerTrendingUpBuy:
         run_scan(db, fetcher)
         rej = rejects_of(db)
         assert not any(r.startswith("anti-flap") for r in rej), rej
+        run_scan(db, fetcher)  # v10.7.23 — BUY 2 siklus
         assert len(exec_stub.calls) == 1, rej
 
 
@@ -430,7 +436,8 @@ class TestScannerBear4hConfBonus:
         run_scan(db, fetcher)  # siklus 1: lolos conf -> konfirmasi
         rej = rejects_of(db)
         assert "conf<95_bear4h" not in rej, rej
-        assert len(exec_stub.calls) == 1  # v10.7.12 — BUY 1 siklus
+        run_scan(db, fetcher)  # v10.7.23 — BUY 2 siklus
+        assert len(exec_stub.calls) == 1  # v10.7.12 — BUY 2 siklus
 
 
 class TestScannerSellRegression:
@@ -473,7 +480,7 @@ class TestScanDebugHTTP:
         gates = body.get("buy_gates") or {}
         assert gates.get("trend_up_min_cycles") == 3
         assert gates.get("bear4h_conf_bonus") == 5
-        assert gates.get("buy_confirm_cycles") == 1
+        assert gates.get("buy_confirm_cycles") == 2
 
 
 class TestRegression:
