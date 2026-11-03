@@ -1177,6 +1177,22 @@ async def _c5_check(device_id: str, sym: str, side: str) -> str:
     return _c5_gate(f"{device_id}:{sym}:{side}", side, closed, time.time())
 
 
+async def _trend1h_inputs(sym: str) -> tuple[float | None, float | None, float | None]:
+    """v10.7.25 — (harga, EMA50 1H, EMA50 1H 3 candle lalu) utk jalur entry
+    di luar scanner utama (relay Titan)."""
+    try:
+        from market_data import get_crypto_snapshot as _g1h
+        from indicators import _ema as _ema_fn
+        snap = await _g1h(sym, "1h")
+        c1 = [float(c["close"]) for c in ((snap or {}).get("candles") or []) if c.get("close")]
+        if len(c1) >= 54:
+            es = _ema_fn(c1, 50)
+            return c1[-1], es[-1], es[-4]
+    except Exception as e:  # noqa: BLE001
+        logger.debug("trend1h inputs %s gagal: %s", sym, e)
+    return None, None, None
+
+
 def _trend1h_gate(side: str, px: float | None, ema: float | None,
                   ema_prev: float | None) -> str | None:
     """v10.7.23 — keputusan user: LONG ditolak bila harga < EMA50 1H atau
@@ -2451,6 +2467,10 @@ async def _run_titan_relay(db: Any) -> None:
                 continue
             mark = float(p.get("markPrice") or 0)
             if not mark:
+                continue
+            # v10.7.25 — hard gate EMA50 1H juga berlaku utk relay Titan
+            # (semua entry baru, tanpa pengecualian formula/sumber).
+            if _trend1h_gate(side, *(await _trend1h_inputs(base))):
                 continue
             now = datetime.now(timezone.utc).isoformat()
             # Fan-out ke setiap user Titan-Bot.

@@ -28,3 +28,17 @@ def test_fail_closed_and_wiring():
     assert src.index("_trend1h_gate(sig[\"side\"]") < src.index("await _c5_check(")
     assert "_long_relaxed = False" in src
     assert scheduler.BUY_CONFIRM_CYCLES == 2 == scheduler.SELL_CONFIRM_CYCLES
+
+
+def test_gate_unconditional_for_all_formulas_and_paths():
+    # v10.7.25 — gate tidak dibungkus kondisi formula/profil apa pun
+    src = inspect.getsource(scheduler._run_full_auto_scanner)
+    i = src.index('_tg = _trend1h_gate(sig["side"], _px1h, _ema1h, _ema1h_prev)')
+    pre = src[max(0, i - 400):i]
+    for word in ("formula", "longterm", "Confluence", "profile", "engine"):
+        assert f"if {word}" not in pre and f"{word} ==" not in pre.split("\n")[-2]
+    # EMA 1H dihitung utk SEMUA simbol yg punya sinyal (tanpa filter formula)
+    assert 'if any(isinstance(s, dict) and s.get("side") for s in results):' in src
+    # relay Titan juga lewat gate
+    relay = inspect.getsource(scheduler._run_titan_relay) if hasattr(scheduler, "_run_titan_relay") else open(scheduler.__file__).read()
+    assert "_trend1h_gate(side, *(await _trend1h_inputs(base)))" in relay
