@@ -1187,7 +1187,8 @@ async def _trend1h_inputs(sym: str) -> tuple[float | None, float | None, float |
         c1 = [float(c["close"]) for c in ((snap or {}).get("candles") or []) if c.get("close")]
         if len(c1) >= 54:
             es = _ema_fn(c1, 50)
-            return c1[-1], es[-1], es[-4]
+            # v10.7.26 — candle 1H TERTUTUP terakhir (index -2)
+            return c1[-2], es[-2], es[-5]
     except Exception as e:  # noqa: BLE001
         logger.debug("trend1h inputs %s gagal: %s", sym, e)
     return None, None, None
@@ -1665,7 +1666,9 @@ async def _run_full_auto_scanner(
                         if len(_c1) >= 54:
                             from indicators import _ema as _ema_fn
                             _es = _ema_fn(_c1, 50)
-                            _ema1h, _ema1h_prev, _px1h = _es[-1], _es[-4], _c1[-1]
+                            # v10.7.26 — candle 1H TERTUTUP terakhir (index -2),
+                            # slope -2 vs -5 (konsisten dgn RSI/BTC regime)
+                            _ema1h, _ema1h_prev, _px1h = _es[-2], _es[-5], _c1[-2]
                         # v10.7.7 — high/low 24 jam dari 24 candle 1h terakhir
                         _cc = ((_snap or {}).get("candles") or [])[-24:]
                         _hs = [float(c["high"]) for c in _cc if c.get("high")]
@@ -2255,6 +2258,13 @@ async def _run_full_auto_scanner(
                     / max(1, int(res["leverage"])), 2,
                 )
                 rec = {**res, "device_id": device_id, "margin_usdt": margin_usdt}
+                # v10.7.26 — simpan keputusan gate EMA50 1H utk analisa
+                rec["trend1h_gate"] = {
+                    "side": sig["side"], "price_1h_close": _px1h,
+                    "ema50_1h": _ema1h, "ema50_1h_prev": _ema1h_prev,
+                    "result": "pass" if not _tg else "blocked",
+                    "reason": _tg,
+                }
                 # v10.1.2 — SELALU simpan record walau entry_order_id kosong
                 # (bug lama: trade tereksekusi di Binance tapi tak pernah
                 # masuk DB → user mengira bot tidak eksekusi). Fallback _id

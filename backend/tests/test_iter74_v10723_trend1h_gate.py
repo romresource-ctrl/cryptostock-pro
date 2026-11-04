@@ -42,3 +42,14 @@ def test_gate_unconditional_for_all_formulas_and_paths():
     # relay Titan juga lewat gate
     relay = inspect.getsource(scheduler._run_titan_relay) if hasattr(scheduler, "_run_titan_relay") else open(scheduler.__file__).read()
     assert "_trend1h_gate(side, *(await _trend1h_inputs(base)))" in relay
+
+
+def test_v10726_closed_candle_and_record():
+    txt = open(scheduler.__file__).read()
+    assert "_ema1h, _ema1h_prev, _px1h = _es[-2], _es[-5], _c1[-2]" in txt
+    assert "return c1[-2], es[-2], es[-5]" in txt
+    src = inspect.getsource(scheduler._run_full_auto_scanner)
+    i = src.index('rec["trend1h_gate"] = {')
+    assert i > src.index('_tg = _trend1h_gate(sig["side"]')
+    for k in ('"price_1h_close": _px1h', '"ema50_1h": _ema1h', '"ema50_1h_prev": _ema1h_prev', '"result":'):
+        assert k in src[i:i + 400]
