@@ -39,7 +39,7 @@ def test_no_flip_when_conditions_not_met():
 
 def test_wired_before_filters():
     src = inspect.getsource(scheduler._run_full_auto_scanner)
-    i = src.index("_dip = _dip_top_flip(sig, _rsi1h, _hi24, _lo24, [])")
+    i = src.index("_dip = None if _with_trend else _dip_top_flip(sig, _rsi1h, _hi24, _lo24, [])")
     assert i < src.index('if btc15["state"] == "rebound" and sig["side"] == "SELL":')
 
 

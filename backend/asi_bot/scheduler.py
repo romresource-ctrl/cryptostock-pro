@@ -1143,7 +1143,14 @@ def _c5_gate(key: str, side: str, closed: list[dict[str, Any]],
     tunggu sinyal baru (sinyal harus hilang dulu lalu muncul lagi)."""
     st = _C5_SIG.get(key)
     if not st or now_s - st["last"] > C5_SIG_GAP_S:
-        st = {"t0_ms": now_s * 1000, "cancelled": False}
+        # v10.7.29 — harga referensi = close candle 5m tertutup terakhir
+        # saat sinyal pertama terlihat.
+        _ref = None
+        try:
+            _ref = float(closed[-1]["close"]) if closed else None
+        except Exception:
+            _ref = None
+        st = {"t0_ms": now_s * 1000, "cancelled": False, "ref": _ref}
     st["last"] = now_s
     _C5_SIG[key] = st
     if st["cancelled"]:
@@ -1152,10 +1159,14 @@ def _c5_gate(key: str, side: str, closed: list[dict[str, Any]],
         try:
             if int(c["t"]) + 300_000 <= st["t0_ms"]:
                 continue  # candle sudah tutup sebelum sinyal terbentuk
-            o, cl = float(c["open"]), float(c["close"])
+            cl = float(c["close"])
         except Exception:
             continue
-        if (side == "SELL" and cl > o) or (side == "BUY" and cl < o):
+        # v10.7.29 — batal hanya bila HARGA benar-benar bergerak berlawanan
+        # (close 5m tertutup melewati harga referensi), bukan sekadar satu
+        # candle warna berlawanan (dulu membunuh hampir semua sinyal 1H).
+        ref = st.get("ref")
+        if ref and ((side == "SELL" and cl > ref) or (side == "BUY" and cl < ref)):
             st["cancelled"] = True
             return "cancel"
     if _two_closed_5m_confirm(side, closed):
@@ -1701,7 +1712,15 @@ async def _run_full_auto_scanner(
                     # SELL dekat low 24h (<1%) + RSI1h <45 → BUY; BUY dekat
                     # high 24h (<1%) + RSI1h >55 → SELL (v10.7.8: dilonggarkan dari 30/70). Level dicerminkan
                     # dari entry; semua filter berikutnya menilai arah baru.
-                    _dip = _dip_top_flip(sig, _rsi1h, _hi24, _lo24, [])
+                    # v10.7.29 — AKAR MASALAH "0 eksekusi": sinyal yang SEARAH
+                    # tren 1H (SELL saat harga<EMA50 1H & slope turun; BUY saat
+                    # harga>EMA50 1H & slope naik) dulu dibalik oleh Long the
+                    # Dip / Short the Top, lalu hasil baliknya ditolak gate
+                    # tren → tidak ada yang tereksekusi (log: 187× flip, 2×
+                    # placed). Sinyal searah tren kini TIDAK dibalik/ditahan;
+                    # ia tetap wajib lolos konfirmasi 2 candle 5m.
+                    _with_trend = _trend1h_gate(sig["side"], _px1h, _ema1h, _ema1h_prev) is None
+                    _dip = None if _with_trend else _dip_top_flip(sig, _rsi1h, _hi24, _lo24, [])
                     if _dip and _dip.get("wait"):
                         # v10.7.9 — zona bottom/top: ambil candle 15m (lazy)
                         # lalu cek "wink" sebelum membalik arah.
@@ -1719,7 +1738,7 @@ async def _run_full_auto_scanner(
                     if _dip and _dip.get("wait"):
                         _dev_reject(rep, f"{_dip['wait'].lower().replace(' ', '_')}_wait_reversal")
                         continue
-                    if not _dip and _diptop_hold_blocks(sym, sig["side"]):
+                    if not _dip and not _with_trend and _diptop_hold_blocks(sym, sig["side"]):
                         # v10.7.10 — keputusan user (opsi 1): harga sudah keluar
                         # zona tanpa wink → arah telat tetap diblokir 4 jam.
                         _dev_reject(rep, f"diptop_hold_block_{sig['side']}")
@@ -1832,7 +1851,8 @@ async def _run_full_auto_scanner(
                     # profil SCALPER (sinyal reversal jangka pendek) tidak
                     # diblok BTC Regime 1H; filter BTC 15m & konfirmasi 2x5m
                     # tetap berlaku. Profil lain tidak berubah.
-                    _scalper_exempt = (sig.get("profile") or bot_profile) == "scalper"
+                    # v10.7.28 — keputusan user: berlaku untuk SEMUA profil.
+                    _scalper_exempt = False  # v10.7.29 — gate BTC Regime aktif lagi
                     if sym != "BTC" and not _scalper_exempt:
                         if sig["side"] == "SELL" and gate_block_sell:
                             _dev_reject(rep, f"btc_regime {btc_regime['regime']}: block SELL")
@@ -2136,12 +2156,9 @@ async def _run_full_auto_scanner(
                 # v10.7.23 — HARD GATE tren 1H simbol (tidak di-relax BTC
                 # apa pun). Dinilai pada arah yang akan dieksekusi.
                 _tg = _trend1h_gate(sig["side"], _px1h, _ema1h, _ema1h_prev)
-                # v10.7.27 — profil SCALPER dikecualikan dari gate EMA50 1H
-                if _tg and (sig.get("profile") or bot_profile) == "scalper":
-                    _tg_exempt = _tg
-                    _tg = None
-                else:
-                    _tg_exempt = None
+                # v10.7.29 — pengecualian v10.7.27/28 dicabut (keputusan user:
+                # perbaiki akar masalah, jangan batalkan gate).
+                _tg_exempt = None
                 if _tg:
                     _dev_reject(rep, _tg)
                     continue
@@ -2273,7 +2290,7 @@ async def _run_full_auto_scanner(
                 rec["trend1h_gate"] = {
                     "side": sig["side"], "price_1h_close": _px1h,
                     "ema50_1h": _ema1h, "ema50_1h_prev": _ema1h_prev,
-                    "result": ("exempt_scalper" if _tg_exempt
+                    "result": ("exempt" if _tg_exempt
                                else "pass" if not _tg else "blocked"),
                     "reason": _tg or _tg_exempt,
                 }

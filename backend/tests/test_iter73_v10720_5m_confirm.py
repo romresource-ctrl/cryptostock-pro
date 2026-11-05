@@ -32,19 +32,22 @@ def kt(t, o, c):
     return {"t": t, "open": o, "close": c}
 
 
-def test_gate_cancel_on_against_candle_and_needs_new_signal():
+def test_gate_cancel_only_when_price_beyond_reference():
+    # v10.7.29 — ref = close 5m tertutup terakhir saat sinyal muncul (10.0)
     scheduler._C5_SIG.clear()
-    T = 1_800_000_000  # detik
+    T = 1_800_000_000
     t0 = T * 1000
-    # sinyal SHORT terbentuk di T; candle tutup SETELAH T hijau → batal
-    closed = [kt(t0 - 600_000, 10, 9.9), kt(t0 - 120_000, 9.9, 10.1)]
-    assert scheduler._c5_gate("d:ETH:SELL", "SELL", closed, T) == "cancel"
-    # meski kemudian 2 merah, tetap batal selama sinyal sama masih ada
-    red2 = [kt(t0 + 300_000, 10.1, 10.0), kt(t0 + 600_000, 10.0, 9.9)]
-    assert scheduler._c5_gate("d:ETH:SELL", "SELL", red2, T + 90) == "cancel"
-    assert scheduler._c5_gate("d:ETH:SELL", "SELL", red2, T + 180) == "cancel"
-    # sinyal hilang > gap lalu muncul lagi → sinyal baru, 2 merah → ok
-    later = T + 180 + scheduler.C5_SIG_GAP_S + 1
+    base = [kt(t0 - 600_000, 9.9, 10.1), kt(t0 - 300_000, 10.1, 10.0)]
+    assert scheduler._c5_gate("d:ETH:SELL", "SELL", base, T) == "wait"
+    # candle hijau kecil tapi close MASIH di bawah ref → bukan batal
+    g = base + [kt(t0, 9.9, 9.95)]
+    assert scheduler._c5_gate("d:ETH:SELL", "SELL", g, T + 90) == "wait"
+    # close di atas ref (harga naik melawan SHORT) → batal & tetap batal
+    up = g + [kt(t0 + 300_000, 9.95, 10.05)]
+    assert scheduler._c5_gate("d:ETH:SELL", "SELL", up, T + 180) == "cancel"
+    red2 = up + [kt(t0 + 600_000, 10.05, 9.9), kt(t0 + 900_000, 9.9, 9.8)]
+    assert scheduler._c5_gate("d:ETH:SELL", "SELL", red2, T + 270) == "cancel"
+    later = T + 1300 + scheduler.C5_SIG_GAP_S  # semua candle sudah sebelum sinyal baru
     assert scheduler._c5_gate("d:ETH:SELL", "SELL", red2, later) == "ok"
 
 
