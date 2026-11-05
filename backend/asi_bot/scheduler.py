@@ -1828,7 +1828,12 @@ async def _run_full_auto_scanner(
                     # bearish_reversal/trending_down → blokir BUY.
                     # v10.7.0 — keputusan user: gate 1H/4H SELALU aktif
                     # (Reverse ON maupun OFF); bypass v10.5.1 dihapus.
-                    if sym != "BTC":
+                    # v10.7.27 — keputusan user ("aplikasi menjual sinyal"):
+                    # profil SCALPER (sinyal reversal jangka pendek) tidak
+                    # diblok BTC Regime 1H; filter BTC 15m & konfirmasi 2x5m
+                    # tetap berlaku. Profil lain tidak berubah.
+                    _scalper_exempt = (sig.get("profile") or bot_profile) == "scalper"
+                    if sym != "BTC" and not _scalper_exempt:
                         if sig["side"] == "SELL" and gate_block_sell:
                             _dev_reject(rep, f"btc_regime {btc_regime['regime']}: block SELL")
                             continue
@@ -2131,6 +2136,12 @@ async def _run_full_auto_scanner(
                 # v10.7.23 — HARD GATE tren 1H simbol (tidak di-relax BTC
                 # apa pun). Dinilai pada arah yang akan dieksekusi.
                 _tg = _trend1h_gate(sig["side"], _px1h, _ema1h, _ema1h_prev)
+                # v10.7.27 — profil SCALPER dikecualikan dari gate EMA50 1H
+                if _tg and (sig.get("profile") or bot_profile) == "scalper":
+                    _tg_exempt = _tg
+                    _tg = None
+                else:
+                    _tg_exempt = None
                 if _tg:
                     _dev_reject(rep, _tg)
                     continue
@@ -2262,8 +2273,9 @@ async def _run_full_auto_scanner(
                 rec["trend1h_gate"] = {
                     "side": sig["side"], "price_1h_close": _px1h,
                     "ema50_1h": _ema1h, "ema50_1h_prev": _ema1h_prev,
-                    "result": "pass" if not _tg else "blocked",
-                    "reason": _tg,
+                    "result": ("exempt_scalper" if _tg_exempt
+                               else "pass" if not _tg else "blocked"),
+                    "reason": _tg or _tg_exempt,
                 }
                 # v10.1.2 — SELALU simpan record walau entry_order_id kosong
                 # (bug lama: trade tereksekusi di Binance tapi tak pernah

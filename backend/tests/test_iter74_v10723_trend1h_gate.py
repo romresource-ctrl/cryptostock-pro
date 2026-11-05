@@ -53,3 +53,14 @@ def test_v10726_closed_candle_and_record():
     assert i > src.index('_tg = _trend1h_gate(sig["side"]')
     for k in ('"price_1h_close": _px1h', '"ema50_1h": _ema1h', '"ema50_1h_prev": _ema1h_prev', '"result":'):
         assert k in src[i:i + 400]
+
+
+def test_v10727_scalper_exempt_from_ema50_and_btc_regime():
+    src = inspect.getsource(scheduler._run_full_auto_scanner)
+    assert '_scalper_exempt = (sig.get("profile") or bot_profile) == "scalper"' in src
+    assert 'if sym != "BTC" and not _scalper_exempt:' in src
+    assert 'if _tg and (sig.get("profile") or bot_profile) == "scalper":' in src
+    # filter BTC 15m & konfirmasi 5m tetap berlaku utk semua profil
+    assert 'btc15m_rebound_candle_up: block SELL' in src
+    assert src.index('_scalper_exempt') > src.index('btc15m_drop_candle_down: block BUY')
+    assert "await _c5_check(device_id, sym, sig[\"side\"])" in src
