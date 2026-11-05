@@ -66,7 +66,7 @@ MIN_FULL_AUTO_CONFIDENCE = 90
 #    sebelum Full-Auto mengeksekusi.
 TREND_UP_MIN_CYCLES = 3
 BEAR4H_CONF_BONUS = 5
-BUY_CONFIRM_CYCLES = 2  # v10.7.23 — user: 1 → 2 (setara SELL)
+BUY_CONFIRM_CYCLES = 1  # v10.7.30 — user: kembali ke 1
 # v10.2.31 — Keputusan user (eksekusi lebih sering, "jangan sampai
 # seharian tidak eksekusi"): BUY tidak lagi butuh 2 siklus konfirmasi;
 # satu siklus cukup. Risiko flap kecil karena proteksi lain tetap:
@@ -83,7 +83,10 @@ BUY_CONFIRM_CYCLES = 2  # v10.7.23 — user: 1 → 2 (setara SELL)
 #    SL penuh (mengurangi exposure posisi "mati").
 SELL_CHASE_PCT = 3.0            # %
 SELL_CHASE_WINDOW_H = 6         # jam
-SELL_CONFIRM_CYCLES = 2
+SELL_CONFIRM_CYCLES = 1  # v10.7.30 — user: kembali ke 1
+# v10.7.30 — SELL saat BTC trending_up hanya bila confidence ≥ ini DAN harga
+# simbol < EMA50 1H (konfirmasi kuat).
+SELL_STRONG_CONF = 95
 LONGTERM_STALE_HOURS = 3.0
 LONGTERM_STALE_MIN_PROFIT_PCT = 0.5  # %
 # v10.2.23 — Paket anti-loss sisi BUY + circuit breaker yang tangguh
@@ -1207,14 +1210,14 @@ async def _trend1h_inputs(sym: str) -> tuple[float | None, float | None, float |
 
 def _trend1h_gate(side: str, px: float | None, ema: float | None,
                   ema_prev: float | None) -> str | None:
-    """v10.7.23 — keputusan user: LONG ditolak bila harga < EMA50 1H atau
-    slope EMA50 1H turun; SHORT ditolak bila harga > EMA50 1H atau slope
-    naik. Data tidak tersedia → tolak (hard gate, fail-closed)."""
+    """v10.7.23 — keputusan user. v10.7.30 — PRICE-ONLY (slope dihapus):
+    LONG ditolak bila harga < EMA50 1H; SHORT ditolak bila harga > EMA50
+    1H. Data tidak tersedia → tolak (hard gate, fail-closed)."""
     if px is None or ema is None or ema_prev is None:
         return "trend_1h_data_unavailable"
-    if side == "BUY" and (px < ema or ema < ema_prev):
+    if side == "BUY" and px < ema:
         return "trend_1h_ema50_block_LONG"
-    if side == "SELL" and (px > ema or ema > ema_prev):
+    if side == "SELL" and px > ema:
         return "trend_1h_ema50_block_SHORT"
     return None
 
@@ -1855,8 +1858,19 @@ async def _run_full_auto_scanner(
                     _scalper_exempt = False  # v10.7.29 — gate BTC Regime aktif lagi
                     if sym != "BTC" and not _scalper_exempt:
                         if sig["side"] == "SELL" and gate_block_sell:
-                            _dev_reject(rep, f"btc_regime {btc_regime['regime']}: block SELL")
-                            continue
+                            # v10.7.30 — keputusan user: SELL tetap boleh saat
+                            # BTC trending_up bila konfirmasi KUAT: confidence
+                            # ≥ SELL_STRONG_CONF dan harga simbol sudah di
+                            # bawah EMA50 1H (simbol lemah sendiri). Konfirmasi
+                            # 2 candle 5m tetap wajib di tahap berikutnya.
+                            _strong_sell = (
+                                btc_regime["regime"] == "trending_up"
+                                and float(sig.get("confidence") or 0) >= SELL_STRONG_CONF
+                                and _px1h is not None and _ema1h is not None
+                                and _px1h < _ema1h)
+                            if not _strong_sell:
+                                _dev_reject(rep, f"btc_regime {btc_regime['regime']}: block SELL")
+                                continue
                         if sig["side"] == "BUY" and gate_block_buy:
                             _dev_reject(rep, f"btc_regime {btc_regime['regime']}: block BUY")
                             continue
@@ -1984,8 +1998,9 @@ async def _run_full_auto_scanner(
                         # slope-turun 4H simbol tidak lagi di-relax oleh BTC.
                         _long_relaxed = False
                         _short_relaxed = trend_down_streak >= TREND_UP_MIN_CYCLES
-                        if want_long and (not bias_up
-                                          or (slope_dn and not _long_relaxed)):
+                        # v10.7.30 — keputusan user: syarat slope 4H (ganda
+                        # dgn gate 1H) dihapus — filter 4H kini price-only.
+                        if want_long and not bias_up:
                             logger.info("full-auto trend-filter skip %s/%s: "
                                         "LONG ditolak (price%sEMA50 %.4f, slope %s, btc_up_streak=%d)",
                                         device_id, sym,
@@ -1994,8 +2009,7 @@ async def _run_full_auto_scanner(
                                         trend_up_streak)
                             _dev_reject(rep, "trend_filter_4h_block_LONG")
                             continue
-                        if not want_long and (bias_up
-                                              or (slope_up and not _short_relaxed)):
+                        if not want_long and bias_up:
                             logger.info("full-auto trend-filter skip %s/%s: "
                                         "SHORT ditolak (price%sEMA50 %.4f, slope %s, btc_dn_streak=%d)",
                                         device_id, sym,

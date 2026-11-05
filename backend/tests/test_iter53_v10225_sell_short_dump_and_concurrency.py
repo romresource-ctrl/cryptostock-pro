@@ -369,7 +369,7 @@ class TestSideConcurrencyCap:
         rej = rejects_of(db)
         assert not any(r.startswith("max_open_sell") for r in rej), rej
         # Should reach confirmation
-        assert "sell_awaiting_confirm_cycle_2" in rej, rej
+        assert len(exec_stub.calls) >= 1, rej  # v10.7.30 — 1 siklus
         assert len(exec_stub.calls) == 0
 
     def test_a2_three_open_sell_new_sell_rejected(self, monkeypatch):
@@ -424,7 +424,7 @@ class TestSideConcurrencyCap:
         run_scan(db, fetcher)
         rej = rejects_of(db)
         assert not any(r.startswith("max_open_sell") for r in rej), rej
-        assert "sell_awaiting_confirm_cycle_2" in rej, rej
+        assert len(exec_stub.calls) >= 1, rej  # v10.7.30 — 1 siklus
 
     def test_a5_per_device_scope(self, monkeypatch):
         """3 open SELL under device_id OTHER → cap for device TEST = 0 →
@@ -440,7 +440,7 @@ class TestSideConcurrencyCap:
         run_scan(db, fetcher)
         rej = rejects_of(db)
         assert not any(r.startswith("max_open_sell") for r in rej), rej
-        assert "sell_awaiting_confirm_cycle_2" in rej, rej
+        assert len(exec_stub.calls) >= 1, rej  # v10.7.30 — 1 siklus
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -472,7 +472,7 @@ class TestSellShortDumpGuard:
         rej = rejects_of(db)
         assert not any(r.startswith("sell_short_dump_") for r in rej), rej
         assert not any(r.startswith("anti_chase_sell_") for r in rej), rej
-        assert "sell_awaiting_confirm_cycle_2" in rej, rej
+        assert len(exec_stub.calls) >= 1, rej  # v10.7.30 — 1 siklus
 
     def test_b3_sell_6h_drop_only_btc_flat_goes_to_confirmation(
             self, monkeypatch):
@@ -486,7 +486,7 @@ class TestSellShortDumpGuard:
         rej = rejects_of(db)
         assert not any(r.startswith("anti_chase_sell_") for r in rej), rej
         assert not any(r.startswith("sell_short_dump_") for r in rej), rej
-        assert "sell_awaiting_confirm_cycle_2" in rej, rej
+        assert len(exec_stub.calls) >= 1, rej  # v10.7.30 — 1 siklus
         assert len(exec_stub.calls) == 0
 
     def test_b4_btc_excluded_from_short_dump(self, monkeypatch):
@@ -534,7 +534,7 @@ class TestRegression:
             monkeypatch, side="SELL", base="BEAR",
             closes_4h=closes_downtrend())
         run_scan(db, fetcher)
-        assert "sell_awaiting_confirm_cycle_2" in rejects_of(db)
+        assert len(exec_stub.calls) >= 1  # v10.7.30 — 1 siklusects_of(db)
         assert len(exec_stub.calls) == 0
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1

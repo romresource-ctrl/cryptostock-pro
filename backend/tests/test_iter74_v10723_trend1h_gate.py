@@ -13,13 +13,13 @@ gate = _ns["_trend1h_gate"]
 def test_long_rules():
     assert gate("BUY", 101, 100, 99) is None
     assert gate("BUY", 99, 100, 99) == "trend_1h_ema50_block_LONG"    # di bawah EMA
-    assert gate("BUY", 101, 100, 100.5) == "trend_1h_ema50_block_LONG"  # slope turun
+    assert gate("BUY", 101, 100, 100.5) is None  # v10.7.30 — slope tidak dicek
 
 
 def test_short_rules():
     assert gate("SELL", 99, 100, 101) is None
     assert gate("SELL", 101, 100, 101) == "trend_1h_ema50_block_SHORT"
-    assert gate("SELL", 99, 100, 99.5) == "trend_1h_ema50_block_SHORT"
+    assert gate("SELL", 99, 100, 99.5) is None  # v10.7.30 — slope tidak dicek
 
 
 def test_fail_closed_and_wiring():
@@ -27,7 +27,7 @@ def test_fail_closed_and_wiring():
     src = inspect.getsource(scheduler._run_full_auto_scanner)
     assert src.index("_trend1h_gate(sig[\"side\"]") < src.index("await _c5_check(")
     assert "_long_relaxed = False" in src
-    assert scheduler.BUY_CONFIRM_CYCLES == 2 == scheduler.SELL_CONFIRM_CYCLES
+    assert scheduler.BUY_CONFIRM_CYCLES == 1 == scheduler.SELL_CONFIRM_CYCLES  # v10.7.30
 
 
 def test_gate_unconditional_for_all_formulas_and_paths():
@@ -61,3 +61,21 @@ def test_v10729_gates_restored_and_dip_skips_with_trend():
     assert "_tg_exempt = _tg" not in src
     assert "_dip = None if _with_trend else _dip_top_flip(" in src
     assert "if not _dip and not _with_trend and _diptop_hold_blocks(" in src
+
+
+def test_v10730_price_only_cycles_and_strong_sell():
+    g = _ns_v30 = {}
+    exec(_raw_now()[_raw_now().index("def _trend1h_gate"):_raw_now().index("def _btc15m_short_block")], g)
+    f = g["_trend1h_gate"]
+    assert f("BUY", 101, 100, 105) is None          # slope turun tidak lagi memblok
+    assert f("BUY", 99, 100, 95) == "trend_1h_ema50_block_LONG"
+    assert f("SELL", 99, 100, 95) is None           # slope naik tidak lagi memblok
+    assert f("SELL", 101, 100, 105) == "trend_1h_ema50_block_SHORT"
+    assert scheduler.BUY_CONFIRM_CYCLES == 1 == scheduler.SELL_CONFIRM_CYCLES
+    src = inspect.getsource(scheduler._run_full_auto_scanner)
+    assert "if want_long and not bias_up:" in src and "if not want_long and bias_up:" in src
+    assert ">= SELL_STRONG_CONF" in src and "_px1h < _ema1h)" in src
+
+
+def _raw_now():
+    return open(scheduler.__file__).read()

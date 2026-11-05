@@ -372,7 +372,7 @@ class TestAntiChaseSell:
         assert not any(r.startswith("sell_short_dump_") for r in rej), rej
         # SELL now goes through confirmation (2 cycles) — expect
         # sell_awaiting_confirm_cycle_2 on first scan
-        assert "sell_awaiting_confirm_cycle_2" in rej, rej
+        assert len(exec_stub.calls) >= 1, rej  # v10.7.30 — 1 siklus
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -388,7 +388,7 @@ class TestSellConfirmationTwoCycles:
         # Cycle 1 — no execute, rejects records sell_menunggu_konfirmasi
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 0
-        assert "sell_awaiting_confirm_cycle_2" in rejects_of(db)
+        assert len(exec_stub.calls) >= 1  # v10.7.30 — 1 siklusects_of(db)
         doc = db.asi_buy_confirm.docs.get(cf_key)
         assert doc and doc["count"] == 1
         assert doc["side"] == "SELL"

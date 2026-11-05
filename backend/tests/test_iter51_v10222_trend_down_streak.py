@@ -494,7 +494,7 @@ class TestShortSlopeRelaxation:
         run_scan(db, fetcher)
         rej = rejects_of(db)
         assert "trend_filter_4h_block_SHORT" not in rej, rej
-        assert "sell_awaiting_confirm_cycle_2" in rej, rej
+        assert len(exec_stub.calls) >= 1, rej  # v10.7.30 — 1 siklus
         assert len(exec_stub.calls) == 0
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
@@ -569,7 +569,7 @@ class TestGateRegressions:
             base="BEAR", streak=0, closes_4h=closes_downtrend())
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 0
-        assert "sell_awaiting_confirm_cycle_2" in rejects_of(db)
+        assert len(exec_stub.calls) >= 1  # v10.7.30 — 1 siklusects_of(db)
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
 

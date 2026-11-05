@@ -377,7 +377,7 @@ class TestScannerBuyConfirmFlow:
             base="BULL", streak=0)
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 0
-        assert "buy_awaiting_confirm_cycle_2" in rejects_of(db)
+        assert len(exec_stub.calls) >= 1  # v10.7.30 — 1 siklusects_of(db)
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
         assert exec_stub.calls[0]["side"] == "BUY"
@@ -449,7 +449,7 @@ class TestScannerSellRegression:
             base="BEAR", streak=0)  # bonus BEAR TIDAK berlaku utk SELL
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 0
-        assert "sell_awaiting_confirm_cycle_2" in rejects_of(db)
+        assert len(exec_stub.calls) >= 1  # v10.7.30 — 1 siklusects_of(db)
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
         assert exec_stub.calls[0]["side"] == "SELL"

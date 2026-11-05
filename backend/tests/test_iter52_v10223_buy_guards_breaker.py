@@ -649,7 +649,7 @@ class TestAntiChaseSellRegression:
         run_scan(db, fetcher)
         rej = rejects_of(db)
         assert not any(r.startswith("anti_chase_sell_") for r in rej), rej
-        assert "sell_awaiting_confirm_cycle_2" in rej, rej
+        assert len(exec_stub.calls) >= 1, rej  # v10.7.30 — 1 siklus
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -736,7 +736,7 @@ class TestGateRegressions:
             monkeypatch, side="SELL", base="BEAR")
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 0
-        assert "sell_awaiting_confirm_cycle_2" in rejects_of(db)
+        assert len(exec_stub.calls) >= 1  # v10.7.30 — 1 siklusects_of(db)
         run_scan(db, fetcher)
         assert len(exec_stub.calls) == 1
 
