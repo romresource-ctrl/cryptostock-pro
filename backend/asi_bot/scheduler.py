@@ -84,9 +84,6 @@ BUY_CONFIRM_CYCLES = 1  # v10.7.30 — user: kembali ke 1
 SELL_CHASE_PCT = 3.0            # %
 SELL_CHASE_WINDOW_H = 6         # jam
 SELL_CONFIRM_CYCLES = 1  # v10.7.30 — user: kembali ke 1
-# v10.7.30 — SELL saat BTC trending_up hanya bila confidence ≥ ini DAN harga
-# simbol < EMA50 1H (konfirmasi kuat).
-SELL_STRONG_CONF = 95
 LONGTERM_STALE_HOURS = 3.0
 LONGTERM_STALE_MIN_PROFIT_PCT = 0.5  # %
 # v10.2.23 — Paket anti-loss sisi BUY + circuit breaker yang tangguh
@@ -1858,19 +1855,10 @@ async def _run_full_auto_scanner(
                     _scalper_exempt = False  # v10.7.29 — gate BTC Regime aktif lagi
                     if sym != "BTC" and not _scalper_exempt:
                         if sig["side"] == "SELL" and gate_block_sell:
-                            # v10.7.30 — keputusan user: SELL tetap boleh saat
-                            # BTC trending_up bila konfirmasi KUAT: confidence
-                            # ≥ SELL_STRONG_CONF dan harga simbol sudah di
-                            # bawah EMA50 1H (simbol lemah sendiri). Konfirmasi
-                            # 2 candle 5m tetap wajib di tahap berikutnya.
-                            _strong_sell = (
-                                btc_regime["regime"] == "trending_up"
-                                and float(sig.get("confidence") or 0) >= SELL_STRONG_CONF
-                                and _px1h is not None and _ema1h is not None
-                                and _px1h < _ema1h)
-                            if not _strong_sell:
-                                _dev_reject(rep, f"btc_regime {btc_regime['regime']}: block SELL")
-                                continue
+                            # v10.7.31 — keputusan user: perilaku asli
+                            # dikembalikan (pengecualian SELL kuat dihapus).
+                            _dev_reject(rep, f"btc_regime {btc_regime['regime']}: block SELL")
+                            continue
                         if sig["side"] == "BUY" and gate_block_buy:
                             _dev_reject(rep, f"btc_regime {btc_regime['regime']}: block BUY")
                             continue

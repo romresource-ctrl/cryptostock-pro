@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"}],"uuid":"15eb535228aa4cf4a25b855894e49654","collectionName":"asi_panic_events","type":"collection"}

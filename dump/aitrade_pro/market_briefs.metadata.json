@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"generated_at":{"$numberInt":"1"}},"name":"generated_at_1","expireAfterSeconds":{"$numberInt":"172800"}}],"uuid":"93776a8f7984493c99d967834d8076e9","collectionName":"market_briefs","type":"collection"}

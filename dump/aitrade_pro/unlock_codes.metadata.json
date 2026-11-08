@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"}],"uuid":"3efd830110ca4d79b9666ffe63ef53e3","collectionName":"unlock_codes","type":"collection"}

@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"}],"uuid":"e1b54f511b784155966f2c9cf8f1f55f","collectionName":"asi_titan_config","type":"collection"}

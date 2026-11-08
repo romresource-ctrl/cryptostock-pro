@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tail -100 /app/test_result.md; echo \"=== supervisor logs ===\"; ls -la /var/log/supervisor/ 2>/dev/null | tail -20)",
+      "Read(//var/log/supervisor/**)",
+      "Bash(awk -F: '$1<3612')",
+      "Bash(awk -F: '$1>3612')"
+    ]
+  }
+}

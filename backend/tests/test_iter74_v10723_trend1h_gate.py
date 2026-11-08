@@ -74,8 +74,22 @@ def test_v10730_price_only_cycles_and_strong_sell():
     assert scheduler.BUY_CONFIRM_CYCLES == 1 == scheduler.SELL_CONFIRM_CYCLES
     src = inspect.getsource(scheduler._run_full_auto_scanner)
     assert "if want_long and not bias_up:" in src and "if not want_long and bias_up:" in src
-    assert ">= SELL_STRONG_CONF" in src and "_px1h < _ema1h)" in src
+    assert "SELL_STRONG_CONF" not in src  # v10.7.31 — dikembalikan ke asli
 
 
 def _raw_now():
     return open(scheduler.__file__).read()
+
+
+def test_v10731_symmetric_btc_regime_and_ema50():
+    txt = _raw_now()
+    assert 'gate_block_sell = btc_regime["regime"] in (\n        "bullish_reversal", "trending_up", "bear_capitulation")' in txt
+    assert 'gate_block_buy = btc_regime["regime"] in (\n        "bearish_reversal", "trending_down", "bear_capitulation")' in txt
+    src = inspect.getsource(scheduler._run_full_auto_scanner)
+    assert 'if sig["side"] == "SELL" and gate_block_sell:' in src
+    assert 'if sig["side"] == "BUY" and gate_block_buy:' in src
+    g = {}
+    exec(txt[txt.index("def _trend1h_gate"):txt.index("def _btc15m_short_block")], g)
+    f = g["_trend1h_gate"]
+    assert f("SELL", 101, 100, 100) == "trend_1h_ema50_block_SHORT" and f("BUY", 101, 100, 100) is None
+    assert f("BUY", 99, 100, 100) == "trend_1h_ema50_block_LONG" and f("SELL", 99, 100, 100) is None
