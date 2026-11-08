@@ -1,8 +1,8 @@
 """Multi-AI ensemble for trading analysis.
 
-Calls GPT-5-mini (OpenAI), Claude Sonnet 4.6 (Anthropic), and Gemini 3.5 Flash
-(Google) in parallel via emergentintegrations, then aggregates into a
-consensus signal with news/macro context.
+Calls Gemini 3.5 Flash, Gemini 2.5 Pro, and Gemini 3.5 Flash Lite
+    in parallel via emergentintegrations, then aggregates into a
+    consensus signal with news/macro context.
 
 Multi-vendor combo chosen for:
 - Cost efficiency (~80% cheaper than the previous 3x Claude combo)
@@ -23,12 +23,9 @@ from typing import Any
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 MODELS = [
-    # Cost-optimised multi-provider ensemble (v7.0.2). Whenever a newer
-    # model is available in the Emergent LLM catalog, only this list has to
-    # change — the frontend picks up the new labels via GET /api/ai/models.
-    {"provider": "openai", "model": "gpt-5-mini", "label": "GPT-5 mini"},
-    {"provider": "anthropic", "model": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6"},
     {"provider": "gemini", "model": "gemini-3.5-flash", "label": "Gemini 3.5 Flash"},
+    {"provider": "gemini", "model": "gemini-2.5-pro", "label": "Gemini 2.5 Pro"},
+    {"provider": "gemini", "model": "gemini-3.5-flash-lite", "label": "Gemini 3.5 Flash Lite"},
 ]
 
 
