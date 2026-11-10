@@ -1,5 +1,5 @@
 """
-AITrade Pro backend — server.py (Full updated version with working /predict, /analyze, & Risk/Target Profit UI)
+AI Crypto Stock Pro backend — server.py (Full standalone version with working unlock codes & admin API + /admin.html)
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from typing import Any, Literal
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, FastAPI, Header, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
 from starlette.middleware.cors import CORSMiddleware
@@ -149,7 +149,7 @@ async def _get_tr_summary_cached(market: str, symbols: list[str]) -> dict:
         _tr_cache[key] = (time.time(), data)
         return data
 
-mongo_url = os.environ["MONGO_URL"]
+mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
 client = AsyncIOMotorClient(
     mongo_url,
     serverSelectionTimeoutMS=20000,
@@ -158,7 +158,7 @@ client = AsyncIOMotorClient(
     retryWrites=True,
     uuidRepresentation="standard",
 )
-db = client[os.environ["DB_NAME"]]
+db = client[os.environ.get("DB_NAME", "aitrade_pro")]
 
 from market_data import (  # noqa: E402,F811
     CRYPTO_BINANCE_MAP,
@@ -219,7 +219,7 @@ DEFAULT_ACTIVE_PROFILE = "spot"
 
 TIMEFRAMES = ["15m", "30m", "1h", "3h", "6h", "12h", "18h", "24h"]
 
-app = FastAPI(title="AITrade Pro")
+app = FastAPI(title="AI Crypto Stock Pro")
 api = APIRouter(prefix="/api")
 
 @app.get("/health")
@@ -393,14 +393,6 @@ class LoggedUser(BaseModel):
 class LoggedUsersResponse(BaseModel):
     total: int
     users: list[LoggedUser]
-
-def _compute_unlock_code(email: str) -> str:
-    import hashlib
-    secret = os.environ.get("UNLOCK_SECRET", "")
-    normalized = email.strip().lower()
-    msg = f"{secret}::{normalized}"
-    h = hashlib.sha256(msg.encode()).hexdigest()[:12].upper()
-    return f"{h[0:4]}-{h[4:8]}-{h[8:12]}"
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -614,16 +606,6 @@ async def ai_suggestions(
         if profile else "CONFLUENCE"
     )
     items = [a.model_dump() for a in picks]
-    if market == "crypto":
-        try:
-            from asi_bot.whitelist import binance_perp_tradable
-            perps = await binance_perp_tradable()
-            if perps is not None:
-                for it in items:
-                    base = str(it.get("symbol") or "").upper().split("/")[0].split("USDT")[0]
-                    it["futures_tradable"] = base in perps
-        except Exception:
-            pass
     out = {
         "market": market,
         "timeframe": timeframe,
@@ -641,7 +623,7 @@ def _profile_to_model(p: dict) -> Profile:
 
 @api.get("/")
 async def health() -> dict:
-    return {"app": "AITrade Pro", "status": "ok", "time": _now_iso()}
+    return {"app": "AI Crypto Stock Pro", "status": "ok", "time": _now_iso()}
 
 @api.get("/profiles", response_model=ProfilesResponse)
 async def list_profiles() -> ProfilesResponse:
@@ -1919,3 +1901,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Route untuk melayani file admin.html
+@app.get("/admin.html")
+async def serve_admin_page():
+    return FileResponse(ROOT_DIR / "admin.html")
