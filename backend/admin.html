@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Crypto Stock Pro — Admin Dashboard</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background-color: #0f172a; color: #f8fafc; padding: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        h1 { margin-bottom: 20px; color: #38bdf8; text-align: center; }
+        .card { background-color: #1e293b; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: 600; color: #94a3b8; }
+        input, select, button { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #334155; background-color: #0f172a; color: #fff; font-size: 14px; }
+        input:focus, select:focus { border-color: #38bdf8; outline: none; }
+        button { background-color: #0284c7; color: white; font-weight: bold; cursor: pointer; border: none; margin-top: 10px; transition: 0.2s; }
+        button:hover { background-color: #0369a1; }
+        .btn-danger { background-color: #ef4444; width: auto; padding: 6px 12px; font-size: 12px; margin: 0; }
+        .btn-danger:hover { background-color: #dc2626; }
+        .btn-warning { background-color: #f59e0b; width: auto; padding: 6px 12px; font-size: 12px; margin: 0 4px; }
+        .btn-warning:hover { background-color: #d97706; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; font-size: 14px; }
+        th { background-color: #0f172a; color: #38bdf8; }
+        .status-active { color: #22c55e; font-weight: bold; }
+        .status-unused { color: #eab308; font-weight: bold; }
+        .status-revoked { color: #ef4444; font-weight: bold; }
+        .result-box { background-color: #0284c722; border: 1px solid #0284c7; padding: 15px; border-radius: 8px; margin-top: 15px; text-align: center; display: none; }
+        .code-display { font-size: 24px; font-weight: bold; color: #38bdf8; letter-spacing: 2px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>AI Crypto Stock Pro — Panel Admin Unlock Code</h1>
+
+    <!-- Konfigurasi Server -->
+    <div class="card">
+        <h3>1. Pengaturan Server & Admin Token</h3>
+        <div class="form-group" style="margin-top: 10px;">
+            <label>URL Backend Server (VPS Anda):</label>
+            <input type="text" id="backendUrl" value="http://localhost:8000" placeholder="https://api.domainanda.com">
+        </div>
+        <div class="form-group">
+            <label>Admin Token (Isi dengan nilai ADMIN_TOKEN dari .env):</label>
+            <input type="password" id="adminToken" placeholder="Masukkan Token Admin">
+        </div>
+    </div>
+
+    <!-- Form Generate Code -->
+    <div class="card">
+        <h3>2. Generate Kode Unlock Baru</h3>
+        <div class="form-group" style="margin-top: 10px;">
+            <label>Email Pengguna:</label>
+            <input type="email" id="userEmail" placeholder="user@gmail.com">
+        </div>
+        <div class="form-group">
+            <label>Durasi Akses:</label>
+            <select id="codeDuration">
+                <option value="monthly">1 Bulan (Monthly)</option>
+                <option value="quarterly">3 Bulan (Quarterly)</option>
+                <option value="semi_annual">6 Bulan (Semi-Annual)</option>
+                <option value="annual">1 Tahun (Annual)</option>
+                <option value="lifetime">Permanen (Lifetime)</option>
+            </select>
+        </div>
+        <button onclick="generateCode()">Generate Unlock Code</button>
+
+        <div id="resultBox" class="result-box">
+            <div>Kode Berhasil Dibuat untuk <span id="resEmail"></span>:</div>
+            <div id="resCode" class="code-display">XXXX-XXXX-XXXX</div>
+            <div>Durasi: <span id="resDuration"></span> | Expire: <span id="resExpire"></span></div>
+        </div>
+    </div>
+
+    <!-- Tabel Daftar Kode -->
+    <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <h3>3. Daftar Semua Kode Unlock</h3>
+            <button onclick="loadCodes()" style="width: auto; padding: 8px 16px; margin: 0;">Refresh Data</button>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Email</th>
+                    <th>Kode</th>
+                    <th>Durasi</th>
+                    <th>Status</th>
+                    <th>Device Bound</th>
+                    <th>Aksi</th>
+                </tr>
+            </thead>
+            <tbody id="codesTableBody">
+                <tr><td colspan="6" style="text-align: center;">Klik Refresh Data untuk memuat daftar kode.</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    function getHeaders() {
+        const token = document.getElementById('adminToken').value.trim();
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['x-admin-token'] = token;
+        return headers;
+    }
+
+    function getBaseUrl() {
+        let url = document.getElementById('backendUrl').value.trim();
+        if (url.endsWith('/')) url = url.slice(0, -1);
+        return url;
+    }
+
+    async function generateCode() {
+        const email = document.getElementById('userEmail').value.trim();
+        const duration = document.getElementById('codeDuration').value;
+        if (!email) return alert('Silakan masukkan email!');
+
+        try {
+            const res = await fetch(`${getBaseUrl()}/api/admin/generate-code`, {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify({ email, duration })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'Gagal membuat kode');
+
+            document.getElementById('resEmail').innerText = data.email;
+            document.getElementById('resCode').innerText = data.code;
+            document.getElementById('resDuration').innerText = data.duration_label;
+            document.getElementById('resExpire').innerText = data.expires_at || 'Permanen';
+            document.getElementById('resultBox').style.display = 'block';
+
+            loadCodes();
+        } catch (err) {
+            console.error("Detail Error API:", err);
+            alert("Error: " + err.message);
+        }
+    }
+
+    async function loadCodes() {
+        try {
+            const res = await fetch(`${getBaseUrl()}/api/admin/codes`, {
+                headers: getHeaders()
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'Gagal memuat data');
+
+            const tbody = document.getElementById('codesTableBody');
+            tbody.innerHTML = '';
+
+            if (!data.codes || data.codes.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">Belum ada kode unlock.</td></tr>';
+                return;
+            }
+
+            data.codes.forEach(c => {
+                const tr = document.createElement('tr');
+                let statusClass = 'status-unused';
+                if (c.status === 'active') statusClass = 'status-active';
+                if (c.status === 'revoked') statusClass = 'status-revoked';
+
+                tr.innerHTML = `
+                    <td>${c.email}</td>
+                    <td><b>${c.code}</b></td>
+                    <td>${c.duration}</td>
+                    <td><span class="${statusClass}">${c.status.toUpperCase()}</span></td>
+                    <td>${c.device_name || c.device_id || '-'}</td>
+                    <td>
+                        <button class="btn-warning" onclick="resetDevice('${c.code}')">Reset Device</button>
+                        <button class="btn-danger" onclick="revokeCode('${c.code}')">Revoke</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        } catch (err) {
+            console.error("Detail Error Load Codes:", err);
+            alert("Error: " + err.message);
+        }
+    }
+
+    async function resetDevice(code) {
+        if (!confirm(`Reset ikatan perangkat untuk kode ${code}?`)) return;
+        try {
+            const res = await fetch(`${getBaseUrl()}/api/admin/codes/${code}/reset-device`, {
+                method: 'POST',
+                headers: getHeaders()
+            });
+            if (res.ok) { alert('Berhasil reset device!'); loadCodes(); }
+            else { throw new Error('Gagal mereset perangkat'); }
+        } catch (e) { alert(e.message); }
+    }
+
+    async function revokeCode(code) {
+        if (!confirm(`Revoke / matikan kode ${code}?`)) return;
+        try {
+            const res = await fetch(`${getBaseUrl()}/api/admin/codes/${code}/revoke`, {
+                method: 'POST',
+                headers: getHeaders()
+            });
+            if (res.ok) { alert('Kode berhasil di-revoke!'); loadCodes(); }
+            else { throw new Error('Gagal melakukan revoke kode'); }
+        } catch (e) { alert(e.message); }
+    }
+</script>
+
+</body>
+</html>

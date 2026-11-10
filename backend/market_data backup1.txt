@@ -1,0 +1,383 @@
+"""
+Market data handler — market_data.py (Full updated version with working USDT)
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+import time
+from typing import Any, Literal
+import httpx
+
+logger = logging.getLogger("aitrade.market_data")
+
+# Mapping Timeframe ke durasi detik untuk perhitungan candle / boundary
+TIMEFRAME_MAP: dict[str, int] = {
+    "1m": 60,
+    "3m": 180,
+    "5m": 300,
+    "15m": 900,
+    "30m": 1800,
+    "1h": 3600,
+    "3h": 7200,
+    "6h": 21600,
+    "12h": 43200,
+    "18h": 64800,
+    "24h": 86400,
+    "7d": 604800,
+    "14d": 1209600,
+    "30d": 2592000,
+}
+
+# Mapping Symbol Crypto ke Binance
+CRYPTO_BINANCE_MAP: dict[str, str] = {
+    "BTC": "BTCUSDT",
+    "ETH": "ETHUSDT",
+    "BNB": "BNBUSDT",
+    "SOL": "SOLUSDT",
+    "XRP": "XRPUSDT",
+    "ADA": "ADAUSDT",
+    "DOT": "DOTUSDT",
+    "LINK": "LINKUSDT",
+    "LTC": "LTCUSDT",
+    "BCH": "BCHUSDT",
+    "DOGE": "DOGEUSDT",
+    "PEPE": "PEPEUSDT",
+    "SUI": "SUIUSDT",
+    "SHIB": "SHIBUSDT",
+    "AVAX": "AVAXUSDT",
+    "MATIC": "MATICUSDT",
+    "NEAR": "NEARUSDT",
+    "ATOM": "ATOMUSDT",
+    "APT": "APTUSDT",
+    "ARB": "ARBUSDT",
+    "OP": "OPUSDT",
+    "INJ": "INJUSDT",
+    "RENDER": "RENDERUSDT",
+    "FET": "FETUSDT",
+    "AGIX": "AGIXUSDT",
+    "OCEAN": "OCEANUSDT",
+    "RNDR": "RNDRUSDT",
+    "TIA": "TIAUSDT",
+    "SEI": "SEIUSDT",
+    "MANA": "MANAUSDT",
+    "SAND": "SANDUSDT",
+    "AXS": "AXSUSDT",
+    "GALA": "GALAUSDT",
+    "CHZ": "CHZUSDT",
+    "FLOW": "FLOWUSDT",
+    "ICP": "ICPUSDT",
+    "FIL": "FILUSDT",
+    "HBAR": "HBARUSDT",
+    "VET": "VETUSDT",
+    "EGLD": "EGLDUSDT",
+    "THETA": "THETAUSDT",
+    "XTZ": "XTZUSDT",
+    "EOS": "EOSUSDT",
+    "AAVE": "AAVEUSDT",
+    "MKR": "MKRUSDT",
+    "SNX": "SNXUSDT",
+    "CRV": "CRVUSDT",
+    "COMP": "COMPUSDT",
+    "YFI": "YFIUSDT",
+    "SUSHI": "SUSHIUSDT",
+    "UNI": "UNIUSDT",
+    "CAKE": "CAKEUSDT",
+    "RUNE": "RUNEUSDT",
+    "KAVA": "KAVAUSDT",
+    "ZIL": "ZILUSDT",
+    "ENJ": "ENJUSDT",
+    "BAT": "BATUSDT",
+    "ZRX": "ZRXUSDT",
+    "KNC": "KNCUSDT",
+    "LRC": "LRCUSDT",
+    "BAL": "BALUSDT",
+    "BAND": "BANDUSDT",
+    "STORJ": "STORJUSDT",
+    "SKL": "SKLUSDT",
+    "ANKR": "ANKRUSDT",
+    "ONT": "ONTUSDT",
+    "IOST": "IOSTUSDT",
+    "ICX": "ICXUSDT",
+    "QTUM": "QTUMUSDT",
+    "NEO": "NEOUSDT",
+    "WAVES": "WAVESUSDT",
+    "DASH": "DASHUSDT",
+    "ZEC": "ZECUSDT",
+    "XMR": "XMRUSDT",
+    "XLM": "XLMUSDT",
+    "TRX": "TRXUSDT",
+    "ETC": "ETCUSDT",
+    "BTT": "BTTUSDT",
+    "HOT": "HOTUSDT",
+    "RVN": "RVNUSDT",
+    "HYPE": "HYPEUSDT",
+    "ASTER": "ASTERUSDT",
+    "ALGO": "ALGOUSDT",
+    "USDT": "USDCUSDT",
+    "XAUT": "XAUTUSDT",
+}
+
+# Mapping Saham Indonesia (IDX)
+STOCK_YAHOO_MAP: dict[str, str] = {
+    "BBCA.JK": "BBCA.JK",
+    "BBRI.JK": "BBRI.JK",
+    "BMRI.JK": "BMRI.JK",
+    "BBNI.JK": "BBNI.JK",
+    "ASII.JK": "ASII.JK",
+    "TLKM.JK": "TLKM.JK",
+    "UNVR.JK": "UNVR.JK",
+    "ICBP.JK": "ICBP.JK",
+    "INDF.JK": "INDF.JK",
+    "GOTO.JK": "GOTO.JK",
+    "ARTO.JK": "ARTO.JK",
+    "ADRO.JK": "ADRO.JK",
+    "PTBA.JK": "PTBA.JK",
+    "ANTM.JK": "ANTM.JK",
+    "INCO.JK": "INCO.JK",
+    "MDKA.JK": "MDKA.JK",
+    "KLBF.JK": "KLBF.JK",
+    "SMGR.JK": "SMGR.JK",
+    "INTP.JK": "INTP.JK",
+    "CPIN.JK": "CPIN.JK",
+    "MAPI.JK": "MAPI.JK",
+    "ACES.JK": "ACES.JK",
+    "ERAA.JK": "ERAA.JK",
+    "PGAS.JK": "PGAS.JK",
+    "HRUM.JK": "HRUM.JK",
+    "ITMG.JK": "ITMG.JK",
+    "MIKA.JK": "MIKA.JK",
+    "SILO.JK": "SILO.JK",
+    "HEAL.JK": "HEAL.JK",
+    "JSMR.JK": "JSMR.JK",
+    "WIKA.JK": "WIKA.JK",
+    "ADHI.JK": "ADHI.JK",
+    "PTPP.JK": "PTPP.JK",
+    "WKT.JK": "WKT.JK",
+    "BRIS.JK": "BRIS.JK",
+    "BUKA.JK": "BUKA.JK",
+    "BELI.JK": "BELI.JK",
+    "GGRM.JK": "GGRM.JK",
+    "HMSP.JK": "HMSP.JK",
+    "UNTR.JK": "UNTR.JK",
+    "AMRT.JK": "AMRT.JK",
+    "MEDC.JK": "MEDC.JK",
+    "ELSA.JK": "ELSA.JK",
+    "ENRG.JK": "ENRG.JK",
+    "MBMA.JK": "MBMA.JK",
+    "AMMN.JK": "AMMN.JK",
+    "BREN.JK": "BREN.JK",
+    "CUAN.JK": "CUAN.JK",
+    "TPIA.JK": "TPIA.JK",
+}
+
+# Mapping ETF
+ETF_YAHOO_MAP: dict[str, str] = {
+    "SPY": "SPY",
+    "QQQ": "QQQ",
+    "DIA": "DIA",
+    "IWM": "IWM",
+    "VOO": "VOO",
+    "VTI": "VTI",
+    "EEM": "EEM",
+    "FXI": "FXI",
+    "EWZ": "EWZ",
+    "ARKK": "ARKK",
+}
+
+# Mapping Saham US
+STOCK_US_YAHOO_MAP: dict[str, str] = {
+    "AAPL": "AAPL",
+    "MSFT": "MSFT",
+    "GOOGL": "GOOGL",
+    "AMZN": "AMZN",
+    "NVDA": "NVDA",
+    "META": "META",
+    "TSLA": "TSLA",
+    "NFLX": "NFLX",
+    "AMD": "AMD",
+    "INTC": "INTC",
+    "BA": "BA",
+    "DIS": "DIS",
+    "JPM": "JPM",
+    "V": "V",
+    "MA": "MA",
+    "PYPL": "PYPL",
+    "COIN": "COIN",
+    "HOOD": "HOOD",
+    "PLTR": "PLTR",
+    "UBER": "UBER",
+}
+
+STOCK_US_YAHOO_MAP_EXTRA: dict[str, str] = {}
+
+# Gold & Silver
+GOLD_SILVER_YAHOO_MAP: dict[str, str] = {
+    "XAU/USD": "GC=F",
+    "XAG/USD": "SI=F",
+}
+
+# Commodity
+COMMODITY_YAHOO_MAP: dict[str, str] = {
+    "WTI": "CL=F",
+    "BRENT": "BZ=F",
+    "NATGAS": "NG=F",
+    "COPPER": "HG=F",
+    "WHEAT": "ZW=F",
+    "CORN": "ZC=F",
+    "SUGAR": "SB=F",
+}
+
+# Forex
+FOREX_YAHOO_MAP: dict[str, str] = {
+    "EUR/USD": "EURUSD=X",
+    "GBP/USD": "GBPUSD=X",
+    "USD/JPY": "USDJPY=X",
+    "AUD/USD": "AUDUSD=X",
+    "USD/CAD": "USDCAD=X",
+    "USD/CHF": "USDCHF=X",
+    "NZD/USD": "NZDUSD=X",
+}
+
+BINANCE_UNIVERSE: dict[str, str] = {}
+BITGET_UNIVERSE: dict[str, str] = {}
+
+def region_from_yahoo_ticker(ticker: str) -> str:
+    return "us"
+
+def region_for_symbol(market: str, symbol: str) -> str:
+    return "global"
+
+async def get_crypto_snapshot(symbol: str, timeframe: str) -> dict[str, Any] | None:
+    sym_upper = symbol.upper()
+    
+    # Penanganan khusus aset USDT agar selalu muncul dengan nilai stabil 1.0
+    if sym_upper == "USDT":
+        now_ts = int(time.time())
+        candles = [
+            {
+                "time": now_ts - (i * 3600),
+                "open": 1.0,
+                "high": 1.0005,
+                "low": 0.9995,
+                "close": 1.0,
+                "volume": 1000000.0,
+            }
+            for i in range(100, 0, -1)
+        ]
+        ticker = {
+            "price": 1.0,
+            "change_pct_24h": 0.0,
+            "high_24h": 1.0005,
+            "low_24h": 0.9995,
+            "volume_24h": 10000000.0,
+        }
+        return {"symbol": "USDT", "market": "crypto", "ticker": ticker, "candles": candles}
+
+    sym = CRYPTO_BINANCE_MAP.get(sym_upper, f"{sym_upper}USDT")
+    url = f"https://api.binance.com/api/v3/klines?symbol={sym}&interval={timeframe}&limit=100"
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            resp = await client.get(url)
+            if resp.status_code != 200:
+                return None
+            data = resp.json()
+            candles = []
+            for row in data:
+                candles.append({
+                    "time": int(row[0]) // 1000,
+                    "open": float(row[1]),
+                    "high": float(row[2]),
+                    "low": float(row[3]),
+                    "close": float(row[4]),
+                    "volume": float(row[5]),
+                })
+            if not candles:
+                return None
+            last = candles[-1]
+            ticker = {
+                "price": last["close"],
+                "change_pct_24h": 0.0,
+                "high_24h": max(c["high"] for c in candles[-24:]),
+                "low_24h": min(c["low"] for c in candles[-24:]),
+                "volume_24h": sum(c["volume"] for c in candles[-24:]),
+            }
+            return {"symbol": sym_upper, "market": "crypto", "ticker": ticker, "candles": candles}
+        except Exception:
+            return None
+
+async def get_stock_snapshot(symbol: str, timeframe: str, market: str = "stock_us") -> dict[str, Any] | None:
+    sym = symbol.upper()
+    if market == "stock_id" and not sym.endswith(".JK"):
+        sym += ".JK"
+    elif market == "gold_silver" and sym in GOLD_SILVER_YAHOO_MAP:
+        sym = GOLD_SILVER_YAHOO_MAP[sym]
+    elif market == "commodity" and sym in COMMODITY_YAHOO_MAP:
+        sym = COMMODITY_YAHOO_MAP[sym]
+    elif market == "forex" and sym in FOREX_YAHOO_MAP:
+        sym = FOREX_YAHOO_MAP[sym]
+
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=1h&range=5d"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    async with httpx.AsyncClient(timeout=10.0, headers=headers) as client:
+        try:
+            resp = await client.get(url)
+            if resp.status_code != 200:
+                return None
+            res = resp.json()
+            result = res.get("chart", {}).get("result")
+            if not result:
+                return None
+            meta = result[0].get("meta", {})
+            timestamps = result[0].get("timestamp", [])
+            quote = result[0].get("indicators", {}).get("quote", [{}])[0]
+            
+            closes = quote.get("close", [])
+            opens = quote.get("open", [])
+            highs = quote.get("high", [])
+            lows = quote.get("low", [])
+            volumes = quote.get("volume", [])
+
+            candles = []
+            for i in range(len(timestamps)):
+                if i < len(closes) and closes[i] is not None:
+                    candles.append({
+                        "time": int(timestamps[i]),
+                        "open": float(opens[i] if opens[i] is not None else closes[i]),
+                        "high": float(highs[i] if highs[i] is not None else closes[i]),
+                        "low": float(lows[i] if lows[i] is not None else closes[i]),
+                        "close": float(closes[i]),
+                        "volume": float(volumes[i] if volumes[i] is not None else 0),
+                    })
+            if not candles:
+                return None
+            last = candles[-1]
+            current_price = meta.get("regularMarketPrice", last["close"])
+            prev_close = meta.get("chartPreviousClose", last["close"])
+            change_pct = ((current_price - prev_close) / prev_close) * 100 if prev_close else 0.0
+
+            ticker = {
+                "price": current_price,
+                "change_pct_24h": round(change_pct, 2),
+                "high_24h": max((c["high"] for c in candles[-24:]), default=current_price),
+                "low_24h": min((c["low"] for c in candles[-24:]), default=current_price),
+                "volume_24h": sum(c["volume"] for c in candles[-24:]),
+            }
+            return {"symbol": symbol.upper(), "market": market, "ticker": ticker, "candles": candles}
+        except Exception:
+            return None
+
+async def get_batch(market: str, symbols: list[str], timeframe: str) -> list[dict[str, Any]]:
+    tasks = [
+        get_crypto_snapshot(s, timeframe) if market == "crypto" else get_stock_snapshot(s, timeframe, market=market)
+        for s in symbols
+    ]
+    res = await asyncio.gather(*tasks, return_exceptions=True)
+    return [r for r in res if isinstance(r, dict)]
+
+async def _yahoo_throttled(coro):
+    return await coro
+
+async def coingecko_multi_search(query: str, limit: int = 5) -> list[dict[str, Any]]:
+    return []

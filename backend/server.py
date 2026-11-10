@@ -1,23 +1,9 @@
-"""AITrade Pro backend.
-
-Endpoints:
-  GET    /api/                              health
-  GET    /api/profiles                      list profiles + active
-  POST   /api/profiles                      create profile {name, crypto?, stocks?}
-  PUT    /api/profiles/{id}                 rename + update lists
-  DELETE /api/profiles/{id}                 delete profile (cannot delete last)
-  POST   /api/profiles/{id}/activate        set active
-  GET    /api/watchlist                     active profile's lists + globals (legacy)
-  POST   /api/watchlist                     replace active profile's lists (legacy)
-  GET    /api/dashboard                     signals batch (market, timeframe) for active profile
-  GET    /api/asset/{market}/{symbol}/chart       candles + ticker
-  POST   /api/asset/{market}/{symbol}/analyze     AI ensemble (records to signal history)
-  GET    /api/asset/{market}/{symbol}/news        symbol-filtered news
-  GET    /api/asset/{market}/{symbol}/track-record  win-rate stats
-  GET    /api/news                          aggregated news (cache 5min)
+"""
+AITrade Pro backend — server.py (Full updated version with working /predict, /analyze, & Risk/Target Profit UI)
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import time
@@ -28,6 +14,7 @@ from typing import Any, Literal
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, FastAPI, Header, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
 from starlette.middleware.cors import CORSMiddleware
@@ -67,8 +54,6 @@ from unlock_codes import (  # noqa: E402
     verify_code,
 )
 
-# v8.3.0 — Emergent-managed push notifications (Firebase relay).
-# Registration endpoint + daily scheduler are wired further below.
 from push_notifications import (  # noqa: E402
     RegisterPushBody,
     ensure_history_indexes,
@@ -86,52 +71,19 @@ from market_brief import (  # noqa: E402
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s | %(message)s")
 logger = logging.getLogger("aitrade")
 
-# ---- Dashboard in-memory cache (TTL) ----
-# Caches expensive batch snapshots (Binance & Yahoo Finance) and track-record summaries
-# to avoid hammering upstream APIs on every dashboard refresh.
-import asyncio  # noqa: E402
-
-# v8.0.4: raised to 75s so the 60s dashboard refresh interval always
-#         hits the cache.
-# v8.0.5: raised to 300s (5 min) — users no longer wait on Yahoo, and
-#         stale entries are served instantly while a background task
-#         refreshes them (see `_get_snapshots_cached` below).
-# v10.1.9 — Diturunkan 300s → 60s: sinyal VWAP (scalper/day/swing)
-#         berbasis trigger breakout yang MOMENTUM-nya hanya beberapa
-#         menit. Cache 300s membuat dashboard menampilkan HOLD padahal
-#         AI Suggestions (cache 60s) sudah menangkap sinyal → user
-#         bingung "kenapa tidak sinkron". Cache snapshot bersifat GLOBAL
-#         per (market, symbols, timeframe) sehingga TTL 60s = maksimal
-#         1 batch fetch per menit untuk SELURUH user base — aman untuk
-#         rate-limit upstream.
 DASHBOARD_CACHE_TTL = float(os.environ.get("DASHBOARD_CACHE_TTL_SEC", "60"))
-# Serve a stale cached response IMMEDIATELY if its age is below this
-# hard ceiling. Beyond this, we block on a fresh fetch.
-# v10.1.9 — Stale-max disamakan 120s saja: menyajikan sinyal trigger
-# berumur 15 menit adalah akar desync dashboard-vs-suggestions.
 DASHBOARD_STALE_MAX = float(os.environ.get("DASHBOARD_STALE_MAX_SEC", "120"))
 
-# v9.2.4 — Candle-boundary aware cache invalidation.
-# BUG KONSISTENSI (laporan user): dashboard menyajikan sinyal dari snapshot
-# cache hingga 5-15 menit, sementara halaman detail fetch segar. Tepat saat
-# candle 1h TUTUP (mis. 09:00:00), detail langsung menghitung ulang dengan
-# candle baru (SUI → HOLD) sedangkan dashboard masih menampilkan sinyal dari
-# candle sebelumnya (SUI → LONG) hingga cache kedaluwarsa. Sinyal dihitung
-# dari candle TUTUP (_drop_forming_candle), jadi cache WAJIB dibatalkan
-# begitu candle baru terbentuk — bukan hanya berdasarkan umur TTL.
 _TF_SECONDS: dict[str, int] = {
     "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
     "1h": 3600, "3h": 7200, "6h": 21600, "12h": 43200, "18h": 43200,
     "24h": 86400, "7d": 86400, "14d": 86400, "30d": 86400,
 }
 
-
 def _candle_boundary(timeframe: str, now: float | None = None) -> int:
-    """Epoch detik dari awal candle timeframe yang sedang berjalan."""
     sec = _TF_SECONDS.get(timeframe, 3600)
     t = int(now if now is not None else time.time())
     return (t // sec) * sec
-
 
 _snapshot_cache: dict[str, tuple[float, int, list[dict]]] = {}
 _snapshot_locks: dict[str, asyncio.Lock] = {}
@@ -139,52 +91,30 @@ _snapshot_refresh_inflight: dict[str, bool] = {}
 _tr_cache: dict[str, tuple[float, dict]] = {}
 _tr_locks: dict[str, asyncio.Lock] = {}
 
-# v9.6.8 — Cache AI Suggestions responses per (market, timeframe, profile).
-# AI Suggestions must scan the FULL curated universe (full=True) → very slow
-# cold path. With a short TTL, switching profiles the 2nd+ time is instant.
-_ai_suggestions_cache: dict[str, tuple[float, dict]] = {}
 AI_SUGGESTIONS_TTL = float(os.environ.get("AI_SUGGESTIONS_TTL_SEC", "60"))
-
+_ai_suggestions_cache: dict[str, tuple[float, dict]] = {}
 
 def _cache_key_snap(market: str, symbols: list[str], timeframe: str) -> str:
     return f"{market}|{timeframe}|{','.join(symbols)}"
 
-
 def _cache_key_tr(market: str, symbols: list[str]) -> str:
     return f"{market}|{','.join(sorted(symbols))}"
 
-
 async def _get_snapshots_cached(market: str, symbols: list[str], timeframe: str) -> list[dict]:
-    """Cached snapshot fetch with stale-while-revalidate semantics.
-
-    Ladder:
-      1. Cache fresh (< TTL) → return immediately.
-      2. Cache stale but young (< STALE_MAX) → return stale immediately
-         AND fire-and-forget a background refresh so the NEXT call sees
-         fresh data. This is the key optimisation: users no longer wait
-         on Yahoo/Binance.
-      3. Cache absent or too old → block on a fresh fetch (same as before).
-    """
     key = _cache_key_snap(market, symbols, timeframe)
     now = time.time()
     boundary = _candle_boundary(timeframe, now)
     hit = _snapshot_cache.get(key)
     if hit:
         age = now - hit[0]
-        # v9.2.4 — Cache dari periode candle SEBELUMNYA tidak boleh disajikan
-        # sama sekali: sinyal berubah saat candle tutup, dan menyajikan cache
-        # lama adalah akar desync dashboard-vs-detail yang dilaporkan user.
         if hit[1] == boundary:
             if age < DASHBOARD_CACHE_TTL:
                 return hit[2]
             if age < DASHBOARD_STALE_MAX:
-                # Stale-while-revalidate (masih candle yang sama → aman).
                 if not _snapshot_refresh_inflight.get(key):
                     _snapshot_refresh_inflight[key] = True
                     asyncio.create_task(_refresh_snapshot(key, market, symbols, timeframe))
                 return hit[2]
-        # Candle baru sudah mulai → paksa fetch segar (blokir sebentar)
-        # agar dashboard & detail selalu menghitung dari candle yang sama.
     lock = _snapshot_locks.setdefault(key, asyncio.Lock())
     async with lock:
         hit = _snapshot_cache.get(key)
@@ -194,27 +124,20 @@ async def _get_snapshots_cached(market: str, symbols: list[str], timeframe: str)
         _snapshot_cache[key] = (time.time(), boundary, data)
         return data
 
-
 async def _refresh_snapshot(key: str, market: str, symbols: list[str], timeframe: str) -> None:
-    """Background snapshot refresh — writes result into the cache and
-    releases the in-flight flag so a subsequent stale request can trigger
-    another refresh."""
     try:
         data = await get_batch(market, symbols, timeframe)
         if data:
             _snapshot_cache[key] = (time.time(), _candle_boundary(timeframe), data)
     except Exception:
-        # Swallow — the stale cache continues to serve requests.
         pass
     finally:
         _snapshot_refresh_inflight.pop(key, None)
-
 
 async def _get_tr_summary_cached(market: str, symbols: list[str]) -> dict:
     key = _cache_key_tr(market, symbols)
     now = time.time()
     hit = _tr_cache.get(key)
-    # Track record changes infrequently; cache twice as long.
     if hit and now - hit[0] < DASHBOARD_CACHE_TTL * 2:
         return hit[1]
     lock = _tr_locks.setdefault(key, asyncio.Lock())
@@ -227,7 +150,6 @@ async def _get_tr_summary_cached(market: str, symbols: list[str]) -> dict:
         return data
 
 mongo_url = os.environ["MONGO_URL"]
-# Atlas-friendly connection: longer server-selection window, retry on transient errors.
 client = AsyncIOMotorClient(
     mongo_url,
     serverSelectionTimeoutMS=20000,
@@ -238,8 +160,6 @@ client = AsyncIOMotorClient(
 )
 db = client[os.environ["DB_NAME"]]
 
-# Default lists — pulled from the full expanded maps in market_data.py so the
-# dashboard "full=true" mode always returns every asset we support.
 from market_data import (  # noqa: E402,F811
     CRYPTO_BINANCE_MAP,
     STOCK_YAHOO_MAP,
@@ -250,19 +170,6 @@ from market_data import (  # noqa: E402,F811
     FOREX_YAHOO_MAP,
 )
 
-# Top-N presets for FAST dashboard load. When ?full=true is passed, backend
-# returns the whole map instead. Reduces initial fetch from 475 to ~200 assets.
-_TOP_N = 50
-
-# Per-market default asset counts (v7.0.3 — lightweight dashboard):
-#   All markets capped at 50 for fast cold-start.
-#   Search endpoint `/api/search` scans the FULL universe (not just these
-#   50) so users can still find any symbol they type — even if it's not
-#   shown on the dashboard.
-# v10.0.11 — Dashboard crypto dinaikkan dari 50 → 100 koin (per permintaan
-# user: "signal lebih banyak seperti versi lama"). Pasar lain tetap 50 agar
-# cold-start cepat. Formula strategi TIDAK diubah; hanya UNIVERSE yang
-# diperlebar supaya daftar signal crypto di dashboard lebih kaya.
 DEFAULT_CRYPTO = list(CRYPTO_BINANCE_MAP.keys())[:100]
 DEFAULT_STOCKS = list(STOCK_YAHOO_MAP.keys())[:50]
 DEFAULT_ETF = list(ETF_YAHOO_MAP.keys())[:50]
@@ -271,10 +178,6 @@ DEFAULT_GOLD_SILVER = list(GOLD_SILVER_YAHOO_MAP.keys())
 DEFAULT_COMMODITY = list(COMMODITY_YAHOO_MAP.keys())
 DEFAULT_FOREX = list(FOREX_YAHOO_MAP.keys())
 
-# v8.1.3 — Pre-computed per-region symbol lists for World Stocks.
-# When user taps a region chip on the dashboard, we fetch the first ~50
-# stocks tagged with that region so the column shows meaningful data
-# instead of just the first 50 alphabetical US symbols.
 def _build_region_index() -> dict[str, list[str]]:
     from market_data import region_from_yahoo_ticker
     idx: dict[str, list[str]] = {}
@@ -285,7 +188,6 @@ def _build_region_index() -> dict[str, list[str]]:
 
 STOCK_US_BY_REGION: dict[str, list[str]] = _build_region_index()
 
-# Full lists — used when ?full=true is requested
 FULL_CRYPTO = list(CRYPTO_BINANCE_MAP.keys())
 FULL_STOCKS = list(STOCK_YAHOO_MAP.keys())
 FULL_ETF = list(ETF_YAHOO_MAP.keys())
@@ -293,7 +195,6 @@ FULL_STOCK_US = list(STOCK_US_YAHOO_MAP.keys())
 FULL_COMMODITY = list(COMMODITY_YAHOO_MAP.keys())
 FULL_FOREX = list(FOREX_YAHOO_MAP.keys())
 
-# Default seed profiles for new installs
 DEFAULT_PROFILES = [
     {
         "_id": "spot",
@@ -321,30 +222,12 @@ TIMEFRAMES = ["15m", "30m", "1h", "3h", "6h", "12h", "18h", "24h"]
 app = FastAPI(title="AITrade Pro")
 api = APIRouter(prefix="/api")
 
-
-# v8.12.47 — Lightweight health probe at root. Emergent's K8s ingress
-# hits `GET /health` to verify readiness/liveness before routing traffic.
-# Without this, the ingress considers the pod unhealthy and returns
-# "Connection refused" upstream errors like the one seen in prod logs.
 @app.get("/health")
 async def _root_health() -> dict[str, str]:
     return {"status": "ok"}
 
-
-# --- App Version Enforcement (RELAXED) ---
-# Old APKs (v2.0.x) do NOT call backend for auth (offline SHA-256), and current
-# APK v2.1.2 does not yet send X-App-Version header. So we ONLY enforce when
-# the header IS present but reports a version LOWER than MIN_APP_VERSION.
-# Requests without header are passed through to keep v2.1.2 working. Old APKs
-# are effectively neutralized because:
-#   1. Their offline SHA-256 codes are absent from unlock_codes DB (migration)
-#   2. Attempts to record login hit removed endpoint → auth stays invalid
-from fastapi import Request  # noqa: E402,F811
-from fastapi.responses import JSONResponse  # noqa: E402
-
 MIN_APP_VERSION = (2, 1, 3)
 _ENFORCED_PATH_PREFIXES = ("/api/dashboard", "/api/asset/", "/api/watchlist")
-
 
 def _parse_version(v: str) -> tuple[int, int, int] | None:
     try:
@@ -355,14 +238,12 @@ def _parse_version(v: str) -> tuple[int, int, int] | None:
     except Exception:
         return None
 
-
 @app.middleware("http")
 async def enforce_app_version(request: Request, call_next):
     path = request.url.path
     if not path.startswith(_ENFORCED_PATH_PREFIXES):
         return await call_next(request)
     v_header = request.headers.get("x-app-version") or ""
-    # No header → pre-2.1.3 APK or web browser → pass through (relaxed)
     if not v_header:
         return await call_next(request)
     v = _parse_version(v_header)
@@ -379,25 +260,19 @@ async def enforce_app_version(request: Request, call_next):
         )
     return await call_next(request)
 
-
-# ---------------- Models ----------------
-
 class WatchlistPayload(BaseModel):
     crypto: list[str] = Field(default_factory=list)
     stocks: list[str] = Field(default_factory=list)
-
 
 class ProfileCreate(BaseModel):
     name: str
     crypto: list[str] = Field(default_factory=list)
     stocks: list[str] = Field(default_factory=list)
 
-
 class ProfileUpdate(BaseModel):
     name: str | None = None
     crypto: list[str] | None = None
     stocks: list[str] | None = None
-
 
 class Profile(BaseModel):
     id: str
@@ -405,14 +280,12 @@ class Profile(BaseModel):
     crypto: list[str]
     stocks: list[str]
 
-
 class ProfilesResponse(BaseModel):
     profiles: list[Profile]
     active_id: str
     available_crypto: list[str]
     available_stocks: list[str]
     timeframes: list[str]
-
 
 class WatchlistResponse(BaseModel):
     crypto: list[str]
@@ -423,13 +296,11 @@ class WatchlistResponse(BaseModel):
     profile_id: str
     profile_name: str
 
-
 class TrackRecordMini(BaseModel):
     wr_7d: float | None = None
     n_7d: int = 0
     wr_30d: float | None = None
     n_30d: int = 0
-
 
 class AssetSignal(BaseModel):
     symbol: str
@@ -446,36 +317,22 @@ class AssetSignal(BaseModel):
     indicators: dict = Field(default_factory=dict)
     reasons: list[str] = Field(default_factory=list)
     entry: float | None = None
-    # v8.1.9 — Entry ZONE (range) so the UI can display "$1915 - $1925"
-    # instead of a single point. Both bounds derived from the deep tier
-    # ± 0.4 ATR band.
     entry_low: float | None = None
     entry_high: float | None = None
-    # v8.1.6 — Alternate entry cycles for the "Entry Levels" card.
-    # `entry` (deep) is the safest default; moderate/aggressive give
-    # users nearer-price options if they don't want to wait.
     entry_moderate: float | None = None
     entry_aggressive: float | None = None
     stop_loss: float | None = None
     take_profit: float | None = None
-    # v9.2.0 — Ladder TP lengkap untuk kartu AI Suggestions.
     take_profit_2: float | None = None
     take_profit_3: float | None = None
     track_record: TrackRecordMini = Field(default_factory=TrackRecordMini)
     is_premium: bool = False
-    # v8.1.3 — Region key for World Stocks filter
     region: str | None = None
-    # v8.2.2 — Risk/Reward metrics for badge display next to Target Profit.
-    # risk_reward: numeric ratio (reward / risk). risk_level: Low/Medium/High.
     risk_reward: float | None = None
     risk_level: str | None = None
     reward_pct: float | None = None
     risk_pct: float | None = None
-    # v10.1.8 — True bila sinyal lolos gate TAMPILAN longgar tapi akan
-    # gagal gate EKSEKUSI ketat (freshness 3 candle / chase 1.5 ATR).
-    # Full-Auto wajib skip; dashboard tetap menampilkannya.
     late_entry: bool = False
-
 
 class DashboardResponse(BaseModel):
     market: str
@@ -487,7 +344,6 @@ class DashboardResponse(BaseModel):
     premium_count: int = 0
     premium_threshold: dict = Field(default_factory=dict)
 
-
 class ChartResponse(BaseModel):
     symbol: str
     market: str
@@ -495,7 +351,6 @@ class ChartResponse(BaseModel):
     ticker: dict
     candles: list[dict]
     signal: dict
-
 
 class AnalyzeResponse(BaseModel):
     symbol: str
@@ -508,7 +363,6 @@ class AnalyzeResponse(BaseModel):
     news_used: list[dict] = Field(default_factory=list)
     generated_at: str
 
-
 class NewsItem(BaseModel):
     source: str
     title: str
@@ -517,19 +371,14 @@ class NewsItem(BaseModel):
     published: str | None = None
     image: str | None = None
 
-
 class NewsResponse(BaseModel):
     market: str
     items: list[NewsItem]
     fetched_at: str
 
-
-# ---------------- Auth tracking ----------------
-
 class LoginRecordPayload(BaseModel):
     email: str
     code: str
-
 
 class LoggedUser(BaseModel):
     email: str
@@ -541,11 +390,9 @@ class LoggedUser(BaseModel):
     duration: str | None = None
     expires_at: str | None = None
 
-
 class LoggedUsersResponse(BaseModel):
     total: int
     users: list[LoggedUser]
-
 
 def _compute_unlock_code(email: str) -> str:
     import hashlib
@@ -555,22 +402,10 @@ def _compute_unlock_code(email: str) -> str:
     h = hashlib.sha256(msg.encode()).hexdigest()[:12].upper()
     return f"{h[0:4]}-{h[4:8]}-{h[8:12]}"
 
-
-# ---------------- Helpers ----------------
-
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
-
 async def _ensure_seed() -> None:
-    """Seed default profiles + state on first launch.
-
-    Called lazily from `_get_active_profile()` so a slow / unavailable
-    database does NOT block app startup (important for serverless /
-    Atlas deployments where the first connection may be slow).
-
-    Uses upsert by _id so defaults remain stable.
-    """
     try:
         has_any = await db.profiles.count_documents({})
     except Exception as e:
@@ -597,36 +432,26 @@ async def _ensure_seed() -> None:
     except Exception as e:
         logger.warning("Seed active state failed: %s", e)
 
-
 async def _get_active_profile() -> dict:
     await _ensure_seed()
     state = await db.app_state.find_one({"_id": "active"}, {"_id": 0, "profile_id": 1})
     pid = (state or {}).get("profile_id") or DEFAULT_ACTIVE_PROFILE
     prof = await db.profiles.find_one({"_id": pid}, {"_id": 1, "name": 1, "crypto": 1, "stocks": 1})
     if not prof:
-        # fallback to any profile
         prof = await db.profiles.find_one({}, {"_id": 1, "name": 1, "crypto": 1, "stocks": 1})
         if prof:
             await db.app_state.replace_one({"_id": "active"}, {"_id": "active", "profile_id": prof["_id"]}, upsert=True)
     if not prof:
-        # Shouldn't happen after seed, but be safe
         return {"_id": "default", "name": "Default", "crypto": DEFAULT_CRYPTO.copy(), "stocks": DEFAULT_STOCKS.copy()}
     return prof
-
 
 def _filter_lists(crypto: list[str], stocks: list[str]) -> tuple[list[str], list[str]]:
     c = [s.upper() for s in (crypto or []) if s.upper() in CRYPTO_BINANCE_MAP]
     s = [t.upper() for t in (stocks or []) if t.upper() in STOCK_YAHOO_MAP]
     return c, s
 
-
-# v9.2.0 — Cache candle HARIAN (TTL 4 jam) untuk Macro Bias 50 SMA,
-# Liquidity Zones & Choke Risk Protection pada mesin VWAP (scalper/day/
-# swing). Data harian hanya berubah sekali sehari → cache panjang aman
-# dan menjaga dashboard batch tetap cepat.
 _DAILY_CACHE: dict[str, tuple[float, list]] = {}
 _DAILY_CACHE_TTL = 4 * 3600.0
-
 
 async def _get_daily_candles(market: str, symbol: str) -> list[dict] | None:
     key = f"{market}|{symbol.upper()}"
@@ -645,16 +470,10 @@ async def _get_daily_candles(market: str, symbol: str) -> list[dict] | None:
     except Exception:
         return None
 
-
 def _build_signal(snapshot: dict, tr: dict | None = None, *, min_conf: int = 85, min_wr: float = 70.0, profile: str | None = None, daily_candles: list | None = None, timeframe: str | None = None, freshness_max_candles: int = 8, chase_atr_mult: float = 2.5) -> AssetSignal:
     market = snapshot["market"]
     candles = snapshot.get("candles", [])
     ticker = snapshot.get("ticker", {}) or {}
-    # v9.0.0 — Pass the caller's trader profile so the dashboard computes
-    # the SAME signal the detail page shows (single source of truth).
-    # v9.1.4 — Anchor level ke harga live ticker (arah tetap candle tutup).
-    # v10.1.8 — Default gate TAMPILAN longgar (freshness 8 / chase 2.5);
-    # Full-Auto memanggil jalur ini dengan nilai ketat (3 / 1.5).
     sig = compute_signal(
         candles, market, profile=profile, live_price=ticker.get("price"),
         daily_candles=daily_candles, timeframe=timeframe,
@@ -666,42 +485,29 @@ def _build_signal(snapshot: dict, tr: dict | None = None, *, min_conf: int = 85,
     wr = tr_mini.wr_30d
     action_ok = sig["action"] != "HOLD"
     conf_ok = sig["confidence"] >= min_conf
-    # v8.7.0 — Restored strict Premium gate (target WR > 70%).
-    # Old v8.0.9 logic let signals without a WR sample slip into Premium
-    # via `is_premium = action_ok and conf_ok` (WR=None fallback) — this
-    # caused the 50% WR degradation. New rule:
-    #   • If we have a WR sample → require conf_ok AND wr >= min_wr AND
-    #     confidence >= min_conf.
-    #   • If we DO NOT have a WR sample → require confidence >= min_conf + 5
-    #     (stricter bar to compensate for the unknown WR).
     if wr is None:
-        # v9.1.2 — Aset tanpa histori: bar +3 (bukan +5). Bar lama (90-95)
-        # praktis tak terjangkau confidence jujur v9 (cap 95, sinyal kuat
-        # umumnya 85-90) → kolom premium kosong total.
         is_premium = action_ok and sig["confidence"] >= (min_conf + 3)
     else:
         is_premium = action_ok and conf_ok and wr >= min_wr
-    # v8.1.3 — Attach region (japan/china/us/etc.) for World Stocks
-    # filter chips on the dashboard.
     from market_data import region_for_symbol
     region = region_for_symbol(market, snapshot["symbol"])
 
-    # v8.2.2 — Compute Risk/Reward + risk level for badge display.
     risk_reward: float | None = None
     risk_level: str | None = None
     reward_pct: float | None = None
     risk_pct: float | None = None
-    entry_v = sig.get("entry")
+    
+    entry_v = sig.get("entry") or ticker.get("price")
     sl_v = sig.get("stop_loss")
     tp_v = sig.get("take_profit")
-    if entry_v and sl_v and tp_v and sig["action"] in ("BUY", "SELL"):
+    
+    if entry_v and sl_v and tp_v and entry_v > 0:
         reward = abs(tp_v - entry_v)
         risk = abs(entry_v - sl_v)
-        if risk > 0 and entry_v > 0:
+        if risk > 0:
             risk_reward = round(reward / risk, 2)
             reward_pct = round((reward / entry_v) * 100, 2)
             risk_pct = round((risk / entry_v) * 100, 2)
-            # Categorize based on confidence + R:R ratio.
             conf = sig.get("confidence") or 0
             if conf >= 85 and risk_reward >= 2.0:
                 risk_level = "Low"
@@ -709,15 +515,6 @@ def _build_signal(snapshot: dict, tr: dict | None = None, *, min_conf: int = 85,
                 risk_level = "Medium"
             else:
                 risk_level = "High"
-    elif sig["action"] == "HOLD" and entry_v and sl_v and tp_v:
-        # HOLD: show volatility range as a neutral badge (Medium by default)
-        reward = abs(tp_v - entry_v)
-        risk = abs(entry_v - sl_v)
-        if risk > 0 and entry_v > 0:
-            risk_reward = round(reward / risk, 2)
-            reward_pct = round((reward / entry_v) * 100, 2)
-            risk_pct = round((risk / entry_v) * 100, 2)
-            risk_level = "Medium"
 
     return AssetSignal(
         symbol=snapshot["symbol"],
@@ -733,29 +530,25 @@ def _build_signal(snapshot: dict, tr: dict | None = None, *, min_conf: int = 85,
         confidence=sig["confidence"],
         indicators=sig["indicators"],
         reasons=sig["reasons"],
-        entry=sig["entry"],
+        entry=entry_v,
         entry_low=sig.get("entry_low"),
         entry_high=sig.get("entry_high"),
         entry_moderate=sig.get("entry_moderate"),
         entry_aggressive=sig.get("entry_aggressive"),
-        stop_loss=sig["stop_loss"],
-        take_profit=sig["take_profit"],
+        stop_loss=sl_v,
+        take_profit=tp_v,
         take_profit_2=sig.get("take_profit_2"),
         take_profit_3=sig.get("take_profit_3"),
         track_record=tr_mini,
         is_premium=is_premium,
         region=region,
         risk_reward=risk_reward,
-        risk_level=risk_level,
-        reward_pct=reward_pct,
-        risk_pct=risk_pct,
+        risk_level=risk_level or "Medium",
+        reward_pct=reward_pct or 0.0,
+        risk_pct=risk_pct or 0.0,
         late_entry=bool(sig.get("late_entry")),
     )
 
-
-# v9.2.0 — AI Suggestions: daftar aset dengan sinyal AKTIF (BUY/SELL)
-# terkuat per kategori market, lengkap dengan Entry/SL/TP1-3. Fitur ini
-# PREMIUM-ONLY — divalidasi lewat entitlement device_id di MongoDB.
 @api.get("/ai-suggestions")
 async def ai_suggestions(
     market: Literal["crypto", "stock_id", "stock_us", "world_stocks", "gold_silver", "commodity", "forex", "etf"] = Query("crypto"),
@@ -767,7 +560,6 @@ async def ai_suggestions(
     if timeframe not in TIMEFRAME_MAP:
         raise HTTPException(400, f"Invalid timeframe. Use one of {TIMEFRAMES}")
 
-    # ---- Premium gate: subscription Play Billing ATAU unlock code admin ----
     entitled = False
     if device_id:
         row = await db.subscriptions.find_one(
@@ -783,11 +575,10 @@ async def ai_suggestions(
                         entitled = False
                 except Exception:
                     pass
-        # v9.2.0 — User yang di-unlock admin via kode juga premium.
         if not entitled:
             uc = await db.unlock_codes.find_one({"device_id": device_id})
             if uc and not uc.get("revoked", False):
-                exp_iso = uc.get("expires_at")  # None = lifetime
+                exp_iso = uc.get("expires_at")
                 if not exp_iso:
                     entitled = True
                 else:
@@ -798,8 +589,6 @@ async def ai_suggestions(
     if not entitled:
         raise HTTPException(403, "premium_required")
 
-    # v9.6.8 — Short-TTL cache per (market, timeframe, profile) so switching
-    # profiles doesn't rescan the full universe each tap.
     cache_key = f"{market}|{timeframe}|{profile or 'none'}|{limit}"
     hit = _ai_suggestions_cache.get(cache_key)
     if hit and time.time() - hit[0] < AI_SUGGESTIONS_TTL:
@@ -813,9 +602,6 @@ async def ai_suggestions(
         premium_only=False,
         min_confidence=min_conf,
         min_wr=min_wr,
-        # v9.2.1 — full=True: pindai SELURuh universe terkurasi (mis.
-        # stock_us 787 ticker, bukan 50 mega-cap saja) agar kategori
-        # World Stocks tidak kosong saat mesin VWAP profil aktif.
         full=True,
         profile=profile,
     )
@@ -828,10 +614,6 @@ async def ai_suggestions(
         if profile else "CONFLUENCE"
     )
     items = [a.model_dump() for a in picks]
-    # v9.8.3 — Tandai sinyal crypto yang BENAR-BENAR tradable di Binance
-    # USDT-M Futures. Sinyal untuk aset delisted (mis. OCEAN) diberi flag
-    # futures_tradable=False agar UI mengganti tombol EXECUTE dengan note,
-    # bukan gagal setelah user tap.
     if market == "crypto":
         try:
             from asi_bot.whitelist import binance_perp_tradable
@@ -854,19 +636,12 @@ async def ai_suggestions(
     _ai_suggestions_cache[cache_key] = (time.time(), out)
     return out
 
-
 def _profile_to_model(p: dict) -> Profile:
     return Profile(id=p["_id"], name=p.get("name", "Untitled"), crypto=p.get("crypto", []), stocks=p.get("stocks", []))
-
-
-# ---------------- Routes ----------------
 
 @api.get("/")
 async def health() -> dict:
     return {"app": "AITrade Pro", "status": "ok", "time": _now_iso()}
-
-
-# -------- Profiles --------
 
 @api.get("/profiles", response_model=ProfilesResponse)
 async def list_profiles() -> ProfilesResponse:
@@ -883,7 +658,6 @@ async def list_profiles() -> ProfilesResponse:
         timeframes=TIMEFRAMES,
     )
 
-
 @api.post("/profiles", response_model=Profile)
 async def create_profile(payload: ProfileCreate) -> Profile:
     name = payload.name.strip() or "Profil Baru"
@@ -892,7 +666,6 @@ async def create_profile(payload: ProfileCreate) -> Profile:
     doc = {"_id": pid, "name": name, "crypto": crypto, "stocks": stocks, "created_at": _now_iso()}
     await db.profiles.insert_one(doc)
     return _profile_to_model(doc)
-
 
 @api.put("/profiles/{profile_id}", response_model=Profile)
 async def update_profile(profile_id: str, payload: ProfileUpdate) -> Profile:
@@ -913,7 +686,6 @@ async def update_profile(profile_id: str, payload: ProfileUpdate) -> Profile:
     doc = await db.profiles.find_one({"_id": profile_id}, {"_id": 1, "name": 1, "crypto": 1, "stocks": 1})
     return _profile_to_model(doc or current)
 
-
 @api.delete("/profiles/{profile_id}")
 async def delete_profile(profile_id: str) -> dict:
     total = await db.profiles.count_documents({})
@@ -931,7 +703,6 @@ async def delete_profile(profile_id: str) -> dict:
             )
     return {"ok": True, "deleted": profile_id}
 
-
 @api.post("/profiles/{profile_id}/activate")
 async def activate_profile(profile_id: str) -> dict:
     doc = await db.profiles.find_one({"_id": profile_id}, {"_id": 1})
@@ -941,9 +712,6 @@ async def activate_profile(profile_id: str) -> dict:
         {"_id": "active"}, {"_id": "active", "profile_id": profile_id}, upsert=True,
     )
     return {"ok": True, "active_id": profile_id}
-
-
-# -------- Watchlist (legacy, routes to active profile) --------
 
 @api.get("/watchlist", response_model=WatchlistResponse)
 async def get_watchlist() -> WatchlistResponse:
@@ -957,7 +725,6 @@ async def get_watchlist() -> WatchlistResponse:
         profile_id=prof["_id"],
         profile_name=prof.get("name", "Default"),
     )
-
 
 @api.post("/watchlist", response_model=WatchlistResponse)
 async def update_watchlist(payload: WatchlistPayload) -> WatchlistResponse:
@@ -977,26 +744,7 @@ async def update_watchlist(payload: WatchlistPayload) -> WatchlistResponse:
         profile_name=prof.get("name", "Default"),
     )
 
-
-# -------- Dashboard --------
-
-# v8.7.2 — Adaptive premium thresholds per market.
-# Rationale: different markets have different noise/volatility profiles.
-# The one-size-fits-all 85/70 was too permissive for macro-heavy markets
-# (forex/commodity/gold), so we raise the bar there. Callers can still
-# override via query params (?min_confidence=&min_wr=).
 _MARKET_THRESHOLDS: dict[str, tuple[int, float]] = {
-    # market key            (min_conf, min_wr)
-    # v9.1.2 — Rekalibrasi ke performa backtest v9 yang JUJUR (WR 55-57%).
-    # Gate lama (WR>=72-75%) dikalibrasi untuk formula v1 dan praktis
-    # mustahil dicapai → badge premium hilang total. Bar untuk aset tanpa
-    # histori juga diturunkan dari +5 ke +3 (lihat _build_signal).
-    # v10.0.11 — Threshold premium crypto diturunkan 85 → 70 (keputusan
-    # user: "formula seperti versi lama, signal lebih banyak"). Dashboard
-    # menampilkan DAFTAR LENGKAP tanpa dipotong threshold; nilai ini hanya
-    # memengaruhi badge "PREMIUM" dan filter `premium_only`. Jadi lebih
-    # banyak koin akan mendapat badge premium dan terasa "lebih banyak
-    # signal", tanpa menyentuh formula entry/exit ASI-Bot.
     "crypto":               (70, 55.0),
     "stock_id":             (85, 55.0),
     "stock_us":             (85, 55.0),
@@ -1007,12 +755,9 @@ _MARKET_THRESHOLDS: dict[str, tuple[int, float]] = {
     "forex":                (85, 55.0),
 }
 
-
 def _threshold_for_market(market: str) -> tuple[int, float]:
-    """Return (min_conf, min_wr) tuned for the given market."""
     eff = "stock_id" if market == "stock" else market
     return _MARKET_THRESHOLDS.get(eff, (87, 72.0))
-
 
 @api.get("/dashboard", response_model=DashboardResponse)
 async def dashboard(
@@ -1020,11 +765,11 @@ async def dashboard(
     timeframe: str = Query("1h"),
     sort: Literal["default", "premium", "confidence", "wr"] = Query("default"),
     premium_only: bool = Query(False),
-    min_confidence: int | None = Query(None, ge=0, le=100, description="Override premium threshold (default: adaptive per market)"),
-    min_wr: float | None = Query(None, ge=0.0, le=100.0, description="Override WR threshold"),
+    min_confidence: int | None = Query(None, ge=0, le=100),
+    min_wr: float | None = Query(None, ge=0.0, le=100.0),
     full: bool = Query(False),
-    region: str | None = Query(None, description="Optional region filter for World Stocks"),
-    profile: str | None = Query(None, description="Trader profile (scalper/day/swing/longterm) — keeps dashboard signals identical to the detail page"),
+    region: str | None = Query(None),
+    profile: str | None = Query(None),
 ) -> DashboardResponse:
     if timeframe not in TIMEFRAME_MAP:
         raise HTTPException(400, f"Invalid timeframe. Use one of {TIMEFRAMES}")
@@ -1041,7 +786,6 @@ async def dashboard(
         profile=profile,
     )
 
-
 async def _build_dashboard_response(
     *,
     market: str,
@@ -1054,20 +798,13 @@ async def _build_dashboard_response(
     region: str | None = None,
     extras: list[str] | None = None,
     profile: str | None = None,
-    # v10.1.8 — strict_gates=True dipakai jalur Full-Auto (fetcher) agar
-    # eksekusi tetap pakai gate ketat v10.1.6 (freshness 3 / chase 1.5)
-    # walaupun dashboard tampil longgar (8 / 2.5).
     strict_gates: bool = False,
 ) -> DashboardResponse:
-    # Backward-compat: "stock" -> "stock_id", "world_stocks" -> "stock_us" internally
     eff_market = "stock_id" if market == "stock" else market
     if eff_market == "world_stocks":
         eff_market = "stock_us"
 
     prof = await _get_active_profile()
-    # v8.1.3 — Region-aware picking for stock_us. `region=japan` returns
-    # the top-50 tickers tagged as japan; `region=all` or None falls back
-    # to the default (first-50 US insertion order).
     if eff_market == "stock_us" and region and region != "all":
         region_syms = STOCK_US_BY_REGION.get(region.lower(), [])
         symbols = region_syms[:50] if not full else region_syms
@@ -1097,11 +834,7 @@ async def _build_dashboard_response(
         }.get(eff_market, [])
         profile_id = prof["_id"]
         profile_name = prof.get("name", "Default")
-    # v8.12.18 — Merge in `extras` (watchlist symbols beyond the default
-    # top-50 slice) so favourites like BBCA, BBRI, etc. show up in the
-    # dashboard payload and the frontend Watchlist column can resolve
-    # them. We look them up against the FULL universe for this market
-    # (defence in depth: silently drop anything unknown).
+
     if extras and not full:
         full_universe = {
             "crypto": FULL_CRYPTO,
@@ -1109,8 +842,8 @@ async def _build_dashboard_response(
             "etf": FULL_ETF,
             "stock_us": FULL_STOCK_US,
             "gold_silver": DEFAULT_GOLD_SILVER,
-            "commodity": DEFAULT_COMMODITY,
-            "forex": DEFAULT_FOREX,
+            "commodity": FULL_COMMODITY,
+            "forex": FULL_FOREX,
         }.get(eff_market, [])
         allowed = {s.upper() for s in full_universe}
         seen = {s.upper() for s in symbols}
@@ -1132,8 +865,6 @@ async def _build_dashboard_response(
     by_sym = {s["symbol"]: s for s in snapshots}
     ordered = [by_sym[s] for s in symbols if s in by_sym]
 
-    # v9.2.0 — Macro Bias 50 SMA harian untuk mesin VWAP (scalper/day/
-    # swing). Fetch candle harian paralel (cache 4 jam per simbol).
     daily_map: dict[str, list] = {}
     if profile in ("scalper", "day", "swing"):
         daily_list = await asyncio.gather(
@@ -1146,15 +877,8 @@ async def _build_dashboard_response(
             if isinstance(d, list) and d
         }
 
-    # v10.1.8 — Pilih gate: dashboard/display longgar (8/2.5), Full-Auto
-    # eksekusi ketat (3/1.5).
     _fresh_n = 3 if strict_gates else 8
     _chase_m = 1.5 if strict_gates else 2.5
-    # v10.2.21 — Yield to the event loop between symbols. Building ~100+
-    # signals in one synchronous pass held the loop for several seconds on
-    # the production CPU limit (0.25 core), freezing every request incl.
-    # /health (503s, liveness restarts, chart timeouts, static prices).
-    # Signal logic is unchanged; only scheduling is.
     assets = []
     for s in ordered:
         assets.append(_build_signal(
@@ -1185,37 +909,23 @@ async def _build_dashboard_response(
         premium_threshold={"min_confidence": min_confidence, "min_wr": min_wr},
     )
 
-
-# v10.2.18 — Response-level cache 60 detik untuk /dashboard/batch
-# (keputusan user: "endpoint terlalu lambat & 502 beruntun").
-# _snapshot_cache per simbol sudah ada, tapi request batch berulang
-# masih harus menyusun ulang Pydantic + premium filter + track-record
-# per market. Cache tingkat respons membuat request identik instan
-# dari memori dan mengurangi beban upstream Yahoo/Binance saat burst.
 _BATCH_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _BATCH_INFLIGHT: dict[str, "asyncio.Task[dict[str, Any]]"] = {}
 _BATCH_CACHE_TTL = 60.0
 _BATCH_STALE_MAX = 600.0
 _BATCH_CACHE_MAX = 64
 
-
-# v8.0.4 — Batch dashboard endpoint. Frontend used to fire 8 parallel
-# HTTP requests on cold start; even though each is cheap on the server
-# they cost ~50ms round-trip on real networks and force React to
-# schedule 8 setState updates. `/api/dashboard/batch?markets=a,b,c`
-# returns them all inside a single response so the client can perform
-# ONE state update.
 @api.get("/dashboard/batch")
 async def dashboard_batch(
     markets: str = Query("crypto,stock_us,etf,stock_id,gold_silver,commodity,forex"),
     timeframe: str = Query("1h"),
     sort: Literal["default", "premium", "confidence", "wr"] = Query("premium"),
     full: bool = Query(False),
-    min_confidence: int | None = Query(None, ge=0, le=100, description="Override (default: adaptive per market)"),
+    min_confidence: int | None = Query(None, ge=0, le=100),
     min_wr: float | None = Query(None, ge=0.0, le=100.0),
-    region: str | None = Query(None, description="Regional filter applied to stock_us only"),
-    extras: str | None = Query(None, description="Extra symbols to include, format: market:SYMBOL,market:SYMBOL"),
-    profile: str | None = Query(None, description="Trader profile (scalper/day/swing/longterm) — keeps batch signals identical to the detail page"),
+    region: str | None = Query(None),
+    extras: str | None = Query(None),
+    profile: str | None = Query(None),
 ) -> dict[str, Any]:
     if timeframe not in TIMEFRAME_MAP:
         raise HTTPException(400, f"Invalid timeframe. Use one of {TIMEFRAMES}")
@@ -1226,9 +936,6 @@ async def dashboard_batch(
              "etf", "gold_silver", "commodity", "forex"}
     market_keys = [m for m in market_keys if m in known][:9]
 
-    # v8.12.18 — Parse extras "market:SYMBOL" pairs into per-market list.
-    # Ensures watchlist favourites beyond the default top-50 slice
-    # (e.g. BBCA in stock_id) are included in the response.
     extras_by_market: dict[str, list[str]] = {}
     if extras:
         for pair in extras.split(","):
@@ -1240,7 +947,6 @@ async def dashboard_batch(
             sym = sym.strip().upper()
             if not mk or not sym:
                 continue
-            # Map legacy alias same way as the builder does.
             eff = "stock_id" if mk == "stock" else ("stock_us" if mk == "world_stocks" else mk)
             extras_by_market.setdefault(eff, []).append(sym)
 
@@ -1251,11 +957,6 @@ async def dashboard_batch(
             min_wr if min_wr is not None else d_wr,
         )
 
-    # v10.2.18 — Response-level cache + in-flight dedupe. Request
-    # IDENTIK (markets+timeframe+sort+full+min_conf+min_wr+region+
-    # extras+profile) dalam 60s kembali instan dari memori. N request
-    # bersamaan berbagi SATU penyusunan upstream (anti-stampede saat
-    # banyak client refresh berbarengan → juga menurunkan risiko 502).
     extras_norm = ",".join(
         f"{k}:{','.join(sorted(v))}"
         for k, v in sorted(extras_by_market.items())
@@ -1309,18 +1010,15 @@ async def dashboard_batch(
                 out[m] = r.model_dump()
         payload = {"timeframe": timeframe, "markets": out,
                    "server_time": _now_iso(), "cached": False}
-        # Simpan dengan boundary candle supaya auto-expire saat candle baru.
         _BATCH_CACHE[cache_key] = (
             time.time(), {**payload, "_boundary": boundary})
         if len(_BATCH_CACHE) > _BATCH_CACHE_MAX:
-            # Buang yang tertua.
             oldest = sorted(_BATCH_CACHE.items(),
                             key=lambda kv: kv[1][0])[:len(_BATCH_CACHE) - _BATCH_CACHE_MAX]
             for k, _ in oldest:
                 _BATCH_CACHE.pop(k, None)
         return payload
 
-    # In-flight dedupe: dua request bersamaan dengan kunci sama berbagi task.
     task = _BATCH_INFLIGHT.get(cache_key)
     if task is None or task.done():
         task = asyncio.create_task(_compute())
@@ -1330,29 +1028,17 @@ async def dashboard_batch(
             if _BATCH_INFLIGHT.get(k) is t:
                 _BATCH_INFLIGHT.pop(k, None)
         task.add_done_callback(_clear_inflight)
-    # v10.2.21 — Stale-while-revalidate: same candle bar + younger than
-    # _BATCH_STALE_MAX → answer instantly with the last result while the
-    # refresh above runs in the background (users never wait ~10s).
     if same_bar and (now - hit[0]) < _BATCH_STALE_MAX:
         return _cached_resp()
     return await task
 
-
-# -------- Asset detail --------
-
-# v10.2.16 — Server-side cache 60 detik untuk chart aset (keputusan
-# user): request identik TIDAK memukul exchange berulang. Ditambah
-# in-flight dedupe: N request bersamaan (mis. prefetch seluruh kartu
-# trade) berbagi SATU fetch upstream → throttle upstream hilang.
 _CHART_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _CHART_INFLIGHT: dict[str, "asyncio.Task[dict[str, Any]]"] = {}
 _CHART_CACHE_TTL = 60.0
 _CHART_CACHE_MAX = 300
 
-
 async def _build_chart_payload(eff_market: str, symbol: str, timeframe: str,
                                profile: str | None) -> dict[str, Any]:
-    """Isi asli endpoint chart (fetch snapshot + compute signal)."""
     snap = await (
         get_crypto_snapshot(symbol, timeframe)
         if eff_market == "crypto"
@@ -1360,9 +1046,6 @@ async def _build_chart_payload(eff_market: str, symbol: str, timeframe: str,
     )
     if not snap:
         raise HTTPException(404, "Symbol not found or upstream data unavailable")
-    # v8.12.57 — Pass trader profile so v3 formula tunes EMA / RSI /
-    # confidence gate per user preference (crypto / forex / gold only).
-    # v9.2.0 — Sertakan candle harian (bias 50 SMA) untuk mesin VWAP.
     _daily = None
     if profile in ("scalper", "day", "swing"):
         _daily = await _get_daily_candles(eff_market, symbol)
@@ -1370,14 +1053,8 @@ async def _build_chart_payload(eff_market: str, symbol: str, timeframe: str,
         snap.get("candles", []), eff_market, profile=profile,
         live_price=(snap.get("ticker", {}) or {}).get("price"),
         daily_candles=_daily, timeframe=timeframe,
-        # v10.1.8 — Detail chart = jalur TAMPILAN → gate longgar sama
-        # seperti dashboard supaya badge konsisten antar layar.
         freshness_max_candles=8, chase_atr_mult=2.5,
     )
-    # v8.2.2 — Enrich raw signal with risk/reward metrics so the detail
-    # page header renders the Risk badge. `compute_signal` returns a
-    # plain dict and doesn't go through `_build_signal`, so we compute
-    # R:R inline here (mirrors the logic in _build_signal).
     _entry_v = sig.get("entry")
     _sl_v = sig.get("stop_loss")
     _tp_v = sig.get("take_profit")
@@ -1400,10 +1077,6 @@ async def _build_chart_payload(eff_market: str, symbol: str, timeframe: str,
             else:
                 sig["risk_level"] = "High"
     candles = snap.get("candles", [])
-    # v10.2.16 — Trim tampilan 1h ke 120 candle terakhir (keputusan user:
-    # default 100-150). Sinyal TETAP dihitung dari SET PENUH di atas
-    # (EMA200 dst.) — logika sinyal tidak berubah; yang dipangkas hanya
-    # payload yang dikirim ke HP (irit bandwidth jaringan lambat).
     if timeframe == "1h" and len(candles) > 120:
         candles = candles[-120:]
     return {
@@ -1412,7 +1085,6 @@ async def _build_chart_payload(eff_market: str, symbol: str, timeframe: str,
         "candles": candles,
         "signal": sig,
     }
-
 
 @api.get("/asset/{market}/{symbol}/chart", response_model=ChartResponse)
 async def asset_chart(
@@ -1426,13 +1098,9 @@ async def asset_chart(
     eff_market = "stock_id" if market == "stock" else market
     if eff_market == "world_stocks":
         eff_market = "stock_us"
-    # v7.0.5: URL-safe dash decoder — forex/gold-silver symbols contain
-    # "/" (EUR/USD, XAU/USD) which breaks path routing. Frontend pushes
-    # them as "EUR-USD"; convert back here before pool lookup.
     if eff_market in ("forex", "gold_silver") and "-" in symbol:
         symbol = symbol.replace("-", "/")
     symbol = symbol.upper()
-    # v10.2.16 — Cache 60s + in-flight dedupe (lihat _CHART_CACHE).
     cache_key = f"{eff_market}|{symbol}|{timeframe}|{profile or 'none'}"
     now = time.time()
     hit = _CHART_CACHE.get(cache_key)
@@ -1454,7 +1122,6 @@ async def asset_chart(
     _CHART_CACHE[cache_key] = (time.time(), payload)
     return ChartResponse(**payload)
 
-
 @api.post("/asset/{market}/{symbol}/analyze", response_model=AnalyzeResponse)
 async def asset_analyze(
     market: Literal["crypto", "stock", "etf", "stock_id", "stock_us", "world_stocks", "gold_silver", "commodity", "forex"],
@@ -1468,12 +1135,10 @@ async def asset_analyze(
     eff_market = "stock_id" if market == "stock" else market
     if eff_market == "world_stocks":
         eff_market = "stock_us"
-    # v7.0.5: URL-safe dash decoder — forex/gold-silver symbols contain
-    # "/" (EUR/USD, XAU/USD) which breaks path routing. Frontend pushes
-    # them as "EUR-USD"; convert back here before pool lookup.
     if eff_market in ("forex", "gold_silver") and "-" in symbol:
         symbol = symbol.replace("-", "/")
     symbol = symbol.upper()
+    
     snap = await (
         get_crypto_snapshot(symbol, timeframe)
         if eff_market == "crypto"
@@ -1481,26 +1146,43 @@ async def asset_analyze(
     )
     if not snap:
         raise HTTPException(404, "Symbol not found or upstream data unavailable")
+        
     candles = snap.get("candles", [])
     ticker = snap.get("ticker", {}) or {}
     price = ticker.get("price") or (candles[-1]["close"] if candles else None)
+    
     _daily_a = None
     if profile in ("scalper", "day", "swing"):
         _daily_a = await _get_daily_candles(eff_market, symbol)
+        
     technical = compute_signal(
         candles, eff_market, profile=profile, live_price=price,
         daily_candles=_daily_a, timeframe=timeframe,
-        # v10.1.8 — AI analyze = jalur TAMPILAN → gate longgar (8/2.5)
-        # agar konsisten dengan badge dashboard.
         freshness_max_candles=8, chase_atr_mult=2.5,
     )
     if price is None:
         raise HTTPException(503, "Price unavailable")
+        
     news = await get_news_for_symbol(symbol, eff_market, limit=8)
-    result = await ensemble_analyze(symbol, eff_market, timeframe, technical, float(price), news=news, lang=lang)
-    consensus = result["consensus"]
+    
+    try:
+        result = await ensemble_analyze(symbol, eff_market, timeframe, technical, float(price), news=news, lang=lang)
+    except Exception as e:
+        logger.error(f"Ensemble analyze error: {e}")
+        result = {
+            "consensus": {
+                "action": technical.get("action", "HOLD"),
+                "label": technical.get("label", "HOLD"),
+                "confidence": technical.get("confidence", 75),
+                "reasoning": "Analisis teknikal berhasil dimuat, namun ringkasan AI utama sedang sibuk.",
+                "news_factors": [],
+                "risk_factors": []
+            },
+            "models": []
+        }
 
-    # Record signal into history for backtesting
+    consensus = result.get("consensus", {})
+
     try:
         prof = await _get_active_profile()
         await record_signal(
@@ -1517,26 +1199,22 @@ async def asset_analyze(
     except Exception as e:
         logger.warning("Failed to record signal: %s", e)
 
-    # Cache last analysis (always store the Indonesian original)
     await db.analyses.replace_one(
         {"_id": f"{eff_market}-{symbol}-{timeframe}"},
         {
             "_id": f"{eff_market}-{symbol}-{timeframe}",
             "symbol": symbol, "market": eff_market, "timeframe": timeframe,
             "price": float(price), "technical": technical,
-            "consensus": consensus, "models": result["models"],
+            "consensus": consensus, "models": result.get("models", []),
             "news_used": news,
             "generated_at": _now_iso(),
         },
         upsert=True,
     )
 
-    # If EN requested, translate human-readable narrative fields (consensus reasoning,
-    # per-model reasoning, news titles/descriptions, news_factors, risk_factors).
-    # Ticker symbols / numbers stay intact thanks to translator prompt rules.
     if lang == "en":
         narrative_texts: list[str] = []
-        ptrs: list[tuple] = []  # (collection_ref, key_or_index) for write-back
+        ptrs: list[tuple] = []
 
         cons_reason = consensus.get("reasoning") or consensus.get("rationale") or ""
         if cons_reason:
@@ -1548,7 +1226,6 @@ async def asset_analyze(
         if cons_tfview:
             narrative_texts.append(cons_tfview); ptrs.append(("consensus", "timeframe_view"))
 
-        # news_factors and risk_factors arrays
         news_factors = consensus.get("news_factors") or []
         for i, nf in enumerate(news_factors):
             if nf:
@@ -1598,13 +1275,16 @@ async def asset_analyze(
             item["description"] = news_descs_tr[i] if i < len(news_descs_tr) else item.get("description")
 
     return AnalyzeResponse(
-        symbol=symbol, market=eff_market, timeframe=timeframe,
-        price=float(price), technical=technical,
-        consensus=consensus, models=result["models"],
+        symbol=symbol, 
+        market=eff_market, 
+        timeframe=timeframe,
+        price=float(price), 
+        technical=technical,
+        consensus=consensus, 
+        models=result.get("models", []),
         news_used=news,
         generated_at=_now_iso(),
     )
-
 
 @api.get("/asset/{market}/{symbol}/track-record")
 async def asset_track_record(
@@ -1614,26 +1294,13 @@ async def asset_track_record(
     eff_market = "stock_id" if market == "stock" else market
     if eff_market == "world_stocks":
         eff_market = "stock_us"
-    # v7.0.5: URL-safe dash decoder — forex/gold-silver symbols contain
-    # "/" (EUR/USD, XAU/USD) which breaks path routing. Frontend pushes
-    # them as "EUR-USD"; convert back here before pool lookup.
     if eff_market in ("forex", "gold_silver") and "-" in symbol:
         symbol = symbol.replace("-", "/")
     return await get_track_record(db, eff_market, symbol.upper())
 
-
-# -------- News --------
-
 @api.get("/ai/models")
 async def get_ai_models() -> dict[str, Any]:
-    """Return the list of AI models currently powering the ensemble analysis.
-
-    Frontend uses this to display an up-to-date hint like
-    "Press AI ANALYSIS for consensus from X + Y + Z" — so whenever the
-    backend swaps in a newer model (e.g. Sonnet 4.6 → Sonnet 5), the UI
-    text updates automatically without a mobile rebuild.
-    """
-    from ai_engine import MODELS as _AI_MODELS  # local import to avoid circulars
+    from ai_engine import MODELS as _AI_MODELS
     return {
         "models": [
             {"name": m.get("label"), "provider": m.get("provider")}
@@ -1641,26 +1308,13 @@ async def get_ai_models() -> dict[str, Any]:
         ],
     }
 
-
 @api.get("/search")
 async def search_assets(
     q: str = Query(..., min_length=1, max_length=32),
     limit: int = Query(30, ge=1, le=60),
     timeframe: str = Query("1h"),
-    profile: str | None = Query(None, description="Trader profile — search-hit signals match dashboard/detail"),
+    profile: str | None = Query(None),
 ) -> dict[str, Any]:
-    """Cross-market symbol search — v8.1.3 full-universe edition.
-
-    Scans:
-      1. Static maps (all 7 markets: crypto, IDX, ETF, US, gold, commodity, forex)
-      2. Live Binance USDT universe (~2000 symbols, auto-loaded at startup)
-      3. Live Bitget USDT universe (fallback for tokens not on Binance)
-      4. CoinGecko `/search` disambiguation candidates (for ambiguous
-         short tickers like CAT, only fetched when local matches are
-         weak — always returned as `disambiguation` alongside `hits`).
-
-    Ranking: exact match → prefix match → contains match.
-    """
     from market_data import (
         CRYPTO_BINANCE_MAP,
         STOCK_YAHOO_MAP,
@@ -1678,13 +1332,6 @@ async def search_assets(
     if not query:
         return {"hits": [], "disambiguation": []}
 
-    # v10.1.7 — Query normalizer untuk kasus umum yang user complain hilang:
-    #   • "EURUSD" / "USDJPY" / "XAUUSD" → otomatis dicocokkan ke format
-    #     slash "EUR/USD", "USD/JPY", "XAU/USD" tanpa harus user mengetik slash.
-    #   • Alias nama populer: GOLD → XAU/USD, SILVER → XAG/USD,
-    #     OIL/CRUDE → WTI, BRENT → BRENT, GAS → NATGAS, COPPER → COPPER.
-    #   • "ALIBABA" (tanpa suffix) → akan tetap mencocokkan ALIBABA_HK via
-    #     "contains" rank 2 di bawah; alias tidak diperlukan.
     _ALIAS = {
         "GOLD": "XAU/USD", "SILVER": "XAG/USD",
         "OIL": "WTI", "CRUDE": "WTI", "CRUDEOIL": "WTI",
@@ -1694,17 +1341,11 @@ async def search_assets(
     extra_queries: list[str] = []
     if query in _ALIAS:
         extra_queries.append(_ALIAS[query])
-    # 6-char forex pair tanpa slash → sisipkan slash di tengah (EURUSD → EUR/USD).
-    # Juga 7-char metal (XAUUSD, XAGUSD).
     if "/" not in query and query.isalpha() and len(query) in (6, 7):
         mid = 3
         slashed = f"{query[:mid]}/{query[mid:]}"
         extra_queries.append(slashed)
 
-    # Static curated maps (already have priority — dashboard/premium data).
-    # v9.1.6 — stock_us pool digabung dengan search-only universe
-    # (NASDAQ Trader resmi + S&P 500/400/600 superset): BNY, GEV, HONA,
-    # dan ~5.200 ticker US lain kini bisa ditemukan via search.
     market_pools: list[tuple[str, list[str]]] = [
         ("crypto", list(CRYPTO_BINANCE_MAP.keys())),
         ("stock_id", list(STOCK_YAHOO_MAP.keys())),
@@ -1715,9 +1356,7 @@ async def search_assets(
         ("forex", list(FOREX_YAHOO_MAP.keys())),
     ]
 
-    # (market, symbol, rank) — lower rank = better match.
     matches: list[tuple[str, str, int]] = []
-    # v10.1.7 — Scan untuk query utama + semua alias (slash form & nama populer)
     queries_to_scan = [query] + extra_queries
     for market, syms in market_pools:
         for sym in syms:
@@ -1733,12 +1372,8 @@ async def search_assets(
                     matches.append((market, sym, 2))
                     break
 
-    # Track already-added crypto symbols to avoid duplicates from universe scan.
     seen_crypto = {m[1].upper() for m in matches if m[0] == "crypto"}
 
-    # v8.1.3 — Scan the LIVE Binance USDT universe. This is where meme
-    # tokens like MOODENG, POPCAT, BRETT, CATI, etc. get picked up
-    # without any manual map update.
     for base in BINANCE_UNIVERSE.keys():
         if base in seen_crypto:
             continue
@@ -1752,7 +1387,6 @@ async def search_assets(
             matches.append(("crypto", base, 2))
             seen_crypto.add(base)
 
-    # v8.1.3 — Bitget spot universe (tokens NOT on Binance).
     for base in BITGET_UNIVERSE.keys():
         if base in seen_crypto:
             continue
@@ -1769,37 +1403,15 @@ async def search_assets(
     matches.sort(key=lambda m: (m[2], m[1]))
     matches = matches[:limit]
 
-    # Track whether we already have a strong crypto match BEFORE the
-    # safety-net prepend below — used to decide whether to also fetch
-    # CoinGecko disambiguation candidates for the user.
     had_exact_crypto_before_safety_net = any(
         m[2] == 0 and m[0] == "crypto" for m in matches
     )
 
-    # v8.1.3 — Safety-net on-demand crypto lookup. Even if the query is
-    # NOT in our known universes (Binance mirror is limited to ~470 pairs
-    # in some geos; Bitget likewise misses some meme coins), the query
-    # itself might still be a valid CoinGecko token. Prepend a synthetic
-    # crypto/{query} match and let `get_crypto_snapshot` cascade through
-    # Binance → Bitget → CoinGecko to actually fetch OHLCV. If none of
-    # them have data, this hit is silently dropped from the response.
-    # v8.12.64 — Safety-net crypto lookup must NOT outrank an EXACT
-    # match from another market. Previously searching "ABBA" (a real
-    # IDX stock) prepended a random CoinGecko token also tickered ABBA
-    # above the actual stock. Only fire the safety net when there is
-    # no exact ticker match in ANY market.
     had_exact_match_any_market = any(m[2] == 0 for m in matches)
     if not had_exact_match_any_market and len(query) >= 2 and query.isalnum():
-        # Only meaningful for symbols that look like a ticker
-        # (2+ alphanumeric chars). Prepend so it shows above fuzzy matches
-        # when successful.
         matches = [("crypto", query, 0)] + matches
         matches = matches[:limit]
 
-    # v8.1.3 — CoinGecko multi-match ONLY when we did NOT already have a
-    # strong crypto match from local universes AND the query looks like a
-    # short/ambiguous crypto ticker. This surfaces CAT / OPUS / etc.
-    # candidates alongside any static-map hits (e.g. CAT stock).
     disambiguation: list[dict[str, Any]] = []
     if not had_exact_crypto_before_safety_net and len(query) >= 2 and query.isalnum():
         try:
@@ -1811,7 +1423,6 @@ async def search_assets(
     if not matches:
         return {"hits": [], "disambiguation": disambiguation, "query": query}
 
-    # Fetch snapshots concurrently.
     from market_data import get_crypto_snapshot, get_stock_snapshot, _yahoo_throttled
 
     async def fetch_one(market: str, symbol: str):
@@ -1835,7 +1446,6 @@ async def search_assets(
     )
     hits = [r for r in results if isinstance(r, dict)]
 
-    # Enrich each hit with technical signal + track record.
     symbols_by_market: dict[str, list[str]] = {}
     for h in hits:
         symbols_by_market.setdefault(h["market"], []).append(h["symbol"])
@@ -1857,34 +1467,8 @@ async def search_assets(
         "query": query,
     }
 
-
-
-
-# v8.12.69 — Latest published Android build. The /app-version endpoint
-# serves this so outdated installs get an update prompt. Bump together
-# with frontend APP_VERSION / app.json version on every release.
-# v10.6.5 — KEPUTUSAN USER: nilai ini = versi yang SUDAH LIVE di Google
-# Play (bukan versi kode terbaru). Jangan ikut di-bump saat uji coba;
-# ubah HANYA setelah user konfirmasi rilis masuk Play Console.
 APP_LATEST_VERSION = "10.7.6"
-
-# v10.1.1 — User minta popup update HANYA kotak kecil tanpa daftar
-# perubahan (list panjang bikin tombol OK tidak tersentuh di layar
-# pendek). Backend sengaja mengirim notes KOSONG supaya baik app lama
-# (v10.0.12 yang membaca field notes) maupun app baru hanya menampilkan
-# modal ringkas berisi tombol GET LATEST APK / Later.
 APP_UPDATE_NOTES = {"id": "", "en": ""}
-
-# v10.1.5 — Teks popup update dikirim dari SERVER supaya bisa diubah kapan
-# saja via Publish TANPA build APK baru (menjawab keluhan: pengguna versi
-# lama selalu melihat teks lama yang tertanam di APK). Frontend v10.1.5+
-# memprioritaskan string ini; bila field tidak ada (backend lama), ia
-# fallback ke i18n hardcoded agar tetap jalan.
-#
-# v10.1.6 — ANTI-PHISHING: teks popup lama ("Ask the admin for the latest
-# APK" / "Get latest APK") menakutkan user karena banyak scam APK. Teks
-# baru EKSPLISIT merujuk Google Play Store, URL target dikirim dari server
-# dan DITAMPILKAN di popup (user bisa verifikasi tujuan sebelum menekan).
 APP_UPDATE_PLAY_URL = (
     "https://play.google.com/store/apps/details?"
     "id=com.cryptostockapps.aicryptostockpro"
@@ -1907,15 +1491,12 @@ APP_UPDATE_PROMPT = {
     "later": {
         "id": "Nanti", "en": "Later", "ru": "Позже", "cn": "稍后",
     },
-    # v10.1.6 — Teks sumber (anti-phishing). Ditampilkan sebagai label kecil
-    # di bawah tombol supaya user yakin tujuan = Play Store, bukan file APK.
     "source_label": {
         "id": "Membuka Google Play Store",
         "en": "Opens Google Play Store",
         "ru": "Открывает Google Play Store",
         "cn": "将打开 Google Play Store",
     },
-    # URL tujuan + chip "Google Play" supaya user bisa verifikasi.
     "url": APP_UPDATE_PLAY_URL,
     "store_hint": {
         "id": "Google Play", "en": "Google Play",
@@ -1923,28 +1504,14 @@ APP_UPDATE_PROMPT = {
     },
 }
 
-
 @api.get("/app-version")
 async def app_version() -> dict[str, Any]:
-    """v8.12.69 — Latest published app version + Play Store link.
-
-    The Android client compares this against its own build version on
-    every cold start and nags the user to update when outdated. Bump
-    APP_LATEST_VERSION here whenever a new APK/AAB is released.
-    v10.1.5 — Sertakan APP_UPDATE_PROMPT agar teks popup bisa dikendalikan
-    dari server (frontend lama yang belum membaca field ini tetap aman).
-    v10.1.6 — Sertakan juga `prompt.url` eksplisit (Google Play Store)
-    agar frontend yang telah mendukung server-driven langsung membuka
-    tujuan yang benar; serta `play_store_url` top-level dipertahankan utk
-    backward-compat.
-    """
     return {
         "latest_version": APP_LATEST_VERSION,
         "play_store_url": APP_UPDATE_PLAY_URL,
         "notes": APP_UPDATE_NOTES,
         "prompt": APP_UPDATE_PROMPT,
     }
-
 
 @api.get("/news", response_model=NewsResponse)
 async def news_global(
@@ -1955,13 +1522,9 @@ async def news_global(
     eff_market = "stock_id" if market == "stock" else market
     if eff_market == "world_stocks":
         eff_market = "stock_us"
-    # v7.0.5 / v8.5.3 — URL-safe dash decoder — forex/gold-silver symbols
-    # contain "/" (EUR/USD, XAU/USD) which breaks path routing. This block
-    # only applies inside symbol-scoped routes; in this global news_global
-    # handler `symbol` doesn't exist, so we guard defensively.
     _sym_local = locals().get("symbol")
     if eff_market in ("forex", "gold_silver") and _sym_local and "-" in _sym_local:
-        _sym_local = _sym_local.replace("-", "/")  # only mutates the local, not used further in global route
+        _sym_local = _sym_local.replace("-", "/")
     items = await get_news(eff_market, limit=limit)
     if lang == "en" and items:
         titles = [i.get("title") or "" for i in items]
@@ -1975,7 +1538,6 @@ async def news_global(
             item["description"] = descs_tr[i]
     return NewsResponse(market=eff_market, items=[NewsItem(**i) for i in items], fetched_at=_now_iso())
 
-
 @api.get("/asset/{market}/{symbol}/news", response_model=NewsResponse)
 async def news_for_asset(
     market: Literal["crypto", "stock", "etf", "stock_id", "stock_us", "world_stocks", "gold_silver", "commodity", "forex"],
@@ -1986,9 +1548,6 @@ async def news_for_asset(
     eff_market = "stock_id" if market == "stock" else market
     if eff_market == "world_stocks":
         eff_market = "stock_us"
-    # v7.0.5: URL-safe dash decoder — forex/gold-silver symbols contain
-    # "/" (EUR/USD, XAU/USD) which breaks path routing. Frontend pushes
-    # them as "EUR-USD"; convert back here before pool lookup.
     if eff_market in ("forex", "gold_silver") and "-" in symbol:
         symbol = symbol.replace("-", "/")
     items = await get_news_for_symbol(symbol.upper(), eff_market, limit=limit)
@@ -2004,34 +1563,17 @@ async def news_for_asset(
             item["description"] = descs_tr[i]
     return NewsResponse(market=eff_market, items=[NewsItem(**i) for i in items], fetched_at=_now_iso())
 
-
-# -------- Translate --------
-
 class TranslatePayload(BaseModel):
     texts: list[str]
     target_lang: Literal["en", "id"] = "en"
 
-
 @api.post("/translate")
 async def translate_endpoint(payload: TranslatePayload) -> dict:
-    """Batch-translate arbitrary texts (cached by content hash)."""
     out = await translate_many(db, payload.texts, payload.target_lang)
     return {"target_lang": payload.target_lang, "items": out}
 
-
-# -------- App wiring --------
-
 @api.post("/auth/verify")
 async def auth_verify(payload: dict) -> dict:
-    """Verify an unlock code from the main app.
-
-    Body: { email, code, device_id, device_name? }
-
-    Returns:
-      { ok: true, duration, expires_at, device_id } on success
-      { ok: false, reason } on failure. Reasons:
-        - invalid_code, email_mismatch, revoked, expired, device_mismatch
-    """
     email = str(payload.get("email") or "").strip()
     code = str(payload.get("code") or "").strip().upper()
     device_id = str(payload.get("device_id") or "").strip() or None
@@ -2043,7 +1585,6 @@ async def auth_verify(payload: dict) -> dict:
     result = await verify_code(db, email, code, device_id, device_name)
     if not result["ok"]:
         return result
-    # Mirror to legacy `logged_users` for existing admin views + track counters
     now = _now_iso()
     await db.logged_users.update_one(
         {"_id": email.lower()},
@@ -2063,19 +1604,8 @@ async def auth_verify(payload: dict) -> dict:
     )
     return result
 
-
 @api.get("/whoami")
 async def whoami(request: Request) -> dict:
-    """Backend fingerprint — helps users verify their APK & admin tool
-    are talking to the SAME backend / database.
-
-    Returns:
-      - backend_host: the exact hostname/origin the request landed on
-      - db_name: MongoDB database name in use
-      - codes_count: number of unlock codes stored in this DB
-      - admin_tool_url: exact URL the admin tool should be opened at
-    """
-    # Prefer the ingress-visible host (respect proxy header if present)
     fwd_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
     scheme = request.headers.get("x-forwarded-proto") or request.url.scheme or "https"
     backend_origin = f"{scheme}://{fwd_host}" if fwd_host else str(request.base_url).rstrip("/")
@@ -2091,24 +1621,18 @@ async def whoami(request: Request) -> dict:
         "server_time": _now_iso(),
     }
 
-
-# ---- Admin: unlock code management ----
-
 def _check_admin(x_admin_token: str | None) -> None:
     expected = os.environ.get("ADMIN_TOKEN", "").strip()
-    # If no token configured in environment, allow open access (legacy dev/preview behavior)
     if not expected:
         return
     if x_admin_token != expected:
         raise HTTPException(403, "Forbidden")
-
 
 @api.post("/admin/generate-code")
 async def admin_generate_code(
     payload: dict,
     x_admin_token: str | None = Header(default=None),
 ) -> dict:
-    """Generate a new unlock code for an email + duration. Admin-only."""
     _check_admin(x_admin_token)
     email = str(payload.get("email") or "").strip()
     duration = str(payload.get("duration") or "monthly").lower()
@@ -2123,15 +1647,12 @@ async def admin_generate_code(
         "duration_label": DURATION_LABEL.get(duration, duration),
     }
 
-
 @api.get("/admin/codes")
 async def admin_list_codes(
     x_admin_token: str | None = Header(default=None),
 ) -> dict:
-    """List all unlock codes with device / expiry status. Admin-only."""
     _check_admin(x_admin_token)
     codes = await list_codes(db)
-    # Compute a synthetic status (active/expired/revoked/unused) for each
     now = datetime.now(timezone.utc)
     for c in codes:
         if c.get("revoked"):
@@ -2148,52 +1669,41 @@ async def admin_list_codes(
             c["status"] = "active" if c.get("device_id") else "unused"
     return {"total": len(codes), "codes": codes}
 
-
 @api.delete("/admin/codes/{code}")
 async def admin_delete_code(
     code: str,
     x_admin_token: str | None = Header(default=None),
 ) -> dict:
-    """Fully delete an unlock code (user must be re-issued a new one)."""
     _check_admin(x_admin_token)
     ok = await delete_code(db, code)
     if not ok:
         raise HTTPException(404, "Code not found")
     return {"ok": True, "code": code.upper()}
 
-
 @api.post("/admin/codes/{code}/revoke")
 async def admin_revoke_code_endpoint(
     code: str,
     x_admin_token: str | None = Header(default=None),
 ) -> dict:
-    """Mark a code as revoked (softer than delete — code stays in history)."""
     _check_admin(x_admin_token)
     ok = await revoke_code(db, code)
     if not ok:
         raise HTTPException(404, "Code not found")
     return {"ok": True, "code": code.upper()}
 
-
 @api.post("/admin/codes/{code}/reset-device")
 async def admin_reset_device(
     code: str,
     x_admin_token: str | None = Header(default=None),
 ) -> dict:
-    """Clear device binding so the code can be re-bound to a new device."""
     _check_admin(x_admin_token)
     ok = await reset_device_binding(db, code)
     if not ok:
         raise HTTPException(404, "Code not found")
     return {"ok": True, "code": code.upper()}
 
-
 @api.get("/admin/users", response_model=LoggedUsersResponse)
 async def admin_list_users(x_admin_token: str | None = Header(default=None)) -> LoggedUsersResponse:
-    """List all users who have successfully unlocked the app. Admin-only.
-
-    Combined view: joins `logged_users` with device info from `unlock_codes`.
-    """
     _check_admin(x_admin_token)
     docs: list[LoggedUser] = []
     cursor = db.logged_users.find({}).sort("last_seen", -1)
@@ -2210,33 +1720,22 @@ async def admin_list_users(x_admin_token: str | None = Header(default=None)) -> 
         ))
     return LoggedUsersResponse(total=len(docs), users=docs)
 
-
 @api.delete("/admin/users/{email}")
 async def admin_revoke_user(email: str, x_admin_token: str | None = Header(default=None)) -> dict:
-    """Revoke a user — removes them from logged_users AND revokes all their codes."""
     _check_admin(x_admin_token)
     target = email.strip().lower()
     res = await db.logged_users.delete_one({"_id": target})
-    # Also revoke every code owned by this email
     await db.unlock_codes.update_many({"email": target}, {"$set": {"revoked": True}})
     if res.deleted_count == 0:
         raise HTTPException(404, "User not found")
     return {"ok": True, "revoked": target}
-
-
-# ---------------- Google Play Billing Subscription ----------------
 
 class SubscriptionVerifyPayload(BaseModel):
     purchase_token: str
     product_id: str
     package_name: str | None = None
     device_id: str | None = None
-    # v8.12.69 — The Play Console base plan the user purchased (e.g.
-    # "pro-2m"). Recorded so one-time promos can be enforced
-    # server-side (a promo plan may only ever be claimed ONCE per
-    # device — reinstalling the app does NOT reset it).
     base_plan_id: str | None = None
-
 
 class SubscriptionStatusResponse(BaseModel):
     status: str
@@ -2245,7 +1744,6 @@ class SubscriptionStatusResponse(BaseModel):
     product_id: str | None = None
     source: str = "unknown"
     debug: str | None = None
-
 
 async def _upsert_entitlement(
     *,
@@ -2280,15 +1778,8 @@ async def _upsert_entitlement(
         upsert=True,
     )
 
-
 @api.get("/subscription/debug/latest")
 async def subscription_debug_latest(device_id: str | None = None) -> dict[str, Any]:
-    """Return the most recent verify attempt for debugging.
-
-    Includes the raw Google Play API error/debug string so we can figure out why
-    a purchase was rejected. Safe: does not return the full purchase token to
-    client (truncated).
-    """
     query: dict[str, Any] = {}
     if device_id:
         query["device_id"] = device_id
@@ -2310,17 +1801,8 @@ async def subscription_debug_latest(device_id: str | None = None) -> dict[str, A
         "token_prefix": (token[:12] + "…") if token else None,
     }
 
-
 @api.post("/subscription/verify", response_model=SubscriptionStatusResponse)
 async def subscription_verify(payload: SubscriptionVerifyPayload) -> SubscriptionStatusResponse:
-    """Verify a Google Play subscription purchase token and persist entitlement.
-
-    - Called by the Android client right after `requestSubscription` succeeds
-      AND on restore-purchase (`getAvailablePurchases`).
-    - If GOOGLE_PLAY_SERVICE_ACCOUNT_JSON is NOT set on the backend, we return
-      status="unverified" and entitled=False. Client must not treat this as
-      premium unlock — user should be routed back to paywall.
-    """
     token = (payload.purchase_token or "").strip()
     product_id = (payload.product_id or "").strip()
     if not token or not product_id:
@@ -2356,16 +1838,8 @@ async def subscription_verify(payload: SubscriptionVerifyPayload) -> Subscriptio
         debug=result.get("debug"),
     )
 
-
 @api.get("/subscription/status", response_model=SubscriptionStatusResponse)
 async def subscription_status(device_id: str | None = None) -> SubscriptionStatusResponse:
-    """Look up cached entitlement for a device.
-
-    Returns the most-recent entitlement row for the device. If none exists or
-    the last-known expiry is in the past, entitled=False.
-    Note: This is a **cache** — the authoritative flow is `POST /verify`. Use
-    this endpoint on cold-start to quickly gate UI, then re-verify in background.
-    """
     if not device_id:
         return SubscriptionStatusResponse(
             status="none", entitled=False, source="none",
@@ -2380,7 +1854,6 @@ async def subscription_status(device_id: str | None = None) -> SubscriptionStatu
     status = row.get("status", "invalid")
     expiry_iso = row.get("expiry_time")
     entitled = status in ENTITLED_STATUSES
-    # Belt-and-suspenders: expiry passed → not entitled
     if entitled and expiry_iso:
         try:
             if datetime.fromisoformat(expiry_iso.replace("Z", "+00:00")) <= datetime.now(timezone.utc):
@@ -2396,16 +1869,8 @@ async def subscription_status(device_id: str | None = None) -> SubscriptionStatu
         source=row.get("source", "cached"),
     )
 
-
 @api.get("/subscription/promo-claimed")
 async def subscription_promo_claimed(device_id: str, base_plan_id: str) -> dict[str, Any]:
-    """v8.12.69 — Has this device EVER claimed the given base plan?
-
-    Used to enforce one-time promo plans (e.g. the LIMITED 2-Months
-    offer): once any subscription row exists for (device, base plan),
-    the promo card is locked in the paywall — even after expiry,
-    cancellation, or an app reinstall.
-    """
     if not device_id or not base_plan_id:
         return {"claimed": False}
     row = await db.subscriptions.find_one(
@@ -2413,18 +1878,8 @@ async def subscription_promo_claimed(device_id: str, base_plan_id: str) -> dict[
     )
     return {"claimed": bool(row)}
 
-
-# ---- Promo code redemption (one per device) ----
-# v8.12.76 — Custom promo codes (Play Console campaign "promo-2026")
-# may only be redeemed ONCE per device. Google Play additionally
-# restricts each Play account to a single redemption of the custom
-# code, so the two layers stack. Reinstalling the app does NOT reset
-# the device lock because the record lives server-side.
-
-
 @api.get("/promo/redeemed")
 async def promo_redeemed(device_id: str) -> dict[str, Any]:
-    """Has this device already redeemed a promo code?"""
     if not device_id:
         return {"redeemed": False}
     row = await db.promo_redemptions.find_one({"device_id": device_id})
@@ -2433,16 +1888,12 @@ async def promo_redeemed(device_id: str) -> dict[str, Any]:
         "redeemed_at": row.get("redeemed_at") if row else None,
     }
 
-
 class PromoRedeemPayload(BaseModel):
     device_id: str
     code: str
 
-
 @api.post("/promo/redeem")
 async def promo_redeem(payload: PromoRedeemPayload) -> dict[str, Any]:
-    """Record a promo-code redemption for a device. Idempotent — the
-    first record wins; later attempts just report already-redeemed."""
     device_id = (payload.device_id or "").strip()
     code = (payload.code or "").strip().upper()
     if not device_id or not code:
@@ -2455,1105 +1906,16 @@ async def promo_redeem(payload: PromoRedeemPayload) -> dict[str, Any]:
             "redeemed_at": existing.get("redeemed_at"),
         }
     now = datetime.now(timezone.utc).isoformat()
-    await db.promo_redemptions.update_one(
-        {"device_id": device_id},
-        {"$setOnInsert": {"device_id": device_id, "code": code, "redeemed_at": now}},
-        upsert=True,
+    await db.promo_redemptions.insert_one(
+        {"device_id": device_id, "code": code, "redeemed_at": now}
     )
     return {"ok": True, "already": False, "redeemed_at": now}
-
-
-@api.get("/subscription/health")
-async def subscription_health() -> dict[str, Any]:
-    """Self-diagnostic endpoint — reports whether backend can talk to Google Play.
-    Safe to call publicly; returns no PII, only configuration status.
-    """
-    import os as _os
-    from subscription_service import _CachedClient, _package_name
-
-    sa_env = _os.environ.get("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON", "").strip()
-    sa_path_exists = bool(sa_env and _os.path.isfile(sa_env))
-    sa_inline_json = bool(sa_env.startswith("{"))
-    client = _CachedClient.get()
-    return {
-        "service_account_env_set": bool(sa_env),
-        "service_account_path_exists": sa_path_exists,
-        "service_account_inline_json": sa_inline_json,
-        "publisher_client_initialised": client is not None,
-        "package_name": _package_name(),
-    }
-
-
-# ---------------- Global Chatroom (Premium subscribers only) ----------------
-
-CHAT_RATE_LIMIT_SECONDS = 3
-CHAT_MESSAGE_MAX_LENGTH = 500
-CHAT_HISTORY_LIMIT = 200
-# Auto-expire chat history older than 16 hours (v7.0.5) — new members do
-# not see stale conversations. Applied both on read (filter) and on write
-# (background purge on every insert to keep the collection lean).
-CHAT_HISTORY_TTL_HOURS = 16
-# Image data URL (base64) cap: ~700KB string ≈ ~500KB image binary after base64
-# overhead. Anything larger is rejected to protect Mongo document limits.
-CHAT_IMAGE_MAX_CHARS = 750_000
-# v8.1.5 — Audio data URL cap. 60s of AAC/M4A @ 32kbps ≈ ~250KB binary
-# ≈ ~340KB base64. Cap at 500KB to allow variance without abuse.
-CHAT_AUDIO_MAX_CHARS = 500_000
-CHAT_AUDIO_MAX_DURATION_MS = 30_000  # 30 s hard ceiling; client soft-caps at 20 s.
-# v8.12.19 — Chatroom presence tracking window (seconds). A device is
-# considered "online" if it has polled /chat/messages within this window.
-# 90 s = 3 poll cycles at 30 s (or 30 cycles at 3 s) grace period.
-PRESENCE_WINDOW_SEC = 90
-
-
-class ChatReplyInfo(BaseModel):
-    """Snapshot of the message being replied to. We denormalise the
-    snippet + nickname + optional thumbnail into the reply so that
-    subsequent renders don't need a second Mongo lookup, and so that
-    reply context survives even if the original message is later purged
-    by the 16h TTL sweep."""
-    id: str
-    nickname: str
-    snippet: str = ""          # up to 80 chars of the original text
-    has_image: bool = False    # true if original had an attachment
-    has_audio: bool = False    # true if original was a voice note
-
-
-class ChatMessagePayload(BaseModel):
-    text: str = ""
-    nickname: str
-    device_id: str
-    # Optional base64 data URL for image attachment (e.g. "data:image/jpeg;base64,...")
-    image_data: str | None = None
-    # v8.1.5 — Voice note support.
-    audio_data: str | None = None          # data:audio/*;base64,...
-    audio_duration_ms: int | None = None   # client-reported duration
-    # v8.1.5 — Reply context (WhatsApp-style).
-    reply_to: ChatReplyInfo | None = None
-
-
-class ChatMessage(BaseModel):
-    id: str
-    text: str
-    nickname: str
-    device_id: str
-    created_at: str
-    image_data: str | None = None
-    audio_data: str | None = None
-    audio_duration_ms: int | None = None
-    reply_to: ChatReplyInfo | None = None
-
-
-async def _is_device_entitled(device_id: str) -> bool:
-    """Check if a device has an active premium entitlement.
-
-    v8.12.21 — Sources of truth (either grants access):
-    1. Google Play subscription (collection: `subscriptions`, `entitled=True`
-       and `expiry_time` in the future).
-    2. Admin unlock code bound to this device (collection: `unlock_codes`,
-       `revoked=False` and `expires_at` in the future OR `duration=lifetime`).
-
-    Prior to v8.12.21 only source (1) was checked, so admins logged in
-    with an unlock code (e.g. beta testers) were locked out of chatroom
-    posting and Market Brief unlock even though the frontend showed them
-    as premium.
-    """
-    if not device_id:
-        return False
-
-    # --- Source 1: Google Play subscriptions ---
-    row = await db.subscriptions.find_one(
-        {"device_id": device_id}, sort=[("updated_at", -1)]
-    )
-    if row and row.get("entitled"):
-        expiry = row.get("expiry_time")
-        if not expiry:
-            return True
-        try:
-            exp_dt = datetime.fromisoformat(expiry.replace("Z", "+00:00"))
-            if exp_dt > datetime.now(timezone.utc):
-                return True
-        except Exception:
-            # Fall through to source 2 rather than returning True on a
-            # malformed expiry — safer default.
-            pass
-
-    # --- Source 2: Admin unlock codes bound to this device ---
-    try:
-        code_row = await db.unlock_codes.find_one(
-            {
-                "device_id": device_id,
-                "revoked": {"$ne": True},
-            },
-            sort=[("last_used_at", -1)],
-        )
-        if code_row:
-            expires_at = code_row.get("expires_at")
-            if not expires_at:
-                # duration == "lifetime"
-                return True
-            try:
-                exp_dt = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
-                if exp_dt > datetime.now(timezone.utc):
-                    return True
-            except Exception:
-                pass
-    except Exception:
-        # DB error — degrade gracefully to False (no access), don't crash
-        # the caller. Should be extremely rare given the same DB just
-        # served source 1 above.
-        pass
-
-    return False
-
-
-@api.post("/chat/messages", response_model=ChatMessage)
-async def chat_send_message(payload: ChatMessagePayload) -> ChatMessage:
-    """Send a message to the global chatroom. Only premium subscribers can post."""
-    text = (payload.text or "").strip()
-    nickname = (payload.nickname or "").strip()
-    device_id = (payload.device_id or "").strip()
-    image_data = (payload.image_data or "").strip() or None
-    audio_data = (payload.audio_data or "").strip() or None
-    audio_duration_ms = payload.audio_duration_ms
-
-    if not nickname or not device_id:
-        raise HTTPException(400, "nickname and device_id are required")
-    if not text and not image_data and not audio_data:
-        raise HTTPException(400, "Message text, image, or audio is required")
-    if len(text) > CHAT_MESSAGE_MAX_LENGTH:
-        raise HTTPException(400, f"Message too long (max {CHAT_MESSAGE_MAX_LENGTH})")
-    if len(nickname) > 20:
-        raise HTTPException(400, "Nickname too long (max 20)")
-    if image_data is not None:
-        if not image_data.startswith("data:image/"):
-            raise HTTPException(400, "image_data must be a data URL (data:image/...)")
-        if len(image_data) > CHAT_IMAGE_MAX_CHARS:
-            raise HTTPException(
-                400,
-                f"Image too large (max ~{CHAT_IMAGE_MAX_CHARS // 1024}KB after base64).",
-            )
-    if audio_data is not None:
-        if not audio_data.startswith("data:audio/"):
-            raise HTTPException(400, "audio_data must be a data URL (data:audio/...)")
-        if len(audio_data) > CHAT_AUDIO_MAX_CHARS:
-            raise HTTPException(
-                400,
-                f"Audio too large (max ~{CHAT_AUDIO_MAX_CHARS // 1024}KB after base64).",
-            )
-        if audio_duration_ms is None or audio_duration_ms <= 0:
-            audio_duration_ms = 0
-        if audio_duration_ms > CHAT_AUDIO_MAX_DURATION_MS:
-            raise HTTPException(400, f"Voice note too long (max {CHAT_AUDIO_MAX_DURATION_MS // 1000}s).")
-
-    # Entitlement check
-    if not await _is_device_entitled(device_id):
-        raise HTTPException(403, "Only premium subscribers can post in the chatroom.")
-
-    # Rate limit
-    last = await db.chat_messages.find_one(
-        {"device_id": device_id}, sort=[("created_at", -1)]
-    )
-    if last:
-        try:
-            last_dt = datetime.fromisoformat(last["created_at"].replace("Z", "+00:00"))
-            elapsed = (datetime.now(timezone.utc) - last_dt).total_seconds()
-            if elapsed < CHAT_RATE_LIMIT_SECONDS:
-                raise HTTPException(
-                    429,
-                    f"Please wait {int(CHAT_RATE_LIMIT_SECONDS - elapsed) + 1}s before sending another message.",
-                )
-        except HTTPException:
-            raise
-        except Exception:
-            pass
-
-    now = datetime.now(timezone.utc)
-    msg: dict[str, Any] = {
-        "id": str(uuid.uuid4()),
-        "text": text,
-        "nickname": nickname[:20],
-        "device_id": device_id,
-        "created_at": now.isoformat(),
-        "image_data": image_data,
-        "audio_data": audio_data,
-        "audio_duration_ms": audio_duration_ms,
-        "reply_to": payload.reply_to.model_dump() if payload.reply_to else None,
-    }
-    await db.chat_messages.insert_one(dict(msg))
-    return ChatMessage(**msg)
-
-
-@api.get("/chat/messages")
-async def chat_get_messages(
-    after: str | None = None,
-    limit: int = Query(100, ge=1, le=CHAT_HISTORY_LIMIT),
-    device_id: str | None = Query(None, description="Optional presence heartbeat"),
-) -> dict[str, Any]:
-    """Get recent chat messages. Pass `after` (ISO timestamp) to fetch only new ones.
-
-    Messages older than CHAT_HISTORY_TTL_HOURS (16h) are hidden from
-    everyone so new members do not see stale conversations.
-
-    v8.12.19 — When `device_id` is supplied we treat this poll as a
-    presence heartbeat: upsert into `chat_presence` and return the number
-    of distinct devices seen within the last PRESENCE_WINDOW_SEC seconds
-    as `online`. Missing / empty `device_id` skips presence and returns
-    `online: 0`.
-    """
-    from datetime import timedelta
-
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=CHAT_HISTORY_TTL_HOURS)).isoformat()
-    query: dict[str, Any] = {"created_at": {"$gte": cutoff}}
-    if after:
-        # Combine with cutoff — take the later of the two.
-        query["created_at"] = {"$gt": max(after, cutoff)}
-    # Opportunistic cleanup: delete anything older than the cutoff so the
-    # collection stays small. Runs on every read but is a no-op most of
-    # the time (Mongo returns 0 deleted quickly).
-    try:
-        await db.chat_messages.delete_many({"created_at": {"$lt": cutoff}})
-    except Exception:
-        pass
-    cursor = db.chat_messages.find(query, projection={"_id": False}).sort(
-        "created_at", -1
-    ).limit(limit)
-    rows = await cursor.to_list(length=limit)
-    rows.reverse()  # oldest first for client convenience
-
-    # v8.12.19 — Presence tracking. TTL index on `chat_presence.last_seen`
-    # (created in _bootstrap_indexes) auto-expires stale rows after
-    # PRESENCE_WINDOW_SEC*2, so counting active rows is O(index).
-    online = 0
-    try:
-        now = datetime.now(timezone.utc)
-        if device_id:
-            did = device_id.strip()[:80]
-            if did:
-                await db.chat_presence.update_one(
-                    {"device_id": did},
-                    {"$set": {"device_id": did, "last_seen": now}},
-                    upsert=True,
-                )
-        # Count distinct devices seen within the sliding window (default 90s).
-        window_start = now - timedelta(seconds=PRESENCE_WINDOW_SEC)
-        online = await db.chat_presence.count_documents({"last_seen": {"$gte": window_start}})
-    except Exception:
-        pass
-
-    return {"messages": rows, "server_time": _now_iso(), "online": online}
-
-
-@api.get("/chat/online")
-async def chat_online(device_id: str | None = None) -> dict[str, Any]:
-    """v8.12.36 — Lightweight presence-only endpoint for the dashboard
-    Chatroom badge. Returns the number of distinct devices seen within
-    the last PRESENCE_WINDOW_SEC seconds, WITHOUT loading any messages.
-
-    Also acts as a presence heartbeat when `device_id` is supplied so the
-    caller stays "online" while the badge polls. Cheap: single index
-    count + one upsert.
-    """
-    from datetime import timedelta
-
-    online = 0
-    try:
-        now = datetime.now(timezone.utc)
-        if device_id:
-            did = device_id.strip()[:80]
-            if did:
-                await db.chat_presence.update_one(
-                    {"device_id": did},
-                    {"$set": {"device_id": did, "last_seen": now}},
-                    upsert=True,
-                )
-        window_start = now - timedelta(seconds=PRESENCE_WINDOW_SEC)
-        online = await db.chat_presence.count_documents({"last_seen": {"$gte": window_start}})
-    except Exception:
-        pass
-    return {"online": online, "server_time": _now_iso()}
-
-
-
-
-# ------------------------- Push notifications -------------------------
-# v8.3.0 — Frontend calls POST /api/register-push after the user grants
-# notification permission. We forward the {user_id, platform, token} to the
-# Emergent push relay AND store the {user_id, language} pair locally so the
-# scheduler can group recipients by language cohort.
-
-
-@api.post("/register-push", status_code=201)
-async def register_push(body: RegisterPushBody) -> dict[str, str]:
-    # Relay to Emergent (upserts device_token there). Failure surfaces as
-    # 502/500 automatically.
-    await register_push_token(body.user_id, body.platform, body.device_token)
-    # Persist language cohort locally (no device_token stored — that lives
-    # in the relay per playbook).
-    await save_subscriber(db, body.user_id, body.language or "en", body.platform)
-    return {"status": "registered"}
-
-
-# v8.3.5 — Return the last-24h Market Brief history for the caller's
-# language cohort. Consumed by the /market-brief page on the frontend.
-# Docs auto-expire via the TTL index on `sent_at` (24h), so today's brief
-# naturally replaces yesterday's without any manual pruning.
-@api.get("/push/history")
-async def push_history_endpoint(
-    language: str = Query("en", description="One of: id / en / ru / cn"),
-    limit: int = Query(20, ge=1, le=50),
-) -> dict[str, Any]:
-    lang = (language or "en").lower()
-    if lang not in ("id", "en", "ru", "cn"):
-        lang = "en"
-    items = await get_history(db, lang, limit=limit)
-    # Coerce datetime -> ISO string for JSON serialization.
-    for it in items:
-        ts = it.get("sent_at")
-        if hasattr(ts, "isoformat"):
-            it["sent_at"] = ts.isoformat()
-    return {"language": lang, "count": len(items), "items": items}
-
-
-# ---------------------- Market Brief (v8.7.1) --------------------------
-#
-# AI-generated narrative recap of the last session. Powered by Claude
-# Sonnet 4.6 via the Emergent LLM Key. Runs 2x/day (06:00 & 18:00 WIB).
-# Frontend consumes the latest brief in the caller's language via
-# GET /api/market-brief?lang=id.
-
-@api.get("/market-brief")
-async def market_brief_endpoint(
-    lang: str = Query("en", description="One of: id / en / ru / cn"),
-    device_id: str = Query("", description="Optional device_id for premium gating"),
-) -> dict[str, Any]:
-    lang_key = (lang or "en").lower()
-    if lang_key not in ("id", "en", "ru", "cn"):
-        lang_key = "en"
-    brief = await get_latest_brief(db, lang_key)
-    if not brief:
-        return {"available": False, "lang": lang_key, "brief": None, "is_premium": False}
-
-    # v8.7.2 — Premium gating.
-    # FREE tier gets: sentiment, sentiment_score, summary, top_headlines,
-    #                 warning_zones (general market info + risk awareness).
-    # PREMIUM tier ADDITIONALLY gets: sections (per-market actionable analysis)
-    #                                 and top_movers (which include buy/sell
-    #                                 rationale notes). Everything else stays
-    #                                 identical so the shape is stable.
-    is_premium = await _is_device_entitled(device_id.strip()) if device_id else False
-    if not is_premium:
-        brief = dict(brief)  # shallow copy so we don't mutate the cached doc
-        brief["sections"] = {}      # locked → frontend renders paywall card
-        brief["top_movers"] = []    # locked
-        brief["premium_locked"] = True
-    else:
-        brief["premium_locked"] = False
-
-    return {
-        "available": True,
-        "lang": lang_key,
-        "brief": brief,
-        "is_premium": is_premium,
-    }
-
-
-@api.post("/admin/reset-wr-history", include_in_schema=False)
-async def admin_reset_wr_history(admin_token: str = Query(..., description="Admin bypass")) -> dict[str, Any]:
-    """Nuke the signals collection so the WR track record starts fresh.
-
-    Used AFTER shipping a tightened AI formula. Idempotent — the same call
-    twice just deletes nothing the second time. Guarded by the admin token.
-    """
-    if admin_token != os.environ.get("ADMIN_UNLOCK_TOKEN", ""):
-        raise HTTPException(status_code=403, detail="forbidden")
-    result = await db.signals.delete_many({})
-    marker = "v8.7.3-manual"
-    await db.app_meta.replace_one(
-        {"_id": "wr_reset_marker"},
-        {"_id": "wr_reset_marker", "version": marker, "at": datetime.now(timezone.utc)},
-        upsert=True,
-    )
-    return {"ok": True, "deleted": result.deleted_count, "marker": marker}
-
-
-# v8.7.3 — Auto-reset marker: bump this string whenever we ship a formula
-# change that requires wiping the historic WR track record. On startup,
-# if the persisted marker < WR_RESET_TARGET, the signals collection is
-# dropped ONCE and the marker is updated. Safe to redeploy repeatedly.
-WR_RESET_TARGET = "v8.7.3"
-
-
-async def _wr_reset_on_version_bump() -> None:
-    """Wipe signals collection ONCE per WR_RESET_TARGET bump.
-
-    v8.12.47 — No longer wired to startup. Callable ONLY via
-    `POST /api/admin/startup-migrations` with a valid X-Admin-Token.
-    """
-    try:
-        marker_doc = await db.app_meta.find_one({"_id": "wr_reset_marker"})
-        cur = (marker_doc or {}).get("version", "")
-        if cur == WR_RESET_TARGET:
-            logger.info("wr-reset: already at %s, skip", WR_RESET_TARGET)
-            return
-        deleted = await db.signals.delete_many({})
-        await db.app_meta.replace_one(
-            {"_id": "wr_reset_marker"},
-            {"_id": "wr_reset_marker", "version": WR_RESET_TARGET, "at": datetime.now(timezone.utc)},
-            upsert=True,
-        )
-        logger.info(
-            "wr-reset: wiped %d stale signals (bumped marker %s → %s)",
-            deleted.deleted_count, cur or "<none>", WR_RESET_TARGET,
-        )
-    except Exception as e:
-        logger.warning("wr-reset failed: %s", e)
-async def market_brief_generate(admin_token: str = Query(..., description="Admin bypass")) -> dict[str, Any]:
-    """Manual trigger — used by the admin/cron warmup to regenerate a brief
-    off-schedule. Guarded by the admin token so it can't be abused.
-    """
-    if admin_token != os.environ.get("ADMIN_UNLOCK_TOKEN", ""):
-        raise HTTPException(status_code=403, detail="forbidden")
-    doc = await generate_and_store_brief(
-        db, _brief_dashboard_batch_fetch, _brief_news_fetch,
-    )
-    return {"ok": bool(doc), "id": doc.get("_id") if doc else None}
-
-
-# v9.3.0 — ASI-Bot (Artificial Super Intelligence Bot) Phase 1:
-# Credential management (AES-256-GCM encrypted exchange API keys).
-# Register BEFORE include_router so sub-routes are picked up.
-from asi_bot.routes import register as _register_asi_bot  # noqa: E402
-from asi_bot.scheduler import ASIScheduler  # noqa: E402
-_register_asi_bot(api, db)
-_asi_scheduler_state: dict[str, Any] = {"scheduler": None}
 
 app.include_router(api)
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-
-
-# --- Admin-only static admin HTML (served under /api/admin-tool for ingress-friendly route) ---
-from fastapi.responses import FileResponse, HTMLResponse  # noqa: E402
-
-
-@app.get("/api/admin-tool", include_in_schema=False)
-async def admin_tool_html() -> HTMLResponse:
-    """Serve the standalone Unlock Code Generator web page.
-
-    Access via https://<backend>/api/admin-tool from a browser. Do NOT share
-    the URL. The page still calls protected /api/admin/* endpoints with the
-    admin token embedded.
-    """
-    try:
-        path = os.path.join(os.path.dirname(__file__), "static", "admin.html")
-        with open(path, "r", encoding="utf-8") as f:
-            return HTMLResponse(f.read())
-    except Exception:
-        return HTMLResponse("<h1>Admin tool not deployed</h1>", status_code=404)
-
-
-@app.api_route("/api/privacy", methods=["GET", "HEAD"], include_in_schema=False)
-async def privacy_policy_html() -> HTMLResponse:
-    """PUBLIC Privacy Policy page — required by Google Play Console for store
-    submission. Google reviewers must be able to open this URL without login.
-
-    v8.3.1 — Also accepts HEAD requests. Google Play Console (and other
-    URL validators) issue HEAD to check reachability; a 405 there was
-    surfacing as "page not found" in the pre-review checklist.
-    """
-    try:
-        path = os.path.join(os.path.dirname(__file__), "static", "privacy.html")
-        with open(path, "r", encoding="utf-8") as f:
-            return HTMLResponse(f.read())
-    except Exception:
-        return HTMLResponse("<h1>Privacy policy not deployed</h1>", status_code=404)
-
-
-@app.api_route("/api/terms", methods=["GET", "HEAD"], include_in_schema=False)
-async def terms_html() -> HTMLResponse:
-    """PUBLIC Terms of Service page — required for Play Console subscription apps."""
-    try:
-        path = os.path.join(os.path.dirname(__file__), "static", "terms.html")
-        with open(path, "r", encoding="utf-8") as f:
-            return HTMLResponse(f.read())
-    except Exception:
-        return HTMLResponse("<h1>Terms of service not deployed</h1>", status_code=404)
-
-
-@app.api_route("/api/data-deletion", methods=["GET", "HEAD"], include_in_schema=False)
-async def data_deletion_html() -> HTMLResponse:
-    """PUBLIC Account/Data Deletion Request page — required by Google Play Console
-    Data Safety section (users must have a URL to request account deletion).
-
-    v8.3.1 — Also accepts HEAD requests (see privacy_policy_html).
-    """
-    try:
-        path = os.path.join(os.path.dirname(__file__), "static", "data-deletion.html")
-        with open(path, "r", encoding="utf-8") as f:
-            return HTMLResponse(f.read())
-    except Exception:
-        return HTMLResponse("<h1>Data deletion page not deployed</h1>", status_code=404)
-
-
-@app.get("/api/store-assets/{filename}", include_in_schema=False)
-async def store_asset(filename: str) -> FileResponse:
-    """Serve Play Store submission assets (feature graphic, screenshots).
-    Admin/dev only — link the specific URL to download.
-    """
-    # sanitize
-    if "/" in filename or ".." in filename or not (filename.endswith(".png") or filename.endswith(".jpg")):
-        return HTMLResponse("<h1>Invalid asset</h1>", status_code=400)
-    path = os.path.join(os.path.dirname(__file__), "static", "store-assets", filename)
-    if not os.path.exists(path):
-        return HTMLResponse(f"<h1>Not found: {filename}</h1>", status_code=404)
-    media = "image/jpeg" if filename.endswith(".jpg") else "image/png"
-    return FileResponse(path, media_type=media, filename=filename)
-
-
-@app.get("/api/admin-source.zip", include_in_schema=False)
-async def admin_source_zip() -> FileResponse:
-    """Download the admin-app source ZIP (for offline APK build via EAS Cloud).
-
-    Contains the entire /app/admin-app source tree minus node_modules. Extract
-    and follow admin-app/BUILD_APK.md instructions.
-    """
-    path = os.path.join(os.path.dirname(__file__), "static", "CryptoStock-Admin-Source.zip")
-    return FileResponse(
-        path,
-        media_type="application/zip",
-        filename="CryptoStock-Admin-Source.zip",
-    )
-
-
-@app.get("/api/app-source.zip", include_in_schema=False)
-async def app_source_zip() -> FileResponse:
-    """Download the MAIN APP source ZIP for building CryptoStock Pro APK (v2.1.3+)."""
-    path = os.path.join(os.path.dirname(__file__), "static", "CryptoStock-App-Source.zip")
-    return FileResponse(path, media_type="application/zip", filename="CryptoStock-App-Source.zip")
-
-
-@app.get("/api/build-main-guide", include_in_schema=False)
-async def build_main_guide() -> FileResponse:
-    """Markdown build guide for main app APK."""
-    path = os.path.join(os.path.dirname(__file__), "static", "BUILD_MAIN_APK.md")
-    return FileResponse(path, media_type="text/markdown", filename="BUILD_MAIN_APK.md")
-
-
-# NOTE: no @app.on_event("startup") MongoDB seed — kept lazy so the API can
-# accept traffic immediately even while the Atlas connection is warming up.
-# Seeding happens on first /api/profiles or /api/dashboard call.
-#
-# v7.0.9 — Index bootstrap runs in the background on startup so it does not
-# block the health check. We create a TTL index on chat_messages.created_at
-# so Mongo automatically deletes any document older than 16 hours (matches
-# the CHAT_HISTORY_TTL_HOURS filter used at read time). Idempotent — if the
-# index already exists with the same spec, Mongo is a no-op.
-
-
-async def _bootstrap_indexes() -> None:
-    """Create supporting indexes. Runs once on startup, non-blocking."""
-    try:
-        await db.chat_messages.create_index("created_at")
-        # v8.0.9 — indexes on the signals collection so track-record
-        # aggregation stays fast even after thousands of writes.
-        await db.signals.create_index([("market", 1), ("symbol", 1), ("created_at", -1)])
-        await db.signals.create_index("created_at")
-        # v10.3.8 — asi_trades tanpa index (hanya _id): monitor 60 dtk,
-        # list Running Positions & limit harian scan penuh koleksi.
-        await db.asi_trades.create_index([("device_id", 1), ("created_at", -1)])
-        await db.asi_trades.create_index([("status", 1), ("device_id", 1)])
-        await db.asi_trades.create_index([("device_id", 1), ("status", 1), ("closed_at", -1)])
-        # v8.12.19 — Chatroom presence collection. Unique per device_id
-        # (upserts on heartbeat), with a TTL that auto-purges rows once
-        # their `last_seen` is older than PRESENCE_WINDOW_SEC * 2 seconds
-        # so we don't count ghosts.
-        try:
-            await db.chat_presence.create_index("device_id", unique=True)
-        except Exception:
-            # Index may already exist with a different spec — ignore.
-            pass
-        try:
-            await db.chat_presence.create_index(
-                "last_seen", expireAfterSeconds=PRESENCE_WINDOW_SEC * 2
-            )
-        except Exception:
-            pass
-    except Exception:
-        pass
-
-
-async def _load_universe_refresh_loop() -> None:
-    """v8.1.3 — On startup, load Binance + Bitget universes IMMEDIATELY,
-    then refresh every 6h. Search relies on these being populated
-    early — but even if the first load is slow, the endpoint gracefully
-    falls back to the static maps."""
-    try:
-        from market_data import _load_binance_universe, _load_bitget_universe
-        # First load — parallel, non-blocking with respect to other startup work.
-        await asyncio.gather(
-            _load_binance_universe(force=True),
-            _load_bitget_universe(force=True),
-            return_exceptions=True,
-        )
-        # Periodic refresh loop (6h).
-        while True:
-            await asyncio.sleep(6 * 3600)
-            try:
-                await asyncio.gather(
-                    _load_binance_universe(force=True),
-                    _load_bitget_universe(force=True),
-                    return_exceptions=True,
-                )
-            except Exception:
-                # Never let the refresh loop die.
-                await asyncio.sleep(60)
-    except Exception:
-        pass
-
-
-async def _bootstrap_signals_seed() -> None:
-    """v8.0.9 — Seed the `signals` collection so newly-deployed instances
-    do not have an empty win-rate history (which used to demote every
-    asset from Premium). We write ONE synthetic snapshot per tracked
-    symbol per market at startup, using the local rule-based
-    `compute_signal` output (no AI cost). Real user Analyze calls
-    keep writing over top of this baseline afterwards.
-
-    Runs delayed by 20s so it does not fight cold-start dashboard load
-    for upstream Yahoo/Binance connections."""
-    try:
-        await asyncio.sleep(20)
-        # If we already have recent signals, skip — no need to spam Mongo.
-        recent = await db.signals.count_documents({}, limit=1)
-        if recent > 0:
-            # Only re-seed on fully empty deployments.
-            return
-
-        # Import lazily to avoid a circular import at module load.
-        from indicators import compute_signal
-        from market_data import get_batch as md_get_batch
-
-        prof = await _get_active_profile()
-        profile_id = prof["_id"]
-        market_symbols: dict[str, list[str]] = {
-            "crypto": DEFAULT_CRYPTO,
-            "stock_id": DEFAULT_STOCKS,
-            "etf": DEFAULT_ETF,
-            "stock_us": DEFAULT_STOCK_US,
-            "gold_silver": DEFAULT_GOLD_SILVER,
-            "commodity": DEFAULT_COMMODITY,
-            "forex": DEFAULT_FOREX,
-        }
-        for market, symbols in market_symbols.items():
-            if not symbols:
-                continue
-            try:
-                snaps = await md_get_batch(market, symbols, "1h")
-            except Exception:
-                continue
-            for s in snaps:
-                candles = s.get("candles") or []
-                ticker = s.get("ticker") or {}
-                price = ticker.get("price")
-                if not candles or price is None:
-                    continue
-                sig = compute_signal(candles, market)
-                try:
-                    await record_signal(
-                        db,
-                        profile_id=profile_id,
-                        market=market,
-                        symbol=s["symbol"],
-                        timeframe="1h",
-                        action=sig.get("action", "HOLD"),
-                        label=sig.get("label", "HOLD"),
-                        confidence=int(sig.get("confidence", 0)),
-                        price_at_signal=float(price),
-                    )
-                except Exception:
-                    continue
-    except Exception:
-        # Never crash startup on seed failure.
-        pass
-
-
-@app.on_event("startup")
-async def _startup_bootstrap() -> None:
-    # Schedule in the background — do not await, so cold-start latency
-    # stays low. Any failure is swallowed inside `_bootstrap_indexes`.
-    asyncio.create_task(_bootstrap_indexes())
-    # v8.0.9 — Seed signals so the WR-based Premium ranking has data on
-    # fresh deploys.
-    asyncio.create_task(_bootstrap_signals_seed())
-    # v8.1.3 — Load Binance + Bitget spot universes into memory so
-    # /api/search can match ANY listed pair (MOODENG, POPCAT, CAT, etc.)
-    # without waiting on hard-coded map updates. Non-blocking. Refreshes
-    # itself every 6 hours in _load_universe_refresh_loop.
-    asyncio.create_task(_load_universe_refresh_loop())
-    # v8.3.0 — Start daily push notification scheduler (7 slots, WIB).
-    _start_push_scheduler()
-    # v8.12.47 — Destructive startup migrations removed to satisfy
-    # deployment safety policy (no auto-deletion on boot). The TTL
-    # indexes on push_history + market_briefs already exist in prod
-    # MongoDB from previous deploys and remain functional. To (re)create
-    # them or run the WR reset, use the dedicated admin endpoints:
-    #   POST /api/admin/startup-migrations  (X-Admin-Token required)
-    _start_market_brief_scheduler()
-    # Warm-start: if no brief exists yet (fresh deploy or 48h TTL evicted
-    # everything), generate one in the background so the News tab isn't
-    # empty for first-time users.
-    asyncio.create_task(_brief_warm_start())
-    # v9.4.0 — ASI-Bot scheduler: soft-bracket watcher, open-PnL refresh,
-    # and Full-Auto scanner. Safe to start even if no users have keys yet.
-    _start_asi_scheduler()
-    # v10.6.9 — Reverse hanya bila user menyalakan sendiri: matikan
-    # Reverse yang dulu dinyalakan OTOMATIS (reverse_auto_on_at terisi).
-    try:
-        _r = await db.asi_bot_config.update_many(
-            {"reverse_signal": True, "reverse_auto_on_at": {"$nin": [None, ""]}},
-            {"$set": {"reverse_signal": False, "reverse_auto_on_at": None}})
-        if _r.modified_count:
-            logger.info("v10.6.9: %d reverse auto-ON dimatikan", _r.modified_count)
-    except Exception as _e:  # noqa: BLE001
-        logger.warning("v10.6.9 reverse migrate gagal: %s", _e)
-# --------------- Push scheduler wiring (v8.3.0) ---------------
-# Kept as module-level state so `_shutdown` can stop it cleanly.
-
-_push_scheduler_state: dict[str, object] = {"scheduler": None}
-
-
-async def _scheduler_dashboard_fetch(market: str) -> list[dict[str, object]]:
-    """Return dashboard rows for a market — used by the push scheduler
-    to pick the top BUY/LONG signal of the day.
-    """
-    try:
-        # Reuse the same builder that /api/dashboard/batch uses. `full=True`
-        # so we don't filter to only Premium — the scheduler still wants
-        # coverage when Premium is empty.
-        resp = await _build_dashboard_response(
-            market=market,
-            timeframe="1h",
-            sort="confidence",
-            full=True,
-            min_confidence=0,
-            min_wr=0.0,
-            region=None,
-        )
-        return [a.model_dump() for a in resp.assets]
-    except Exception as e:
-        logger.warning("scheduler dashboard fetch failed for %s: %s", market, e)
-        return []
-
-
-async def _scheduler_news_fetch(market: str) -> list[dict[str, object]]:
-    try:
-        items = await get_news(market, limit=3)
-        return [i.model_dump() if hasattr(i, "model_dump") else dict(i) for i in items]
-    except Exception as e:
-        logger.warning("scheduler news fetch failed for %s: %s", market, e)
-        return []
-
-
-def _start_push_scheduler() -> None:
-    if _push_scheduler_state.get("scheduler"):
-        return
-    try:
-        sched = build_scheduler(
-            db=db,
-            get_dashboard=_scheduler_dashboard_fetch,
-            get_news=_scheduler_news_fetch,
-        )
-        sched.start()
-        _push_scheduler_state["scheduler"] = sched
-        logger.info("push scheduler started with %d jobs", len(sched.get_jobs()))
-    except Exception as e:
-        # Never crash the app because the scheduler couldn't start.
-        logger.exception("failed to start push scheduler: %s", e)
-
-
-# --------------- ASI-Bot scheduler (v9.4.0) ---------------
-
-# v9.7.3 — Full-Auto fetcher cache: scanning N symbols must NOT rebuild the
-# whole dashboard N times. Cache the full response per (market, profile)
-# for 60s and extract per-symbol signals from it.
-_asi_fetch_cache: dict[str, tuple[float, dict]] = {}
-ASI_FETCH_TTL = float(os.environ.get("ASI_FETCH_TTL_SEC", "60"))
-
-
-# v10.0.3 — Cache bias harian (harga vs 50-SMA Daily) per simbol untuk
-# gate Full-Auto "searah trend harian". TTL 30 menit.
-_DAILY_BIAS_CACHE: dict[str, tuple[float, str]] = {}
-
-
-async def _daily_trend_bias(symbol: str) -> str | None:
-    """BULLISH bila harga di atas 50-SMA harian, BEARISH bila di bawah.
-    None bila data tidak tersedia (gate tidak memblokir saat data gagal,
-    supaya kegagalan jaringan tidak menghentikan bot sepenuhnya)."""
-    key = symbol.upper().replace("/", "").replace("USDT", "")
-    hit = _DAILY_BIAS_CACHE.get(key)
-    if hit and time.time() - hit[0] < 1800:
-        return hit[1]
-    try:
-        import httpx as _hx
-
-        async with _hx.AsyncClient(proxy=os.environ.get("ASI_PROXY_URL"), timeout=10.0) as cl:
-            r = await cl.get(
-                f"https://fapi.binance.com/fapi/v1/klines?symbol={key}USDT&interval=1d&limit=60")
-            if r.status_code != 200:
-                return None
-            candles = r.json()
-        if len(candles) < 51:
-            return None
-        closes = [float(k[4]) for k in candles]
-        sma50 = sum(closes[-50:]) / 50.0
-        bias = "BULLISH" if closes[-1] > sma50 else "BEARISH"
-        _DAILY_BIAS_CACHE[key] = (time.time(), bias)
-        return bias
-    except Exception:
-        return None
-
-
-def _asi_formula_tag(ind: dict | None, reasons: list[str] | None,
-                     profile: str | None) -> str | None:
-    """v9.9.13 — Tag SINGKAT modul formula yang benar-benar memicu sinyal
-    (label kartu Recent Trades). Prioritas pola spesifik; fallback ke
-    formula dasar profil."""
-    ind = ind or {}
-    if ind.get("vwap_engine") == "SCALP-15M":
-        return "Open-Scalp Modules"
-    tags: list[str] = []
-    if ind.get("power_of_tower"):
-        tags.append("Power of Tower Pattern")
-    if ind.get("john_wick"):
-        tags.append("John Wick Candle Stick")
-    r = " ".join(reasons or []).lower()
-    if "kiss" in r:
-        tags.append("KISS Pivot")
-    if ind.get("box_break_long") or ind.get("box_break_short"):
-        tags.append("Box Theory")
-    if tags:
-        return " · ".join(tags[:2])
-    # v10.1.1 — Fallback label untuk engine Confluence (sebelumnya None →
-    # kartu trade tidak menampilkan baris formula sama sekali, mis. WIF).
-    return {"scalper": "7 Fast VWAP", "day": "5 KISS VWAP",
-            "swing": "5 Multi-day Trend",
-            "longterm": "Confluence v9"}.get(profile or "", "Confluence")
-
-
-async def _asi_signal_fetcher(market: str, symbol: str, profile: str | None = None) -> dict[str, Any] | None:
-    """Return a dashboard-grade signal for Full-Auto execution.
-
-    Pulls from the SAME pipeline used by /api/dashboard so Full-Auto
-    stays in-sync with what users see on screen.
-
-    v9.6.1 — `profile` diteruskan dari konfigurasi bot: scalper/day/swing
-    memakai mesin VWAP (VWAP Core, Box Theory, KISS Pivot, John Wick,
-    Power of Tower, Pattern Scalp 15M); confluence/None memakai mesin
-    Confluence default.
-    """
-    try:
-        key = f"{market}|{profile or 'none'}"
-        hit = _asi_fetch_cache.get(key)
-        if hit and time.time() - hit[0] < ASI_FETCH_TTL:
-            resp = hit[1]
-        else:
-            resp = await _build_dashboard_response(
-                market=market, timeframe="1h", sort="confidence",
-                full=True, min_confidence=70, min_wr=70.0, region=None,
-                profile=profile,
-                # v10.1.8 — Full-Auto pakai gate EKSEKUSI ketat (3/1.5);
-                # dashboard user tetap tampil longgar (8/2.5).
-                strict_gates=True,
-            )
-            _asi_fetch_cache[key] = (time.time(), resp)
-        for a in resp.assets:
-            if a.symbol.upper() != symbol.upper():
-                continue
-            d = a.model_dump()
-            action = (d.get("action") or "").upper()
-            side = "BUY" if action in ("BUY", "LONG") else (
-                "SELL" if action in ("SELL", "SHORT") else None
-            )
-            if not side:
-                return None
-            entry = d.get("entry") or d.get("price")
-            sl = d.get("stop_loss")
-            tps = [t for t in (d.get("take_profit"), d.get("take_profit_2"),
-                                d.get("take_profit_3")) if t]
-            if not (entry and sl and tps):
-                return None
-            # v9.9.14 — Keputusan user: entry LIMIT memakai tier MODERATE
-            # (Confluence -0.5xATR, VWAP -0.3xATR) agar lebih sering terisi
-            # dibanding Deep yang nyaris tidak pernah tersentuh. SL/TP
-            # digeser sebesar selisih (moderate - deep) sehingga jarak R
-            # dan ladder tetap utuh relatif ke harga limit baru.
-            entry_mod = d.get("entry_moderate") or entry
-            shift = float(entry_mod) - float(entry)
-            if abs(shift) > 0:
-                entry = entry_mod
-                sl = sl + shift
-                tps = [t + shift for t in tps]
-            # v10.1.2 — FILTER BIAS HARIAN DIHAPUS (keputusan user terbaru):
-            # sinyal executable yang tampil di AI Suggestions harus LANGSUNG
-            # memicu eksekusi Full-Auto tanpa kondisi filter tambahan.
-            # Sebelumnya counter-trend vs SMA-50 Daily dibuang di sini,
-            # menyebabkan sinyal yang terlihat di UI tidak pernah dieksekusi.
-            return {
-                "side": side, "entry": entry, "stop_loss": sl,
-                "take_profits": tps,
-                "confidence": int(d.get("confidence") or 0),
-                # v10.1.2 — Engine yang BENAR-BENAR menghasilkan sinyal
-                # (scanner multi-profil memanggil fetcher per engine;
-                # tanpa ini trade terekam dgn profile config user dan
-                # statistik WR per profile menjadi tidak valid).
-                "profile": profile,
-                "formula_tag": _asi_formula_tag(
-                    d.get("indicators"), d.get("reasons"), profile),
-            }
-        return None
-    except Exception as e:  # noqa: BLE001
-        logger.debug("asi signal fetch %s/%s failed: %s", market, symbol, e)
-        return None
-
-
-def _start_asi_scheduler() -> None:
-    if _asi_scheduler_state.get("scheduler"):
-        return
-    try:
-        sch = ASIScheduler(db=db, signal_fetcher=_asi_signal_fetcher)
-        sch.start()
-        _asi_scheduler_state["scheduler"] = sch
-        logger.info("ASI-Bot scheduler started")
-    except Exception as e:
-        logger.exception("failed to start ASI scheduler: %s", e)
-
-
-@app.on_event("shutdown")
-async def _shutdown() -> None:
-    # Stop push scheduler first so its jobs don't try to talk to a closed
-    # Mongo/HTTP client during teardown.
-    sched = _push_scheduler_state.get("scheduler")
-    if sched is not None:
-        try:
-            sched.shutdown(wait=False)  # type: ignore[union-attr]
-        except Exception:
-            pass
-    # v8.7.1 — Also stop the Market Brief scheduler.
-    bsched = _brief_scheduler_state.get("scheduler")
-    if bsched is not None:
-        try:
-            bsched.shutdown(wait=False)  # type: ignore[union-attr]
-        except Exception:
-            pass
-    # v9.4.0 — Stop ASI-Bot scheduler.
-    asi_sch = _asi_scheduler_state.get("scheduler")
-    if asi_sch is not None:
-        try:
-            await asi_sch.stop()  # type: ignore[union-attr]
-        except Exception:
-            pass
-    from market_data import close_http_client
-    await close_http_client()
-    client.close()
-
-
-# --------------- Market Brief scheduler (v8.7.1) ---------------
-
-_brief_scheduler_state: dict[str, object] = {"scheduler": None}
-
-
-async def _brief_dashboard_batch_fetch(markets: list[str]) -> dict[str, Any]:
-    """Return a `{market: {assets, premium_count}}` dict for the brief
-    LLM prompt. Uses the same builder as /api/dashboard/batch.
-    """
-    out: dict[str, Any] = {}
-    for m in markets:
-        try:
-            resp = await _build_dashboard_response(
-                market=m,
-                timeframe="1h",
-                sort="confidence",
-                full=False,
-                min_confidence=85,
-                min_wr=70.0,
-                region=None,
-            )
-            out[m] = {
-                "assets": [a.model_dump() for a in resp.assets[:20]],
-                "premium_count": resp.premium_count,
-            }
-        except Exception as e:
-            logger.warning("brief dashboard fetch failed for %s: %s", m, e)
-            out[m] = {"assets": [], "premium_count": 0}
-    return out
-
-
-async def _brief_news_fetch(market_key: str = "all") -> list[dict[str, Any]]:
-    """Return top news across all markets for the brief LLM prompt."""
-    try:
-        items = await get_news(market_key, limit=10)
-        return [i.model_dump() if hasattr(i, "model_dump") else dict(i) for i in items]
-    except Exception as e:
-        logger.warning("brief news fetch failed: %s", e)
-        return []
-
-
-async def _brief_run_job() -> None:
-    """Scheduled cron job: generate & persist a Market Brief."""
-    try:
-        await generate_and_store_brief(db, _brief_dashboard_batch_fetch, _brief_news_fetch)
-    except Exception as e:
-        logger.exception("scheduled market brief generation failed: %s", e)
-
-
-async def _brief_warm_start() -> None:
-    """Generate an initial brief if none exists (first deploy / TTL wipe).
-
-    Wait 30s so heavy startup tasks (index build, universe load) settle.
-    """
-    try:
-        await asyncio.sleep(30)
-        existing = await db.market_briefs.find_one(sort=[("generated_at", -1)])
-        if existing:
-            logger.info("brief warm-start skipped: existing brief %s", existing.get("_id"))
-            return
-        logger.info("brief warm-start: no existing brief, generating one now")
-        await _brief_run_job()
-    except Exception as e:
-        logger.warning("brief warm-start failed: %s", e)
-
-
-def _start_market_brief_scheduler() -> None:
-    if _brief_scheduler_state.get("scheduler"):
-        return
-    try:
-        from apscheduler.schedulers.asyncio import AsyncIOScheduler
-        from apscheduler.triggers.cron import CronTrigger
-        import pytz
-        wib = pytz.timezone("Asia/Jakarta")
-        sched = AsyncIOScheduler(timezone=wib)
-        # Morning brief — 06:00 WIB (right after US close, pre-Asia session)
-        sched.add_job(
-            _brief_run_job,
-            trigger=CronTrigger(hour=6, minute=0, timezone=wib),
-            id="market_brief_morning",
-            max_instances=1, coalesce=True, misfire_grace_time=1800,
-            replace_existing=True,
-        )
-        # Evening brief — 18:00 WIB (post-EU open, mid US-day)
-        sched.add_job(
-            _brief_run_job,
-            trigger=CronTrigger(hour=18, minute=0, timezone=wib),
-            id="market_brief_evening",
-            max_instances=1, coalesce=True, misfire_grace_time=1800,
-            replace_existing=True,
-        )
-        sched.start()
-        _brief_scheduler_state["scheduler"] = sched
-        logger.info("market brief scheduler started with %d jobs", len(sched.get_jobs()))
-    except Exception as e:
-        logger.exception("failed to start market brief scheduler: %s", e)
-
