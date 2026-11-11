@@ -91,3 +91,4 @@ credentials.json
 # Use Emergent Secrets panel to inject GOOGLE_PLAY_SERVICE_ACCOUNT_JSON
 # as inline JSON instead.
 backend/service-account.json
+"backend/service-account.json" 
