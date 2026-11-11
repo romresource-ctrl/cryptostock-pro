@@ -92,3 +92,4 @@ credentials.json
 # as inline JSON instead.
 backend/service-account.json
 "backend/service-account.json" 
+backend/service-account.json 
