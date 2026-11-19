@@ -1,9 +1,10 @@
 """
-AI Crypto Stock Pro backend — server.py (Full standalone version with working unlock codes & admin API + /admin.html)
+AI Crypto Stock Pro backend — server.py (Full standalone version with working unlock codes, admin API, /admin.html & web preview dashboard /)
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import time
@@ -13,7 +14,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, FastAPI, Header, HTTPException, Query, Request
+from fastapi import APIRouter, FastAPI, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, FileResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
@@ -53,6 +54,7 @@ from unlock_codes import (  # noqa: E402
     revoke_code,
     verify_code,
 )
+from chartbite_engine import SignalAndTPTrackerEngine  # noqa: E402
 
 from push_notifications import (  # noqa: E402
     RegisterPushBody,
@@ -159,6 +161,327 @@ client = AsyncIOMotorClient(
     uuidRepresentation="standard",
 )
 db = client[os.environ.get("DB_NAME", "aitrade_pro")]
+chartbite_engine = SignalAndTPTrackerEngine(db)
+
+# Timeframe chart → timeframe MTF yang dipakai gate EMA 20/50 Chartbite.
+_CHARTBITE_MTF: dict[str, str] = {
+    "1m": "15m", "3m": "15m", "5m": "1h", "15m": "1h", "30m": "4h",
+    "1h": "4h", "3h": "1d", "6h": "1d", "12h": "1d", "18h": "1d", "24h": "1d",
+}
+_chartbite_done: dict[str, dict | None] = {}
+_chartbite_inflight: dict[str, asyncio.Task] = {}
+_chartbite_last_px: dict[str, float] = {}
+
+
+class ChartbiteHub:
+    """Klien WebSocket aplikasi yang menerima event sinyal / TP / SL."""
+
+    def __init__(self) -> None:
+        self._sockets: set[WebSocket] = set()
+        self._lock = asyncio.Lock()
+
+    async def connect(self, ws: WebSocket) -> None:
+        await ws.accept()
+        async with self._lock:
+            self._sockets.add(ws)
+
+    def disconnect(self, ws: WebSocket) -> None:
+        self._sockets.discard(ws)
+
+    async def broadcast(self, ticker: str, payload: dict) -> None:
+        async with self._lock:
+            sockets = list(self._sockets)
+        dead: list[WebSocket] = []
+        for ws in sockets:
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                dead.append(ws)
+        if dead:
+            async with self._lock:
+                for ws in dead:
+                    self._sockets.discard(ws)
+
+
+chartbite_hub = ChartbiteHub()
+
+
+def _chartbite_side(action: str | None, label: str | None = None) -> str | None:
+    raw = f"{action or ''} {label or ''}".upper()
+    if "LONG" in raw or "BUY" in raw:
+        return "LONG"
+    if "SHORT" in raw or "SELL" in raw:
+        return "SHORT"
+    return None
+
+
+def _chartbite_key(symbol: str, side: str, timeframe: str) -> str:
+    return f"{symbol.upper()}|{side}|{timeframe}|{_candle_boundary(timeframe)}"
+
+
+def _chartbite_public(doc: dict, trade_id: str | None = None) -> dict:
+    out: dict[str, Any] = {}
+    for key, value in doc.items():
+        if key == "_id":
+            out["trade_id"] = str(value)
+            continue
+        if isinstance(value, datetime):
+            out[key] = value.isoformat()
+        else:
+            out[key] = value
+    if trade_id:
+        out["trade_id"] = trade_id
+    return out
+
+
+def _binance_pair(ticker: str) -> str:
+    return CRYPTO_BINANCE_MAP.get(ticker.upper(), f"{ticker.upper()}USDT")
+
+
+_PAIR_TO_TICKER = {pair.upper(): ticker for ticker, pair in CRYPTO_BINANCE_MAP.items()}
+
+
+def _ticker_from_pair(pair: str) -> str:
+    pair = pair.upper()
+    if pair in _PAIR_TO_TICKER:
+        return _PAIR_TO_TICKER[pair]
+    if pair.endswith("USDT"):
+        return pair[:-4]
+    return pair
+
+
+async def _chartbite_active_tickers() -> list[str]:
+    cursor = chartbite_engine.collection.find({"status": "ACTIVE"}, {"ticker": 1})
+    found: list[str] = []
+    async for row in cursor:
+        ticker = str(row.get("ticker") or "").upper()
+        if ticker and ticker not in found:
+            found.append(ticker)
+    return found
+
+
+async def _register_chartbite_body(
+    symbol: str,
+    market: str,
+    timeframe: str,
+    candles: list[dict],
+    side: str,
+    key: str,
+) -> dict | None:
+    import pandas as pd
+
+    try:
+        existing = await chartbite_engine.collection.find_one(
+            {"ticker": symbol.upper(), "action": side, "status": "ACTIVE"}
+        )
+        if existing:
+            public = _chartbite_public(existing)
+            _chartbite_done[key] = public
+            return public
+        if len(candles) < 15:
+            _chartbite_done[key] = None
+            return None
+        mtf_tf = _CHARTBITE_MTF.get(timeframe, "4h")
+        mtf_snap = await get_crypto_snapshot(symbol, mtf_tf)
+        mtf_candles = (mtf_snap or {}).get("candles") or []
+        if len(mtf_candles) < 50:
+            _chartbite_done[key] = None
+            return None
+        doc = chartbite_engine.generate_validated_signal(
+            symbol.upper(),
+            pd.DataFrame(candles),
+            pd.DataFrame(mtf_candles),
+            side,
+        )
+        if not doc:
+            _chartbite_done[key] = None
+            return None
+        doc["market"] = market
+        doc["timeframe"] = timeframe
+        doc["mtf_timeframe"] = mtf_tf
+        trade_id = await chartbite_engine.save_new_signal(doc)
+        public = _chartbite_public(doc, trade_id)
+        _chartbite_done[key] = public
+        await chartbite_hub.broadcast(symbol.upper(), {
+            "event": "SIGNAL",
+            "trade_id": trade_id,
+            "ticker": symbol.upper(),
+            "action": side,
+            "price": public["entry_price"],
+            "message": (
+                f"{side} {symbol.upper()} lolos gate MTF {public['mtf_zone']} "
+                f"@ {public['entry_price']}"
+            ),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "sl": public["sl"],
+            "tp1": public["tp1"],
+            "tp2": public["tp2"],
+            "tp3": public["tp3"],
+            "mtf_zone": public["mtf_zone"],
+        })
+        return public
+    except Exception as exc:
+        _chartbite_done.pop(key, None)
+        logger.warning("chartbite signal %s: %s", symbol, exc)
+        return None
+    finally:
+        if len(_chartbite_done) > 4000:
+            _chartbite_done.clear()
+
+
+def schedule_chartbite(
+    symbol: str,
+    market: str,
+    timeframe: str,
+    candles: list[dict],
+    action: str | None,
+    label: str | None = None,
+) -> asyncio.Task | None:
+    """Jalankan gate Chartbite sekali per simbol/arah/candle. None = sudah selesai."""
+    if market != "crypto":
+        return None
+    side = _chartbite_side(action, label)
+    if side is None:
+        return None
+    key = _chartbite_key(symbol, side, timeframe)
+    if key in _chartbite_done:
+        return None
+    task = _chartbite_inflight.get(key)
+    if task is None:
+        task = asyncio.create_task(
+            _register_chartbite_body(symbol, market, timeframe, candles, side, key)
+        )
+        _chartbite_inflight[key] = task
+
+        def _clear(done: asyncio.Task, k: str = key) -> None:
+            if _chartbite_inflight.get(k) is done:
+                _chartbite_inflight.pop(k, None)
+
+        task.add_done_callback(_clear)
+    return task
+
+
+async def chartbite_for_signal(
+    symbol: str,
+    market: str,
+    timeframe: str,
+    candles: list[dict],
+    action: str | None,
+    label: str | None = None,
+) -> dict | None:
+    side = _chartbite_side(action, label)
+    if market != "crypto" or side is None:
+        return None
+    key = _chartbite_key(symbol, side, timeframe)
+    if key in _chartbite_done:
+        return _chartbite_done[key]
+    task = schedule_chartbite(symbol, market, timeframe, candles, action, label)
+    if task is None:
+        return _chartbite_done.get(key)
+    return await task
+
+
+async def _chartbite_on_price(ticker: str, price: float) -> None:
+    now = time.time()
+    if now - _chartbite_last_px.get(ticker, 0.0) < 0.4:
+        return
+    _chartbite_last_px[ticker] = now
+    try:
+        await chartbite_engine.process_realtime_tick(
+            ticker, price, chartbite_hub.broadcast
+        )
+    except Exception as exc:
+        logger.warning("chartbite tick %s: %s", ticker, exc)
+
+
+async def _chartbite_rest_prices(tickers: list[str]) -> None:
+    import httpx
+
+    wanted = {_binance_pair(t).upper(): t.upper() for t in tickers}
+    async with httpx.AsyncClient(timeout=8.0) as http:
+        resp = await http.get("https://fapi.binance.com/fapi/v1/ticker/price")
+        if resp.status_code != 200:
+            resp = await http.get("https://api.binance.com/api/v3/ticker/price")
+        if resp.status_code != 200:
+            return
+        rows = resp.json()
+    if isinstance(rows, dict):
+        rows = [rows]
+    for row in rows:
+        pair = str(row.get("symbol") or "").upper()
+        ticker = wanted.get(pair)
+        if not ticker:
+            continue
+        try:
+            price = float(row.get("price") or 0)
+        except (TypeError, ValueError):
+            continue
+        if price > 0:
+            await _chartbite_on_price(ticker, price)
+
+
+async def _chartbite_binance_loop() -> None:
+    """Loop WebSocket harga Binance → process_realtime_tick untuk trade ACTIVE."""
+    import websockets
+
+    hosts = (
+        "wss://fstream.binance.com/market/stream?streams=",
+        "wss://data-stream.binance.vision/stream?streams=",
+        "wss://stream.binance.com:9443/stream?streams=",
+    )
+    while True:
+        try:
+            tickers = await _chartbite_active_tickers()
+            if not tickers:
+                await asyncio.sleep(4)
+                continue
+            streams = "/".join(
+                f"{_binance_pair(t).lower()}@aggTrade" for t in tickers[:80]
+            )
+            subscribed = set(tickers)
+            connected = False
+            for host in hosts:
+                try:
+                    async with websockets.connect(
+                        host + streams, ping_interval=20, close_timeout=5,
+                    ) as ws:
+                        connected = True
+                        last_check = time.time()
+                        while True:
+                            try:
+                                raw = await asyncio.wait_for(ws.recv(), timeout=20)
+                            except asyncio.TimeoutError:
+                                raw = None
+                            now = time.time()
+                            if now - last_check > 12:
+                                last_check = now
+                                current = set(await _chartbite_active_tickers())
+                                if current != subscribed:
+                                    break
+                            if not raw:
+                                continue
+                            msg = json.loads(raw)
+                            data = msg.get("data") if isinstance(msg, dict) else None
+                            if not isinstance(data, dict):
+                                data = msg if isinstance(msg, dict) else {}
+                            try:
+                                price = float(data.get("p") or data.get("c") or 0)
+                            except (TypeError, ValueError):
+                                continue
+                            pair = str(data.get("s") or "")
+                            if price <= 0 or not pair:
+                                continue
+                            await _chartbite_on_price(_ticker_from_pair(pair), price)
+                    break
+                except Exception as exc:
+                    logger.warning("chartbite ws %s: %s", host.split("/")[2], exc)
+                    continue
+            if not connected:
+                await _chartbite_rest_prices(tickers)
+                await asyncio.sleep(3)
+        except Exception as exc:
+            logger.warning("chartbite loop: %s", exc)
+            await asyncio.sleep(3)
 
 from market_data import (  # noqa: E402,F811
     CRYPTO_BINANCE_MAP,
@@ -620,10 +943,6 @@ async def ai_suggestions(
 
 def _profile_to_model(p: dict) -> Profile:
     return Profile(id=p["_id"], name=p.get("name", "Untitled"), crypto=p.get("crypto", []), stocks=p.get("stocks", []))
-
-@api.get("/")
-async def health() -> dict:
-    return {"app": "AI Crypto Stock Pro", "status": "ok", "time": _now_iso()}
 
 @api.get("/profiles", response_model=ProfilesResponse)
 async def list_profiles() -> ProfilesResponse:
@@ -1901,6 +2220,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Route untuk melayani file Web Preview Dashboard (index.html)
+@app.get("/")
+async def serve_index_page():
+    return FileResponse(ROOT_DIR / "index.html")
 
 # Route untuk melayani file admin.html
 @app.get("/admin.html")
